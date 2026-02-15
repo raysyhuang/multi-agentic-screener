@@ -32,7 +32,7 @@ async def test_verifier_passes_valid_output():
             "tokens_in": 100,
             "tokens_out": 50,
             "latency_ms": 500,
-            "model": "gpt-5.2-mini",
+            "model": "gpt-5.2",
             "cost_usd": 0.001,
         },
     ):
@@ -72,7 +72,7 @@ async def test_verifier_flags_invalid_output():
             "tokens_in": 100,
             "tokens_out": 50,
             "latency_ms": 500,
-            "model": "gpt-5.2-mini",
+            "model": "gpt-5.2",
             "cost_usd": 0.001,
         },
     ):
@@ -122,7 +122,7 @@ async def test_verifier_fail_open_on_non_json():
             "tokens_in": 50,
             "tokens_out": 20,
             "latency_ms": 200,
-            "model": "gpt-5.2-mini",
+            "model": "gpt-5.2",
             "cost_usd": 0.0005,
         },
     ):

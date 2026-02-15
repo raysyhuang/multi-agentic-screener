@@ -20,7 +20,6 @@ _MODEL_COSTS: dict[str, tuple[float, float]] = {
     "claude-sonnet-4-5-20250929": (3.0, 15.0),
     "claude-haiku-4-5-20251001": (0.80, 4.0),
     "gpt-5.2": (2.0, 8.0),
-    "gpt-5.2-mini": (0.40, 1.60),
     "gpt-5.2-nano": (0.10, 0.40),
     "o3-mini": (1.10, 4.40),
 }

@@ -62,7 +62,7 @@ class VerificationResult:
 class VerifierAgent(BaseAgent):
     def __init__(self):
         settings = get_settings()
-        model = getattr(settings, "verifier_model", "gpt-5.2-mini")
+        model = getattr(settings, "verifier_model", "gpt-5.2")
         super().__init__("verifier", model)
 
     async def verify(

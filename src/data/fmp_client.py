@@ -9,7 +9,7 @@ import pandas as pd
 
 from src.config import get_settings
 
-BASE_URL = "https://financialmodelingprep.com/api/v3"
+BASE_URL = "https://financialmodelingprep.com/stable"
 
 
 class FMPClient:
@@ -23,7 +23,7 @@ class FMPClient:
         self, from_date: date, to_date: date
     ) -> list[dict]:
         """Upcoming earnings dates."""
-        url = f"{BASE_URL}/earning_calendar"
+        url = f"{BASE_URL}/earnings-calendar"
         params = self._params(**{"from": str(from_date), "to": str(to_date)})
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
@@ -31,17 +31,17 @@ class FMPClient:
         return resp.json()
 
     async def get_earnings_surprise(self, ticker: str) -> list[dict]:
-        """Historical earnings surprises."""
-        url = f"{BASE_URL}/earnings-surprises/{ticker}"
+        """Historical earnings data (actual vs estimate)."""
+        url = f"{BASE_URL}/earnings"
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=self._params())
+            resp = await client.get(url, params=self._params(symbol=ticker))
             resp.raise_for_status()
         return resp.json()
 
     async def get_insider_trading(self, ticker: str, limit: int = 50) -> list[dict]:
         """Recent insider transactions."""
-        url = f"{BASE_URL}/insider-trading"
-        params = self._params(symbol=ticker, limit=limit)
+        url = f"{BASE_URL}/insider-trading/search"
+        params = self._params(symbol=ticker, limit=limit, page=0)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
@@ -49,20 +49,20 @@ class FMPClient:
 
     async def get_institutional_holders(self, ticker: str) -> list[dict]:
         """Institutional ownership data."""
-        url = f"{BASE_URL}/institutional-holder/{ticker}"
+        url = f"{BASE_URL}/institutional-ownership/symbol-positions-summary"
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=self._params())
+            resp = await client.get(url, params=self._params(symbol=ticker))
             resp.raise_for_status()
         return resp.json()
 
     async def get_company_profile(self, ticker: str) -> dict:
         """Company profile with sector, market cap, etc."""
-        url = f"{BASE_URL}/profile/{ticker}"
+        url = f"{BASE_URL}/profile"
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=self._params())
+            resp = await client.get(url, params=self._params(symbol=ticker))
             resp.raise_for_status()
             data = resp.json()
-        return data[0] if data else {}
+        return data[0] if isinstance(data, list) and data else (data if isinstance(data, dict) else {})
 
     async def get_stock_screener(
         self,
@@ -73,7 +73,7 @@ class FMPClient:
         limit: int = 5000,
     ) -> list[dict]:
         """Screen stocks by basic criteria — used for universe construction."""
-        url = f"{BASE_URL}/stock-screener"
+        url = f"{BASE_URL}/company-screener"
         params = self._params(
             marketCapMoreThan=market_cap_more_than,
             volumeMoreThan=volume_more_than,
@@ -88,8 +88,8 @@ class FMPClient:
 
     async def get_key_metrics(self, ticker: str, period: str = "annual") -> list[dict]:
         """Key financial metrics (P/E, EV/EBITDA, etc.)."""
-        url = f"{BASE_URL}/key-metrics/{ticker}"
-        params = self._params(period=period)
+        url = f"{BASE_URL}/key-metrics"
+        params = self._params(symbol=ticker, period=period)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()
@@ -99,8 +99,8 @@ class FMPClient:
         self, ticker: str, from_date: date, to_date: date
     ) -> pd.DataFrame:
         """Historical daily prices as DataFrame."""
-        url = f"{BASE_URL}/historical-price-full/{ticker}"
-        params = self._params(**{"from": str(from_date), "to": str(to_date)})
+        url = f"{BASE_URL}/historical-price-eod/full"
+        params = self._params(symbol=ticker, **{"from": str(from_date), "to": str(to_date)})
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await client.get(url, params=params)
             resp.raise_for_status()

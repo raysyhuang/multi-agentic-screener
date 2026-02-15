@@ -116,7 +116,7 @@ class ExecutionPlan:
 class PlannerAgent(BaseAgent):
     def __init__(self):
         settings = get_settings()
-        model = getattr(settings, "planner_model", "gpt-5.2-mini")
+        model = getattr(settings, "planner_model", "gpt-5.2")
         super().__init__("planner", model)
 
     async def create_plan(

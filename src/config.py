@@ -55,8 +55,8 @@ class Settings(BaseSettings):
     afternoon_check_minute: int = 30
 
     # --- Planner / Verifier ---
-    planner_model: str = "gpt-5.2-mini"
-    verifier_model: str = "gpt-5.2-mini"
+    planner_model: str = "gpt-5.2"
+    verifier_model: str = "gpt-5.2"
 
     # --- Retry settings ---
     agent_max_retry_attempts: int = 2
