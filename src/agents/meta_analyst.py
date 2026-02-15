@@ -24,12 +24,27 @@ Your job is to analyze the system's performance over the past 30 days and identi
 4. Systematic biases (always bullish? over-confident? sector concentration?)
 5. Specific threshold adjustments that would have improved results
 
+If divergence data is provided (under the "divergence" key), also analyze:
+6. LLM contribution: Is the agentic overlay adding or destroying portfolio value?
+   Look at net_portfolio_delta and run_level_deltas — individual wins do NOT guarantee portfolio uplift.
+7. Event type effectiveness: VETO/PROMOTE/RESIZE win rates and return deltas independently.
+8. Reason code analysis: Which reason codes correlate with positive/negative outcomes?
+9. Regime-specific LLM value: In which regimes does the LLM overlay add most/least value?
+10. Cost efficiency: Is LLM cost justified? Report net_delta_per_dollar.
+
 RULES:
 1. Be brutally honest. Sugar-coating leads to real money losses.
 2. Every suggestion must be specific and actionable (e.g., "reduce breakout threshold from 50 to 55").
 3. If the sample size is too small for reliable conclusions, say so.
 4. Consider survivorship bias — we only see stocks we picked, not the ones we missed.
 5. Minimum 20 signals needed before adjusting model parameters.
+6. If any divergence bucket (event type, reason code, or regime) has fewer than 10 resolved events,
+   treat it as exploratory only — describe the pattern but do NOT recommend structural changes.
+7. When analyzing divergence data, distinguish micro-level uplift (individual trade delta) from
+   portfolio-level uplift (sum of all deltas in a run). High individual win rate with net negative
+   portfolio delta means losses are large when the LLM is wrong.
+8. For agent_adjustments, be specific about which agent and conditions
+   (e.g., "reduce debate aggressiveness in bull regimes where VETO win rate is below 40%").
 
 Respond with JSON:
 {
@@ -42,7 +57,9 @@ Respond with JSON:
   "regime_accuracy": float (0-1),
   "biases_detected": ["bias 1", "bias 2"],
   "threshold_adjustments": [{"parameter": "x", "current": y, "suggested": z, "reasoning": "..."}],
-  "summary": "2-3 paragraph executive summary"
+  "summary": "2-3 paragraph executive summary",
+  "divergence_assessment": "2-3 paragraph assessment of LLM overlay contribution (or null if no divergence data)",
+  "agent_adjustments": [{"agent": "debate|risk_gate|interpreter", "condition": "...", "adjustment": "...", "reasoning": "..."}]
 }"""
 
 
@@ -60,7 +77,7 @@ class MetaAnalystAgent(BaseAgent):
                 model=self.model,
                 system_prompt=SYSTEM_PROMPT,
                 user_prompt=user_prompt,
-                max_tokens=2500,
+                max_tokens=3500,
                 temperature=0.3,
             )
         except Exception as e:

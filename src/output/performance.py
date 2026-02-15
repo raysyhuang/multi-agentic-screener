@@ -288,6 +288,192 @@ async def get_performance_summary(days: int = 30) -> dict:
         }
 
 
+async def get_divergence_stats(days: int = 30) -> dict | None:
+    """Portfolio-level divergence statistics for the meta-analyst.
+
+    Returns None if no divergence data exists (fail-closed).
+    """
+    from src.db.models import DivergenceEvent, DivergenceOutcome
+    from sqlalchemy.orm import aliased
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+
+        # LEFT JOIN so unresolved events are included
+        result = await session.execute(
+            select(DivergenceEvent, DivergenceOutcome)
+            .outerjoin(
+                DivergenceOutcome,
+                DivergenceEvent.id == DivergenceOutcome.divergence_id,
+            )
+            .where(DivergenceEvent.run_date >= cutoff)
+        )
+        rows = result.all()
+
+    if not rows:
+        return None
+
+    total_events = len(rows)
+    resolved = [(ev, out) for ev, out in rows if out is not None]
+    total_resolved = len(resolved)
+
+    # Overall improvement rate
+    improved_count = sum(1 for _, out in resolved if out.improved_vs_quant is True)
+    overall_improvement_rate = (
+        round(improved_count / total_resolved, 4) if total_resolved > 0 else None
+    )
+
+    # Net portfolio delta — sum of ALL return_deltas
+    all_deltas = [out.return_delta for _, out in resolved if out.return_delta is not None]
+    net_portfolio_delta = round(sum(all_deltas), 4) if all_deltas else None
+
+    # --- By event type ---
+    by_event_type: dict[str, dict] = {}
+    for ev, out in rows:
+        et = ev.event_type
+        bucket = by_event_type.setdefault(et, {
+            "events": 0, "resolved": 0, "wins": 0,
+            "deltas": [], "costs": [],
+        })
+        bucket["events"] += 1
+        if ev.llm_cost_usd:
+            bucket["costs"].append(ev.llm_cost_usd)
+        if out is not None:
+            bucket["resolved"] += 1
+            if out.improved_vs_quant is True:
+                bucket["wins"] += 1
+            if out.return_delta is not None:
+                bucket["deltas"].append(out.return_delta)
+
+    by_event_type_out = {}
+    for et, b in by_event_type.items():
+        by_event_type_out[et] = {
+            "events": b["events"],
+            "resolved": b["resolved"],
+            "win_rate": round(b["wins"] / b["resolved"], 4) if b["resolved"] > 0 else None,
+            "avg_return_delta": round(sum(b["deltas"]) / len(b["deltas"]), 4) if b["deltas"] else None,
+            "total_cost": round(sum(b["costs"]), 4),
+        }
+
+    # --- By reason code ---
+    by_reason_code: dict[str, dict] = {}
+    for ev, out in rows:
+        codes = ev.reason_codes or []
+        for code in codes:
+            bucket = by_reason_code.setdefault(code, {
+                "events": 0, "with_outcome": 0, "wins": 0, "deltas": [],
+            })
+            bucket["events"] += 1
+            if out is not None:
+                bucket["with_outcome"] += 1
+                if out.improved_vs_quant is True:
+                    bucket["wins"] += 1
+                if out.return_delta is not None:
+                    bucket["deltas"].append(out.return_delta)
+
+    by_reason_code_out = {}
+    for code, b in by_reason_code.items():
+        by_reason_code_out[code] = {
+            "events": b["events"],
+            "with_outcome": b["with_outcome"],
+            "win_rate": round(b["wins"] / b["with_outcome"], 4) if b["with_outcome"] > 0 else None,
+            "avg_return_delta": round(sum(b["deltas"]) / len(b["deltas"]), 4) if b["deltas"] else None,
+        }
+
+    # --- By regime ---
+    by_regime: dict[str, dict] = {}
+    for ev, out in rows:
+        regime = (ev.regime or "unknown").lower()
+        bucket = by_regime.setdefault(regime, {
+            "events": 0, "resolved": 0, "wins": 0, "deltas": [],
+        })
+        bucket["events"] += 1
+        if out is not None:
+            bucket["resolved"] += 1
+            if out.improved_vs_quant is True:
+                bucket["wins"] += 1
+            if out.return_delta is not None:
+                bucket["deltas"].append(out.return_delta)
+
+    by_regime_out = {}
+    for regime, b in by_regime.items():
+        by_regime_out[regime] = {
+            "events": b["events"],
+            "resolved": b["resolved"],
+            "win_rate": round(b["wins"] / b["resolved"], 4) if b["resolved"] > 0 else None,
+            "avg_return_delta": round(sum(b["deltas"]) / len(b["deltas"]), 4) if b["deltas"] else None,
+        }
+
+    # --- Run-level deltas (portfolio-level metric) ---
+    run_deltas: dict[str, list[float]] = {}
+    for ev, out in resolved:
+        if out.return_delta is not None:
+            run_key = str(ev.run_date)
+            run_deltas.setdefault(run_key, []).append(out.return_delta)
+
+    run_level_deltas = sorted(
+        [
+            {
+                "run_date": rd,
+                "divergence_count": len(deltas),
+                "net_delta": round(sum(deltas), 4),
+                "positive": sum(deltas) > 0,
+            }
+            for rd, deltas in run_deltas.items()
+        ],
+        key=lambda x: x["run_date"],
+    )
+
+    # Run-level trend (null if < 4 runs)
+    run_level_trend = None
+    if len(run_level_deltas) >= 4:
+        mid = len(run_level_deltas) // 2
+        early = run_level_deltas[:mid]
+        recent = run_level_deltas[mid:]
+        early_avg = sum(r["net_delta"] for r in early) / len(early)
+        recent_avg = sum(r["net_delta"] for r in recent) / len(recent)
+        run_level_trend = {
+            "recent_4_avg_delta": round(recent_avg, 4),
+            "early_4_avg_delta": round(early_avg, 4),
+            "improving": recent_avg > early_avg,
+        }
+
+    # --- Cost efficiency ---
+    total_llm_cost = sum(ev.llm_cost_usd or 0.0 for ev, _ in rows)
+    positive_deltas = [d for d in all_deltas if d > 0]
+    total_positive_delta = sum(positive_deltas)
+    positive_divergence_count = len(positive_deltas)
+
+    cost_efficiency = {
+        "total_llm_cost": round(total_llm_cost, 4),
+        "total_positive_delta_generated": round(total_positive_delta, 4),
+        "cost_per_positive_divergence": (
+            round(total_llm_cost / positive_divergence_count, 4)
+            if positive_divergence_count > 0 and total_llm_cost > 0
+            else None
+        ),
+        "net_delta_per_dollar": (
+            round((net_portfolio_delta or 0) / total_llm_cost, 4)
+            if total_llm_cost > 0
+            else None
+        ),
+    }
+
+    return {
+        "period_days": days,
+        "total_events": total_events,
+        "total_resolved": total_resolved,
+        "overall_improvement_rate": overall_improvement_rate,
+        "net_portfolio_delta": net_portfolio_delta,
+        "by_event_type": by_event_type_out,
+        "by_reason_code": by_reason_code_out,
+        "by_regime": by_regime_out,
+        "run_level_deltas": run_level_deltas,
+        "run_level_trend": run_level_trend,
+        "cost_efficiency": cost_efficiency,
+    }
+
+
 async def get_equity_curve(days: int = 90) -> list[dict]:
     """Build equity curve from closed outcomes (cumulative returns)."""
     async with get_session() as session:

@@ -36,7 +36,7 @@ Four agents with intentional model diversity for cross-validation. Each agent ca
 | Signal Interpreter | Claude Sonnet 4.5 | Reads features, produces thesis + confidence 0-100 + risk flags |
 | Adversarial Validator | GPT-5.2 | Attacks thesis from a different model's perspective (bull/bear debate) |
 | Risk Gatekeeper | Claude Opus 4.6 | Final approve/veto/adjust — fail-safe to VETO on any error |
-| Meta-Analyst (weekly) | Claude Opus 4.6 | Reviews 30-day performance, detects biases, suggests adjustments |
+| Meta-Analyst (weekly) | Claude Opus 4.6 | Reviews 30-day performance + divergence stats, detects biases, suggests adjustments |
 
 The pipeline narrows a universe of ~200 stocks down to 1-2 picks:
 
@@ -192,6 +192,8 @@ src/
 │       └── sector_rotation.yaml # Portfolio sector exposure check
 ├── governance/                 # Model lifecycle management
 │   ├── artifacts.py            # Audit trail, GovernanceContext per run
+│   ├── divergence_ledger.py    # Per-decision LLM attribution (VETO/PROMOTE/RESIZE)
+│   ├── threshold_manager.py    # Threshold adjustment proposals with dry-run
 │   ├── performance_monitor.py  # Rolling metrics, decay detection
 │   └── retrain_policy.py       # When to retrain, model versioning
 ├── portfolio/                  # Position sizing + risk management
@@ -205,13 +207,13 @@ src/
 │   ├── report.py               # Jinja2 HTML report generation
 │   └── performance.py          # Outcome tracking, calibration, risk metrics
 └── db/
-    ├── models.py               # 6 SQLAlchemy models (DailyRun, Signal, Outcome, etc.)
+    ├── models.py               # 8 SQLAlchemy models (DailyRun, Signal, Outcome, DivergenceEvent, etc.)
     └── session.py              # Async PostgreSQL connection
 
 api/
 └── app.py                      # FastAPI — reports, signals, outcomes, costs, artifacts
 
-tests/                          # 260 tests across all modules
+tests/                          # 379 tests across all modules
 ```
 
 ## Data Contracts
@@ -235,6 +237,7 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 - **Signal cooldown** — suppresses re-triggering same ticker for 5 calendar days
 - **Confluence detection** — multi-model agreement boosts confidence (2+ models = 10%+ score bonus)
 - **Decay detection** — rolling metrics monitor for hit rate collapse, MAE expansion, or negative expectancy
+- **Divergence ledger** — tracks every LLM override (VETO/PROMOTE/RESIZE) with counterfactual return deltas; portfolio-level aggregation feeds weekly meta-analyst for second-order self-evaluation
 - **Governance audit trail** — every run captures regime, model versions, decay status, config hash, and git commit
 - **Portfolio construction** — Kelly/volatility-scaled sizing with regime exposure multipliers and liquidity caps
 - **No look-ahead** — signals fire on day T close, execute at T+1 open
@@ -336,16 +339,18 @@ heroku ps:scale worker=1
 
 ## Database Schema
 
-Six tables in PostgreSQL:
+Eight tables in PostgreSQL:
 
 | Table | Purpose |
 |---|---|
-| `daily_runs` | One row per pipeline execution (regime, universe size, duration) |
+| `daily_runs` | One row per pipeline execution (regime, universe size, duration, execution mode) |
 | `candidates` | All tickers that passed scoring (composite score, features) |
 | `signals` | Final approved picks (entry, stop, target, thesis, debate summary) |
 | `outcomes` | Tracks actual P&L vs predictions (entry date, exit, max favorable/adverse) |
 | `pipeline_artifacts` | Full stage envelope per run for traceability |
 | `agent_logs` | Raw LLM inputs/outputs with token counts and cost |
+| `divergence_events` | Per-decision LLM attribution — VETO/PROMOTE/RESIZE with reason codes |
+| `divergence_outcomes` | Counterfactual results — agentic vs quant return delta per divergence |
 
 ## Cost Tracking
 
@@ -362,7 +367,7 @@ Every LLM call is logged with token counts and estimated USD cost. The `/api/cos
 
 ## Tests
 
-260 tests covering all modules:
+379 tests covering all modules:
 
 ```bash
 pytest tests/ -v                    # Run all tests
@@ -371,7 +376,7 @@ pytest tests/test_signals/ -v       # Signal models + confluence + cooldown
 pytest tests/test_memory/ -v        # Episodic, working memory, memory service
 pytest tests/test_skills/ -v        # Skill engine, YAML loading, precondition matching
 pytest tests/test_backtest/ -v      # Validation gate + metrics
-pytest tests/test_governance/ -v    # Decay detection + retrain policy
+pytest tests/test_governance/ -v    # Decay detection, retrain policy, divergence ledger, thresholds
 pytest tests/test_portfolio/ -v     # Position sizing + trade plans
 pytest tests/test_contracts.py -v   # Data contract enforcement
 ```

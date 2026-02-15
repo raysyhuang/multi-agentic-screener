@@ -1116,6 +1116,20 @@ async def run_weekly_meta_review() -> None:
         logger.info("No closed trades in past 30 days — skipping meta-review")
         return
 
+    # Enrich with divergence stats (fail-closed)
+    try:
+        from src.output.performance import get_divergence_stats
+        divergence_stats = await get_divergence_stats(days=30)
+        if divergence_stats is not None:
+            performance_data["divergence"] = divergence_stats
+            logger.info(
+                "Divergence stats added: %d events, %d resolved",
+                divergence_stats.get("total_events", 0),
+                divergence_stats.get("total_resolved", 0),
+            )
+    except Exception as e:
+        logger.warning("Failed to fetch divergence stats (non-fatal): %s", e)
+
     analyst = MetaAnalystAgent()
     result = await analyst.analyze(performance_data)
 

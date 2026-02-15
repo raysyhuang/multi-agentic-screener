@@ -81,6 +81,14 @@ class ThresholdAdjustment(BaseModel):
     evidence_sample_size: int = Field(ge=0, description="Number of trades supporting this suggestion")
 
 
+class AgentAdjustment(BaseModel):
+    """A suggested change to agent behavior from the Meta-Analyst."""
+    agent: str = Field(description="Agent to adjust: debate, risk_gate, or interpreter")
+    condition: str = Field(description="When/where to apply")
+    adjustment: str = Field(description="What to change")
+    reasoning: str = Field(description="Why, with evidence")
+
+
 class MetaAnalysis(BaseModel):
     """Output schema for weekly Meta-Analyst agent."""
     analysis_period: str
@@ -96,6 +104,14 @@ class MetaAnalysis(BaseModel):
         default_factory=list,
     )
     summary: str
+    divergence_assessment: str | None = Field(
+        default=None,
+        description="Assessment of LLM overlay contribution to portfolio performance",
+    )
+    agent_adjustments: list[AgentAdjustment] = Field(
+        default_factory=list,
+        description="Suggested changes to agent behavior based on divergence patterns",
+    )
 
 
 # --- Base agent class ---

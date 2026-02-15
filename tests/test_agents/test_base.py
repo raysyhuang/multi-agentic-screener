@@ -4,6 +4,7 @@ import pytest
 from pydantic import ValidationError
 
 from src.agents.base import (
+    AgentAdjustment,
     SignalInterpretation,
     DebatePosition,
     DebateResult,
@@ -90,3 +91,60 @@ def test_meta_analysis_valid():
         summary="System performed well overall.",
     )
     assert ma.total_signals == 25
+
+
+def test_meta_analysis_with_divergence_fields():
+    """New divergence fields parse correctly."""
+    ma = MetaAnalysis(
+        analysis_period="2025-03-01 to 2025-03-31",
+        total_signals=25,
+        win_rate=0.64,
+        avg_pnl_pct=1.8,
+        best_model="breakout",
+        worst_model="catalyst",
+        regime_accuracy=0.75,
+        biases_detected=[],
+        summary="Summary.",
+        divergence_assessment="LLM overlay is net positive.",
+        agent_adjustments=[
+            AgentAdjustment(
+                agent="risk_gate",
+                condition="bull regime",
+                adjustment="reduce veto aggressiveness",
+                reasoning="VETO win rate below 40%",
+            ),
+        ],
+    )
+    assert ma.divergence_assessment == "LLM overlay is net positive."
+    assert len(ma.agent_adjustments) == 1
+    assert ma.agent_adjustments[0].agent == "risk_gate"
+
+
+def test_meta_analysis_backward_compatible():
+    """Old data without new fields still deserializes."""
+    old_data = {
+        "analysis_period": "2025-03-01 to 2025-03-31",
+        "total_signals": 25,
+        "win_rate": 0.64,
+        "avg_pnl_pct": 1.8,
+        "best_model": "breakout",
+        "worst_model": "catalyst",
+        "regime_accuracy": 0.75,
+        "biases_detected": [],
+        "summary": "Summary.",
+    }
+    ma = MetaAnalysis(**old_data)
+    assert ma.divergence_assessment is None
+    assert ma.agent_adjustments == []
+
+
+def test_agent_adjustment_valid():
+    """AgentAdjustment model validates correctly."""
+    adj = AgentAdjustment(
+        agent="debate",
+        condition="choppy regime with VIX > 25",
+        adjustment="increase bear weight by 10%",
+        reasoning="Debate bull bias detected in volatile markets",
+    )
+    assert adj.agent == "debate"
+    assert "choppy" in adj.condition
