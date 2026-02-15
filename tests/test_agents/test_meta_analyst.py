@@ -136,6 +136,83 @@ class TestAnalyzeWithoutDivergenceData:
         assert result.win_rate == 0.60
 
 
+class TestSparseDataResilience:
+    """LLM returns null/malformed fields when data is sparse — should still parse."""
+
+    @pytest.mark.asyncio
+    async def test_regime_accuracy_null(self):
+        llm_response = _base_llm_response(regime_accuracy=None)
+
+        async def mock_call_llm(*, model, system_prompt, user_prompt, max_tokens, temperature):
+            return {"content": llm_response}
+
+        agent = MetaAnalystAgent.__new__(MetaAnalystAgent)
+        agent.name = "meta_analyst"
+        agent.model = "claude-opus-4-20250514"
+
+        with patch("src.agents.meta_analyst.call_llm", side_effect=mock_call_llm):
+            result = await agent.analyze(_performance_data_without_divergence())
+
+        assert result is not None
+        assert result.regime_accuracy is None
+
+    @pytest.mark.asyncio
+    async def test_malformed_threshold_adjustments_filtered(self):
+        """LLM writes prose instead of numeric fields — malformed entries dropped."""
+        llm_response = _base_llm_response(
+            threshold_adjustments=[
+                # Malformed: uses "current"/"suggested" instead of "current_value"/"suggested_value"
+                {"parameter": "vix_threshold", "current": 20, "suggested": 25, "reasoning": "N/A"},
+                # Valid entry
+                {
+                    "parameter": "breakout_threshold",
+                    "current_value": 50.0,
+                    "suggested_value": 55.0,
+                    "reasoning": "Win rate improves above 55",
+                    "confidence": 65.0,
+                    "evidence_sample_size": 30,
+                },
+            ],
+        )
+
+        async def mock_call_llm(*, model, system_prompt, user_prompt, max_tokens, temperature):
+            return {"content": llm_response}
+
+        agent = MetaAnalystAgent.__new__(MetaAnalystAgent)
+        agent.name = "meta_analyst"
+        agent.model = "claude-opus-4-20250514"
+
+        with patch("src.agents.meta_analyst.call_llm", side_effect=mock_call_llm):
+            result = await agent.analyze(_performance_data_without_divergence())
+
+        assert result is not None
+        # Only the valid entry survives
+        assert len(result.threshold_adjustments) == 1
+        assert result.threshold_adjustments[0].parameter == "breakout_threshold"
+
+    @pytest.mark.asyncio
+    async def test_all_threshold_adjustments_malformed(self):
+        """All entries malformed — should parse with empty list."""
+        llm_response = _base_llm_response(
+            threshold_adjustments=[
+                {"parameter": "x", "reasoning": "not enough data"},
+            ],
+        )
+
+        async def mock_call_llm(*, model, system_prompt, user_prompt, max_tokens, temperature):
+            return {"content": llm_response}
+
+        agent = MetaAnalystAgent.__new__(MetaAnalystAgent)
+        agent.name = "meta_analyst"
+        agent.model = "claude-opus-4-20250514"
+
+        with patch("src.agents.meta_analyst.call_llm", side_effect=mock_call_llm):
+            result = await agent.analyze(_performance_data_without_divergence())
+
+        assert result is not None
+        assert result.threshold_adjustments == []
+
+
 class TestDivergenceFetchFailureDoesNotBlockReview:
     @pytest.mark.asyncio
     async def test_fail_closed_behavior(self):

@@ -54,9 +54,9 @@ Respond with JSON:
   "avg_pnl_pct": float,
   "best_model": "model name",
   "worst_model": "model name",
-  "regime_accuracy": float (0-1),
+  "regime_accuracy": float (0-1) or null if insufficient data,
   "biases_detected": ["bias 1", "bias 2"],
-  "threshold_adjustments": [{"parameter": "x", "current": y, "suggested": z, "reasoning": "..."}],
+  "threshold_adjustments": [{"parameter": "param_name", "current_value": 50.0, "suggested_value": 55.0, "reasoning": "why", "confidence": 70.0, "evidence_sample_size": 25}],
   "summary": "2-3 paragraph executive summary",
   "divergence_assessment": "2-3 paragraph assessment of LLM overlay contribution (or null if no divergence data)",
   "agent_adjustments": [{"agent": "debate|risk_gate|interpreter", "condition": "...", "adjustment": "...", "reasoning": "..."}]
@@ -88,6 +88,20 @@ class MetaAnalystAgent(BaseAgent):
         if isinstance(content, str):
             logger.warning("Meta-analyst returned non-JSON")
             return None
+
+        # Sanitize threshold_adjustments — LLMs may produce malformed entries
+        # when data is sparse (e.g., prose instead of numeric fields)
+        raw_adjustments = content.get("threshold_adjustments", [])
+        if isinstance(raw_adjustments, list):
+            required_keys = {"parameter", "current_value", "suggested_value", "reasoning",
+                             "confidence", "evidence_sample_size"}
+            valid = []
+            for adj in raw_adjustments:
+                if isinstance(adj, dict) and required_keys.issubset(adj.keys()):
+                    valid.append(adj)
+                else:
+                    logger.debug("Dropping malformed threshold_adjustment: %s", adj)
+            content["threshold_adjustments"] = valid
 
         try:
             return MetaAnalysis(**content)

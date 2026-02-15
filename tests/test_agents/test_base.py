@@ -138,6 +138,37 @@ def test_meta_analysis_backward_compatible():
     assert ma.agent_adjustments == []
 
 
+def test_meta_analysis_regime_accuracy_optional():
+    """regime_accuracy can be None when data is insufficient."""
+    ma = MetaAnalysis(
+        analysis_period="2025-03-01 to 2025-03-31",
+        total_signals=2,
+        win_rate=0.50,
+        avg_pnl_pct=0.5,
+        best_model="breakout",
+        worst_model="catalyst",
+        regime_accuracy=None,
+        biases_detected=[],
+        summary="Insufficient data for regime accuracy.",
+    )
+    assert ma.regime_accuracy is None
+
+
+def test_meta_analysis_regime_accuracy_defaults_to_none():
+    """regime_accuracy defaults to None when omitted."""
+    ma = MetaAnalysis(
+        analysis_period="2025-03-01 to 2025-03-31",
+        total_signals=2,
+        win_rate=0.50,
+        avg_pnl_pct=0.5,
+        best_model="breakout",
+        worst_model="catalyst",
+        biases_detected=[],
+        summary="Minimal data.",
+    )
+    assert ma.regime_accuracy is None
+
+
 def test_agent_adjustment_valid():
     """AgentAdjustment model validates correctly."""
     adj = AgentAdjustment(

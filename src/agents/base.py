@@ -96,7 +96,9 @@ class MetaAnalysis(BaseModel):
     avg_pnl_pct: float
     best_model: str
     worst_model: str
-    regime_accuracy: float
+    regime_accuracy: float | None = Field(
+        default=None, description="Regime detection accuracy 0-1 (null if insufficient data)"
+    )
     biases_detected: list[str]
     threshold_adjustments: list[ThresholdAdjustment] = Field(
         description="Suggested parameter changes",
