@@ -3,10 +3,18 @@
 from __future__ import annotations
 
 import os
+from enum import Enum
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
 from pydantic import Field
+
+
+class ExecutionMode(str, Enum):
+    """Pipeline execution mode — controls how much LLM processing is used."""
+    QUANT_ONLY = "quant_only"      # L1-L3 only: data/features/signals/rank. Zero LLM cost.
+    HYBRID = "hybrid"              # Quant shortlist + interpreter only. No debate/risk gate.
+    AGENTIC_FULL = "agentic_full"  # Full pipeline with all LLM agents.
 
 # Resolve project root (parent of src/)
 PROJECT_ROOT = Path(__file__).resolve().parent.parent
@@ -44,6 +52,9 @@ class Settings(BaseSettings):
     holding_periods: list[int] = Field(default=[5, 10, 15])
     slippage_pct: float = 0.001  # 0.10%
     commission_per_trade: float = 1.0  # dollars
+
+    # --- Execution mode ---
+    execution_mode: str = "agentic_full"  # quant_only | hybrid | agentic_full
 
     # --- Trading mode ---
     trading_mode: str = "PAPER"  # PAPER or LIVE — paper trading until 30-day gate passes

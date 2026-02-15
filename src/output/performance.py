@@ -278,6 +278,150 @@ async def get_performance_summary(days: int = 30) -> dict:
         }
 
 
+async def get_equity_curve(days: int = 90) -> list[dict]:
+    """Build equity curve from closed outcomes (cumulative returns)."""
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(Outcome).where(
+                Outcome.still_open == False,
+                Outcome.entry_date >= cutoff,
+            ).order_by(Outcome.exit_date.asc())
+        )
+        closed = result.scalars().all()
+
+    curve = []
+    cumulative = 0.0
+    for o in closed:
+        pnl = o.pnl_pct or 0.0
+        cumulative += pnl
+        curve.append({
+            "time": str(o.exit_date) if o.exit_date else str(o.entry_date),
+            "value": round(cumulative, 4),
+            "pnl": round(pnl, 4),
+        })
+    return curve
+
+
+async def get_drawdown_curve(days: int = 90) -> list[dict]:
+    """Build drawdown series from equity curve."""
+    curve = await get_equity_curve(days)
+    if not curve:
+        return []
+
+    peak = 0.0
+    drawdown = []
+    for point in curve:
+        peak = max(peak, point["value"])
+        dd = point["value"] - peak
+        drawdown.append({
+            "time": point["time"],
+            "value": round(dd, 4),
+        })
+    return drawdown
+
+
+async def get_return_distribution(days: int = 90) -> dict:
+    """Return distribution of trade P&L by signal model."""
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(Outcome, Signal)
+            .join(Signal, Outcome.signal_id == Signal.id)
+            .where(Outcome.still_open == False, Outcome.entry_date >= cutoff)
+        )
+        rows = result.all()
+
+    by_model: dict[str, list[float]] = {}
+    for outcome, signal in rows:
+        pnl = outcome.pnl_pct or 0.0
+        by_model.setdefault(signal.signal_model, []).append(pnl)
+
+    distribution = {}
+    for model, pnls in by_model.items():
+        import numpy as np
+        arr = np.array(pnls)
+        distribution[model] = {
+            "returns": [round(p, 4) for p in pnls],
+            "mean": round(float(arr.mean()), 4),
+            "std": round(float(arr.std()), 4),
+            "count": len(pnls),
+        }
+    return distribution
+
+
+async def get_regime_matrix(days: int = 180) -> list[dict]:
+    """Win rate matrix: model x regime, color-coded."""
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(Outcome, Signal)
+            .join(Signal, Outcome.signal_id == Signal.id)
+            .where(Outcome.still_open == False, Outcome.entry_date >= cutoff)
+        )
+        rows = result.all()
+
+    # Build nested dict: model -> regime -> [pnls]
+    matrix: dict[str, dict[str, list[float]]] = {}
+    for outcome, signal in rows:
+        pnl = outcome.pnl_pct or 0.0
+        matrix.setdefault(signal.signal_model, {}).setdefault(signal.regime, []).append(pnl)
+
+    result_list = []
+    for model, regimes in matrix.items():
+        for regime, pnls in regimes.items():
+            wins = sum(1 for p in pnls if p > 0)
+            result_list.append({
+                "model": model,
+                "regime": regime,
+                "trades": len(pnls),
+                "win_rate": round(wins / len(pnls), 4) if pnls else 0,
+                "avg_pnl": round(sum(pnls) / len(pnls), 4) if pnls else 0,
+            })
+    return result_list
+
+
+async def get_mode_comparison() -> list[dict]:
+    """Compare metrics across execution modes (quant_only vs hybrid vs agentic_full)."""
+    from src.db.models import DailyRun
+
+    async with get_session() as session:
+        # Get runs grouped by execution mode
+        result = await session.execute(
+            select(DailyRun).order_by(DailyRun.run_date.desc()).limit(90)
+        )
+        runs = result.scalars().all()
+
+        # Get outcomes for each mode's signals
+        all_outcomes_result = await session.execute(
+            select(Outcome, Signal)
+            .join(Signal, Outcome.signal_id == Signal.id)
+            .where(Outcome.still_open == False)
+        )
+        all_rows = all_outcomes_result.all()
+
+    # Map run_date -> execution_mode
+    date_to_mode = {r.run_date: (r.execution_mode or "agentic_full") for r in runs}
+
+    # Group outcomes by mode
+    by_mode: dict[str, list[float]] = {}
+    for outcome, signal in all_rows:
+        mode = date_to_mode.get(signal.run_date, "agentic_full")
+        by_mode.setdefault(mode, []).append(outcome.pnl_pct or 0.0)
+
+    comparison = []
+    for mode, pnls in by_mode.items():
+        wins = sum(1 for p in pnls if p > 0)
+        comparison.append({
+            "mode": mode,
+            "trades": len(pnls),
+            "win_rate": round(wins / len(pnls), 4) if pnls else 0,
+            "avg_pnl": round(sum(pnls) / len(pnls), 4) if pnls else 0,
+            "total_return": round(sum(pnls), 4),
+        })
+    return comparison
+
+
 def _build_calibration(
     outcomes: list, signals_map: dict
 ) -> list[dict]:

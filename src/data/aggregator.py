@@ -18,6 +18,7 @@ import gc
 import json
 import logging
 from datetime import date, timedelta
+from pathlib import Path
 
 import pandas as pd
 
@@ -344,3 +345,56 @@ class DataAggregator:
     def get_cache_stats(self) -> dict:
         """Return cache performance statistics."""
         return self._cache.get_stats()
+
+    async def snapshot_ohlcv(
+        self,
+        tickers: list[str],
+        from_date: date,
+        to_date: date,
+        output_dir: str | Path = "data/snapshots",
+    ) -> Path:
+        """Fetch OHLCV for tickers and save as a parquet snapshot for reproducibility.
+
+        Returns the path to the saved snapshot directory.
+        """
+        output_path = Path(output_dir)
+        output_path.mkdir(parents=True, exist_ok=True)
+
+        tag = f"{from_date}_{to_date}"
+        snapshot_dir = output_path / tag
+        snapshot_dir.mkdir(parents=True, exist_ok=True)
+
+        data = await self.get_bulk_ohlcv(tickers, from_date, to_date)
+
+        for ticker, df in data.items():
+            if not df.empty:
+                parquet_path = snapshot_dir / f"{ticker}.parquet"
+                df.to_parquet(parquet_path, index=False)
+
+        manifest = {
+            "tickers": list(data.keys()),
+            "from_date": str(from_date),
+            "to_date": str(to_date),
+            "count": sum(1 for df in data.values() if not df.empty),
+        }
+        (snapshot_dir / "manifest.json").write_text(json.dumps(manifest, indent=2))
+
+        logger.info(
+            "Snapshot saved: %d tickers to %s", manifest["count"], snapshot_dir,
+        )
+        return snapshot_dir
+
+    @staticmethod
+    def load_snapshot(snapshot_dir: str | Path) -> dict[str, pd.DataFrame]:
+        """Load a previously-saved OHLCV snapshot from parquet files."""
+        snapshot_path = Path(snapshot_dir)
+        if not snapshot_path.is_dir():
+            raise FileNotFoundError(f"Snapshot directory not found: {snapshot_path}")
+
+        data: dict[str, pd.DataFrame] = {}
+        for parquet_file in sorted(snapshot_path.glob("*.parquet")):
+            ticker = parquet_file.stem
+            data[ticker] = pd.read_parquet(parquet_file)
+
+        logger.info("Loaded snapshot: %d tickers from %s", len(data), snapshot_path)
+        return data

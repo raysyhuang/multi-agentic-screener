@@ -58,6 +58,18 @@ packages = ["src"]
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 asyncio_mode = "auto"
+markers = [
+    "integration: tests requiring live API keys (deselected by default in CI)",
+]
+
+[tool.coverage.run]
+source = ["src"]
+omit = ["src/data/*_client.py"]
+
+[tool.coverage.report]
+fail_under = 70
+show_missing = true
+skip_empty = true
 
 [tool.ruff]
 target-version = "py312"

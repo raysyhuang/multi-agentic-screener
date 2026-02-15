@@ -28,6 +28,7 @@ class GovernanceRecord:
     run_date: str
     regime: str = ""
     trading_mode: str = "PAPER"  # PAPER or LIVE
+    execution_mode: str = "agentic_full"  # quant_only | hybrid | agentic_full
     models_active: list[str] = field(default_factory=list)
     decay_detected: bool = False
     decay_reasons: list[str] = field(default_factory=list)
@@ -82,6 +83,9 @@ class GovernanceContext:
 
     def set_trading_mode(self, mode: str) -> None:
         self._record.trading_mode = mode
+
+    def set_execution_mode(self, mode: str) -> None:
+        self._record.execution_mode = mode
 
     def set_models_active(self, models: list[str]) -> None:
         self._record.models_active = models

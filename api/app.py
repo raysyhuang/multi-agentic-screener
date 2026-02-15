@@ -218,6 +218,52 @@ async def dashboard_performance():
     return data
 
 
+# ---------------------------------------------------------------------------
+# Dashboard Chart Endpoints (PR4)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dashboard/equity-curve")
+async def dashboard_equity_curve(days: int = Query(default=90, le=365)):
+    """Cumulative walk-forward returns (equity curve)."""
+    from src.output.performance import get_equity_curve
+    return {"equity_curve": await get_equity_curve(days)}
+
+
+@app.get("/api/dashboard/drawdown")
+async def dashboard_drawdown(days: int = Query(default=90, le=365)):
+    """Drawdown curve (area series, red)."""
+    from src.output.performance import get_drawdown_curve
+    return {"drawdown": await get_drawdown_curve(days)}
+
+
+@app.get("/api/dashboard/return-distribution")
+async def dashboard_return_distribution(days: int = Query(default=90, le=365)):
+    """Return distribution by signal model."""
+    from src.output.performance import get_return_distribution
+    return {"distribution": await get_return_distribution(days)}
+
+
+@app.get("/api/dashboard/regime-matrix")
+async def dashboard_regime_matrix(days: int = Query(default=180, le=365)):
+    """Win rate x model x regime matrix."""
+    from src.output.performance import get_regime_matrix
+    return {"matrix": await get_regime_matrix(days)}
+
+
+@app.get("/api/dashboard/calibration")
+async def dashboard_calibration():
+    """Confidence calibration curve (confidence vs actual hit rate)."""
+    data = await get_performance_summary(days=90)
+    return {"calibration": data.get("confidence_calibration", [])}
+
+
+@app.get("/api/dashboard/mode-comparison")
+async def dashboard_mode_comparison():
+    """LLM uplift: quant_only vs hybrid vs agentic_full metrics."""
+    from src.output.performance import get_mode_comparison
+    return {"comparison": await get_mode_comparison()}
+
+
 @app.get("/api/cache-stats")
 async def cache_stats():
     """Return data cache performance statistics."""
@@ -456,6 +502,39 @@ async def list_meta_reviews(limit: int = Query(default=10, le=50)):
         }
         for r in reviews
     ]
+
+
+# ---------------------------------------------------------------------------
+# Threshold Management Endpoints (PR6)
+# ---------------------------------------------------------------------------
+
+@app.get("/api/thresholds")
+async def get_thresholds():
+    """Return current threshold values."""
+    from src.governance.threshold_manager import get_current_thresholds
+    return {"thresholds": get_current_thresholds()}
+
+
+@app.get("/api/thresholds/history")
+async def threshold_history(limit: int = Query(default=20, le=50)):
+    """Return threshold snapshot history."""
+    from src.governance.threshold_manager import get_snapshot_history
+    return {"history": get_snapshot_history(limit)}
+
+
+@app.post("/api/thresholds/apply/{run_date}")
+async def apply_threshold_snapshot(run_date: str):
+    """Apply a dry-run threshold snapshot (human approval step)."""
+    from src.governance.threshold_manager import apply_snapshot
+    try:
+        date.fromisoformat(run_date)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD.")
+
+    success = apply_snapshot(run_date)
+    if not success:
+        raise HTTPException(404, f"No applicable snapshot for {run_date}")
+    return {"status": "applied", "run_date": run_date}
 
 
 @app.get("/health")

@@ -34,6 +34,9 @@ class DailyRun(Base):
     universe_size: Mapped[int] = mapped_column(Integer, nullable=False)
     candidates_scored: Mapped[int] = mapped_column(Integer, nullable=False)
     pipeline_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
+    execution_mode: Mapped[str | None] = mapped_column(
+        String(20), nullable=True, default="agentic_full"
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

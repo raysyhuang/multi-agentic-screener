@@ -71,6 +71,16 @@ class RiskGateOutput(BaseModel):
     regime_note: str | None = None
 
 
+class ThresholdAdjustment(BaseModel):
+    """A suggested threshold change from the Meta-Analyst."""
+    parameter: str = Field(description="Config parameter name (e.g., 'vix_high_threshold')")
+    current_value: float
+    suggested_value: float
+    reasoning: str = Field(description="Why this adjustment is suggested")
+    confidence: float = Field(ge=0, le=100, description="Confidence in this adjustment")
+    evidence_sample_size: int = Field(ge=0, description="Number of trades supporting this suggestion")
+
+
 class MetaAnalysis(BaseModel):
     """Output schema for weekly Meta-Analyst agent."""
     analysis_period: str
@@ -81,7 +91,7 @@ class MetaAnalysis(BaseModel):
     worst_model: str
     regime_accuracy: float
     biases_detected: list[str]
-    threshold_adjustments: list[dict] = Field(
+    threshold_adjustments: list[ThresholdAdjustment] = Field(
         description="Suggested parameter changes",
         default_factory=list,
     )

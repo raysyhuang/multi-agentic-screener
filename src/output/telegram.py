@@ -39,15 +39,24 @@ def format_daily_alert(
     validation_failed: bool = False,
     failed_checks: list[str] | None = None,
     key_risks: list[str] | None = None,
+    execution_mode: str | None = None,
 ) -> str:
     """Format the daily picks into a Telegram-friendly HTML message."""
+    mode_label = ""
+    if execution_mode and execution_mode != "agentic_full":
+        mode_label = f"Mode: <b>{execution_mode.upper()}</b>\n"
+
     if validation_failed:
         lines = [
             f"<b>📊 Daily Screener — {run_date}</b>",
             f"Regime: <b>{regime.upper()}</b>",
+        ]
+        if mode_label:
+            lines.append(mode_label.strip())
+        lines.extend([
             "",
             "<b>NoSilentPass — Validation FAILED</b>",
-        ]
+        ])
         for check in (failed_checks or []):
             lines.append(f"  - {check}")
         if key_risks:
@@ -62,16 +71,21 @@ def format_daily_alert(
     if not picks:
         return (
             f"<b>📊 Daily Screener — {run_date}</b>\n"
-            f"Regime: <b>{regime.upper()}</b>\n\n"
+            f"Regime: <b>{regime.upper()}</b>\n"
+            f"{mode_label}\n"
             f"No high-conviction picks today."
         )
 
     lines = [
         f"<b>📊 Daily Screener — {run_date}</b>",
         f"Regime: <b>{regime.upper()}</b>",
+    ]
+    if mode_label:
+        lines.append(mode_label.strip())
+    lines.extend([
         f"Picks: <b>{len(picks)}</b>",
         "",
-    ]
+    ])
 
     for i, pick in enumerate(picks, 1):
         ticker = pick.get("ticker", "???")

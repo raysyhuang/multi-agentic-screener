@@ -1,0 +1,27 @@
+# Default backtest configuration — pinned assumptions for reproducibility.
+# Run with: python -m src.backtest.runner --config configs/backtest_default.yaml
+
+start_date: "2024-06-01"
+end_date: "2025-01-31"
+
+# Ticker universe (null = use live screener universe)
+universe: null
+
+# Execution mode: quant_only | hybrid | agentic_full
+mode: "quant_only"
+
+# Cost assumptions
+slippage_pct: 0.001     # 10 bps per side
+commission_per_trade: 1.0  # USD per trade
+
+# Holding periods to sweep
+holding_periods: [5, 10, 15]
+
+# Signal generation
+min_price: 5.0
+min_avg_daily_volume: 500000
+top_n_candidates: 10
+
+# Output
+output_dir: "backtest_results"
+version_tag: "v1"

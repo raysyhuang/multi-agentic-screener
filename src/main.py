@@ -1067,6 +1067,27 @@ async def run_weekly_meta_review() -> None:
             result.biases_detected,
             len(result.threshold_adjustments),
         )
+
+        # Process threshold adjustments (dry-run by default)
+        if result.threshold_adjustments:
+            from src.governance.threshold_manager import process_adjustments
+            adj_result = process_adjustments(
+                adjustments=result.threshold_adjustments,
+                run_date=str(today),
+                dry_run=True,
+            )
+            logger.info(
+                "Threshold proposals: %d applied (dry-run), %d rejected",
+                len(adj_result.applied), len(adj_result.rejected),
+            )
+            async with get_session() as session:
+                session.add(AgentLog(
+                    run_date=today,
+                    agent_name="threshold_manager",
+                    model_used="deterministic",
+                    ticker=None,
+                    output_data=adj_result.snapshot.to_dict(),
+                ))
     else:
         logger.warning("Meta-review returned no result")
 
