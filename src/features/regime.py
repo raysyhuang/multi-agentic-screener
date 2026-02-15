@@ -38,11 +38,43 @@ class RegimeAssessment:
     details: dict
 
 
+def compute_breadth_score(price_data: dict[str, pd.DataFrame]) -> float | None:
+    """Compute market breadth: % of tickers with close above their 20-day SMA.
+
+    Args:
+        price_data: Dict of ticker -> OHLCV DataFrame with 'close' column.
+
+    Returns:
+        Breadth score 0.0-1.0, or None if insufficient data.
+    """
+    if not price_data:
+        return None
+
+    above = 0
+    total = 0
+    for ticker, df in price_data.items():
+        if df is None or df.empty or len(df) < 20:
+            continue
+        close = df["close"].astype(float)
+        sma20 = close.rolling(20).mean().iloc[-1]
+        if pd.isna(sma20):
+            continue
+        total += 1
+        if close.iloc[-1] > sma20:
+            above += 1
+
+    if total < 10:
+        return None
+
+    return round(above / total, 4)
+
+
 def classify_regime(
     spy_df: pd.DataFrame,
     qqq_df: pd.DataFrame,
     vix: float | None = None,
     yield_spread: float | None = None,
+    breadth_score: float | None = None,
 ) -> RegimeAssessment:
     """Classify current market regime using SPY/QQQ trend + VIX + breadth.
 
@@ -80,6 +112,17 @@ def classify_regime(
             yield_signal = "flat"
     signals["yield_curve"] = yield_signal
 
+    # --- Breadth ---
+    breadth_signal = "neutral"
+    if breadth_score is not None:
+        settings_obj = get_settings()
+        if breadth_score >= settings_obj.breadth_bullish_threshold:
+            breadth_signal = "broad"
+        elif breadth_score <= settings_obj.breadth_bearish_threshold:
+            breadth_signal = "narrow"
+    signals["breadth"] = breadth_signal
+    signals["breadth_score"] = breadth_score
+
     # --- Composite scoring ---
     bull_score = 0.0
     bear_score = 0.0
@@ -111,6 +154,12 @@ def classify_regime(
     if yield_signal == "inverted":
         bear_score += 0.5
 
+    # Breadth
+    if breadth_signal == "broad":
+        bull_score += 1.0
+    elif breadth_signal == "narrow":
+        bear_score += 1.0
+
     # Determine regime
     total = bull_score + bear_score
     if total == 0:
@@ -132,7 +181,7 @@ def classify_regime(
         vix_level=vix,
         spy_trend=spy_trend,
         qqq_trend=qqq_trend,
-        breadth_score=None,  # TODO: add breadth from advance/decline data
+        breadth_score=breadth_score,
         yield_spread=yield_spread,
         details=signals,
     )

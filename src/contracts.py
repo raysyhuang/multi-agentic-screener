@@ -45,7 +45,13 @@ class StageError(StrictModel):
 
 
 class StageEnvelope(BaseModel):
-    """Core envelope wrapping every stage output."""
+    """Core envelope wrapping every stage output.
+
+    Uses extra='forbid' to prevent accidental extra fields on the envelope
+    itself, while payload: Any allows any stage-specific content.
+    """
+
+    model_config = ConfigDict(extra="forbid")
 
     run_id: str = Field(default_factory=lambda: uuid.uuid4().hex[:12])
     stage: StageName

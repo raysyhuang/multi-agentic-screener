@@ -34,12 +34,12 @@ from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
 from src.features.sentiment import score_news_batch
-from src.features.regime import classify_regime, RegimeAssessment, get_regime_allowed_models
+from src.features.regime import classify_regime, RegimeAssessment, get_regime_allowed_models, compute_breadth_score
 from src.signals.filter import filter_universe, filter_by_ohlcv
 from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
 from src.signals.catalyst import score_catalyst
-from src.signals.ranker import rank_candidates, deduplicate_signals
+from src.signals.ranker import rank_candidates, deduplicate_signals, filter_correlated_picks
 from src.agents.orchestrator import run_agent_pipeline, PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert
@@ -113,18 +113,83 @@ async def run_morning_pipeline() -> None:
             logger.error("Failed to send fail-closed Telegram alert")
 
 
+async def _check_paper_gate(settings) -> bool:
+    """Enforce 30-day paper trading gate before allowing LIVE mode.
+
+    Returns True if pipeline should proceed, False if blocked.
+    Logs a warning and forces PAPER mode if gate fails.
+    """
+    if settings.trading_mode != "LIVE":
+        return True  # PAPER mode always allowed
+
+    from src.backtest.metrics import compute_metrics
+
+    async with get_session() as session:
+        from sqlalchemy import func
+        result = await session.execute(
+            select(
+                func.count(Outcome.id),
+                func.min(Outcome.entry_date),
+                func.max(Outcome.entry_date),
+            ).where(Outcome.still_open == False)
+        )
+        row = result.one()
+        total_closed, earliest, latest = row
+
+        if total_closed < 10 or earliest is None or latest is None:
+            logger.warning(
+                "PAPER GATE: Only %d closed trades — need 30+ days of history. "
+                "Forcing PAPER mode.", total_closed
+            )
+            settings.trading_mode = "PAPER"
+            return True
+
+        span_days = (latest - earliest).days
+        if span_days < 30:
+            logger.warning(
+                "PAPER GATE: Only %d days of paper trading history (need 30). "
+                "Forcing PAPER mode.", span_days
+            )
+            settings.trading_mode = "PAPER"
+            return True
+
+        # Check profit factor
+        pnl_result = await session.execute(
+            select(Outcome.pnl_pct).where(Outcome.still_open == False)
+        )
+        pnls = [r[0] or 0.0 for r in pnl_result.all()]
+
+    metrics = compute_metrics(pnls)
+    if metrics.profit_factor < 1.0:
+        logger.warning(
+            "PAPER GATE: Profit factor %.2f < 1.0 — not profitable yet. "
+            "Forcing PAPER mode.", metrics.profit_factor
+        )
+        settings.trading_mode = "PAPER"
+        return True
+
+    logger.info(
+        "PAPER GATE PASSED: %d days history, %d trades, PF=%.2f — LIVE mode allowed",
+        span_days, len(pnls), metrics.profit_factor,
+    )
+    return True
+
+
 async def _run_pipeline_core(
     today: date, settings, run_id: str, start_time: float
 ) -> None:
     """Inner pipeline logic — extracted so fail-closed wrapper can catch errors."""
     stage_envelopes: list[StageEnvelope] = []
 
+    # Enforce 30-day paper trading gate
+    await _check_paper_gate(settings)
+
     if settings.trading_mode == "PAPER":
         logger.info("PAPER MODE — all picks are recommendations only, not live trades")
 
     aggregator = DataAggregator()
 
-    # --- Step 1: Macro context and regime detection ---
+    # --- Step 1: Macro context and regime detection (preliminary, breadth added after OHLCV) ---
     logger.info("Step 1: Fetching macro context...")
     macro = await aggregator.get_macro_context()
     regime_assessment = classify_regime(
@@ -196,6 +261,22 @@ async def _run_pipeline_core(
     # Further filter by OHLCV quality
     qualified_tickers = [t for t in tickers if filter_by_ohlcv(t, price_data.get(t))]
     logger.info("OHLCV filter: %d → %d qualified", len(tickers), len(qualified_tickers))
+
+    # --- Step 3b: Recompute regime with breadth from actual OHLCV data ---
+    breadth = compute_breadth_score(price_data)
+    if breadth is not None:
+        logger.info("Breadth score: %.2f (%d/%d above 20d SMA)", breadth, int(breadth * len(price_data)), len(price_data))
+        regime_assessment = classify_regime(
+            spy_df=macro.get("spy_prices"),
+            qqq_df=macro.get("qqq_prices"),
+            vix=macro.get("vix"),
+            yield_spread=macro.get("yield_spread_10y2y"),
+            breadth_score=breadth,
+        )
+        logger.info("Regime (with breadth): %s (confidence: %.2f)", regime_assessment.regime.value, regime_assessment.confidence)
+        regime_context["breadth_score"] = breadth
+        regime_context["regime"] = regime_assessment.regime.value
+        regime_context["confidence"] = regime_assessment.confidence
 
     # --- Step 4: Feature engineering ---
     logger.info("Step 4: Computing features for %d tickers...", len(qualified_tickers))
@@ -323,7 +404,11 @@ async def _run_pipeline_core(
         features_by_ticker=features_by_ticker,
         top_n=settings.top_n_for_interpretation,
     )
-    logger.info("Top %d candidates selected", len(ranked))
+    logger.info("Top %d candidates selected (pre-correlation)", len(ranked))
+
+    # Correlation filter: drop highly-correlated picks
+    ranked = filter_correlated_picks(ranked, price_data)
+    logger.info("Top %d candidates after correlation filter", len(ranked))
 
     # Update regime envelope with gated candidates
     regime_envelope.payload.gated_candidates = [c.ticker for c in ranked]
@@ -555,7 +640,16 @@ async def _run_pipeline_core(
             "holding_period": pick.holding_period,
         })
 
-    alert_msg = format_daily_alert(picks_for_alert, regime_assessment.regime.value, str(today))
+    validation_failed = validation_result.validation_status == "fail"
+    failed_checks = [k for k, v in validation_result.checks.items() if v == "fail"] if validation_failed else None
+    alert_msg = format_daily_alert(
+        picks_for_alert,
+        regime_assessment.regime.value,
+        str(today),
+        validation_failed=validation_failed,
+        failed_checks=failed_checks,
+        key_risks=validation_result.key_risks or None,
+    )
     await send_alert(alert_msg)
 
     logger.info(

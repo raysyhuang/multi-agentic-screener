@@ -32,8 +32,33 @@ async def send_alert(message: str) -> bool:
         return False
 
 
-def format_daily_alert(picks: list[dict], regime: str, run_date: str) -> str:
+def format_daily_alert(
+    picks: list[dict],
+    regime: str,
+    run_date: str,
+    validation_failed: bool = False,
+    failed_checks: list[str] | None = None,
+    key_risks: list[str] | None = None,
+) -> str:
     """Format the daily picks into a Telegram-friendly HTML message."""
+    if validation_failed:
+        lines = [
+            f"<b>📊 Daily Screener — {run_date}</b>",
+            f"Regime: <b>{regime.upper()}</b>",
+            "",
+            "<b>NoSilentPass — Validation FAILED</b>",
+        ]
+        for check in (failed_checks or []):
+            lines.append(f"  - {check}")
+        if key_risks:
+            lines.append("")
+            lines.append("<b>Key risks:</b>")
+            for risk in key_risks:
+                lines.append(f"  - {risk}")
+        lines.append("")
+        lines.append("All picks blocked by validation gate.")
+        return "\n".join(lines)
+
     if not picks:
         return (
             f"<b>📊 Daily Screener — {run_date}</b>\n"
@@ -73,6 +98,13 @@ def format_daily_alert(picks: list[dict], regime: str, run_date: str) -> str:
             f"  <i>{thesis[:150]}</i>" if thesis else "",
             "",
         ])
+
+    # Fragility warnings
+    if key_risks:
+        lines.append("<b>Fragility warnings:</b>")
+        for risk in key_risks:
+            lines.append(f"  - {risk}")
+        lines.append("")
 
     lines.append("<i>Paper trading mode — no real positions</i>")
     return "\n".join(lines)

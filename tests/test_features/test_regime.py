@@ -8,6 +8,7 @@ from src.features.regime import (
     classify_regime,
     Regime,
     get_regime_allowed_models,
+    compute_breadth_score,
 )
 
 
@@ -79,3 +80,43 @@ def test_allowed_models_choppy():
     assert "breakout" not in models
     assert "mean_reversion" in models
     assert "catalyst" in models
+
+
+def test_breadth_score_all_above():
+    """All tickers above 20d SMA → breadth near 1.0."""
+    np.random.seed(42)
+    price_data = {}
+    for i in range(20):
+        close = 100 + np.arange(30) * 0.5  # steady uptrend
+        price_data[f"T{i}"] = pd.DataFrame({"close": close})
+    score = compute_breadth_score(price_data)
+    assert score is not None
+    assert score >= 0.9
+
+
+def test_breadth_score_all_below():
+    """All tickers below 20d SMA → breadth near 0.0."""
+    np.random.seed(43)
+    price_data = {}
+    for i in range(20):
+        close = 100 - np.arange(30) * 0.5  # steady downtrend
+        price_data[f"T{i}"] = pd.DataFrame({"close": close})
+    score = compute_breadth_score(price_data)
+    assert score is not None
+    assert score <= 0.1
+
+
+def test_breadth_score_insufficient_data():
+    """Too few tickers → None."""
+    price_data = {"A": pd.DataFrame({"close": [100, 101]})}
+    assert compute_breadth_score(price_data) is None
+
+
+def test_breadth_affects_regime(sample_spy_df, sample_qqq_df):
+    """Broad breadth should boost bull score."""
+    result_no_breadth = classify_regime(sample_spy_df, sample_qqq_df, vix=18.0)
+    result_with_breadth = classify_regime(sample_spy_df, sample_qqq_df, vix=18.0, breadth_score=0.75)
+    # With high breadth, bull confidence should be at least as high
+    assert result_with_breadth.breadth_score == 0.75
+    if result_no_breadth.regime == Regime.BULL:
+        assert result_with_breadth.confidence >= result_no_breadth.confidence

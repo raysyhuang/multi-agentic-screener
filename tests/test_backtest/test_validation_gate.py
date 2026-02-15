@@ -1,12 +1,13 @@
 """Tests for validation gate enforcement (NoSilentPass rule).
 
-Tests the 6 validation checks from docs/validation_contract.md:
+Tests the 7 validation checks from docs/validation_contract.md:
 1. timestamp_integrity_check
 2. next_bar_execution_check
 3. future_data_guard_check
 4. slippage_sensitivity_check
 5. threshold_sensitivity_check
 6. confidence_calibration_check
+7. regime_survival_check
 """
 
 from datetime import date, timedelta
@@ -242,3 +243,58 @@ def test_fragility_score_normalized():
         validation_card=card,
     )
     assert result.fragility_score == 0.45
+
+
+# ── Check 7: regime_survival ──
+
+
+def test_regime_survival_passes_with_good_card():
+    """Card with > 0.5 win rate in 2+ regimes passes."""
+    today = date(2025, 3, 15)
+    card = _make_card()  # bull=0.7, bear=0.5, choppy=0.55 → 2 pass
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=card,
+    )
+    assert result.checks["regime_survival_check"] == "pass"
+
+
+def test_regime_survival_fails_single_regime():
+    """Card positive in only 1 of 3 regimes should fail."""
+    today = date(2025, 3, 15)
+    card = ValidationCard(
+        signal_model="breakout", total_trades=50, win_rate=0.55,
+        avg_pnl_pct=1.0, performance_dispersion=0.1,
+        slippage_sensitivity=0.1, threshold_sensitivity=0.1,
+        variants_tested=1, multiple_testing_penalty=0.0,
+        bull_win_rate=0.65, bear_win_rate=0.30, choppy_win_rate=0.40,
+        deflated_sharpe=0.95, is_robust=True, fragility_score=20.0,
+        notes=["test"],
+    )
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=card,
+    )
+    assert result.checks["regime_survival_check"] == "fail"
+    assert result.validation_status == "fail"
+    assert any("regimes" in r.lower() for r in result.key_risks)
+
+
+def test_regime_survival_passes_insufficient_data():
+    """With < 20 trades, regime check passes by default."""
+    today = date(2025, 3, 15)
+    card = _make_card(total_trades=15)
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=card,
+    )
+    assert result.checks["regime_survival_check"] == "pass"

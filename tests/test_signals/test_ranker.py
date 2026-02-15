@@ -1,9 +1,12 @@
 """Tests for signal ranking."""
 
+import numpy as np
+import pandas as pd
+
 from src.features.regime import Regime
 from src.signals.breakout import BreakoutSignal
 from src.signals.mean_reversion import MeanReversionSignal
-from src.signals.ranker import rank_candidates, deduplicate_signals
+from src.signals.ranker import rank_candidates, deduplicate_signals, filter_correlated_picks, RankedCandidate
 
 
 def _make_breakout(ticker: str, score: float) -> BreakoutSignal:
@@ -59,3 +62,38 @@ def test_deduplicate_keeps_best():
     result = deduplicate_signals(signals)
     assert len(result) == 1
     assert result[0].score == 90
+
+
+def _make_ranked(ticker: str, score: float) -> RankedCandidate:
+    return RankedCandidate(
+        ticker=ticker, signal_model="breakout", raw_score=score,
+        regime_adjusted_score=score, direction="LONG", entry_price=100,
+        stop_loss=95, target_1=110, target_2=None, holding_period=10,
+        components={}, features={},
+    )
+
+
+def test_correlation_filter_drops_identical():
+    """Two tickers with identical returns should be filtered."""
+    np.random.seed(42)
+    returns = np.random.randn(30).cumsum() + 100
+    price_data = {
+        "A": pd.DataFrame({"close": returns}),
+        "B": pd.DataFrame({"close": returns}),  # identical
+    }
+    candidates = [_make_ranked("A", 90), _make_ranked("B", 80)]
+    result = filter_correlated_picks(candidates, price_data, max_correlation=0.75)
+    assert len(result) == 1
+    assert result[0].ticker == "A"
+
+
+def test_correlation_filter_keeps_uncorrelated():
+    """Two uncorrelated tickers should both survive."""
+    np.random.seed(42)
+    price_data = {
+        "A": pd.DataFrame({"close": np.random.randn(30).cumsum() + 100}),
+        "B": pd.DataFrame({"close": np.random.randn(30).cumsum() + 200}),
+    }
+    candidates = [_make_ranked("A", 90), _make_ranked("B", 80)]
+    result = filter_correlated_picks(candidates, price_data, max_correlation=0.75)
+    assert len(result) == 2

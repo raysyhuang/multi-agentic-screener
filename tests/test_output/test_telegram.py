@@ -71,3 +71,38 @@ def test_format_outcome_alert():
 
 def test_format_outcome_alert_empty():
     assert format_outcome_alert([]) == ""
+
+
+def test_format_daily_alert_validation_failed():
+    """When validation fails, alert should show failed checks."""
+    msg = format_daily_alert(
+        picks=[],
+        regime="bull",
+        run_date="2025-03-15",
+        validation_failed=True,
+        failed_checks=["slippage_sensitivity_check", "regime_survival_check"],
+        key_risks=["Slippage sensitivity too high (0.65)"],
+    )
+    assert "Validation FAILED" in msg
+    assert "slippage_sensitivity_check" in msg
+    assert "regime_survival_check" in msg
+    assert "Slippage sensitivity" in msg
+    assert "All picks blocked" in msg
+
+
+def test_format_daily_alert_with_fragility_warnings():
+    """Alerts with picks should include fragility warnings if present."""
+    picks = [
+        {
+            "ticker": "AAPL", "direction": "LONG", "entry_price": 195.0,
+            "stop_loss": 190.0, "target_1": 210.0, "confidence": 70,
+            "signal_model": "breakout", "thesis": "Test", "holding_period": 10,
+        },
+    ]
+    msg = format_daily_alert(
+        picks, "bull", "2025-03-15",
+        key_risks=["Small sample size (15 trades)"],
+    )
+    assert "AAPL" in msg
+    assert "Fragility warnings" in msg
+    assert "Small sample size" in msg

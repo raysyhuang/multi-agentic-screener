@@ -250,11 +250,76 @@ async def get_performance_summary(days: int = 30) -> dict:
                 "avg_pnl": round(sum(pnls) / len(pnls), 4),
             }
 
+        # Compute full metrics for overall
+        from src.backtest.metrics import compute_metrics
+        overall_metrics = compute_metrics(all_pnls)
+
         return {
             "period_days": days,
             "total_signals": len(closed),
             "overall": _summary(all_pnls),
+            "risk_metrics": {
+                "sharpe_ratio": overall_metrics.sharpe_ratio,
+                "sortino_ratio": overall_metrics.sortino_ratio,
+                "max_drawdown_pct": overall_metrics.max_drawdown_pct,
+                "profit_factor": overall_metrics.profit_factor,
+                "calmar_ratio": overall_metrics.calmar_ratio,
+                "expectancy": overall_metrics.expectancy,
+                "payoff_ratio": overall_metrics.payoff_ratio,
+                "avg_win_pct": overall_metrics.avg_win_pct,
+                "avg_loss_pct": overall_metrics.avg_loss_pct,
+                "max_consecutive_wins": overall_metrics.max_consecutive_wins,
+                "max_consecutive_losses": overall_metrics.max_consecutive_losses,
+            },
             "by_model": {k: _summary(v) for k, v in by_model.items()},
             "by_regime": {k: _summary(v) for k, v in by_regime.items()},
             "by_confidence": {k: _summary(v) for k, v in by_confidence_bucket.items()},
+            "confidence_calibration": _build_calibration(closed, signals),
         }
+
+
+def _build_calibration(
+    outcomes: list, signals_map: dict
+) -> list[dict]:
+    """Build confidence calibration: actual vs expected win rate by bucket.
+
+    Buckets: 0-40, 40-55, 55-70, 70-85, 85-100.
+    Expected win rate is the average confidence in that bucket / 100.
+    """
+    buckets = [
+        (0, 40, "0-40"),
+        (40, 55, "40-55"),
+        (55, 70, "55-70"),
+        (70, 85, "70-85"),
+        (85, 101, "85-100"),
+    ]
+    result = []
+
+    for low, high, label in buckets:
+        bucket_pnls = []
+        bucket_confs = []
+        for outcome in outcomes:
+            signal = signals_map.get(outcome.signal_id)
+            if not signal:
+                continue
+            conf = signal.confidence or 0
+            if low <= conf < high:
+                bucket_pnls.append(outcome.pnl_pct or 0)
+                bucket_confs.append(conf)
+
+        if not bucket_pnls:
+            continue
+
+        actual_wr = sum(1 for p in bucket_pnls if p > 0) / len(bucket_pnls)
+        expected_wr = (sum(bucket_confs) / len(bucket_confs)) / 100.0
+
+        result.append({
+            "bucket": label,
+            "trades": len(bucket_pnls),
+            "actual_win_rate": round(actual_wr, 4),
+            "expected_win_rate": round(expected_wr, 4),
+            "calibration_error": round(abs(actual_wr - expected_wr), 4),
+            "avg_pnl": round(sum(bucket_pnls) / len(bucket_pnls), 4),
+        })
+
+    return result

@@ -300,6 +300,57 @@ async def cost_summary(days: int = Query(default=30, le=90)):
     }
 
 
+@app.get("/api/artifacts/{run_id}")
+async def get_artifacts(run_id: str):
+    """Return all pipeline stage artifacts for a given run."""
+    from src.db.models import PipelineArtifact
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(PipelineArtifact)
+            .where(PipelineArtifact.run_id == run_id)
+            .order_by(PipelineArtifact.created_at)
+        )
+        artifacts = result.scalars().all()
+
+    if not artifacts:
+        raise HTTPException(404, f"No artifacts for run_id={run_id}")
+
+    return [
+        {
+            "stage": a.stage,
+            "status": a.status,
+            "payload": a.payload,
+            "errors": a.errors,
+            "created_at": str(a.created_at),
+        }
+        for a in artifacts
+    ]
+
+
+@app.get("/api/meta-reviews")
+async def list_meta_reviews(limit: int = Query(default=10, le=50)):
+    """Return recent meta-analyst reviews."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(AgentLog)
+            .where(AgentLog.agent_name == "meta_analyst")
+            .order_by(AgentLog.run_date.desc())
+            .limit(limit)
+        )
+        reviews = result.scalars().all()
+
+    return [
+        {
+            "run_date": str(r.run_date),
+            "model_used": r.model_used,
+            "output": r.output_data,
+            "cost_usd": r.cost_usd,
+        }
+        for r in reviews
+    ]
+
+
 @app.get("/health")
 async def health_check():
     """Health check for Heroku / uptime monitors."""

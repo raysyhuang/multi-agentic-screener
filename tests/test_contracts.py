@@ -233,6 +233,16 @@ def test_strict_model_rejects_unknown_fields():
         LeakageChecks(asof_timestamp_present=True, extra_check=False)
 
 
+def test_stage_envelope_rejects_extra_fields():
+    """StageEnvelope itself should reject unknown fields."""
+    with pytest.raises(ValidationError, match="extra"):
+        StageEnvelope(
+            stage=StageName.DATA_INGEST,
+            payload={"test": True},
+            mystery_field="should fail",
+        )
+
+
 # ── Full pipeline envelope chain ──
 
 

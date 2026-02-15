@@ -108,6 +108,70 @@ def rank_candidates(
     return candidates[:top_n]
 
 
+def filter_correlated_picks(
+    candidates: list[RankedCandidate],
+    price_data: dict[str, "pd.DataFrame"],
+    max_correlation: float = 0.75,
+) -> list[RankedCandidate]:
+    """Remove highly-correlated candidates to prevent concentrated risk.
+
+    Iterates top-down by score. If a candidate's 20-day return correlation
+    with any already-accepted candidate exceeds max_correlation, it is dropped.
+    """
+    import pandas as pd
+    import numpy as np
+
+    if not candidates or not price_data:
+        return candidates
+
+    accepted: list[RankedCandidate] = []
+    accepted_returns: dict[str, pd.Series] = {}
+
+    for candidate in candidates:
+        df = price_data.get(candidate.ticker)
+        if df is None or df.empty or len(df) < 20:
+            accepted.append(candidate)
+            continue
+
+        close = df["close"].astype(float)
+        returns = close.pct_change().dropna().tail(20)
+
+        if returns.empty or len(returns) < 10:
+            accepted.append(candidate)
+            continue
+
+        # Check correlation with all accepted picks
+        is_correlated = False
+        for acc_ticker, acc_returns in accepted_returns.items():
+            # Align by index length
+            min_len = min(len(returns), len(acc_returns))
+            if min_len < 10:
+                continue
+            corr = float(np.corrcoef(
+                returns.values[-min_len:],
+                acc_returns.values[-min_len:],
+            )[0, 1])
+            if abs(corr) > max_correlation:
+                logger.info(
+                    "Correlation filter: dropping %s (corr=%.2f with %s)",
+                    candidate.ticker, corr, acc_ticker,
+                )
+                is_correlated = True
+                break
+
+        if not is_correlated:
+            accepted.append(candidate)
+            accepted_returns[candidate.ticker] = returns
+
+    if len(accepted) < len(candidates):
+        logger.info(
+            "Correlation filter: %d → %d candidates (max_corr=%.2f)",
+            len(candidates), len(accepted), max_correlation,
+        )
+
+    return accepted
+
+
 def deduplicate_signals(signals: list[AnySignal]) -> list[AnySignal]:
     """If multiple models flag the same ticker, keep the highest scoring one."""
     best_by_ticker: dict[str, AnySignal] = {}

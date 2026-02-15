@@ -295,6 +295,21 @@ def run_validation_checks(
     if not cal_ok:
         key_risks.append(f"Win rate below calibration minimum ({validation_card.win_rate:.2%})")
 
+    # ── Check 7: regime_survival_check ──
+    # Signal model must show positive expectancy in >= 2 of 3 regime types.
+    if validation_card and validation_card.total_trades >= 20:
+        regimes_positive = sum(
+            1 for wr in [validation_card.bull_win_rate, validation_card.bear_win_rate, validation_card.choppy_win_rate]
+            if wr > 0.5
+        )
+        regime_survival_ok = regimes_positive >= 2
+    else:
+        regime_survival_ok = True  # insufficient data → pass
+        regimes_positive = 0
+    checks["regime_survival_check"] = _PASS if regime_survival_ok else _FAIL
+    if not regime_survival_ok:
+        key_risks.append(f"Positive in only {regimes_positive}/3 regimes (need 2)")
+
     # ── Aggregate ──
     all_passed = all(v == _PASS for v in checks.values())
     n_failed = sum(1 for v in checks.values() if v == _FAIL)
@@ -302,7 +317,7 @@ def run_validation_checks(
     if not all_passed:
         notes_parts.append(f"{n_failed}/{len(checks)} checks failed — NoSilentPass blocks picks")
     else:
-        notes_parts.append("All 6 validation checks passed")
+        notes_parts.append("All 7 validation checks passed")
 
     fragility_score = (
         validation_card.fragility_score / 100.0  # normalize 0-100 → 0-1
