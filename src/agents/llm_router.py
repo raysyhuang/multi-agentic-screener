@@ -144,7 +144,7 @@ async def _call_openai(
             {"role": "system", "content": system_prompt},
             {"role": "user", "content": user_prompt},
         ],
-        "max_tokens": max_tokens,
+        "max_completion_tokens": max_tokens,
         "temperature": temperature,
     }
 
@@ -336,7 +336,7 @@ async def _call_openai_with_tools(
         kwargs = {
             "model": model,
             "messages": messages,
-            "max_tokens": max_tokens,
+            "max_completion_tokens": max_tokens,
             "temperature": temperature,
         }
         if tool_schemas:
