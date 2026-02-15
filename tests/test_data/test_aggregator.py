@@ -18,8 +18,11 @@ def aggregator():
         patch("src.data.aggregator.FMPClient"),
         patch("src.data.aggregator.YFinanceClient"),
         patch("src.data.aggregator.FREDClient"),
+        patch("src.data.aggregator.DataCache"),
     ):
-        return DataAggregator()
+        agg = DataAggregator()
+        agg._cache_enabled = False
+        return agg
 
 
 @pytest.mark.asyncio

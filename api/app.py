@@ -1,13 +1,15 @@
-"""FastAPI application — serves HTML reports and JSON data."""
+"""FastAPI application — serves HTML reports, JSON data, and the dashboard SPA."""
 
 from __future__ import annotations
 
 import os
 from contextlib import asynccontextmanager
 from datetime import date
+from pathlib import Path
 
 from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse
+from fastapi.responses import HTMLResponse, FileResponse
+from fastapi.staticfiles import StaticFiles
 from sqlalchemy import select
 
 from fastapi import Query
@@ -16,6 +18,8 @@ from src.db.session import init_db, close_db, get_session
 from src.db.models import DailyRun, Signal, Outcome, AgentLog
 from src.output.report import generate_daily_report, generate_performance_report
 from src.output.performance import get_performance_summary
+
+STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
 
 
 @asynccontextmanager
@@ -30,6 +34,10 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Mount static files
+if STATIC_DIR.is_dir():
+    app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
 @app.get("/", response_class=HTMLResponse)
@@ -58,9 +66,18 @@ li {{ margin: 0.5rem 0; }}
 <body>
 <h1>Daily Reports</h1>
 <ul>{''.join(links) if links else '<li>No reports yet. Run the pipeline first.</li>'}</ul>
-<p><a href="/performance">30-Day Performance</a></p>
+<p><a href="/performance">30-Day Performance</a> | <a href="/dashboard">Dashboard</a></p>
 </body></html>"""
     return HTMLResponse(html)
+
+
+@app.get("/dashboard", response_class=HTMLResponse)
+async def dashboard():
+    """Serve the SPA dashboard."""
+    html_path = STATIC_DIR / "dashboard.html"
+    if not html_path.is_file():
+        raise HTTPException(404, "Dashboard not found")
+    return FileResponse(str(html_path), media_type="text/html")
 
 
 @app.get("/report/{report_date}", response_class=HTMLResponse)
@@ -122,6 +139,96 @@ async def performance_page():
     html = generate_performance_report(data, period_days=30)
     return HTMLResponse(html)
 
+
+# ---------------------------------------------------------------------------
+# Dashboard API endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/dashboard/signals")
+async def dashboard_signals():
+    """Return the latest run + approved signals shaped for the dashboard."""
+    async with get_session() as session:
+        run_result = await session.execute(
+            select(DailyRun).order_by(DailyRun.run_date.desc()).limit(1)
+        )
+        run = run_result.scalar_one_or_none()
+        if not run:
+            return {"run_date": None, "regime": None, "signals": []}
+
+        sig_result = await session.execute(
+            select(Signal).where(Signal.run_date == run.run_date)
+        )
+        signals = sig_result.scalars().all()
+
+    approved = [
+        {
+            "ticker": s.ticker,
+            "direction": s.direction,
+            "signal_model": s.signal_model,
+            "entry_price": s.entry_price,
+            "stop_loss": s.stop_loss,
+            "target_1": s.target_1,
+            "holding_period_days": s.holding_period_days,
+            "confidence": s.confidence,
+            "thesis": s.interpreter_thesis,
+            "regime": s.regime,
+        }
+        for s in signals
+        if s.risk_gate_decision in ("APPROVE", "ADJUST")
+    ]
+
+    return {
+        "run_date": str(run.run_date),
+        "regime": run.regime,
+        "signals": approved,
+    }
+
+
+@app.get("/api/dashboard/performance")
+async def dashboard_performance():
+    """Return performance data with an equity curve for charting."""
+    data = await get_performance_summary(days=30)
+
+    if data.get("total_signals", 0) == 0:
+        return data
+
+    # Build equity curve from closed outcomes
+    async with get_session() as session:
+        from datetime import timedelta
+        cutoff = date.today() - timedelta(days=30)
+        result = await session.execute(
+            select(Outcome).where(
+                Outcome.still_open == False,
+                Outcome.entry_date >= cutoff,
+            ).order_by(Outcome.exit_date.asc())
+        )
+        closed = result.scalars().all()
+
+    equity_curve = []
+    cumulative = 0.0
+    for o in closed:
+        pnl = o.pnl_pct or 0.0
+        cumulative += pnl
+        equity_curve.append({
+            "time": str(o.exit_date) if o.exit_date else str(o.entry_date),
+            "value": round(cumulative, 4),
+        })
+
+    data["equity_curve"] = equity_curve
+    return data
+
+
+@app.get("/api/cache-stats")
+async def cache_stats():
+    """Return data cache performance statistics."""
+    from src.data.aggregator import DataAggregator
+    agg = DataAggregator()
+    return agg.get_cache_stats()
+
+
+# ---------------------------------------------------------------------------
+# Existing JSON API endpoints
+# ---------------------------------------------------------------------------
 
 @app.get("/api/signals/{report_date}")
 async def signals_json(report_date: str):

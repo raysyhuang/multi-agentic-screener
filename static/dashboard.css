@@ -1,0 +1,325 @@
+/* Dashboard — dark theme matching existing Jinja2 templates */
+
+:root {
+  --bg: #0f1117;
+  --card: #1a1d29;
+  --border: #2a2d3a;
+  --text: #e4e4e7;
+  --muted: #71717a;
+  --green: #22c55e;
+  --red: #ef4444;
+  --blue: #3b82f6;
+  --yellow: #eab308;
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+
+body {
+  font-family: 'SF Mono', 'Fira Code', 'JetBrains Mono', monospace;
+  background: var(--bg);
+  color: var(--text);
+  min-height: 100vh;
+}
+
+/* ---- Nav ---- */
+
+.nav {
+  display: flex;
+  align-items: center;
+  gap: 1rem;
+  padding: 1rem 2rem;
+  border-bottom: 1px solid var(--border);
+  background: var(--card);
+}
+
+.nav-title {
+  font-size: 1.1rem;
+  font-weight: bold;
+  margin-right: 2rem;
+  color: var(--blue);
+}
+
+.nav-tab {
+  padding: 0.5rem 1rem;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  cursor: pointer;
+  color: var(--muted);
+  background: none;
+  font-family: inherit;
+  font-size: 0.85rem;
+  transition: all 0.15s;
+}
+
+.nav-tab:hover {
+  color: var(--text);
+  background: rgba(59, 130, 246, 0.1);
+}
+
+.nav-tab.active {
+  color: var(--text);
+  border-color: var(--blue);
+  background: rgba(59, 130, 246, 0.15);
+}
+
+/* ---- Layout ---- */
+
+.container {
+  max-width: 1200px;
+  margin: 0 auto;
+  padding: 1.5rem 2rem;
+}
+
+.view { display: none; }
+.view.active { display: block; }
+
+/* ---- Cards ---- */
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1.25rem;
+  margin-bottom: 1rem;
+}
+
+.card-header {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  margin-bottom: 1rem;
+}
+
+.card-title {
+  font-size: 1rem;
+  font-weight: bold;
+}
+
+/* ---- Signal Cards ---- */
+
+.signals-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(340px, 1fr));
+  gap: 1rem;
+}
+
+.signal-card { position: relative; }
+
+.signal-ticker {
+  font-size: 1.3rem;
+  font-weight: bold;
+}
+
+.direction-badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 4px;
+  font-size: 0.75rem;
+  font-weight: bold;
+  text-transform: uppercase;
+  margin-left: 0.5rem;
+}
+
+.direction-long { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+.direction-short { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+
+.signal-model {
+  font-size: 0.8rem;
+  color: var(--muted);
+  margin-left: 0.5rem;
+}
+
+.confidence-meter {
+  width: 100%;
+  height: 6px;
+  background: var(--border);
+  border-radius: 3px;
+  overflow: hidden;
+  margin: 0.75rem 0 0.5rem;
+}
+
+.confidence-fill {
+  height: 100%;
+  border-radius: 3px;
+  transition: width 0.3s;
+}
+
+.confidence-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+  text-align: right;
+}
+
+.trade-grid {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.75rem;
+  margin: 0.75rem 0;
+}
+
+.trade-grid-item .label {
+  font-size: 0.7rem;
+  color: var(--muted);
+  margin-bottom: 2px;
+}
+
+.trade-grid-item .value {
+  font-weight: bold;
+  font-size: 0.85rem;
+}
+
+.signal-thesis {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--muted);
+  font-style: italic;
+  margin-top: 0.5rem;
+}
+
+/* ---- Metrics Grid ---- */
+
+.metrics-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.metric-card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  text-align: center;
+}
+
+.metric-value {
+  font-size: 1.5rem;
+  font-weight: bold;
+  margin-bottom: 0.25rem;
+}
+
+.metric-label {
+  font-size: 0.75rem;
+  color: var(--muted);
+}
+
+.positive { color: var(--green); }
+.negative { color: var(--red); }
+
+/* ---- Chart ---- */
+
+.chart-container {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.chart-title {
+  font-size: 0.9rem;
+  color: var(--muted);
+  margin-bottom: 0.75rem;
+}
+
+#equity-chart {
+  width: 100%;
+  height: 350px;
+}
+
+/* ---- Tables ---- */
+
+.data-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.8rem;
+}
+
+.data-table th,
+.data-table td {
+  padding: 0.6rem 0.75rem;
+  text-align: left;
+  border-bottom: 1px solid var(--border);
+}
+
+.data-table th {
+  color: var(--muted);
+  font-weight: normal;
+  text-transform: uppercase;
+  font-size: 0.7rem;
+  letter-spacing: 0.05em;
+}
+
+.data-table tr:hover td {
+  background: rgba(59, 130, 246, 0.05);
+}
+
+/* ---- Status badges ---- */
+
+.badge {
+  display: inline-block;
+  padding: 0.15rem 0.5rem;
+  border-radius: 3px;
+  font-size: 0.7rem;
+  font-weight: bold;
+  text-transform: uppercase;
+}
+
+.badge-success { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+.badge-failed { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+.badge-bull { background: rgba(34, 197, 94, 0.2); color: var(--green); }
+.badge-bear { background: rgba(239, 68, 68, 0.2); color: var(--red); }
+.badge-choppy { background: rgba(234, 179, 8, 0.2); color: var(--yellow); }
+
+/* ---- Loading spinner ---- */
+
+.spinner {
+  display: flex;
+  justify-content: center;
+  align-items: center;
+  padding: 3rem;
+  color: var(--muted);
+}
+
+.spinner::before {
+  content: '';
+  width: 24px;
+  height: 24px;
+  border: 2px solid var(--border);
+  border-top-color: var(--blue);
+  border-radius: 50%;
+  animation: spin 0.6s linear infinite;
+  margin-right: 0.75rem;
+}
+
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* ---- Empty state ---- */
+
+.empty-state {
+  text-align: center;
+  padding: 3rem;
+  color: var(--muted);
+}
+
+.empty-state h3 {
+  margin-bottom: 0.5rem;
+  color: var(--text);
+}
+
+/* ---- Responsive ---- */
+
+@media (max-width: 768px) {
+  .nav { flex-wrap: wrap; gap: 0.5rem; padding: 1rem; }
+  .nav-title { width: 100%; margin-right: 0; margin-bottom: 0.5rem; }
+  .container { padding: 1rem; }
+  .signals-grid { grid-template-columns: 1fr; }
+  .trade-grid { grid-template-columns: repeat(2, 1fr); }
+  .metrics-grid { grid-template-columns: repeat(2, 1fr); }
+  #equity-chart { height: 250px; }
+}
+
+@media (max-width: 480px) {
+  .metrics-grid { grid-template-columns: 1fr; }
+}

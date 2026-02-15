@@ -4,12 +4,18 @@ Memory-safe patterns (ported from gemini_STST):
   - Semaphore-controlled concurrency prevents memory explosion from 200+ concurrent requests
   - Batch processing with explicit gc.collect() between batches
   - Configurable batch sizes for different Heroku dyno tiers
+
+Caching:
+  - SQLite response cache checked BEFORE acquiring the semaphore (no slot needed for a hit)
+  - TTL-based expiry with separate constants for different data types
+  - Toggled via _cache_enabled flag
 """
 
 from __future__ import annotations
 
 import asyncio
 import gc
+import json
 import logging
 from datetime import date, timedelta
 
@@ -20,6 +26,17 @@ from src.data.polygon_client import PolygonClient
 from src.data.fmp_client import FMPClient
 from src.data.yfinance_client import YFinanceClient
 from src.data.fred_client import FREDClient
+from src.data.cache import (
+    DataCache,
+    TTL_FUNDAMENTALS,
+    TTL_NEWS,
+    TTL_UNIVERSE,
+    TTL_MACRO,
+    TTL_EARNINGS_CALENDAR,
+    classify_ohlcv_ttl,
+    df_to_json,
+    json_to_df,
+)
 
 logger = logging.getLogger(__name__)
 
@@ -38,6 +55,8 @@ class DataAggregator:
         self.yfinance = YFinanceClient()
         self.fred = FREDClient(api_key=settings.fred_api_key or None)
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
+        self._cache = DataCache()
+        self._cache_enabled = True
 
     async def get_ohlcv(
         self,
@@ -45,14 +64,26 @@ class DataAggregator:
         from_date: date,
         to_date: date,
     ) -> pd.DataFrame:
-        """Fetch OHLCV with fallback chain: Polygon → FMP → yfinance.
+        """Fetch OHLCV with fallback chain: Polygon -> FMP -> yfinance.
 
-        Semaphore-controlled to prevent memory explosion from concurrent requests.
+        Cache is checked before acquiring the semaphore.
         """
+        if self._cache_enabled:
+            key = DataCache.build_key(
+                "ohlcv", ticker, "daily",
+                from_date=str(from_date), to_date=str(to_date),
+            )
+            cached = self._cache.get(key)
+            if cached is not None:
+                return json_to_df(cached)
+
         async with self._semaphore:
             try:
                 df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
                 if not df.empty:
+                    if self._cache_enabled:
+                        ttl = classify_ohlcv_ttl(to_date)
+                        self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
                     return df
             except Exception as e:
                 logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
@@ -60,12 +91,18 @@ class DataAggregator:
             try:
                 df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
                 if not df.empty:
+                    if self._cache_enabled:
+                        ttl = classify_ohlcv_ttl(to_date)
+                        self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
                     return df
             except Exception as e:
                 logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
 
             try:
                 df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)
+                if self._cache_enabled and not df.empty:
+                    ttl = classify_ohlcv_ttl(to_date)
+                    self._cache.put(key, df_to_json(df), ttl, source="yfinance", ticker=ticker, endpoint="ohlcv")
                 return df
             except Exception as e:
                 logger.error("All OHLCV sources failed for %s: %s", ticker, e)
@@ -113,14 +150,29 @@ class DataAggregator:
 
     async def get_universe(self) -> list[dict]:
         """Build initial universe from FMP screener."""
+        if self._cache_enabled:
+            key = DataCache.build_key("fmp", "", "universe")
+            cached = self._cache.get(key)
+            if cached is not None:
+                return json.loads(cached)
+
         try:
-            return await self.fmp.get_stock_screener()
+            result = await self.fmp.get_stock_screener()
+            if self._cache_enabled and result:
+                self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+            return result
         except Exception as e:
             logger.error("FMP screener failed: %s", e)
             return []
 
     async def get_ticker_fundamentals(self, ticker: str) -> dict:
         """Aggregate fundamental data for a single ticker."""
+        if self._cache_enabled:
+            key = DataCache.build_key("fmp", ticker, "fundamentals")
+            cached = self._cache.get(key)
+            if cached is not None:
+                return json.loads(cached)
+
         earnings_task = self.fmp.get_earnings_surprise(ticker)
         insider_task = self.fmp.get_insider_trading(ticker)
         profile_task = self.fmp.get_company_profile(ticker)
@@ -134,22 +186,46 @@ class DataAggregator:
         insiders = results[1] if not isinstance(results[1], Exception) else []
         profile = results[2] if not isinstance(results[2], Exception) else {}
 
-        return {
+        data = {
             "earnings_surprises": earnings[:4] if earnings else [],
             "insider_transactions": insiders[:20] if insiders else [],
             "profile": profile,
         }
 
+        if self._cache_enabled:
+            self._cache.put(key, json.dumps(data), TTL_FUNDAMENTALS, source="fmp", ticker=ticker, endpoint="fundamentals")
+
+        return data
+
     async def get_ticker_news(self, ticker: str) -> list[dict]:
         """Fetch recent news for sentiment scoring."""
+        if self._cache_enabled:
+            key = DataCache.build_key("polygon", ticker, "news")
+            cached = self._cache.get(key)
+            if cached is not None:
+                return json.loads(cached)
+
         try:
-            return await self.polygon.get_news(ticker, limit=20)
+            result = await self.polygon.get_news(ticker, limit=20)
+            if self._cache_enabled and result:
+                self._cache.put(key, json.dumps(result), TTL_NEWS, source="polygon", ticker=ticker, endpoint="news")
+            return result
         except Exception as e:
             logger.warning("News fetch failed for %s: %s", ticker, e)
             return []
 
     async def get_macro_context(self) -> dict:
         """Fetch macro indicators for regime detection."""
+        if self._cache_enabled:
+            key = DataCache.build_key("macro", "", "snapshot")
+            cached = self._cache.get(key)
+            if cached is not None:
+                payload = json.loads(cached)
+                # Restore DataFrames from serialized form
+                payload["spy_prices"] = json_to_df(payload["spy_prices"])
+                payload["qqq_prices"] = json_to_df(payload["qqq_prices"])
+                return payload
+
         # VIX and yield curve
         macro = await self.fred.get_macro_snapshot()
 
@@ -164,14 +240,39 @@ class DataAggregator:
 
         macro["spy_prices"] = spy_df
         macro["qqq_prices"] = qqq_df
+
+        if self._cache_enabled:
+            # Serialize DataFrames for JSON storage
+            cache_payload = {**macro}
+            cache_payload["spy_prices"] = df_to_json(spy_df)
+            cache_payload["qqq_prices"] = df_to_json(qqq_df)
+            self._cache.put(key, json.dumps(cache_payload), TTL_MACRO, source="macro", endpoint="snapshot")
+
         return macro
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         """Earnings calendar for catalyst detection."""
         from_date = date.today()
         to_date = from_date + timedelta(days=days_ahead)
+
+        if self._cache_enabled:
+            key = DataCache.build_key(
+                "fmp", "", "earnings_calendar",
+                from_date=str(from_date), to_date=str(to_date),
+            )
+            cached = self._cache.get(key)
+            if cached is not None:
+                return json.loads(cached)
+
         try:
-            return await self.fmp.get_earnings_calendar(from_date, to_date)
+            result = await self.fmp.get_earnings_calendar(from_date, to_date)
+            if self._cache_enabled and result:
+                self._cache.put(key, json.dumps(result), TTL_EARNINGS_CALENDAR, source="fmp", endpoint="earnings_calendar")
+            return result
         except Exception as e:
             logger.warning("Earnings calendar failed: %s", e)
             return []
+
+    def get_cache_stats(self) -> dict:
+        """Return cache performance statistics."""
+        return self._cache.get_stats()
