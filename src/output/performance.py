@@ -153,6 +153,47 @@ async def record_new_signals(pipeline_results: list[dict]) -> None:
             session.add(outcome)
 
 
+async def build_validation_card_from_history(days: int = 90):
+    """Build a ValidationCard from recent closed outcomes for live validation.
+
+    Returns None if insufficient data (< 10 closed trades).
+    """
+    from src.backtest.validation_card import generate_validation_card
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(Outcome, Signal)
+            .join(Signal, Outcome.signal_id == Signal.id)
+            .where(Outcome.still_open == False, Outcome.entry_date >= cutoff)
+        )
+        rows = result.all()
+
+    if len(rows) < 10:
+        return None
+
+    trade_returns: list[float] = []
+    by_regime: dict[str, list[float]] = {}
+    signal_models: set[str] = set()
+
+    for outcome, signal in rows:
+        pnl = outcome.pnl_pct or 0.0
+        trade_returns.append(pnl)
+        by_regime.setdefault(signal.regime.lower(), []).append(pnl)
+        signal_models.add(signal.signal_model)
+
+    # Approximate slippage returns: reduce each return by 0.10% (10 bps round-trip)
+    slippage_returns = [r - 0.10 for r in trade_returns]
+
+    return generate_validation_card(
+        signal_model="aggregate",
+        trade_returns=trade_returns,
+        trade_returns_by_regime=by_regime,
+        slippage_returns=slippage_returns,
+        variants_tested=max(1, len(signal_models)),
+    )
+
+
 async def get_performance_summary(days: int = 30) -> dict:
     """Get aggregate performance data for the meta-analyst."""
     async with get_session() as session:

@@ -66,7 +66,12 @@ async def call_llm(
     settings = get_settings()
     start = time.monotonic()
 
-    if model.startswith("claude"):
+    if model.startswith("gemini"):
+        raise ValueError(
+            f"Gemini provider is disabled in MVP scope (model={model}). "
+            "Gemini API is no longer available. Use Claude or GPT models instead."
+        )
+    elif model.startswith("claude"):
         result = await _call_anthropic(
             model, system_prompt, user_prompt, max_tokens, temperature, settings
         )

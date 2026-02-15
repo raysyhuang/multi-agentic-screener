@@ -218,6 +218,21 @@ def test_final_output_no_trade_requires_reason():
         FinalOutputPayload(decision="NoTrade")
 
 
+# ── Strict contracts — unknown fields rejected ──
+
+
+def test_strict_model_rejects_unknown_fields():
+    """Contract models must reject unknown fields (docs/data_contracts.md)."""
+    with pytest.raises(ValidationError, match="extra"):
+        TickerSnapshot(ticker="AAPL", last_price=195.0, volume=50_000_000, unknown_field="bad")
+
+    with pytest.raises(ValidationError, match="extra"):
+        RegimeInfo(label="bull", confidence=0.8, signals_allowed=[], bogus=True)
+
+    with pytest.raises(ValidationError, match="extra"):
+        LeakageChecks(asof_timestamp_present=True, extra_check=False)
+
+
 # ── Full pipeline envelope chain ──
 
 

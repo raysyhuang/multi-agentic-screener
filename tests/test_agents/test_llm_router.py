@@ -1,6 +1,8 @@
 """Tests for LLM router — JSON parsing logic (no actual API calls)."""
 
-from src.agents.llm_router import _try_parse_json
+import pytest
+
+from src.agents.llm_router import _try_parse_json, call_llm
 
 
 def test_parse_direct_json():
@@ -36,3 +38,14 @@ def test_parse_nested_json():
     result = _try_parse_json(text)
     assert result["outer"]["inner"] == [1, 2, 3]
     assert result["flag"] is True
+
+
+@pytest.mark.asyncio
+async def test_gemini_model_raises_disabled():
+    """Gemini provider is disabled per MVP scope."""
+    with pytest.raises(ValueError, match="Gemini provider is disabled"):
+        await call_llm(
+            model="gemini-2.0-flash",
+            system_prompt="test",
+            user_prompt="test",
+        )

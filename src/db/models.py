@@ -111,6 +111,23 @@ class Outcome(Base):
     )
 
 
+class PipelineArtifact(Base):
+    """Persisted stage envelope — one row per pipeline stage per run for full traceability."""
+
+    __tablename__ = "pipeline_artifacts"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    stage: Mapped[str] = mapped_column(String(30), nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)  # success / failed
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    errors: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class AgentLog(Base):
     """Stores raw LLM agent inputs/outputs for debugging and meta-analysis."""
 

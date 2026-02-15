@@ -184,13 +184,20 @@ async def list_outcomes(
     still_open: bool | None = Query(default=None),
 ):
     """Query outcomes with optional filters by date, regime, model, confidence."""
+    # Validate date parameters upfront
+    try:
+        parsed_from = date.fromisoformat(date_from) if date_from else None
+        parsed_to = date.fromisoformat(date_to) if date_to else None
+    except ValueError:
+        raise HTTPException(400, "Invalid date format. Use YYYY-MM-DD.")
+
     async with get_session() as session:
         query = select(Outcome, Signal).join(Signal, Outcome.signal_id == Signal.id)
 
-        if date_from:
-            query = query.where(Outcome.entry_date >= date.fromisoformat(date_from))
-        if date_to:
-            query = query.where(Outcome.entry_date <= date.fromisoformat(date_to))
+        if parsed_from:
+            query = query.where(Outcome.entry_date >= parsed_from)
+        if parsed_to:
+            query = query.where(Outcome.entry_date <= parsed_to)
         if regime:
             query = query.where(Signal.regime == regime)
         if model:

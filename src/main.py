@@ -29,7 +29,7 @@ from src.contracts import (
     FinalPick,
 )
 from src.data.aggregator import DataAggregator
-from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome
+from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
@@ -53,19 +53,71 @@ logger = logging.getLogger(__name__)
 
 
 async def run_morning_pipeline() -> None:
-    """Main daily pipeline — runs at 6:00 AM ET."""
+    """Main daily pipeline — runs at 6:00 AM ET.
+
+    Fail-closed: any unhandled exception guarantees a NoTrade DB record
+    and Telegram alert rather than a silent abort.
+    """
     import uuid
 
     start_time = time.monotonic()
     today = date.today()
     settings = get_settings()
     run_id = uuid.uuid4().hex[:12]
-    stage_envelopes: list[StageEnvelope] = []
 
     logger.info("=" * 60)
     logger.info("Starting morning pipeline for %s (run_id=%s)", today, run_id)
     logger.info("Trading mode: %s", settings.trading_mode)
     logger.info("=" * 60)
+
+    try:
+        await _run_pipeline_core(today, settings, run_id, start_time)
+    except Exception as exc:
+        elapsed = time.monotonic() - start_time
+        logger.exception("PIPELINE FAILED — fail-closed with NoTrade (run_id=%s): %s", run_id, exc)
+
+        # Guarantee a DailyRun + NoTrade artifact in DB
+        try:
+            async with get_session() as session:
+                session.add(DailyRun(
+                    run_date=today,
+                    regime="unknown",
+                    regime_details={"error": str(exc)},
+                    universe_size=0,
+                    candidates_scored=0,
+                    pipeline_duration_s=round(elapsed, 2),
+                ))
+                no_trade = FinalOutputPayload(
+                    decision="NoTrade",
+                    no_trade_reason=f"Pipeline error: {type(exc).__name__}: {exc}",
+                )
+                session.add(PipelineArtifact(
+                    run_id=run_id,
+                    run_date=today,
+                    stage=StageName.FINAL_OUTPUT.value,
+                    status=StageStatus.FAILED.value,
+                    payload=no_trade.model_dump(),
+                    errors=[{"code": "PIPELINE_CRASH", "message": str(exc)}],
+                ))
+        except Exception as db_exc:
+            logger.error("Failed to write fail-closed record: %s", db_exc)
+
+        # Attempt Telegram alert about failure
+        try:
+            await send_alert(
+                f"PIPELINE FAILED ({today}, run_id={run_id})\n"
+                f"Error: {type(exc).__name__}: {exc}\n"
+                f"Decision: NoTrade (fail-closed)"
+            )
+        except Exception:
+            logger.error("Failed to send fail-closed Telegram alert")
+
+
+async def _run_pipeline_core(
+    today: date, settings, run_id: str, start_time: float
+) -> None:
+    """Inner pipeline logic — extracted so fail-closed wrapper can catch errors."""
+    stage_envelopes: list[StageEnvelope] = []
 
     if settings.trading_mode == "PAPER":
         logger.info("PAPER MODE — all picks are recommendations only, not live trades")
@@ -320,12 +372,23 @@ async def run_morning_pipeline() -> None:
     feature_cols = list(features_by_ticker[next(iter(features_by_ticker))].keys()) if features_by_ticker else []
     next_business_day = today + timedelta(days=1)
 
+    # Build validation card from historical outcomes (None if < 10 closed trades)
+    from src.output.performance import build_validation_card_from_history
+    hist_card = await build_validation_card_from_history(days=90)
+    if hist_card:
+        logger.info(
+            "Validation card from history: %d trades, fragility=%.1f, robust=%s",
+            hist_card.total_trades, hist_card.fragility_score, hist_card.is_robust,
+        )
+    else:
+        logger.info("No historical validation card (< 10 closed trades) — structural checks only")
+
     validation_result = run_validation_checks(
         run_date=today,
         signal_dates=[today] * len(pipeline_result.approved),
         execution_dates=[next_business_day] * len(pipeline_result.approved),
         feature_columns=feature_cols,
-        validation_card=None,  # no backtest card on live runs (first run)
+        validation_card=hist_card,
     )
 
     validation_envelope = StageEnvelope(
@@ -455,6 +518,25 @@ async def run_morning_pipeline() -> None:
                 tokens_out=log.get("tokens_out"),
                 latency_ms=log.get("latency_ms"),
                 cost_usd=log.get("cost_usd"),
+            ))
+
+        # Persist stage envelopes for full run traceability
+        for envelope in stage_envelopes:
+            try:
+                payload_dict = (
+                    envelope.payload.model_dump()
+                    if hasattr(envelope.payload, "model_dump")
+                    else envelope.payload
+                )
+            except Exception:
+                payload_dict = str(envelope.payload)
+            session.add(PipelineArtifact(
+                run_id=run_id,
+                run_date=today,
+                stage=envelope.stage.value,
+                status=envelope.status.value,
+                payload=payload_dict,
+                errors=[e.model_dump() for e in envelope.errors] if envelope.errors else [],
             ))
 
     # --- Step 9: Send Telegram alert ---

@@ -12,7 +12,13 @@ from datetime import date, datetime
 from enum import Enum
 from typing import Any
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, ConfigDict, Field, model_validator
+
+
+class StrictModel(BaseModel):
+    """Base for all contract models — unknown fields are forbidden."""
+
+    model_config = ConfigDict(extra="forbid")
 
 
 # ── Core Envelope ──────────────────────────────────────────────────────────
@@ -32,7 +38,7 @@ class StageName(str, Enum):
     FINAL_OUTPUT = "final_output"
 
 
-class StageError(BaseModel):
+class StageError(StrictModel):
     code: str
     message: str
     detail: str | None = None
@@ -57,7 +63,7 @@ class StageEnvelope(BaseModel):
 
 # ── Stage 1: DataIngestPayload ──────────────────────────────────────────
 
-class TickerSnapshot(BaseModel):
+class TickerSnapshot(StrictModel):
     ticker: str
     last_price: float
     volume: int
@@ -66,14 +72,14 @@ class TickerSnapshot(BaseModel):
     source_provenance: str = "polygon"
 
 
-class DataIngestPayload(BaseModel):
+class DataIngestPayload(StrictModel):
     asof_date: date
     universe: list[TickerSnapshot]
 
 
 # ── Stage 2: FeaturePayload ─────────────────────────────────────────────
 
-class TickerFeatures(BaseModel):
+class TickerFeatures(StrictModel):
     ticker: str
     returns_5d: float | None = None
     returns_10d: float | None = None
@@ -85,14 +91,14 @@ class TickerFeatures(BaseModel):
     feature_quality_flags: list[str] = Field(default_factory=list)
 
 
-class FeaturePayload(BaseModel):
+class FeaturePayload(StrictModel):
     asof_date: date
     ticker_features: list[TickerFeatures]
 
 
 # ── Stage 3: SignalPrefilterPayload ──────────────────────────────────────
 
-class CandidateScores(BaseModel):
+class CandidateScores(StrictModel):
     ticker: str
     model_scores: dict[str, float] = Field(
         description="Scores per signal model (breakout, mean_reversion, catalyst)"
@@ -101,14 +107,14 @@ class CandidateScores(BaseModel):
     prefilter_flags: list[str] = Field(default_factory=list)
 
 
-class SignalPrefilterPayload(BaseModel):
+class SignalPrefilterPayload(StrictModel):
     asof_date: date
     candidates: list[CandidateScores]
 
 
 # ── Stage 4: RegimePayload ───────────────────────────────────────────────
 
-class RegimeInfo(BaseModel):
+class RegimeInfo(StrictModel):
     label: str = Field(description="bull, bear, or choppy")
     confidence: float
     signals_allowed: list[str] = Field(
@@ -116,7 +122,7 @@ class RegimeInfo(BaseModel):
     )
 
 
-class RegimePayload(BaseModel):
+class RegimePayload(StrictModel):
     asof_date: date
     regime: RegimeInfo
     gated_candidates: list[str] = Field(
@@ -126,7 +132,7 @@ class RegimePayload(BaseModel):
 
 # ── Stage 5: AgentReviewPayload ──────────────────────────────────────────
 
-class TickerReview(BaseModel):
+class TickerReview(StrictModel):
     ticker: str
     signal_thesis: str
     signal_confidence: float
@@ -136,25 +142,25 @@ class TickerReview(BaseModel):
     risk_notes: str = ""
 
 
-class AgentReviewPayload(BaseModel):
+class AgentReviewPayload(StrictModel):
     ticker_reviews: list[TickerReview]
 
 
 # ── Stage 6: ValidationPayload ───────────────────────────────────────────
 
-class LeakageChecks(BaseModel):
+class LeakageChecks(StrictModel):
     asof_timestamp_present: bool = True
     next_bar_execution_enforced: bool = True
     future_data_columns_found: list[str] = Field(default_factory=list)
 
 
-class FragilityMetrics(BaseModel):
+class FragilityMetrics(StrictModel):
     slippage_sensitivity: float = 0.0
     threshold_sensitivity: float = 0.0
     confidence_calibration_bucket: str = "medium"
 
 
-class ValidationPayload(BaseModel):
+class ValidationPayload(StrictModel):
     leakage_checks: LeakageChecks
     fragility_metrics: FragilityMetrics
     validation_status: str = Field(description="pass or fail")
@@ -171,7 +177,7 @@ class ValidationPayload(BaseModel):
 
 # ── Stage 7: FinalOutputPayload ──────────────────────────────────────────
 
-class FinalPick(BaseModel):
+class FinalPick(StrictModel):
     ticker: str
     entry_zone: float
     stop_loss: float
@@ -181,7 +187,7 @@ class FinalPick(BaseModel):
     validation_card: dict | None = None
 
 
-class FinalOutputPayload(BaseModel):
+class FinalOutputPayload(StrictModel):
     decision: str = Field(description="Top1To2 or NoTrade")
     picks: list[FinalPick] = Field(default_factory=list, max_length=2)
     no_trade_reason: str | None = None
