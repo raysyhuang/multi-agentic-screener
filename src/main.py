@@ -10,7 +10,7 @@ import time
 from dataclasses import asdict
 from datetime import date, datetime, timedelta
 
-from src.config import get_settings
+from src.config import get_settings, ExecutionMode
 from src.contracts import (
     StageEnvelope,
     StageName,
@@ -71,19 +71,26 @@ logger = logging.getLogger(__name__)
 
 def _json_safe(obj):
     """Recursively convert non-JSON-serializable types in a dict/list structure."""
+    import math
     import numpy as np
+    import pandas as pd
     if isinstance(obj, dict):
         return {k: _json_safe(v) for k, v in obj.items()}
-    if isinstance(obj, list):
+    if isinstance(obj, (list, tuple)):
         return [_json_safe(v) for v in obj]
+    if isinstance(obj, pd.Timestamp):
+        return obj.isoformat()
     if isinstance(obj, (date, datetime)):
         return obj.isoformat()
     if isinstance(obj, (np.integer,)):
         return int(obj)
     if isinstance(obj, (np.floating,)):
-        return float(obj)
+        v = float(obj)
+        return None if math.isnan(v) else v
+    if isinstance(obj, float) and math.isnan(obj):
+        return None
     if isinstance(obj, np.ndarray):
-        return obj.tolist()
+        return [_json_safe(v) for v in obj.tolist()]
     if isinstance(obj, (np.bool_,)):
         return bool(obj)
     return obj
@@ -211,6 +218,179 @@ async def _check_paper_gate(settings) -> bool:
     return True
 
 
+def _build_quant_only_result(
+    ranked: list,
+    regime_context: dict,
+    max_picks: int = 2,
+) -> PipelineRun:
+    """Build a PipelineResult from ranked candidates without any LLM calls.
+
+    Uses deterministic stubs for interpretation/debate/risk_gate fields
+    so all downstream consumers (DB, Telegram, envelopes) work unchanged.
+    """
+    from src.agents.base import (
+        SignalInterpretation,
+        DebateResult,
+        DebatePosition,
+        RiskGateOutput,
+        GateDecision,
+    )
+    from src.agents.orchestrator import PipelineResult, PipelineRun
+
+    approved: list[PipelineResult] = []
+    for candidate in ranked[:max_picks]:
+        stub_interp = SignalInterpretation(
+            ticker=candidate.ticker,
+            thesis=f"Quant-only pick: {candidate.signal_model} score={candidate.raw_score:.2f}",
+            confidence=min(candidate.regime_adjusted_score * 100, 99.0),
+            key_drivers=list(candidate.components.keys())[:3] if candidate.components else ["score"],
+            risk_flags=[],
+            suggested_entry=candidate.entry_price,
+            suggested_stop=candidate.stop_loss,
+            suggested_target=candidate.target_1,
+            timeframe_days=candidate.holding_period,
+        )
+        stub_debate = DebateResult(
+            ticker=candidate.ticker,
+            bull_case=DebatePosition(
+                position="BULL", argument="Quant signal above threshold.",
+                evidence=["composite_score"], weakness="No LLM validation", conviction=60,
+            ),
+            bear_case=DebatePosition(
+                position="BEAR", argument="Skipped in quant_only mode.",
+                evidence=[], weakness="N/A", conviction=0,
+            ),
+            rebuttal_summary="Debate skipped in quant_only mode.",
+            final_verdict="PROCEED",
+            net_conviction=60,
+            key_risk="No LLM adversarial review",
+        )
+        stub_gate = RiskGateOutput(
+            ticker=candidate.ticker,
+            decision=GateDecision.APPROVE,
+            reasoning="Auto-approved in quant_only mode based on composite score.",
+            position_size_pct=5.0,
+        )
+        approved.append(PipelineResult(
+            ticker=candidate.ticker,
+            signal_model=candidate.signal_model,
+            direction=candidate.direction,
+            entry_price=candidate.entry_price,
+            stop_loss=candidate.stop_loss,
+            target_1=candidate.target_1,
+            target_2=candidate.target_2,
+            holding_period=candidate.holding_period,
+            confidence=stub_interp.confidence,
+            interpretation=stub_interp,
+            debate=stub_debate,
+            risk_gate=stub_gate,
+            features=candidate.features,
+        ))
+
+    return PipelineRun(
+        run_date=date.today(),
+        regime=regime_context.get("regime", "unknown"),
+        regime_details=regime_context,
+        candidates_scored=len(ranked),
+        interpreted=0,
+        debated=0,
+        approved=approved,
+        vetoed=[],
+        agent_logs=[],
+    )
+
+
+async def _run_hybrid_pipeline(
+    ranked: list,
+    regime_context: dict,
+    run_id: str,
+    max_picks: int = 2,
+) -> PipelineRun:
+    """Run interpreter only, then auto-approve top picks by confidence.
+
+    No debate or risk gate — lower cost than full agentic pipeline.
+    """
+    from src.agents.base import (
+        DebateResult,
+        DebatePosition,
+        RiskGateOutput,
+        GateDecision,
+    )
+    from src.agents.signal_interpreter import SignalInterpreterAgent
+    from src.agents.orchestrator import PipelineResult, PipelineRun
+
+    settings = get_settings()
+    interpreter = SignalInterpreterAgent()
+    agent_logs: list[dict] = []
+    interpretations = []
+
+    for candidate in ranked[:settings.top_n_for_interpretation]:
+        retry_result = await interpreter.interpret(candidate, regime_context)
+        if retry_result.value:
+            interpretations.append((candidate, retry_result.value))
+            agent_logs.append({
+                "agent": "signal_interpreter",
+                "ticker": candidate.ticker,
+                "confidence": retry_result.value.confidence,
+                "attempts": retry_result.attempt_count,
+                **interpreter.last_call_meta,
+            })
+
+    # Sort by confidence, take top picks
+    interpretations.sort(key=lambda x: x[1].confidence, reverse=True)
+
+    approved: list[PipelineResult] = []
+    for candidate, interp in interpretations[:max_picks]:
+        stub_debate = DebateResult(
+            ticker=candidate.ticker,
+            bull_case=DebatePosition(
+                position="BULL", argument=interp.thesis,
+                evidence=interp.key_drivers, weakness="No adversarial review", conviction=interp.confidence,
+            ),
+            bear_case=DebatePosition(
+                position="BEAR", argument="Skipped in hybrid mode.",
+                evidence=[], weakness="N/A", conviction=0,
+            ),
+            rebuttal_summary="Debate skipped in hybrid mode.",
+            final_verdict="PROCEED",
+            net_conviction=interp.confidence,
+            key_risk="No adversarial debate or risk gate review",
+        )
+        stub_gate = RiskGateOutput(
+            ticker=candidate.ticker,
+            decision=GateDecision.APPROVE,
+            reasoning="Auto-approved in hybrid mode based on interpreter confidence.",
+            position_size_pct=5.0,
+        )
+        approved.append(PipelineResult(
+            ticker=candidate.ticker,
+            signal_model=candidate.signal_model,
+            direction=candidate.direction,
+            entry_price=candidate.entry_price,
+            stop_loss=interp.suggested_stop or candidate.stop_loss,
+            target_1=interp.suggested_target or candidate.target_1,
+            target_2=candidate.target_2,
+            holding_period=interp.timeframe_days or candidate.holding_period,
+            confidence=interp.confidence,
+            interpretation=interp,
+            debate=stub_debate,
+            risk_gate=stub_gate,
+            features=candidate.features,
+        ))
+
+    return PipelineRun(
+        run_date=date.today(),
+        regime=regime_context.get("regime", "unknown"),
+        regime_details=regime_context,
+        candidates_scored=len(ranked),
+        interpreted=len(interpretations),
+        debated=0,
+        approved=approved,
+        vetoed=[],
+        agent_logs=agent_logs,
+    )
+
+
 async def _run_pipeline_core(
     today: date, settings, run_id: str, start_time: float
 ) -> None:
@@ -229,6 +409,7 @@ async def _run_pipeline_core(
     gov = GovernanceContext(run_id=run_id, run_date=str(today))
     gov.__enter__()
     gov.set_trading_mode(settings.trading_mode)
+    gov.set_execution_mode(settings.execution_mode)
     gov.set_config_hash({
         "min_price": settings.min_price,
         "min_adv": settings.min_avg_daily_volume,
@@ -476,13 +657,25 @@ async def _run_pipeline_core(
     # Update regime envelope with gated candidates
     regime_envelope.payload.gated_candidates = [c.ticker for c in ranked]
 
-    # --- Step 7: LLM Agent Pipeline ---
-    logger.info("Step 7: Running LLM agent pipeline...")
-    pipeline_result = await run_agent_pipeline(
-        candidates=ranked,
-        regime_context=regime_context,
-        run_id=run_id,
-    )
+    # --- Step 7: Agent Pipeline (mode-dependent) ---
+    execution_mode = ExecutionMode(settings.execution_mode)
+    logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
+
+    if execution_mode == ExecutionMode.QUANT_ONLY:
+        pipeline_result = _build_quant_only_result(
+            ranked, regime_context, max_picks=settings.max_final_picks,
+        )
+    elif execution_mode == ExecutionMode.HYBRID:
+        pipeline_result = await _run_hybrid_pipeline(
+            ranked, regime_context, run_id=run_id,
+            max_picks=settings.max_final_picks,
+        )
+    else:
+        pipeline_result = await run_agent_pipeline(
+            candidates=ranked,
+            regime_context=regime_context,
+            run_id=run_id,
+        )
 
     # Agent review envelope
     agent_review_envelope = StageEnvelope(
@@ -597,10 +790,11 @@ async def _run_pipeline_core(
         daily_run = DailyRun(
             run_date=today,
             regime=regime_assessment.regime.value,
-            regime_details=regime_context,
+            regime_details=_json_safe(regime_context),
             universe_size=len(filtered),
             candidates_scored=len(ranked),
             pipeline_duration_s=round(elapsed, 2),
+            execution_mode=execution_mode.value,
         )
         session.add(daily_run)
 
@@ -613,7 +807,7 @@ async def _run_pipeline_core(
                 avg_daily_volume=c.features.get("vol_sma_20", 0) or 0,
                 composite_score=c.regime_adjusted_score,
                 signal_model=c.signal_model,
-                features=c.features,
+                features=_json_safe(c.features),
             ))
 
         # Save approved signals and create outcome records for tracking
@@ -635,7 +829,7 @@ async def _run_pipeline_core(
                 risk_gate_decision=pick.risk_gate.decision.value,
                 risk_gate_reasoning=pick.risk_gate.reasoning,
                 regime=regime_assessment.regime.value,
-                features=pick.features,
+                features=_json_safe(pick.features),
             )
             session.add(signal)
             new_signals.append(signal)
@@ -662,7 +856,7 @@ async def _run_pipeline_core(
                 agent_name=log.get("agent", "unknown"),
                 model_used=log.get("model", "unknown"),
                 ticker=log.get("ticker"),
-                output_data=log,
+                output_data=_json_safe(log),
                 tokens_in=log.get("tokens_in"),
                 tokens_out=log.get("tokens_out"),
                 latency_ms=log.get("latency_ms"),
@@ -764,6 +958,7 @@ async def _run_pipeline_core(
         validation_failed=validation_failed,
         failed_checks=failed_checks,
         key_risks=validation_result.key_risks or None,
+        execution_mode=execution_mode.value,
     )
     await send_alert(alert_msg)
 
@@ -950,6 +1145,29 @@ async def main():
     import uvicorn
 
     await init_db()
+
+    # Parse --mode flag to override execution_mode at runtime
+    for arg in sys.argv:
+        if arg.startswith("--mode="):
+            mode_value = arg.split("=", 1)[1]
+            try:
+                ExecutionMode(mode_value)  # validate
+                settings = get_settings()
+                settings.execution_mode = mode_value
+                logger.info("Execution mode overridden to: %s", mode_value)
+            except ValueError:
+                logger.error("Invalid mode '%s'. Use: quant_only, hybrid, agentic_full", mode_value)
+                return
+        elif arg == "--mode" and sys.argv.index(arg) + 1 < len(sys.argv):
+            mode_value = sys.argv[sys.argv.index(arg) + 1]
+            try:
+                ExecutionMode(mode_value)
+                settings = get_settings()
+                settings.execution_mode = mode_value
+                logger.info("Execution mode overridden to: %s", mode_value)
+            except ValueError:
+                logger.error("Invalid mode '%s'. Use: quant_only, hybrid, agentic_full", mode_value)
+                return
 
     if "--run-now" in sys.argv:
         await run_morning_pipeline()
