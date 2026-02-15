@@ -1,0 +1,124 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>Performance Report</title>
+  <style>
+    :root {
+      --bg: #0f1117;
+      --card: #1a1d29;
+      --border: #2a2d3a;
+      --text: #e4e4e7;
+      --muted: #71717a;
+      --green: #22c55e;
+      --red: #ef4444;
+      --blue: #3b82f6;
+    }
+    * { margin: 0; padding: 0; box-sizing: border-box; }
+    body {
+      font-family: 'SF Mono', 'Fira Code', monospace;
+      background: var(--bg);
+      color: var(--text);
+      padding: 2rem;
+      max-width: 900px;
+      margin: 0 auto;
+    }
+    h1 { font-size: 1.5rem; margin-bottom: 1.5rem; }
+    h2 { font-size: 1.1rem; margin-bottom: 0.75rem; color: var(--blue); }
+    .card {
+      background: var(--card);
+      border: 1px solid var(--border);
+      border-radius: 8px;
+      padding: 1.25rem;
+      margin-bottom: 1rem;
+    }
+    table { width: 100%; border-collapse: collapse; font-size: 0.85rem; }
+    th, td { padding: 0.5rem 0.75rem; text-align: left; border-bottom: 1px solid var(--border); }
+    th { color: var(--muted); font-weight: normal; }
+    .positive { color: var(--green); }
+    .negative { color: var(--red); }
+    .footer { margin-top: 2rem; font-size: 0.75rem; color: var(--muted); }
+  </style>
+</head>
+<body>
+  <h1>Performance Report — Last {{ period_days }} Days</h1>
+
+  {% if performance.total_signals == 0 %}
+  <div class="card">
+    <p style="color: var(--muted); text-align: center; padding: 2rem;">
+      No closed trades in this period.
+    </p>
+  </div>
+  {% else %}
+
+  <div class="card">
+    <h2>Overall</h2>
+    <table>
+      <tr><th>Total Signals</th><td>{{ performance.overall.trades }}</td></tr>
+      <tr><th>Win Rate</th><td>{{ "%.1f"|format(performance.overall.win_rate * 100) }}%</td></tr>
+      <tr>
+        <th>Avg P&L</th>
+        <td class="{{ 'positive' if performance.overall.avg_pnl > 0 else 'negative' }}">
+          {{ "%+.2f"|format(performance.overall.avg_pnl) }}%
+        </td>
+      </tr>
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>By Signal Model</h2>
+    <table>
+      <tr><th>Model</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr>
+      {% for model, stats in performance.by_model.items() %}
+      <tr>
+        <td>{{ model }}</td>
+        <td>{{ stats.trades }}</td>
+        <td>{{ "%.1f"|format(stats.win_rate * 100) }}%</td>
+        <td class="{{ 'positive' if stats.avg_pnl > 0 else 'negative' }}">
+          {{ "%+.2f"|format(stats.avg_pnl) }}%
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>By Regime</h2>
+    <table>
+      <tr><th>Regime</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr>
+      {% for regime, stats in performance.by_regime.items() %}
+      <tr>
+        <td>{{ regime }}</td>
+        <td>{{ stats.trades }}</td>
+        <td>{{ "%.1f"|format(stats.win_rate * 100) }}%</td>
+        <td class="{{ 'positive' if stats.avg_pnl > 0 else 'negative' }}">
+          {{ "%+.2f"|format(stats.avg_pnl) }}%
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  <div class="card">
+    <h2>By Confidence Bucket</h2>
+    <table>
+      <tr><th>Bucket</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr>
+      {% for bucket, stats in performance.by_confidence.items() %}
+      <tr>
+        <td>{{ bucket }}</td>
+        <td>{{ stats.trades }}</td>
+        <td>{{ "%.1f"|format(stats.win_rate * 100) }}%</td>
+        <td class="{{ 'positive' if stats.avg_pnl > 0 else 'negative' }}">
+          {{ "%+.2f"|format(stats.avg_pnl) }}%
+        </td>
+      </tr>
+      {% endfor %}
+    </table>
+  </div>
+
+  {% endif %}
+
+  <div class="footer">Multi-Agentic Screener v0.1.0</div>
+</body>
+</html>
