@@ -191,6 +191,35 @@ class TestSparseDataResilience:
         assert result.threshold_adjustments[0].parameter == "breakout_threshold"
 
     @pytest.mark.asyncio
+    async def test_threshold_adjustments_with_null_numeric_values(self):
+        """LLM provides all keys but null values for numerics — entry dropped."""
+        llm_response = _base_llm_response(
+            threshold_adjustments=[
+                {
+                    "parameter": "vix_threshold",
+                    "current_value": None,
+                    "suggested_value": None,
+                    "reasoning": "Insufficient data",
+                    "confidence": None,
+                    "evidence_sample_size": None,
+                },
+            ],
+        )
+
+        async def mock_call_llm(*, model, system_prompt, user_prompt, max_tokens, temperature):
+            return {"content": llm_response}
+
+        agent = MetaAnalystAgent.__new__(MetaAnalystAgent)
+        agent.name = "meta_analyst"
+        agent.model = "claude-opus-4-20250514"
+
+        with patch("src.agents.meta_analyst.call_llm", side_effect=mock_call_llm):
+            result = await agent.analyze(_performance_data_without_divergence())
+
+        assert result is not None
+        assert result.threshold_adjustments == []
+
+    @pytest.mark.asyncio
     async def test_all_threshold_adjustments_malformed(self):
         """All entries malformed — should parse with empty list."""
         llm_response = _base_llm_response(

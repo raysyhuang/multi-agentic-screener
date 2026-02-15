@@ -90,17 +90,21 @@ class MetaAnalystAgent(BaseAgent):
             return None
 
         # Sanitize threshold_adjustments — LLMs may produce malformed entries
-        # when data is sparse (e.g., prose instead of numeric fields)
+        # when data is sparse (e.g., None values, prose instead of numbers)
         raw_adjustments = content.get("threshold_adjustments", [])
         if isinstance(raw_adjustments, list):
-            required_keys = {"parameter", "current_value", "suggested_value", "reasoning",
-                             "confidence", "evidence_sample_size"}
+            numeric_keys = {"current_value", "suggested_value", "confidence", "evidence_sample_size"}
+            required_keys = numeric_keys | {"parameter", "reasoning"}
             valid = []
             for adj in raw_adjustments:
-                if isinstance(adj, dict) and required_keys.issubset(adj.keys()):
-                    valid.append(adj)
-                else:
-                    logger.debug("Dropping malformed threshold_adjustment: %s", adj)
+                if not isinstance(adj, dict) or not required_keys.issubset(adj.keys()):
+                    logger.debug("Dropping threshold_adjustment (missing keys): %s", adj)
+                    continue
+                # Check numeric fields are actually numeric (not None/str)
+                if any(not isinstance(adj.get(k), (int, float)) for k in numeric_keys):
+                    logger.debug("Dropping threshold_adjustment (non-numeric values): %s", adj)
+                    continue
+                valid.append(adj)
             content["threshold_adjustments"] = valid
 
         try:
