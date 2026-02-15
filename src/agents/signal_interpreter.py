@@ -12,6 +12,14 @@ import logging
 
 from src.agents.base import BaseAgent, SignalInterpretation
 from src.agents.llm_router import call_llm
+from src.agents.retry import (
+    RetryPolicy,
+    RetryResult,
+    AttemptRecord,
+    FailureReason,
+    build_retry_prompt_suffix,
+)
+from src.agents.quality import check_interpretation_quality
 from src.config import get_settings
 from src.signals.ranker import RankedCandidate
 
@@ -50,36 +58,147 @@ class SignalInterpreterAgent(BaseAgent):
         settings = get_settings()
         super().__init__("signal_interpreter", settings.signal_interpreter_model)
 
-    async def interpret(self, candidate: RankedCandidate, regime_context: dict) -> SignalInterpretation | None:
-        """Generate thesis for a ranked candidate."""
-        user_prompt = self._build_user_prompt(candidate, regime_context)
+    async def interpret(
+        self,
+        candidate: RankedCandidate,
+        regime_context: dict,
+        retry_policy: RetryPolicy | None = None,
+        memory_context: dict | None = None,
+    ) -> RetryResult[SignalInterpretation]:
+        """Generate thesis for a ranked candidate with retry support."""
+        settings = get_settings()
+        policy = retry_policy or RetryPolicy(
+            max_attempts=settings.agent_max_retry_attempts,
+            max_total_cost_usd=settings.agent_retry_cost_cap_usd,
+            retry_on_low_quality=settings.agent_retry_on_low_quality,
+        )
 
-        try:
-            result = await call_llm(
-                model=self.model,
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=user_prompt,
-                max_tokens=1500,
-                temperature=0.3,
-            )
-        except Exception as e:
-            logger.error("Signal interpreter failed for %s: %s", candidate.ticker, e)
-            return None
+        result = RetryResult[SignalInterpretation]()
+        base_prompt = self._build_user_prompt(candidate, regime_context, memory_context)
+        prompt = base_prompt
 
-        self._store_meta(result)
-        content = result["content"]
-        if isinstance(content, str):
-            logger.warning("Signal interpreter returned non-JSON for %s", candidate.ticker)
-            return None
+        for attempt_num in range(1, policy.max_attempts + 1):
+            # Cost cap check
+            if result.total_cost_usd >= policy.max_total_cost_usd:
+                logger.warning(
+                    "Cost cap reached for %s (%.4f >= %.4f), stopping retries",
+                    candidate.ticker, result.total_cost_usd, policy.max_total_cost_usd,
+                )
+                break
 
-        try:
-            return SignalInterpretation(**content)
-        except Exception as e:
-            logger.warning("Failed to parse interpretation for %s: %s", candidate.ticker, e)
-            return None
+            # Call LLM
+            try:
+                llm_result = await call_llm(
+                    model=self.model,
+                    system_prompt=SYSTEM_PROMPT,
+                    user_prompt=prompt,
+                    max_tokens=1500,
+                    temperature=0.3,
+                )
+            except Exception as e:
+                logger.error("Signal interpreter failed for %s: %s", candidate.ticker, e)
+                record = AttemptRecord(
+                    attempt_num=attempt_num,
+                    success=False,
+                    failure_reason=FailureReason.LLM_API_ERROR,
+                    error_message=str(e),
+                )
+                result.add_attempt(record)
+                if attempt_num < policy.max_attempts and policy.should_retry(FailureReason.LLM_API_ERROR):
+                    prompt = base_prompt + build_retry_prompt_suffix(
+                        attempt_num + 1, FailureReason.LLM_API_ERROR, str(e)
+                    )
+                    continue
+                break
 
-    def _build_user_prompt(self, candidate: RankedCandidate, regime_context: dict) -> str:
-        data = {
+            self._store_meta(llm_result)
+            tokens = llm_result.get("tokens_in", 0) + llm_result.get("tokens_out", 0)
+            cost = llm_result.get("cost_usd", 0.0)
+            result.add_cost(tokens, cost)
+
+            content = llm_result["content"]
+            raw = llm_result.get("raw", str(content))
+
+            # Check for JSON parse failure (content is still a string)
+            if isinstance(content, str):
+                logger.warning("Signal interpreter returned non-JSON for %s", candidate.ticker)
+                record = AttemptRecord(
+                    attempt_num=attempt_num,
+                    success=False,
+                    failure_reason=FailureReason.PARSE_ERROR,
+                    error_message="LLM returned non-JSON response",
+                    raw_output=raw,
+                )
+                result.add_attempt(record)
+                if attempt_num < policy.max_attempts and policy.should_retry(FailureReason.PARSE_ERROR):
+                    prompt = base_prompt + build_retry_prompt_suffix(
+                        attempt_num + 1, FailureReason.PARSE_ERROR, "Response was not valid JSON"
+                    )
+                    continue
+                break
+
+            # Parse into Pydantic model
+            try:
+                interpretation = SignalInterpretation(**content)
+            except Exception as e:
+                logger.warning("Failed to parse interpretation for %s: %s", candidate.ticker, e)
+                record = AttemptRecord(
+                    attempt_num=attempt_num,
+                    success=False,
+                    failure_reason=FailureReason.PARSE_ERROR,
+                    error_message=str(e),
+                    raw_output=raw,
+                )
+                result.add_attempt(record)
+                if attempt_num < policy.max_attempts and policy.should_retry(FailureReason.PARSE_ERROR):
+                    prompt = base_prompt + build_retry_prompt_suffix(
+                        attempt_num + 1, FailureReason.PARSE_ERROR, str(e)
+                    )
+                    continue
+                break
+
+            # Quality check
+            quality = check_interpretation_quality(interpretation)
+            if not quality.passed:
+                logger.info(
+                    "Quality check failed for %s: %s", candidate.ticker, quality.summary
+                )
+                if (
+                    policy.retry_on_low_quality
+                    and attempt_num < policy.max_attempts
+                    and policy.should_retry(FailureReason.LOW_QUALITY)
+                ):
+                    record = AttemptRecord(
+                        attempt_num=attempt_num,
+                        success=False,
+                        failure_reason=FailureReason.LOW_QUALITY,
+                        error_message=quality.summary,
+                        raw_output=raw,
+                    )
+                    result.add_attempt(record)
+                    prompt = base_prompt + build_retry_prompt_suffix(
+                        attempt_num + 1, FailureReason.LOW_QUALITY, quality.summary
+                    )
+                    continue
+                # Accept low quality result rather than returning None
+                result.value = interpretation
+                result.add_attempt(AttemptRecord(attempt_num=attempt_num, success=True))
+                return result
+
+            # Success
+            result.value = interpretation
+            result.add_attempt(AttemptRecord(attempt_num=attempt_num, success=True))
+            return result
+
+        return result
+
+    def _build_user_prompt(
+        self,
+        candidate: RankedCandidate,
+        regime_context: dict,
+        memory_context: dict | None = None,
+    ) -> str:
+        data: dict = {
             "ticker": candidate.ticker,
             "signal_model": candidate.signal_model,
             "raw_score": candidate.raw_score,
@@ -94,6 +213,8 @@ class SignalInterpreterAgent(BaseAgent):
             "features": candidate.features,
             "regime": regime_context,
         }
+        if memory_context:
+            data["memory"] = memory_context
         return f"Analyze this signal candidate and produce your thesis:\n\n{json.dumps(data, indent=2, default=str)}"
 
     def _build_system_prompt(self) -> str:

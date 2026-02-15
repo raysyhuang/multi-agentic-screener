@@ -459,6 +459,7 @@ async def _run_pipeline_core(
     pipeline_result = await run_agent_pipeline(
         candidates=ranked,
         regime_context=regime_context,
+        run_id=run_id,
     )
 
     # Agent review envelope

@@ -1,0 +1,27 @@
+name: sector_rotation
+description: >
+  Sector rotation skill. Check current portfolio sector exposure
+  before adding a new position to prevent sector concentration.
+
+preconditions:
+  check_sector_exposure: true
+
+steps:
+  - action: tool_call
+    tool: get_sector_exposure
+    arguments:
+      ticker: "{{ticker}}"
+  - action: prompt_addon
+    prompt_text: >
+      SECTOR EXPOSURE CHECK: Verify that adding {{ticker}} does not
+      create excessive sector concentration. If current sector exposure
+      exceeds 30%, reduce position size proportionally.
+
+prompt_addons:
+  - "Sector rotation active: monitor sector concentration limits."
+
+validations:
+  - check: has_tool_results
+    description: Sector exposure check completed
+  - check: no_errors
+    description: No errors in sector data retrieval

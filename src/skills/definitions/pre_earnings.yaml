@@ -1,0 +1,27 @@
+name: pre_earnings
+description: >
+  Pre-earnings analysis skill. When a candidate has earnings within
+  the next 14 days, check earnings beat history and cap position size.
+
+preconditions:
+  has_earnings_soon: true
+
+steps:
+  - action: tool_call
+    tool: check_earnings_date
+    arguments:
+      ticker: "{{ticker}}"
+  - action: prompt_addon
+    prompt_text: >
+      EARNINGS WARNING: {{ticker}} has earnings approaching.
+      Consider reducing position size to max 5% and tightening stops.
+      Historical earnings volatility should be factored into risk assessment.
+
+prompt_addons:
+  - "Pre-earnings analysis active: cap position size at 5%, tighten stops by 20%."
+
+validations:
+  - check: has_tool_results
+    description: Earnings date check completed
+  - check: "max_position_size:5"
+    description: Position capped at 5% for pre-earnings

@@ -1,0 +1,29 @@
+name: high_volatility
+description: >
+  High-volatility regime skill. When the market regime indicates
+  elevated volatility, tighten stops and reduce position sizes.
+
+preconditions:
+  regime:
+    in: ["bear", "choppy"]
+
+steps:
+  - action: tool_call
+    tool: lookup_price_history
+    arguments:
+      ticker: "{{ticker}}"
+      days: 10
+  - action: prompt_addon
+    prompt_text: >
+      HIGH VOLATILITY MODE: Current regime is {{regime}}.
+      Apply conservative risk management:
+      - Reduce position size by 30-50%
+      - Tighten stops by 20%
+      - Consider shorter holding periods
+
+prompt_addons:
+  - "High volatility active: reduce size, tighten stops, shorten holding period."
+
+validations:
+  - check: no_errors
+    description: Price history check completed without errors

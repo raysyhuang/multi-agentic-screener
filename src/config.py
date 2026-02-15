@@ -31,7 +31,7 @@ class Settings(BaseSettings):
 
     # --- Model configs ---
     signal_interpreter_model: str = "claude-sonnet-4-5-20250929"
-    adversarial_model: str = "gpt-4.1"
+    adversarial_model: str = "gpt-5.2"
     risk_gate_model: str = "claude-opus-4-6"
     meta_analyst_model: str = "claude-opus-4-6"
 
@@ -53,6 +53,17 @@ class Settings(BaseSettings):
     morning_run_minute: int = 0
     afternoon_check_hour: int = 16
     afternoon_check_minute: int = 30
+
+    # --- Planner / Verifier ---
+    planner_model: str = "gpt-5.2-mini"
+    verifier_model: str = "gpt-5.2-mini"
+
+    # --- Retry settings ---
+    agent_max_retry_attempts: int = 2
+    agent_retry_cost_cap_usd: float = 0.50
+    agent_retry_on_low_quality: bool = False
+    max_run_cost_usd: float = 2.00
+    max_verifier_retries: int = 2
 
     # --- Regime thresholds ---
     vix_high_threshold: float = 25.0
