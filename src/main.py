@@ -71,12 +71,21 @@ logger = logging.getLogger(__name__)
 
 def _json_safe(obj):
     """Recursively convert non-JSON-serializable types in a dict/list structure."""
+    import numpy as np
     if isinstance(obj, dict):
         return {k: _json_safe(v) for k, v in obj.items()}
     if isinstance(obj, list):
         return [_json_safe(v) for v in obj]
     if isinstance(obj, (date, datetime)):
         return obj.isoformat()
+    if isinstance(obj, (np.integer,)):
+        return int(obj)
+    if isinstance(obj, (np.floating,)):
+        return float(obj)
+    if isinstance(obj, np.ndarray):
+        return obj.tolist()
+    if isinstance(obj, (np.bool_,)):
+        return bool(obj)
     return obj
 
 
