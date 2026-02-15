@@ -537,6 +537,171 @@ async def apply_threshold_snapshot(run_date: str):
     return {"status": "applied", "run_date": run_date}
 
 
+# ---------------------------------------------------------------------------
+# Divergence Ledger Endpoints
+# ---------------------------------------------------------------------------
+
+@app.get("/api/divergence/events")
+async def divergence_events(
+    days: int = Query(default=30, le=365),
+    event_type: str | None = Query(default=None, description="VETO|PROMOTE|RESIZE"),
+    regime: str | None = Query(default=None),
+    resolved: bool | None = Query(default=None),
+):
+    """Return divergence events with optional filters."""
+    from datetime import timedelta
+    from src.db.models import DivergenceEvent
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        query = select(DivergenceEvent).where(DivergenceEvent.run_date >= cutoff)
+
+        if event_type:
+            query = query.where(DivergenceEvent.event_type == event_type.upper())
+        if regime:
+            query = query.where(DivergenceEvent.regime == regime)
+        if resolved is not None:
+            query = query.where(DivergenceEvent.outcome_resolved == resolved)
+
+        query = query.order_by(DivergenceEvent.run_date.desc()).limit(200)
+        result = await session.execute(query)
+        events = result.scalars().all()
+
+    return [
+        {
+            "id": e.id,
+            "run_id": e.run_id,
+            "run_date": str(e.run_date),
+            "ticker": e.ticker,
+            "event_type": e.event_type,
+            "execution_mode": e.execution_mode,
+            "quant_rank": e.quant_rank,
+            "agentic_rank": e.agentic_rank,
+            "quant_size": e.quant_size,
+            "agentic_size": e.agentic_size,
+            "quant_score": e.quant_score,
+            "agentic_score": e.agentic_score,
+            "reason_codes": e.reason_codes,
+            "llm_cost_usd": e.llm_cost_usd,
+            "confidence": e.confidence,
+            "regime": e.regime,
+            "outcome_resolved": e.outcome_resolved,
+        }
+        for e in events
+    ]
+
+
+@app.get("/api/divergence/summary")
+async def divergence_summary(days: int = Query(default=60, le=365)):
+    """Aggregated divergence stats: by event type, regime, confidence bucket."""
+    from datetime import timedelta
+    from src.db.models import DivergenceEvent, DivergenceOutcome
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        query = (
+            select(DivergenceEvent, DivergenceOutcome)
+            .outerjoin(DivergenceOutcome, DivergenceOutcome.divergence_id == DivergenceEvent.id)
+            .where(DivergenceEvent.run_date >= cutoff)
+        )
+        result = await session.execute(query)
+        rows = result.all()
+
+    if not rows:
+        return {
+            "period_days": days,
+            "total_events": 0,
+            "by_event_type": {},
+            "by_regime": {},
+            "by_confidence_bucket": {},
+            "total_llm_cost": 0.0,
+            "cost_per_positive_divergence": None,
+            "overall_improvement_rate": None,
+        }
+
+    # Aggregate by event type
+    by_type: dict[str, dict] = {}
+    by_regime: dict[str, dict[str, dict]] = {}
+    by_conf: dict[str, dict] = {}
+    total_cost = 0.0
+    positive_count = 0
+
+    for event, outcome in rows:
+        et = event.event_type
+        total_cost += event.llm_cost_usd or 0.0
+
+        # By event type
+        if et not in by_type:
+            by_type[et] = {"events": 0, "resolved": 0, "improved": 0, "deltas": []}
+        by_type[et]["events"] += 1
+        if outcome:
+            by_type[et]["resolved"] += 1
+            if outcome.improved_vs_quant:
+                by_type[et]["improved"] += 1
+                positive_count += 1
+            if outcome.return_delta is not None:
+                by_type[et]["deltas"].append(outcome.return_delta)
+
+        # By regime
+        reg = event.regime or "unknown"
+        if reg not in by_regime:
+            by_regime[reg] = {}
+        if et not in by_regime[reg]:
+            by_regime[reg][et] = {"events": 0, "resolved": 0, "improved": 0, "deltas": []}
+        by_regime[reg][et]["events"] += 1
+        if outcome:
+            by_regime[reg][et]["resolved"] += 1
+            if outcome.improved_vs_quant:
+                by_regime[reg][et]["improved"] += 1
+            if outcome.return_delta is not None:
+                by_regime[reg][et]["deltas"].append(outcome.return_delta)
+
+        # By confidence bucket
+        conf = event.confidence
+        if conf is not None:
+            bucket = "high" if conf >= 70 else "medium" if conf >= 40 else "low"
+        else:
+            bucket = "unknown"
+        if bucket not in by_conf:
+            by_conf[bucket] = {"events": 0, "resolved": 0, "improved": 0, "deltas": []}
+        by_conf[bucket]["events"] += 1
+        if outcome:
+            by_conf[bucket]["resolved"] += 1
+            if outcome.improved_vs_quant:
+                by_conf[bucket]["improved"] += 1
+            if outcome.return_delta is not None:
+                by_conf[bucket]["deltas"].append(outcome.return_delta)
+
+    def _stats(d: dict) -> dict:
+        resolved = d["resolved"]
+        return {
+            "events": d["events"],
+            "resolved": resolved,
+            "win_rate": round(d["improved"] / resolved, 4) if resolved else None,
+            "avg_return_delta": round(sum(d["deltas"]) / len(d["deltas"]), 4) if d["deltas"] else None,
+        }
+
+    total_resolved = sum(v["resolved"] for v in by_type.values())
+
+    return {
+        "period_days": days,
+        "total_events": sum(v["events"] for v in by_type.values()),
+        "by_event_type": {k: _stats(v) for k, v in by_type.items()},
+        "by_regime": {
+            reg: {et: _stats(v) for et, v in types.items()}
+            for reg, types in by_regime.items()
+        },
+        "by_confidence_bucket": {k: _stats(v) for k, v in by_conf.items()},
+        "total_llm_cost": round(total_cost, 4),
+        "cost_per_positive_divergence": (
+            round(total_cost / positive_count, 4) if positive_count > 0 else None
+        ),
+        "overall_improvement_rate": (
+            round(positive_count / total_resolved, 4) if total_resolved > 0 else None
+        ),
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Health check for Heroku / uptime monitors."""

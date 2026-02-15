@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+import hashlib
 import json
 import logging
 import os
@@ -31,7 +32,7 @@ from src.contracts import (
 )
 from src.data.aggregator import DataAggregator
 from sqlalchemy import select, func
-from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact
+from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
@@ -61,6 +62,11 @@ from src.governance.performance_monitor import (
     RollingMetrics,
 )
 from src.portfolio.construct import build_trade_plan, PortfolioConfig
+from src.governance.divergence_ledger import (
+    freeze_quant_baseline,
+    compute_divergences,
+    DivergenceType,
+)
 
 logging.basicConfig(
     level=logging.INFO,
@@ -677,6 +683,41 @@ async def _run_pipeline_core(
             run_id=run_id,
         )
 
+    # --- Step 7a: Divergence Ledger — freeze quant baseline and compute divergences ---
+    divergence_records = []
+    if execution_mode != ExecutionMode.QUANT_ONLY:
+        try:
+            quant_baseline_result = _build_quant_only_result(
+                ranked, regime_context, max_picks=settings.max_final_picks,
+            )
+            config_hash_str = json.dumps(
+                _json_safe({"min_price": settings.min_price,
+                            "min_adv": settings.min_avg_daily_volume,
+                            "top_n": settings.top_n_for_interpretation,
+                            "max_picks": settings.max_final_picks}),
+                sort_keys=True,
+            )
+            quant_baseline = freeze_quant_baseline(
+                ranked=ranked,
+                max_picks=settings.max_final_picks,
+                regime=regime_assessment.regime.value,
+                config_hash=hashlib.md5(config_hash_str.encode()).hexdigest(),
+            )
+            divergence_records = compute_divergences(
+                quant_baseline=quant_baseline,
+                agentic_result=pipeline_result,
+                agent_logs=pipeline_result.agent_logs,
+            )
+            if divergence_records:
+                logger.info(
+                    "Divergence ledger: %d events — %s",
+                    len(divergence_records),
+                    ", ".join(f"{d.event_type.value}({d.ticker})" for d in divergence_records),
+                )
+        except Exception as e:
+            logger.error("Divergence ledger failed (non-fatal): %s", e)
+            divergence_records = []
+
     # Agent review envelope
     agent_review_envelope = StageEnvelope(
         run_id=run_id,
@@ -861,6 +902,33 @@ async def _run_pipeline_core(
                 tokens_out=log.get("tokens_out"),
                 latency_ms=log.get("latency_ms"),
                 cost_usd=log.get("cost_usd"),
+            ))
+
+        # Persist divergence events
+        for drec in divergence_records:
+            session.add(DivergenceEvent(
+                run_id=run_id,
+                run_date=today,
+                ticker=drec.ticker,
+                event_type=drec.event_type.value,
+                execution_mode=execution_mode.value,
+                quant_rank=drec.quant_rank,
+                agentic_rank=drec.agentic_rank,
+                quant_size=drec.quant_size,
+                agentic_size=drec.agentic_size,
+                quant_score=drec.quant_score,
+                agentic_score=drec.agentic_score,
+                reason_codes=drec.reason_codes,
+                llm_cost_usd=drec.llm_cost_usd,
+                confidence=drec.confidence,
+                regime=regime_assessment.regime.value,
+                quant_baseline_snapshot=_json_safe(quant_baseline) if divergence_records else None,
+                quant_entry_price=drec.quant_entry_price,
+                quant_stop_loss=drec.quant_stop_loss,
+                quant_target_1=drec.quant_target_1,
+                quant_holding_period=drec.quant_holding_period,
+                quant_direction=drec.quant_direction,
+                outcome_resolved=False,
             ))
 
         # Persist stage envelopes for full run traceability

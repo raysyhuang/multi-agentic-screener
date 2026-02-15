@@ -50,6 +50,16 @@ async def check_open_positions() -> list[dict]:
                 logger.error("Failed to evaluate %s: %s", outcome.ticker, e)
 
     logger.info("Updated %d positions", len(updates))
+
+    # Resolve divergence outcomes for closed positions
+    try:
+        from src.governance.divergence_ledger import update_divergence_outcomes
+        div_results = await update_divergence_outcomes()
+        if div_results:
+            logger.info("Resolved %d divergence outcomes", len(div_results))
+    except Exception as e:
+        logger.error("Divergence outcome update failed (non-fatal): %s", e)
+
     return updates
 
 

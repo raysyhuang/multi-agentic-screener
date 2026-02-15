@@ -9,6 +9,7 @@ from sqlalchemy import (
     Date,
     DateTime,
     Float,
+    ForeignKey,
     Integer,
     String,
     Text,
@@ -147,6 +148,71 @@ class AgentLog(Base):
     tokens_out: Mapped[int | None] = mapped_column(Integer, nullable=True)
     latency_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
     cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DivergenceEvent(Base):
+    """One record per diff per ticker at decision time — tracks where LLM diverged from quant baseline."""
+
+    __tablename__ = "divergence_events"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    event_type: Mapped[str] = mapped_column(String(10), nullable=False)  # VETO / PROMOTE / RESIZE
+    execution_mode: Mapped[str] = mapped_column(String(20), nullable=False)
+
+    quant_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    agentic_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quant_size: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)
+    agentic_size: Mapped[float] = mapped_column(Float, nullable=False, default=5.0)
+    quant_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agentic_score: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    reason_codes: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    llm_cost_usd: Mapped[float | None] = mapped_column(Float, nullable=True, default=0.0)
+    confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    quant_baseline_snapshot: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Denormalized quant trade params for counterfactual simulation
+    quant_entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quant_stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quant_target_1: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quant_holding_period: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    quant_direction: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
+    outcome_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class DivergenceOutcome(Base):
+    """Attached after trade closes — scores the LLM divergence against realized outcomes."""
+
+    __tablename__ = "divergence_outcomes"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    divergence_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("divergence_events.id"), nullable=False, index=True
+    )
+
+    agentic_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    agentic_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    quant_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    quant_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    max_adverse_excursion: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_favorable_excursion: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    return_delta: Mapped[float | None] = mapped_column(Float, nullable=True)
+    improved_vs_quant: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
