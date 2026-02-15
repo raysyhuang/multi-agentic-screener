@@ -3,11 +3,12 @@
 from __future__ import annotations
 
 import asyncio
+import json
 import logging
 import os
 import time
 from dataclasses import asdict
-from datetime import date, timedelta
+from datetime import date, datetime, timedelta
 
 from src.config import get_settings
 from src.contracts import (
@@ -67,6 +68,17 @@ logging.basicConfig(
 logger = logging.getLogger(__name__)
 
 
+def _json_safe(obj):
+    """Recursively convert non-JSON-serializable types in a dict/list structure."""
+    if isinstance(obj, dict):
+        return {k: _json_safe(v) for k, v in obj.items()}
+    if isinstance(obj, list):
+        return [_json_safe(v) for v in obj]
+    if isinstance(obj, (date, datetime)):
+        return obj.isoformat()
+    return obj
+
+
 async def run_morning_pipeline() -> None:
     """Main daily pipeline — runs at 6:00 AM ET.
 
@@ -111,7 +123,7 @@ async def run_morning_pipeline() -> None:
                     run_date=today,
                     stage=StageName.FINAL_OUTPUT.value,
                     status=StageStatus.FAILED.value,
-                    payload=no_trade.model_dump(),
+                    payload=_json_safe(no_trade.model_dump()),
                     errors=[{"code": "PIPELINE_CRASH", "message": str(exc)}],
                 ))
         except Exception as db_exc:
@@ -655,6 +667,7 @@ async def _run_pipeline_core(
                     if hasattr(envelope.payload, "model_dump")
                     else envelope.payload
                 )
+                payload_dict = _json_safe(payload_dict)
             except Exception:
                 payload_dict = str(envelope.payload)
             session.add(PipelineArtifact(
@@ -689,7 +702,7 @@ async def _run_pipeline_core(
             run_date=today,
             stage="governance",
             status="success",
-            payload=gov.record.to_dict(),
+            payload=_json_safe(gov.record.to_dict()),
         ))
 
     # --- Step 8c: Portfolio construction ---
