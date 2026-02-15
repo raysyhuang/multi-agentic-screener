@@ -71,19 +71,34 @@ class PolygonClient:
             data = resp.json()
         return data.get("results", [])
 
-    async def get_all_tickers(self, market: str = "stocks") -> list[dict]:
-        """Fetch full ticker list for universe construction."""
+    async def get_all_tickers(
+        self,
+        market: str = "stocks",
+        ticker_type: str | None = None,
+        max_pages: int = 20,
+    ) -> list[dict]:
+        """Fetch ticker list for universe construction.
+
+        Args:
+            market: Market type (default "stocks")
+            ticker_type: Filter by type (e.g. "CS" for Common Stock)
+            max_pages: Safety limit on pagination (default 20 = 20,000 tickers)
+        """
         url = f"{BASE_URL}/v3/reference/tickers"
         params = self._params(market=market, active="true", limit=1000)
+        if ticker_type:
+            params["type"] = ticker_type
         all_tickers = []
+        page = 0
         async with httpx.AsyncClient(timeout=30) as client:
-            while url:
+            while url and page < max_pages:
                 resp = await client.get(url, params=params)
                 resp.raise_for_status()
                 data = resp.json()
                 all_tickers.extend(data.get("results", []))
                 url = data.get("next_url")
                 params = {"apiKey": self._api_key} if url else {}
+                page += 1
         return all_tickers
 
     async def get_grouped_daily(self, on_date: date) -> list[dict]:

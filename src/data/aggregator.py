@@ -184,38 +184,40 @@ class DataAggregator:
             "ARCX": "NYSE", "BATS": "NASDAQ",
         }
 
-        # 1. Fetch reference tickers (all active US stocks)
-        ref_tickers = await self.polygon.get_all_tickers(market="stocks")
+        # Run reference tickers (CS only) and grouped daily in parallel
+        async def _fetch_grouped() -> list[dict]:
+            today = date.today()
+            for offset in range(0, 6):
+                try_date = today - timedelta(days=offset)
+                try:
+                    bars = await self.polygon.get_grouped_daily(try_date)
+                    if bars:
+                        logger.info("Polygon grouped daily: %d bars for %s", len(bars), try_date)
+                        return bars
+                except Exception:
+                    continue
+            return []
 
-        # Build lookup: ticker → exchange (only common stocks on NYSE/NASDAQ)
+        ref_tickers, grouped = await asyncio.gather(
+            self.polygon.get_all_tickers(market="stocks", ticker_type="CS"),
+            _fetch_grouped(),
+        )
+
+        # Build lookup: ticker → exchange (only NYSE/NASDAQ)
         ref_map: dict[str, str] = {}
         for t in ref_tickers:
             ticker = t.get("ticker", "")
             exchange = _EXCHANGE_MAP.get(t.get("primary_exchange", ""), "")
-            typ = t.get("type", "")
-            if exchange in ("NYSE", "NASDAQ") and typ == "CS":
+            if exchange in ("NYSE", "NASDAQ"):
                 ref_map[ticker] = exchange
 
         logger.info("Polygon reference: %d common stocks on NYSE/NASDAQ", len(ref_map))
-
-        # 2. Fetch grouped daily bars (try recent dates)
-        today = date.today()
-        grouped = []
-        for offset in range(0, 6):
-            try_date = today - timedelta(days=offset)
-            try:
-                grouped = await self.polygon.get_grouped_daily(try_date)
-                if grouped:
-                    logger.info("Polygon grouped daily: %d bars for %s", len(grouped), try_date)
-                    break
-            except Exception:
-                continue
 
         if not grouped:
             logger.error("No grouped daily data found in the last 6 days")
             return []
 
-        # 3. Merge: only include tickers that are CS on NYSE/NASDAQ
+        # Merge: only include tickers that are CS on NYSE/NASDAQ
         universe = []
         for bar in grouped:
             ticker = bar.get("T", "")
