@@ -1,13 +1,18 @@
-"""Composite scoring and meta-model ranking.
+"""Composite scoring, meta-model ranking, confluence detection, and signal cooldown.
 
 Combines signals from breakout, mean_reversion, and catalyst models.
 Ranks by composite score within the current regime context.
+Includes confluence detection (multiple models flagging same ticker = high conviction)
+and signal cooldown (suppress re-triggering for N days).
+
+Confluence and cooldown patterns ported from KooCore-D and gemini_STST.
 """
 
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, asdict
+from dataclasses import dataclass, field
+from datetime import date, timedelta
 
 from src.features.regime import Regime, get_regime_allowed_models
 from src.signals.breakout import BreakoutSignal
@@ -180,3 +185,140 @@ def deduplicate_signals(signals: list[AnySignal]) -> list[AnySignal]:
         if ticker not in best_by_ticker or signal.score > best_by_ticker[ticker].score:
             best_by_ticker[ticker] = signal
     return list(best_by_ticker.values())
+
+
+# --- Confluence Detection ---
+
+
+@dataclass
+class ConfluenceResult:
+    """Result of confluence analysis for a single ticker."""
+
+    ticker: str
+    signal_models: list[str]
+    confluence_count: int  # How many models flag this ticker
+    is_confluence: bool    # 2+ models = confluence
+    confluence_bonus: float  # Score boost for multi-model agreement
+
+
+def detect_confluence(signals: list[AnySignal]) -> dict[str, ConfluenceResult]:
+    """Detect tickers flagged by multiple signal models (confluence).
+
+    When 2+ models agree on the same ticker, hit rate improves significantly
+    (KooCore-D data: 2 factors → 55-65%, 3+ factors → 65-75%).
+
+    Returns a dict of ticker → ConfluenceResult.
+    """
+    by_ticker: dict[str, list[str]] = {}
+
+    for signal in signals:
+        model_name = MODEL_MAP.get(type(signal), "unknown")
+        by_ticker.setdefault(signal.ticker, []).append(model_name)
+
+    results: dict[str, ConfluenceResult] = {}
+    for ticker, models in by_ticker.items():
+        unique_models = list(set(models))
+        count = len(unique_models)
+        is_confluence = count >= 2
+
+        # Bonus: 10% per additional model beyond 1
+        bonus = (count - 1) * 0.10 if count > 1 else 0.0
+
+        results[ticker] = ConfluenceResult(
+            ticker=ticker,
+            signal_models=unique_models,
+            confluence_count=count,
+            is_confluence=is_confluence,
+            confluence_bonus=bonus,
+        )
+
+        if is_confluence:
+            logger.info(
+                "Confluence detected: %s flagged by %d models (%s) — +%.0f%% bonus",
+                ticker, count, ", ".join(unique_models), bonus * 100,
+            )
+
+    return results
+
+
+def apply_confluence_bonus(
+    candidates: list[RankedCandidate],
+    confluence: dict[str, ConfluenceResult],
+) -> list[RankedCandidate]:
+    """Apply confluence score bonus to candidates flagged by multiple models.
+
+    Mutates regime_adjusted_score in place and re-sorts.
+    """
+    for c in candidates:
+        cr = confluence.get(c.ticker)
+        if cr and cr.is_confluence:
+            old_score = c.regime_adjusted_score
+            c.regime_adjusted_score = round(old_score * (1 + cr.confluence_bonus), 2)
+            c.components["confluence_count"] = cr.confluence_count
+            c.components["confluence_models"] = cr.signal_models
+
+    # Re-sort after bonus application
+    candidates.sort(key=lambda c: c.regime_adjusted_score, reverse=True)
+    return candidates
+
+
+# --- Signal Cooldown ---
+
+
+COOLDOWN_DAYS = 5  # Suppress same ticker for N calendar days after signal
+
+
+def apply_cooldown(
+    signals: list[AnySignal],
+    recent_signals: list[dict],
+    cooldown_days: int = COOLDOWN_DAYS,
+) -> list[AnySignal]:
+    """Filter out signals for tickers that fired recently (cooldown window).
+
+    Prevents re-triggering the same breakout on consecutive days.
+
+    Args:
+        signals: Current batch of raw signals.
+        recent_signals: List of dicts with 'ticker' and 'run_date' keys
+                       from recent pipeline runs (query from DB).
+        cooldown_days: Number of calendar days to suppress.
+
+    Returns:
+        Filtered signals with recently-fired tickers removed.
+    """
+    if not recent_signals:
+        return signals
+
+    today = date.today()
+    cooldown_cutoff = today - timedelta(days=cooldown_days)
+
+    # Build set of tickers that are still in cooldown
+    cooled_down: set[str] = set()
+    for sig in recent_signals:
+        sig_date = sig.get("run_date")
+        if sig_date is None:
+            continue
+        if isinstance(sig_date, str):
+            sig_date = date.fromisoformat(sig_date)
+        if sig_date >= cooldown_cutoff:
+            cooled_down.add(sig["ticker"])
+
+    if not cooled_down:
+        return signals
+
+    filtered = []
+    suppressed = 0
+    for signal in signals:
+        if signal.ticker in cooled_down:
+            logger.info(
+                "Cooldown: suppressing %s (%s) — fired within last %d days",
+                signal.ticker, MODEL_MAP.get(type(signal), "?"), cooldown_days,
+            )
+            suppressed += 1
+        else:
+            filtered.append(signal)
+
+    if suppressed > 0:
+        logger.info("Cooldown filter: %d → %d signals (%d suppressed)", len(signals), len(filtered), suppressed)
+
+    return filtered

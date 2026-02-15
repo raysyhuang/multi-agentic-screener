@@ -1,8 +1,15 @@
-"""Unified data interface — calls all clients in parallel, merges results."""
+"""Unified data interface — calls all clients in parallel, merges results.
+
+Memory-safe patterns (ported from gemini_STST):
+  - Semaphore-controlled concurrency prevents memory explosion from 200+ concurrent requests
+  - Batch processing with explicit gc.collect() between batches
+  - Configurable batch sizes for different Heroku dyno tiers
+"""
 
 from __future__ import annotations
 
 import asyncio
+import gc
 import logging
 from datetime import date, timedelta
 
@@ -16,6 +23,10 @@ from src.data.fred_client import FREDClient
 
 logger = logging.getLogger(__name__)
 
+# Memory-safe concurrency limits (tuned for Heroku 512 MB)
+MAX_CONCURRENCY = 20   # Max simultaneous API requests
+OHLCV_BATCH_SIZE = 50  # Tickers per batch in bulk fetch
+
 
 class DataAggregator:
     """Orchestrates data fetching across all providers with fallback logic."""
@@ -26,6 +37,7 @@ class DataAggregator:
         self.fmp = FMPClient()
         self.yfinance = YFinanceClient()
         self.fred = FREDClient(api_key=settings.fred_api_key or None)
+        self._semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
 
     async def get_ohlcv(
         self,
@@ -33,44 +45,70 @@ class DataAggregator:
         from_date: date,
         to_date: date,
     ) -> pd.DataFrame:
-        """Fetch OHLCV with fallback chain: Polygon → FMP → yfinance."""
-        try:
-            df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
-            if not df.empty:
-                return df
-        except Exception as e:
-            logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
+        """Fetch OHLCV with fallback chain: Polygon → FMP → yfinance.
 
-        try:
-            df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
-            if not df.empty:
-                return df
-        except Exception as e:
-            logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
+        Semaphore-controlled to prevent memory explosion from concurrent requests.
+        """
+        async with self._semaphore:
+            try:
+                df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
+                if not df.empty:
+                    return df
+            except Exception as e:
+                logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
 
-        try:
-            df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)
-            return df
-        except Exception as e:
-            logger.error("All OHLCV sources failed for %s: %s", ticker, e)
-            return pd.DataFrame()
+            try:
+                df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
+                if not df.empty:
+                    return df
+            except Exception as e:
+                logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
+
+            try:
+                df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)
+                return df
+            except Exception as e:
+                logger.error("All OHLCV sources failed for %s: %s", ticker, e)
+                return pd.DataFrame()
 
     async def get_bulk_ohlcv(
         self,
         tickers: list[str],
         from_date: date,
         to_date: date,
+        batch_size: int = OHLCV_BATCH_SIZE,
     ) -> dict[str, pd.DataFrame]:
-        """Fetch OHLCV for many tickers concurrently."""
-        tasks = [self.get_ohlcv(t, from_date, to_date) for t in tickers]
-        results = await asyncio.gather(*tasks, return_exceptions=True)
-        out = {}
-        for ticker, result in zip(tickers, results):
-            if isinstance(result, Exception):
-                logger.error("Failed to fetch %s: %s", ticker, result)
-                out[ticker] = pd.DataFrame()
-            else:
-                out[ticker] = result
+        """Fetch OHLCV for many tickers in memory-safe batches.
+
+        Processes tickers in batches with explicit gc.collect() between batches
+        to prevent memory buildup on constrained environments (Heroku 512 MB).
+        """
+        out: dict[str, pd.DataFrame] = {}
+        total_batches = (len(tickers) + batch_size - 1) // batch_size
+
+        for batch_idx in range(0, len(tickers), batch_size):
+            batch = tickers[batch_idx:batch_idx + batch_size]
+            batch_num = batch_idx // batch_size + 1
+            logger.info(
+                "OHLCV batch %d/%d: fetching %d tickers...",
+                batch_num, total_batches, len(batch),
+            )
+
+            tasks = [self.get_ohlcv(t, from_date, to_date) for t in batch]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+
+            for ticker, result in zip(batch, results):
+                if isinstance(result, Exception):
+                    logger.error("Failed to fetch %s: %s", ticker, result)
+                    out[ticker] = pd.DataFrame()
+                else:
+                    out[ticker] = result
+
+            # Memory cleanup between batches
+            if total_batches > 1:
+                gc.collect()
+
+        logger.info("Bulk OHLCV complete: %d/%d tickers fetched", len(out), len(tickers))
         return out
 
     async def get_universe(self) -> list[dict]:

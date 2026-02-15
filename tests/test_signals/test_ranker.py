@@ -1,4 +1,6 @@
-"""Tests for signal ranking."""
+"""Tests for signal ranking, confluence detection, and cooldown."""
+
+from datetime import date, timedelta
 
 import numpy as np
 import pandas as pd
@@ -6,7 +8,15 @@ import pandas as pd
 from src.features.regime import Regime
 from src.signals.breakout import BreakoutSignal
 from src.signals.mean_reversion import MeanReversionSignal
-from src.signals.ranker import rank_candidates, deduplicate_signals, filter_correlated_picks, RankedCandidate
+from src.signals.ranker import (
+    rank_candidates,
+    deduplicate_signals,
+    filter_correlated_picks,
+    detect_confluence,
+    apply_confluence_bonus,
+    apply_cooldown,
+    RankedCandidate,
+)
 
 
 def _make_breakout(ticker: str, score: float) -> BreakoutSignal:
@@ -97,3 +107,87 @@ def test_correlation_filter_keeps_uncorrelated():
     candidates = [_make_ranked("A", 90), _make_ranked("B", 80)]
     result = filter_correlated_picks(candidates, price_data, max_correlation=0.75)
     assert len(result) == 2
+
+
+# --- Confluence Detection ---
+
+
+def test_confluence_single_model():
+    """Single model per ticker = no confluence."""
+    signals = [_make_breakout("AAPL", 80)]
+    result = detect_confluence(signals)
+    assert result["AAPL"].confluence_count == 1
+    assert result["AAPL"].is_confluence is False
+    assert result["AAPL"].confluence_bonus == 0.0
+
+
+def test_confluence_two_models():
+    """Two models flagging same ticker = confluence."""
+    signals = [
+        _make_breakout("AAPL", 80),
+        _make_mean_rev("AAPL", 75),
+    ]
+    result = detect_confluence(signals)
+    assert result["AAPL"].confluence_count == 2
+    assert result["AAPL"].is_confluence is True
+    assert result["AAPL"].confluence_bonus == 0.10  # 10% per additional model
+
+
+def test_confluence_bonus_applied():
+    """Confluence bonus should increase adjusted scores."""
+    signals = [
+        _make_breakout("AAPL", 80),
+        _make_mean_rev("AAPL", 75),
+        _make_breakout("MSFT", 70),
+    ]
+    confluence = detect_confluence(signals)
+    candidates = [
+        _make_ranked("AAPL", 80),
+        _make_ranked("MSFT", 85),  # Higher base score
+    ]
+    result = apply_confluence_bonus(candidates, confluence)
+    # AAPL gets 10% bonus: 80 * 1.10 = 88 → now beats MSFT's 85
+    assert result[0].ticker == "AAPL"
+    assert result[0].regime_adjusted_score == 88.0
+
+
+# --- Signal Cooldown ---
+
+
+def test_cooldown_no_recent_signals():
+    """No recent signals → nothing suppressed."""
+    signals = [_make_breakout("AAPL", 80), _make_breakout("MSFT", 70)]
+    result = apply_cooldown(signals, recent_signals=[])
+    assert len(result) == 2
+
+
+def test_cooldown_suppresses_recent():
+    """Tickers fired within cooldown window should be suppressed."""
+    signals = [_make_breakout("AAPL", 80), _make_breakout("MSFT", 70)]
+    recent = [
+        {"ticker": "AAPL", "run_date": date.today() - timedelta(days=2)},
+    ]
+    result = apply_cooldown(signals, recent_signals=recent, cooldown_days=5)
+    assert len(result) == 1
+    assert result[0].ticker == "MSFT"
+
+
+def test_cooldown_allows_expired():
+    """Tickers that fired beyond the cooldown window should pass."""
+    signals = [_make_breakout("AAPL", 80)]
+    recent = [
+        {"ticker": "AAPL", "run_date": date.today() - timedelta(days=10)},
+    ]
+    result = apply_cooldown(signals, recent_signals=recent, cooldown_days=5)
+    assert len(result) == 1
+    assert result[0].ticker == "AAPL"
+
+
+def test_cooldown_string_dates():
+    """Cooldown should handle string dates from DB."""
+    signals = [_make_breakout("AAPL", 80)]
+    recent = [
+        {"ticker": "AAPL", "run_date": str(date.today() - timedelta(days=2))},
+    ]
+    result = apply_cooldown(signals, recent_signals=recent, cooldown_days=5)
+    assert len(result) == 0

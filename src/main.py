@@ -29,21 +29,36 @@ from src.contracts import (
     FinalPick,
 )
 from src.data.aggregator import DataAggregator
+from sqlalchemy import select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
 from src.features.sentiment import score_news_batch
 from src.features.regime import classify_regime, RegimeAssessment, get_regime_allowed_models, compute_breadth_score
-from src.signals.filter import filter_universe, filter_by_ohlcv
+from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
 from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
 from src.signals.catalyst import score_catalyst
-from src.signals.ranker import rank_candidates, deduplicate_signals, filter_correlated_picks
+from src.signals.ranker import (
+    rank_candidates,
+    deduplicate_signals,
+    filter_correlated_picks,
+    detect_confluence,
+    apply_confluence_bonus,
+    apply_cooldown,
+)
 from src.agents.orchestrator import run_agent_pipeline, PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert
 from src.output.performance import check_open_positions, record_new_signals
+from src.governance.artifacts import GovernanceContext
+from src.governance.performance_monitor import (
+    compute_rolling_metrics,
+    check_decay,
+    RollingMetrics,
+)
+from src.portfolio.construct import build_trade_plan, PortfolioConfig
 
 logging.basicConfig(
     level=logging.INFO,
@@ -125,7 +140,6 @@ async def _check_paper_gate(settings) -> bool:
     from src.backtest.metrics import compute_metrics
 
     async with get_session() as session:
-        from sqlalchemy import func
         result = await session.execute(
             select(
                 func.count(Outcome.id),
@@ -189,6 +203,17 @@ async def _run_pipeline_core(
 
     aggregator = DataAggregator()
 
+    # --- Governance context (audit trail for this run) ---
+    gov = GovernanceContext(run_id=run_id, run_date=str(today))
+    gov.__enter__()
+    gov.set_trading_mode(settings.trading_mode)
+    gov.set_config_hash({
+        "min_price": settings.min_price,
+        "min_adv": settings.min_avg_daily_volume,
+        "top_n": settings.top_n_for_interpretation,
+        "slippage": settings.slippage_pct,
+    })
+
     # --- Step 1: Macro context and regime detection (preliminary, breadth added after OHLCV) ---
     logger.info("Step 1: Fetching macro context...")
     macro = await aggregator.get_macro_context()
@@ -229,7 +254,8 @@ async def _run_pipeline_core(
     # --- Step 2: Build universe ---
     logger.info("Step 2: Building universe...")
     raw_universe = await aggregator.get_universe()
-    filtered = filter_universe(raw_universe)
+    universe_funnel = FilterFunnel()
+    filtered = filter_universe(raw_universe, funnel=universe_funnel)
     logger.info("Universe: %d raw → %d filtered", len(raw_universe), len(filtered))
 
     # Data ingest envelope
@@ -259,8 +285,10 @@ async def _run_pipeline_core(
     price_data = await aggregator.get_bulk_ohlcv(tickers, from_date, today)
 
     # Further filter by OHLCV quality
-    qualified_tickers = [t for t in tickers if filter_by_ohlcv(t, price_data.get(t))]
-    logger.info("OHLCV filter: %d → %d qualified", len(tickers), len(qualified_tickers))
+    ohlcv_funnel = OHLCVFunnel(total_input=len(tickers))
+    qualified_tickers = [t for t in tickers if filter_by_ohlcv(t, price_data.get(t), funnel=ohlcv_funnel)]
+    ohlcv_funnel.passed = len(qualified_tickers)
+    ohlcv_funnel.log_summary()
 
     # --- Step 3b: Recompute regime with breadth from actual OHLCV data ---
     breadth = compute_breadth_score(price_data)
@@ -375,6 +403,16 @@ async def _run_pipeline_core(
 
     logger.info("Generated %d raw signals", len(all_signals))
 
+    # Confluence detection: identify tickers flagged by multiple models
+    confluence_map = detect_confluence(all_signals)
+    confluence_tickers = [t for t, cr in confluence_map.items() if cr.is_confluence]
+    if confluence_tickers:
+        logger.info("Confluence tickers (%d): %s", len(confluence_tickers), ", ".join(confluence_tickers))
+
+    # Signal cooldown: suppress recently-fired tickers
+    recent_signals = await _get_recent_signals(days=7)
+    all_signals = apply_cooldown(all_signals, recent_signals)
+
     # Deduplicate (keep best per ticker)
     all_signals = deduplicate_signals(all_signals)
 
@@ -405,6 +443,9 @@ async def _run_pipeline_core(
         top_n=settings.top_n_for_interpretation,
     )
     logger.info("Top %d candidates selected (pre-correlation)", len(ranked))
+
+    # Confluence bonus: boost scores for multi-model agreement
+    ranked = apply_confluence_bonus(ranked, confluence_map)
 
     # Correlation filter: drop highly-correlated picks
     ranked = filter_correlated_picks(ranked, price_data)
@@ -624,6 +665,56 @@ async def _run_pipeline_core(
                 errors=[e.model_dump() for e in envelope.errors] if envelope.errors else [],
             ))
 
+    # --- Step 8b: Governance record ---
+    elapsed = time.monotonic() - start_time
+    gov.set_regime(regime_assessment.regime.value)
+    gov.set_models_active(get_regime_allowed_models(regime_assessment.regime))
+    gov.set_pipeline_stats(
+        universe_size=len(filtered),
+        candidates_scored=len(ranked),
+        picks_approved=len(pipeline_result.approved),
+        duration_s=elapsed,
+    )
+
+    # Decay detection: compare recent live performance against baseline
+    await _check_and_record_decay(gov)
+
+    gov.__exit__(None, None, None)
+
+    # Persist governance record as a pipeline artifact
+    async with get_session() as session:
+        session.add(PipelineArtifact(
+            run_id=run_id,
+            run_date=today,
+            stage="governance",
+            status="success",
+            payload=gov.record.to_dict(),
+        ))
+
+    # --- Step 8c: Portfolio construction ---
+    if pipeline_result.approved:
+        trade_plan = build_trade_plan(
+            candidates=[{
+                "ticker": p.ticker,
+                "direction": p.direction,
+                "entry_price": p.entry_price,
+                "stop_loss": p.stop_loss,
+                "target_1": p.target_1,
+                "confidence": p.confidence,
+                "signal_model": p.signal_model,
+                "holding_period": p.holding_period,
+                "atr_pct": p.features.get("atr_pct", 0),
+                "avg_daily_volume": p.features.get("vol_sma_20", 0),
+            } for p in pipeline_result.approved],
+            regime=regime_assessment.regime.value,
+        )
+        for plan in trade_plan:
+            logger.info(
+                "Trade plan: %s %s — %.1f%% of portfolio ($%.0f, %d shares, R:R %.1f:1)",
+                plan.direction, plan.ticker, plan.weight_pct,
+                plan.notional_usd, plan.shares, plan.reward_risk_ratio,
+            )
+
     # --- Step 9: Send Telegram alert ---
     logger.info("Step 9: Sending Telegram alert...")
     picks_for_alert = []
@@ -656,6 +747,72 @@ async def _run_pipeline_core(
         "Pipeline complete in %.1fs: %d picks, %d stage envelopes, run_id=%s",
         elapsed, len(pipeline_result.approved), len(stage_envelopes), run_id,
     )
+
+
+async def _get_recent_signals(days: int = 7) -> list[dict]:
+    """Fetch recent signals from DB for cooldown filtering."""
+    try:
+        async with get_session() as session:
+            cutoff = date.today() - timedelta(days=days)
+            result = await session.execute(
+                select(Signal.ticker, Signal.run_date).where(Signal.run_date >= cutoff)
+            )
+            return [{"ticker": r[0], "run_date": r[1]} for r in result.all()]
+    except Exception as e:
+        logger.warning("Failed to fetch recent signals for cooldown: %s", e)
+        return []
+
+
+async def _check_and_record_decay(gov: GovernanceContext) -> None:
+    """Check for model decay using recent vs baseline outcomes."""
+    try:
+        async with get_session() as session:
+            # Recent outcomes (last 30 days)
+            cutoff_recent = date.today() - timedelta(days=30)
+            result = await session.execute(
+                select(Outcome).where(
+                    Outcome.still_open == False,
+                    Outcome.entry_date >= cutoff_recent,
+                )
+            )
+            recent = result.scalars().all()
+
+            # Baseline outcomes (30-90 days ago)
+            cutoff_baseline = date.today() - timedelta(days=90)
+            result = await session.execute(
+                select(Outcome).where(
+                    Outcome.still_open == False,
+                    Outcome.entry_date >= cutoff_baseline,
+                    Outcome.entry_date < cutoff_recent,
+                )
+            )
+            baseline = result.scalars().all()
+
+        if len(recent) < 5 or len(baseline) < 5:
+            logger.info("Insufficient data for decay check (recent=%d, baseline=%d)", len(recent), len(baseline))
+            return
+
+        recent_trades = [
+            {"pnl_pct": o.pnl_pct, "max_adverse": o.max_adverse, "max_favorable": o.max_favorable}
+            for o in recent
+        ]
+        baseline_trades = [
+            {"pnl_pct": o.pnl_pct, "max_adverse": o.max_adverse, "max_favorable": o.max_favorable}
+            for o in baseline
+        ]
+
+        live_metrics = compute_rolling_metrics(recent_trades)
+        baseline_metrics = compute_rolling_metrics(baseline_trades)
+        decay_result = check_decay(live_metrics, baseline_metrics)
+
+        gov.set_decay(decay_result.is_decaying, decay_result.triggers)
+        if decay_result.is_decaying:
+            gov.add_flag("decay_detected")
+            for trigger in decay_result.triggers:
+                gov.add_flag(f"decay: {trigger}")
+
+    except Exception as e:
+        logger.warning("Decay check failed: %s", e)
 
 
 async def run_weekly_meta_review() -> None:

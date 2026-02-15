@@ -8,15 +8,16 @@ The system runs autonomously on a daily schedule: morning pipeline at 6 AM ET, a
 
 ```
 L0  Scheduler        APScheduler (cron), triggers daily at 6:00 AM ET
-L1  Data Ingestion   Async Python — Polygon + FMP + yfinance + FRED
+L1  Data Ingestion   Async Python — Polygon + FMP + yfinance + FRED (semaphore-controlled, batch+GC)
 L2  Feature Engine   pandas, pandas-ta, numpy — 30+ technical indicators
-L3  Signal & Filter  Rule-based models + regime gate + correlation filter
+L3  Signal & Filter  Rule-based models + regime gate + confluence + cooldown + correlation filter
 L4  LLM Agents       Signal Interpreter → Adversarial Debate → Risk Gate
 L5  Validation       7-check NoSilentPass gate + Deflated Sharpe Ratio
 L6  Output           PostgreSQL, Telegram alerts, HTML reports, FastAPI
+L7  Governance       Audit trail, decay detection, retrain policy, portfolio construction
 ```
 
-**Key principle**: Layers 1-3 and 5 produce useful candidates with zero LLM cost. Layer 4 adds reasoning quality. Layer 6 adds self-improvement via weekly meta-review.
+**Key principle**: Layers 1-3 and 5 produce useful candidates with zero LLM cost. Layer 4 adds reasoning quality. Layer 6 adds self-improvement via weekly meta-review. Layer 7 provides model lifecycle management and position sizing.
 
 ## LLM Agent Pipeline
 
@@ -107,11 +108,11 @@ src/
 │   ├── sentiment.py            # News headline sentiment scoring
 │   └── regime.py               # Market regime classifier + breadth
 ├── signals/                    # L3 — Signal generation
-│   ├── filter.py               # Universe filtering (price, volume, liquidity)
+│   ├── filter.py               # Universe filtering + funnel counters
 │   ├── breakout.py             # Momentum breakout model
 │   ├── mean_reversion.py       # RSI(2) mean reversion model
 │   ├── catalyst.py             # Event-driven catalyst model
-│   └── ranker.py               # Composite ranking + correlation filter
+│   └── ranker.py               # Ranking + correlation + confluence + cooldown
 ├── agents/                     # L4 — LLM agents
 │   ├── base.py                 # Base agent + Pydantic output schemas
 │   ├── llm_router.py           # Routes to Claude/GPT, tracks cost
@@ -120,6 +121,12 @@ src/
 │   ├── risk_gate.py            # Claude Opus — approve/veto/adjust
 │   ├── meta_analyst.py         # Claude Opus — weekly self-review
 │   └── orchestrator.py         # Runs the 3-agent flow sequentially
+├── governance/                 # Model lifecycle management
+│   ├── artifacts.py            # Audit trail, GovernanceContext per run
+│   ├── performance_monitor.py  # Rolling metrics, decay detection
+│   └── retrain_policy.py       # When to retrain, model versioning
+├── portfolio/                  # Position sizing + risk management
+│   └── construct.py            # Kelly, volatility-scaled, equal-weight sizing
 ├── backtest/                   # L5 — Validation
 │   ├── walk_forward.py         # Walk-forward backtesting engine
 │   ├── metrics.py              # Sharpe, Sortino, Calmar, DSR, profit factor
@@ -135,7 +142,7 @@ src/
 api/
 └── app.py                      # FastAPI — reports, signals, outcomes, costs, artifacts
 
-tests/                          # 138 tests across all modules
+tests/                          # 179 tests across all modules
 ```
 
 ## Safety Mechanisms
@@ -143,9 +150,16 @@ tests/                          # 138 tests across all modules
 - **Fail-closed pipeline** — any unhandled exception guarantees a NoTrade DB record and Telegram alert, never a silent abort
 - **30-day paper trading gate** — LIVE mode is blocked until 30+ days of paper trading with positive profit factor
 - **Correlation filter** — drops picks with >0.75 return correlation to prevent concentrated risk
+- **Signal cooldown** — suppresses re-triggering same ticker for 5 calendar days after a signal fires
+- **Confluence detection** — multi-model agreement boosts confidence (2+ models = 10%+ score bonus)
+- **Decay detection** — rolling metrics monitor for hit rate collapse, MAE expansion, or negative expectancy
+- **Governance audit trail** — every run captures regime, model versions, decay status, config hash, and git commit
+- **Portfolio construction** — Kelly/volatility-scaled sizing with regime exposure multipliers and liquidity caps
 - **Risk gate fail-safe** — LLM errors default to VETO, not APPROVE
 - **No look-ahead** — signals fire on day T close, execute at T+1 open
 - **Realistic costs** — 10 bps slippage + commissions in all validation
+- **Memory-safe batching** — semaphore-controlled concurrency (20 max) + batch+GC for Heroku 512 MB
+- **Funnel counters** — every filter stage tracks elimination counts for debugging
 
 ## API Endpoints
 
@@ -265,13 +279,15 @@ Every LLM call is logged with token counts and estimated USD cost. The `/api/cos
 
 ## Tests
 
-138 tests covering all modules:
+179 tests covering all modules:
 
 ```bash
 pytest tests/ -v                    # Run all tests
-pytest tests/test_signals/ -v       # Signal models only
+pytest tests/test_signals/ -v       # Signal models + confluence + cooldown
 pytest tests/test_agents/ -v        # LLM agent schemas + routing
 pytest tests/test_backtest/ -v      # Validation gate + metrics
+pytest tests/test_governance/ -v    # Decay detection + retrain policy
+pytest tests/test_portfolio/ -v     # Position sizing + trade plans
 pytest tests/test_contracts.py -v   # Data contract enforcement
 ```
 
