@@ -48,6 +48,7 @@ from src.signals.ranker import (
     detect_confluence,
     apply_confluence_bonus,
     apply_cooldown,
+    MODEL_MAP,
 )
 from src.agents.orchestrator import run_agent_pipeline, PipelineRun
 from src.backtest.validation_card import run_validation_checks
@@ -437,8 +438,8 @@ async def _run_pipeline_core(
             candidates=[
                 CandidateScores(
                     ticker=s.ticker,
-                    model_scores={s.signal_model: s.raw_score},
-                    aggregate_score=s.regime_adjusted_score,
+                    model_scores={MODEL_MAP.get(type(s), "unknown"): s.score},
+                    aggregate_score=s.score,
                 )
                 for s in all_signals
             ],
