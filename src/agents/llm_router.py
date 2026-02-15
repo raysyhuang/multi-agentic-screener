@@ -13,6 +13,34 @@ from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
+# Cost per 1M tokens (USD) — updated as of 2025
+_MODEL_COSTS: dict[str, tuple[float, float]] = {
+    # (input_per_1M, output_per_1M)
+    "claude-opus-4-6": (15.0, 75.0),
+    "claude-sonnet-4-5-20250929": (3.0, 15.0),
+    "claude-haiku-4-5-20251001": (0.80, 4.0),
+    "gpt-4.1": (2.0, 8.0),
+    "gpt-4.1-mini": (0.40, 1.60),
+    "gpt-4.1-nano": (0.10, 0.40),
+    "o3-mini": (1.10, 4.40),
+}
+
+
+def _estimate_cost(model: str, tokens_in: int, tokens_out: int) -> float:
+    """Estimate USD cost for an LLM call."""
+    costs = _MODEL_COSTS.get(model)
+    if not costs:
+        # Fallback: match by prefix
+        for key, val in _MODEL_COSTS.items():
+            if model.startswith(key.split("-")[0]):
+                costs = val
+                break
+    if not costs:
+        return 0.0
+    input_cost = (tokens_in / 1_000_000) * costs[0]
+    output_cost = (tokens_out / 1_000_000) * costs[1]
+    return round(input_cost + output_cost, 6)
+
 
 async def call_llm(
     model: str,
@@ -53,9 +81,14 @@ async def call_llm(
     result["latency_ms"] = elapsed_ms
     result["model"] = model
 
+    tokens_in = result.get("tokens_in", 0)
+    tokens_out = result.get("tokens_out", 0)
+    cost = _estimate_cost(model, tokens_in, tokens_out)
+    result["cost_usd"] = cost
+
     logger.info(
-        "LLM call: model=%s, tokens_in=%d, tokens_out=%d, latency=%dms",
-        model, result.get("tokens_in", 0), result.get("tokens_out", 0), elapsed_ms,
+        "LLM call: model=%s, tokens_in=%d, tokens_out=%d, latency=%dms, cost=$%.4f",
+        model, tokens_in, tokens_out, elapsed_ms, cost,
     )
     return result
 

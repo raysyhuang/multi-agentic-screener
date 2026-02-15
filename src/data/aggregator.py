@@ -8,6 +8,7 @@ from datetime import date, timedelta
 
 import pandas as pd
 
+from src.config import get_settings
 from src.data.polygon_client import PolygonClient
 from src.data.fmp_client import FMPClient
 from src.data.yfinance_client import YFinanceClient
@@ -20,10 +21,11 @@ class DataAggregator:
     """Orchestrates data fetching across all providers with fallback logic."""
 
     def __init__(self):
+        settings = get_settings()
         self.polygon = PolygonClient()
         self.fmp = FMPClient()
         self.yfinance = YFinanceClient()
-        self.fred = FREDClient()
+        self.fred = FREDClient(api_key=settings.fred_api_key or None)
 
     async def get_ohlcv(
         self,

@@ -46,6 +46,9 @@ class ValidationCard:
     bear_win_rate: float
     choppy_win_rate: float
 
+    # Deflated Sharpe Ratio (0-1, >0.95 is statistically significant)
+    deflated_sharpe: float
+
     # Verdict
     is_robust: bool
     fragility_score: float  # 0-100, lower = more robust
@@ -137,6 +140,15 @@ def generate_validation_card(
     elif total < 100:
         fragility += 10
 
+    # --- Deflated Sharpe Ratio ---
+    from src.backtest.metrics import deflated_sharpe_ratio
+    sharpe = float(np.mean(arr)) / float(np.std(arr, ddof=1)) * np.sqrt(50) if np.std(arr, ddof=1) > 0 else 0
+    dsr = deflated_sharpe_ratio(sharpe, variants_tested, trade_returns)
+
+    if dsr < 0.5 and variants_tested > 1:
+        fragility += 15
+        notes.append(f"Low Deflated Sharpe Ratio ({dsr:.2f}) — possible selection bias")
+
     fragility = min(100, fragility)
     is_robust = fragility < 40 and win_rate > 0.5 and avg_pnl > 0
 
@@ -158,6 +170,7 @@ def generate_validation_card(
         bull_win_rate=round(bull_wr, 4),
         bear_win_rate=round(bear_wr, 4),
         choppy_win_rate=round(choppy_wr, 4),
+        deflated_sharpe=dsr,
         is_robust=is_robust,
         fragility_score=round(fragility, 2),
         notes=notes,
@@ -169,7 +182,7 @@ def _empty_card(signal_model: str) -> ValidationCard:
         signal_model=signal_model, total_trades=0, win_rate=0, avg_pnl_pct=0,
         performance_dispersion=0, slippage_sensitivity=0, threshold_sensitivity=0,
         variants_tested=0, multiple_testing_penalty=0, bull_win_rate=0, bear_win_rate=0,
-        choppy_win_rate=0, is_robust=False, fragility_score=100,
+        choppy_win_rate=0, deflated_sharpe=0, is_robust=False, fragility_score=100,
         notes=["No trades to validate"],
     )
 

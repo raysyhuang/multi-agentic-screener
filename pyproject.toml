@@ -19,7 +19,10 @@ dependencies = [
     "numpy>=1.26",
 
     # Features
-    "pandas-ta>=0.3",
+    "pandas-ta-openbb>=0.4",
+
+    # Statistics
+    "scipy>=1.12",
 
     # Backtesting
     "vectorbt>=0.26",

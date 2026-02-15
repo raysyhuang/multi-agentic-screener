@@ -20,8 +20,7 @@ class Settings(BaseSettings):
     polygon_api_key: str = ""
     fmp_api_key: str = ""
     financial_datasets_api_key: str = ""
-    finnhub_api_key: str = ""
-    adanos_api_key: str = ""
+    fred_api_key: str = ""  # https://api.stlouisfed.org — optional, yfinance fallback used
 
     # --- Telegram ---
     telegram_bot_token: str = ""
@@ -45,6 +44,9 @@ class Settings(BaseSettings):
     holding_periods: list[int] = Field(default=[5, 10, 15])
     slippage_pct: float = 0.001  # 0.10%
     commission_per_trade: float = 1.0  # dollars
+
+    # --- Trading mode ---
+    trading_mode: str = "PAPER"  # PAPER or LIVE — paper trading until 30-day gate passes
 
     # --- Schedule (ET) ---
     morning_run_hour: int = 6

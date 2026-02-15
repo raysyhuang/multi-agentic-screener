@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import os
 import time
 from dataclasses import asdict
 from datetime import date, timedelta
@@ -28,7 +29,7 @@ from src.contracts import (
     FinalPick,
 )
 from src.data.aggregator import DataAggregator
-from src.db.models import DailyRun, Signal, Candidate, AgentLog
+from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
@@ -63,7 +64,11 @@ async def run_morning_pipeline() -> None:
 
     logger.info("=" * 60)
     logger.info("Starting morning pipeline for %s (run_id=%s)", today, run_id)
+    logger.info("Trading mode: %s", settings.trading_mode)
     logger.info("=" * 60)
+
+    if settings.trading_mode == "PAPER":
+        logger.info("PAPER MODE — all picks are recommendations only, not live trades")
 
     aggregator = DataAggregator()
 
@@ -399,7 +404,8 @@ async def run_morning_pipeline() -> None:
                 features=c.features,
             ))
 
-        # Save approved signals
+        # Save approved signals and create outcome records for tracking
+        new_signals: list[Signal] = []
         for pick in pipeline_result.approved:
             signal = Signal(
                 run_date=today,
@@ -420,6 +426,22 @@ async def run_morning_pipeline() -> None:
                 features=pick.features,
             )
             session.add(signal)
+            new_signals.append(signal)
+
+        # Flush to get signal IDs before creating outcomes
+        await session.flush()
+
+        # Create Outcome records so afternoon check can track them
+        next_trading_day = today + timedelta(days=1)
+        for signal in new_signals:
+            outcome = Outcome(
+                signal_id=signal.id,
+                ticker=signal.ticker,
+                entry_date=next_trading_day,  # T+1 open execution
+                entry_price=signal.entry_price,
+                still_open=True,
+            )
+            session.add(outcome)
 
         # Save agent logs
         for log in pipeline_result.agent_logs:
@@ -429,6 +451,10 @@ async def run_morning_pipeline() -> None:
                 model_used=log.get("model", "unknown"),
                 ticker=log.get("ticker"),
                 output_data=log,
+                tokens_in=log.get("tokens_in"),
+                tokens_out=log.get("tokens_out"),
+                latency_ms=log.get("latency_ms"),
+                cost_usd=log.get("cost_usd"),
             ))
 
     # --- Step 9: Send Telegram alert ---
@@ -454,6 +480,43 @@ async def run_morning_pipeline() -> None:
         "Pipeline complete in %.1fs: %d picks, %d stage envelopes, run_id=%s",
         elapsed, len(pipeline_result.approved), len(stage_envelopes), run_id,
     )
+
+
+async def run_weekly_meta_review() -> None:
+    """Weekly meta-analyst review — runs Sunday at 7:00 PM ET."""
+    from src.agents.meta_analyst import MetaAnalystAgent
+    from src.output.performance import get_performance_summary
+
+    logger.info("Starting weekly meta-review...")
+    today = date.today()
+
+    performance_data = await get_performance_summary(days=30)
+
+    if performance_data.get("total_signals", 0) == 0:
+        logger.info("No closed trades in past 30 days — skipping meta-review")
+        return
+
+    analyst = MetaAnalystAgent()
+    result = await analyst.analyze(performance_data)
+
+    if result:
+        async with get_session() as session:
+            session.add(AgentLog(
+                run_date=today,
+                agent_name="meta_analyst",
+                model_used=analyst.model,
+                ticker=None,
+                output_data=result.model_dump(),
+            ))
+
+        logger.info(
+            "Meta-review complete: win_rate=%.2f, biases=%s, adjustments=%d",
+            result.win_rate,
+            result.biases_detected,
+            len(result.threshold_adjustments),
+        )
+    else:
+        logger.warning("Meta-review returned no result")
 
 
 async def run_afternoon_check() -> None:
@@ -502,10 +565,25 @@ def start_scheduler() -> None:
         name="Afternoon Position Check",
     )
 
+    # Weekly meta-analyst review (Sunday 7 PM ET)
+    scheduler.add_job(
+        run_weekly_meta_review,
+        CronTrigger(
+            day_of_week="sun",
+            hour=19,
+            minute=0,
+            timezone="US/Eastern",
+        ),
+        id="weekly_meta_review",
+        name="Weekly Meta-Analyst Review",
+    )
+
     scheduler.start()
-    logger.info("Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d ET",
-                settings.morning_run_hour, settings.morning_run_minute,
-                settings.afternoon_check_hour, settings.afternoon_check_minute)
+    logger.info(
+        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d, weekly=Sun 19:00 ET",
+        settings.morning_run_hour, settings.morning_run_minute,
+        settings.afternoon_check_hour, settings.afternoon_check_minute,
+    )
     return scheduler
 
 
@@ -524,13 +602,18 @@ async def main():
         await run_afternoon_check()
         return
 
+    if "--meta-now" in sys.argv:
+        await run_weekly_meta_review()
+        return
+
     # Start scheduler + API server
     scheduler = start_scheduler()
 
+    port = int(os.environ.get("PORT", 8000))
     config = uvicorn.Config(
         "api.app:app",
         host="0.0.0.0",
-        port=8000,
+        port=port,
         log_level="info",
     )
     server = uvicorn.Server(config)

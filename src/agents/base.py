@@ -96,6 +96,17 @@ class BaseAgent:
     def __init__(self, name: str, model: str):
         self.name = name
         self.model = model
+        self.last_call_meta: dict = {}  # tokens_in, tokens_out, latency_ms, cost_usd
+
+    def _store_meta(self, llm_result: dict) -> None:
+        """Store metadata from the last LLM call for cost/usage tracking."""
+        self.last_call_meta = {
+            "model": llm_result.get("model", self.model),
+            "tokens_in": llm_result.get("tokens_in", 0),
+            "tokens_out": llm_result.get("tokens_out", 0),
+            "latency_ms": llm_result.get("latency_ms", 0),
+            "cost_usd": llm_result.get("cost_usd", 0.0),
+        }
 
     def _build_system_prompt(self) -> str:
         """Override in subclasses."""

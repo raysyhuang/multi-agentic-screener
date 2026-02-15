@@ -37,6 +37,7 @@ def _make_card(
         bull_win_rate=0.7,
         bear_win_rate=0.5,
         choppy_win_rate=0.55,
+        deflated_sharpe=0.95,
         is_robust=True,
         fragility_score=fragility_score,
         notes=["PASSED"],

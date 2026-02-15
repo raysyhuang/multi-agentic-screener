@@ -89,6 +89,7 @@ async def run_agent_pipeline(
                 "agent": "signal_interpreter",
                 "ticker": candidate.ticker,
                 "confidence": result.confidence,
+                **interpreter.last_call_meta,
             })
 
     # Sort by confidence, take top 5
@@ -127,6 +128,7 @@ async def run_agent_pipeline(
                 "ticker": candidate.ticker,
                 "verdict": debate.final_verdict,
                 "net_conviction": debate.net_conviction,
+                **adversarial.last_call_meta,
             })
 
             if debate.final_verdict != "REJECT":
@@ -167,6 +169,7 @@ async def run_agent_pipeline(
                 "ticker": candidate.ticker,
                 "decision": gate_result.decision.value,
                 "position_size_pct": gate_result.position_size_pct,
+                **risk_gate.last_call_meta,
             })
 
             if gate_result.decision in (GateDecision.APPROVE, GateDecision.ADJUST):

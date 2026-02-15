@@ -82,7 +82,7 @@ class RiskGateAgent(BaseAgent):
             )
         except Exception as e:
             logger.error("Risk gate failed for %s: %s", ticker, e)
-            # Fail safe: veto on error
+            # Fail safe: veto on error — no meta to store
             return RiskGateOutput(
                 ticker=ticker,
                 decision=GateDecision.VETO,
@@ -90,6 +90,7 @@ class RiskGateAgent(BaseAgent):
                 position_size_pct=0,
             )
 
+        self._store_meta(result)
         content = result["content"]
         if isinstance(content, str):
             logger.warning("Risk gate returned non-JSON for %s", ticker)

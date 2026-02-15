@@ -66,6 +66,7 @@ class SignalInterpreterAgent(BaseAgent):
             logger.error("Signal interpreter failed for %s: %s", candidate.ticker, e)
             return None
 
+        self._store_meta(result)
         content = result["content"]
         if isinstance(content, str):
             logger.warning("Signal interpreter returned non-JSON for %s", candidate.ticker)

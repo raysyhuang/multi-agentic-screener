@@ -112,6 +112,60 @@ def _consecutive_streaks(returns: list[float]) -> tuple[int, int]:
     return max_wins, max_losses
 
 
+def deflated_sharpe_ratio(
+    observed_sharpe: float,
+    num_trials: int,
+    returns: list[float],
+    annualization_factor: float = 50.0,
+) -> float:
+    """Compute the Deflated Sharpe Ratio (Bailey & López de Prado).
+
+    Penalizes the observed Sharpe ratio for the number of strategy variants
+    tested (selection bias). Returns the probability that the observed Sharpe
+    exceeds zero after correcting for multiple testing.
+
+    Args:
+        observed_sharpe: The Sharpe ratio of the selected strategy.
+        num_trials: Number of strategy variants tested (parameter combos).
+        returns: Trade-level returns used to estimate skewness/kurtosis.
+        annualization_factor: Trade frequency per year (default 50 for short-term).
+
+    Returns:
+        DSR as a probability (0-1). Values > 0.95 suggest the Sharpe is real.
+    """
+    from scipy import stats
+
+    if num_trials <= 1 or len(returns) < 10 or observed_sharpe <= 0:
+        return 0.0
+
+    arr = np.array(returns)
+    n = len(arr)
+
+    # Skewness and excess kurtosis of returns
+    skew = float(stats.skew(arr))
+    kurt = float(stats.kurtosis(arr))  # excess kurtosis
+
+    # Expected maximum Sharpe under the null (all trials are noise)
+    # E[max(Z)] ≈ (1 - γ) * Φ⁻¹(1 - 1/N) + γ * Φ⁻¹(1 - 1/(N*e))
+    # Simplified: E[max] ≈ √(2 * log(N)) - (log(π) + log(log(N))) / (2 * √(2 * log(N)))
+    log_n = np.log(num_trials)
+    if log_n <= 0:
+        return 0.0
+
+    e_max_z = np.sqrt(2 * log_n) - (np.log(np.pi) + np.log(log_n)) / (2 * np.sqrt(2 * log_n))
+
+    # Variance of the Sharpe ratio estimator (Lo, 2002)
+    # Var(SR) ≈ (1 + 0.5 * SR² - skew * SR + (kurt/4) * SR²) / (n - 1)
+    sr = observed_sharpe / np.sqrt(annualization_factor)  # de-annualize
+    var_sr = (1 + 0.5 * sr**2 - skew * sr + (kurt / 4) * sr**2) / max(1, n - 1)
+    std_sr = np.sqrt(max(var_sr, 1e-10))
+
+    # DSR = P(SR > 0 | observed, trials) = Φ((SR - E[max]) / std(SR))
+    dsr = float(stats.norm.cdf((sr - e_max_z) / std_sr))
+
+    return round(max(0.0, min(1.0, dsr)), 4)
+
+
 def _empty_metrics() -> PerformanceMetrics:
     return PerformanceMetrics(
         total_trades=0, win_rate=0, avg_return_pct=0, median_return_pct=0,

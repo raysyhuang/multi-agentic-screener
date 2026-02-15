@@ -85,6 +85,7 @@ class AdversarialAgent(BaseAgent):
             logger.error("Bear case generation failed for %s: %s", ticker, e)
             return None
 
+        self._store_meta(bear_result)
         bear_content = bear_result["content"]
         if isinstance(bear_content, str):
             logger.warning("Bear case returned non-JSON for %s", ticker)
@@ -126,7 +127,7 @@ class AdversarialAgent(BaseAgent):
             )
         except Exception as e:
             logger.error("Rebuttal synthesis failed for %s: %s", ticker, e)
-            # Return partial result
+            # Return partial result — accumulate cost from bear round
             return DebateResult(
                 ticker=ticker,
                 bull_case=bull_case,
@@ -136,6 +137,14 @@ class AdversarialAgent(BaseAgent):
                 net_conviction=50,
                 key_risk="Debate process failed",
             )
+
+        # Accumulate cost from both rounds
+        bear_meta = self.last_call_meta.copy()
+        self._store_meta(rebuttal_result)
+        self.last_call_meta["tokens_in"] += bear_meta.get("tokens_in", 0)
+        self.last_call_meta["tokens_out"] += bear_meta.get("tokens_out", 0)
+        self.last_call_meta["cost_usd"] += bear_meta.get("cost_usd", 0.0)
+        self.last_call_meta["latency_ms"] += bear_meta.get("latency_ms", 0)
 
         rebuttal_content = rebuttal_result["content"]
         if isinstance(rebuttal_content, str):
