@@ -1,7 +1,6 @@
 """Tests for universe filtering and funnel counters."""
 
 import pandas as pd
-import pytest
 
 from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
 

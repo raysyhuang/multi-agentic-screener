@@ -1,6 +1,6 @@
 """Tests for the verifier agent."""
 
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

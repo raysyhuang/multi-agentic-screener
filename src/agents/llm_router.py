@@ -201,7 +201,6 @@ async def call_llm_with_tools(
     Returns:
         dict with keys: content, raw, tokens_in, tokens_out, latency_ms, model, tool_calls
     """
-    from src.agents.tools import ToolRegistry  # avoid circular import at module level
 
     settings = get_settings()
     start = time.monotonic()

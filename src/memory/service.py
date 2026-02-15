@@ -7,7 +7,6 @@ context (episodic) and current run state (working memory).
 from __future__ import annotations
 
 import logging
-from dataclasses import asdict
 
 from sqlalchemy.ext.asyncio import AsyncSession
 

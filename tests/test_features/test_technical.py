@@ -1,7 +1,6 @@
 """Tests for technical feature engineering."""
 
 import pandas as pd
-import pytest
 
 from src.features.technical import (
     compute_all_technical_features,

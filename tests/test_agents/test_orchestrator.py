@@ -3,8 +3,7 @@
 from __future__ import annotations
 
 from contextlib import ExitStack
-from datetime import date
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import AsyncMock, patch
 
 import pytest
 

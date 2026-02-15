@@ -9,7 +9,7 @@ otherwise return placeholder stubs.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 from typing import Any, Callable, Awaitable
 

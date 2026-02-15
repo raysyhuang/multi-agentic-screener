@@ -8,7 +8,6 @@ from src.skills.engine import (
     SkillDefinition,
     SkillStep,
     SkillValidation,
-    SkillResult,
     _render_template,
     _render_dict,
 )

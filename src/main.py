@@ -8,7 +8,6 @@ import json
 import logging
 import os
 import time
-from dataclasses import asdict
 from datetime import date, datetime, timedelta
 
 from src.config import get_settings, ExecutionMode
@@ -16,7 +15,6 @@ from src.contracts import (
     StageEnvelope,
     StageName,
     StageStatus,
-    StageError,
     DataIngestPayload,
     TickerSnapshot,
     FeaturePayload,
@@ -37,7 +35,7 @@ from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
 from src.features.sentiment import score_news_batch
-from src.features.regime import classify_regime, RegimeAssessment, get_regime_allowed_models, compute_breadth_score
+from src.features.regime import classify_regime, get_regime_allowed_models, compute_breadth_score
 from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
 from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
@@ -54,18 +52,16 @@ from src.signals.ranker import (
 from src.agents.orchestrator import run_agent_pipeline, PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert
-from src.output.performance import check_open_positions, record_new_signals
+from src.output.performance import check_open_positions
 from src.governance.artifacts import GovernanceContext
 from src.governance.performance_monitor import (
     compute_rolling_metrics,
     check_decay,
-    RollingMetrics,
 )
-from src.portfolio.construct import build_trade_plan, PortfolioConfig
+from src.portfolio.construct import build_trade_plan
 from src.governance.divergence_ledger import (
     freeze_quant_baseline,
     compute_divergences,
-    DivergenceType,
 )
 
 logging.basicConfig(

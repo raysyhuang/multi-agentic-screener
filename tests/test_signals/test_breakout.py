@@ -1,6 +1,5 @@
 """Tests for breakout signal model."""
 
-import pytest
 
 from src.features.technical import compute_all_technical_features, latest_features
 from src.signals.breakout import score_breakout

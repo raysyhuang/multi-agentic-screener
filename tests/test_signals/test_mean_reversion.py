@@ -1,6 +1,5 @@
 """Tests for mean reversion signal model."""
 
-import pytest
 
 from src.features.technical import (
     compute_all_technical_features,

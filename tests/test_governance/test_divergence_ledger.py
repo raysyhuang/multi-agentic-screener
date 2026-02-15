@@ -10,8 +10,6 @@ import pytest
 
 from src.governance.divergence_ledger import (
     QUANT_DEFAULT_SIZE,
-    RESIZE_THRESHOLD_PCT,
-    DivergenceRecord,
     DivergenceType,
     ReasonCode,
     compute_divergences,

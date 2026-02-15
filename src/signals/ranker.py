@@ -11,7 +11,7 @@ Confluence and cooldown patterns ported from KooCore-D and gemini_STST.
 from __future__ import annotations
 
 import logging
-from dataclasses import dataclass, field
+from dataclasses import dataclass
 from datetime import date, timedelta
 
 from src.features.regime import Regime, get_regime_allowed_models

@@ -7,13 +7,10 @@ import tempfile
 from pathlib import Path
 from unittest.mock import patch
 
-import pytest
 
 from src.agents.base import ThresholdAdjustment
 from src.governance.threshold_manager import (
     ADJUSTABLE_PARAMS,
-    MAX_CHANGE_PCT,
-    MIN_SAMPLE_SIZE,
     validate_adjustment,
     process_adjustments,
     get_current_thresholds,

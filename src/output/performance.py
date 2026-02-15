@@ -5,8 +5,7 @@ from __future__ import annotations
 import logging
 from datetime import date, timedelta
 
-import pandas as pd
-from sqlalchemy import select, update
+from sqlalchemy import select
 
 from src.db.models import Signal, Outcome
 from src.db.session import get_session
@@ -294,7 +293,6 @@ async def get_divergence_stats(days: int = 30) -> dict | None:
     Returns None if no divergence data exists (fail-closed).
     """
     from src.db.models import DivergenceEvent, DivergenceOutcome
-    from sqlalchemy.orm import aliased
 
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)

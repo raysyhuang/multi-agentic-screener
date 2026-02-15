@@ -3,7 +3,6 @@
 from datetime import date
 
 import pandas as pd
-import pytest
 
 from src.backtest.walk_forward import run_walk_forward
 

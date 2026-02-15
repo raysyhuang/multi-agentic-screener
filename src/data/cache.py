@@ -13,7 +13,7 @@ import json
 import logging
 import sqlite3
 import time
-from datetime import date, timedelta
+from datetime import date
 from pathlib import Path
 
 import pandas as pd

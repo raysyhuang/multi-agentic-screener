@@ -20,17 +20,17 @@ from pathlib import Path
 import pandas as pd
 import yaml
 
-from src.backtest.metrics import PerformanceMetrics, compute_metrics
-from src.backtest.walk_forward import WalkForwardResult, run_walk_forward
-from src.config import get_settings, ExecutionMode
+from src.backtest.metrics import compute_metrics
+from src.backtest.walk_forward import run_walk_forward
+from src.config import get_settings
 from src.data.aggregator import DataAggregator
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
-from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
+from src.features.fundamental import days_to_next_earnings
 from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
 from src.signals.catalyst import score_catalyst
-from src.signals.ranker import rank_candidates, deduplicate_signals, MODEL_MAP
-from src.features.regime import classify_regime, get_regime_allowed_models, compute_breadth_score
+from src.signals.ranker import rank_candidates, deduplicate_signals
+from src.features.regime import classify_regime, compute_breadth_score
 
 logging.basicConfig(
     level=logging.INFO,

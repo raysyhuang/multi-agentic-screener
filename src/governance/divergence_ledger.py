@@ -7,8 +7,6 @@ against realized outcomes via counterfactual simulation.
 
 from __future__ import annotations
 
-import hashlib
-import json
 import logging
 from dataclasses import dataclass, field
 from datetime import date, timedelta
@@ -602,7 +600,6 @@ async def _resolve_single_event(
     aggregator: DataAggregator,
 ) -> dict | None:
     """Resolve a single divergence event against realized outcomes."""
-    from sqlalchemy import select
 
     if event.event_type == DivergenceType.VETO.value:
         return await _resolve_veto(event, session, aggregator)
