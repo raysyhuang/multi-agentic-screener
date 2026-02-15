@@ -86,6 +86,15 @@ class PolygonClient:
                 params = {"apiKey": self._api_key} if url else {}
         return all_tickers
 
+    async def get_grouped_daily(self, on_date: date) -> list[dict]:
+        """Fetch grouped daily bars for all US stocks on a given date."""
+        url = f"{BASE_URL}/v2/aggs/grouped/locale/us/market/stocks/{on_date}"
+        async with httpx.AsyncClient(timeout=60) as client:
+            resp = await client.get(url, params=self._params(adjusted="true"))
+            resp.raise_for_status()
+            data = resp.json()
+        return data.get("results", [])
+
     async def get_snapshot(self, ticker: str) -> dict:
         """Get current-day snapshot (prev close, today's OHLCV, etc.)."""
         url = f"{BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"

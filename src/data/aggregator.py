@@ -149,21 +149,87 @@ class DataAggregator:
         return out
 
     async def get_universe(self) -> list[dict]:
-        """Build initial universe from FMP screener."""
+        """Build initial universe from FMP screener, falling back to Polygon."""
         if self._cache_enabled:
-            key = DataCache.build_key("fmp", "", "universe")
+            key = DataCache.build_key("universe", "", "screener")
             cached = self._cache.get(key)
             if cached is not None:
                 return json.loads(cached)
 
+        # Try FMP first
         try:
             result = await self.fmp.get_stock_screener()
+            if result:
+                if self._cache_enabled:
+                    self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+                return result
+        except Exception as e:
+            logger.warning("FMP screener failed: %s — falling back to Polygon", e)
+
+        # Fallback: Polygon tickers reference + grouped daily bars
+        try:
+            result = await self._build_polygon_universe()
             if self._cache_enabled and result:
-                self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+                self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
             return result
         except Exception as e:
-            logger.error("FMP screener failed: %s", e)
+            logger.error("Polygon universe fallback also failed: %s", e)
             return []
+
+    async def _build_polygon_universe(self) -> list[dict]:
+        """Build universe from Polygon reference tickers + grouped daily bars."""
+        # MIC code → exchange short name
+        _EXCHANGE_MAP = {
+            "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
+            "ARCX": "NYSE", "BATS": "NASDAQ",
+        }
+
+        # 1. Fetch reference tickers (all active US stocks)
+        ref_tickers = await self.polygon.get_all_tickers(market="stocks")
+
+        # Build lookup: ticker → exchange (only common stocks on NYSE/NASDAQ)
+        ref_map: dict[str, str] = {}
+        for t in ref_tickers:
+            ticker = t.get("ticker", "")
+            exchange = _EXCHANGE_MAP.get(t.get("primary_exchange", ""), "")
+            typ = t.get("type", "")
+            if exchange in ("NYSE", "NASDAQ") and typ == "CS":
+                ref_map[ticker] = exchange
+
+        logger.info("Polygon reference: %d common stocks on NYSE/NASDAQ", len(ref_map))
+
+        # 2. Fetch grouped daily bars (try recent dates)
+        today = date.today()
+        grouped = []
+        for offset in range(0, 6):
+            try_date = today - timedelta(days=offset)
+            try:
+                grouped = await self.polygon.get_grouped_daily(try_date)
+                if grouped:
+                    logger.info("Polygon grouped daily: %d bars for %s", len(grouped), try_date)
+                    break
+            except Exception:
+                continue
+
+        if not grouped:
+            logger.error("No grouped daily data found in the last 6 days")
+            return []
+
+        # 3. Merge: only include tickers that are CS on NYSE/NASDAQ
+        universe = []
+        for bar in grouped:
+            ticker = bar.get("T", "")
+            if ticker in ref_map:
+                universe.append({
+                    "symbol": ticker,
+                    "price": bar.get("c", 0),
+                    "volume": bar.get("v", 0),
+                    "exchangeShortName": ref_map[ticker],
+                    "type": "",  # CS → empty (passes the ETF/ETN filter)
+                })
+
+        logger.info("Polygon universe fallback: %d tickers built", len(universe))
+        return universe
 
     async def get_ticker_fundamentals(self, ticker: str) -> dict:
         """Aggregate fundamental data for a single ticker."""
