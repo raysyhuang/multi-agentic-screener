@@ -9,7 +9,7 @@ from __future__ import annotations
 
 import logging
 import uuid
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 
 from src.agents.signal_interpreter import SignalInterpreterAgent
@@ -52,6 +52,26 @@ class PipelineResult:
 
 
 @dataclass
+class NearMissRecord:
+    """In-memory record of a signal rejected at debate or risk gate."""
+    ticker: str
+    stage: str  # "debate" or "risk_gate"
+    debate_verdict: str
+    net_conviction: float
+    bull_conviction: float | None = None
+    bear_conviction: float | None = None
+    key_risk: str | None = None
+    risk_gate_decision: str | None = None
+    risk_gate_reasoning: str | None = None
+    interpreter_confidence: float | None = None
+    signal_model: str | None = None
+    entry_price: float | None = None
+    stop_loss: float | None = None
+    target_price: float | None = None
+    timeframe_days: int | None = None
+
+
+@dataclass
 class PipelineRun:
     run_date: date
     regime: str
@@ -63,6 +83,7 @@ class PipelineRun:
     vetoed: list[str]
     agent_logs: list[dict]
     convergence_state: str = "converged"
+    near_misses: list[NearMissRecord] = field(default_factory=list)
 
 
 async def run_agent_pipeline(
@@ -201,6 +222,7 @@ async def run_agent_pipeline(
             ):
                 pipeline_run.approved.append(pick)
         pipeline_run.agent_logs.extend(retry_run.agent_logs)
+        pipeline_run.near_misses.extend(retry_run.near_misses)
 
         # Re-verify after retry
         pipeline_output_for_verify = {
@@ -271,6 +293,7 @@ async def _execute_pipeline_stages(
     agent_logs: list[dict] = []
     approved: list[PipelineResult] = []
     vetoed: list[str] = []
+    near_misses: list[NearMissRecord] = []
 
     # --- Stage 1: Signal Interpretation (top 10 → top 5) ---
     logger.info("Stage 1: Interpreting %d candidates", len(candidates))
@@ -325,6 +348,7 @@ async def _execute_pipeline_stages(
             vetoed=[],
             agent_logs=agent_logs,
             convergence_state="budget_exhausted",
+            near_misses=near_misses,
         )
 
     # --- Stage 1b: Skill Execution ---
@@ -408,6 +432,21 @@ async def _execute_pipeline_stages(
             if debate.final_verdict != "REJECT":
                 debate_survivors.append((candidate, interpretation, debate))
             else:
+                near_misses.append(NearMissRecord(
+                    ticker=candidate.ticker,
+                    stage="debate",
+                    debate_verdict=debate.final_verdict,
+                    net_conviction=debate.net_conviction,
+                    bull_conviction=debate.bull_case.conviction,
+                    bear_conviction=debate.bear_case.conviction,
+                    key_risk=debate.key_risk,
+                    interpreter_confidence=interpretation.confidence,
+                    signal_model=candidate.signal_model,
+                    entry_price=candidate.entry_price,
+                    stop_loss=candidate.stop_loss,
+                    target_price=candidate.target_1,
+                    timeframe_days=candidate.holding_period,
+                ))
                 logger.info("Debate REJECTED %s", candidate.ticker)
                 vetoed.append(candidate.ticker)
                 memory_service.working.record_veto(candidate.ticker)
@@ -434,6 +473,7 @@ async def _execute_pipeline_stages(
             vetoed=vetoed,
             agent_logs=agent_logs,
             convergence_state="budget_exhausted",
+            near_misses=near_misses,
         )
 
     # --- Stage 3: Risk Gate (survivors → final 1-2) ---
@@ -502,6 +542,23 @@ async def _execute_pipeline_stages(
                 ))
                 memory_service.working.record_approval(candidate.ticker)
             else:
+                near_misses.append(NearMissRecord(
+                    ticker=candidate.ticker,
+                    stage="risk_gate",
+                    debate_verdict=debate.final_verdict,
+                    net_conviction=debate.net_conviction,
+                    bull_conviction=debate.bull_case.conviction,
+                    bear_conviction=debate.bear_case.conviction,
+                    key_risk=debate.key_risk,
+                    risk_gate_decision=gate_result.decision.value,
+                    risk_gate_reasoning=gate_result.reasoning,
+                    interpreter_confidence=interpretation.confidence,
+                    signal_model=candidate.signal_model,
+                    entry_price=candidate.entry_price,
+                    stop_loss=candidate.stop_loss,
+                    target_price=candidate.target_1,
+                    timeframe_days=candidate.holding_period,
+                ))
                 vetoed.append(candidate.ticker)
                 memory_service.working.record_veto(candidate.ticker)
 
@@ -519,6 +576,7 @@ async def _execute_pipeline_stages(
         approved=approved,
         vetoed=vetoed,
         agent_logs=agent_logs,
+        near_misses=near_misses,
     )
 
 

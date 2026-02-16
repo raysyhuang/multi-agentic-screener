@@ -36,7 +36,7 @@ Four agents with intentional model diversity for cross-validation. Each agent ca
 | Signal Interpreter | Claude Sonnet 4.5 | Reads features, produces thesis + confidence 0-100 + risk flags |
 | Adversarial Validator | GPT-5.2 | Attacks thesis from a different model's perspective (bull/bear debate) |
 | Risk Gatekeeper | Claude Opus 4.6 | Final approve/veto/adjust — fail-safe to VETO on any error |
-| Meta-Analyst (weekly) | Claude Opus 4.6 | Reviews 30-day performance + divergence stats, detects biases, suggests adjustments |
+| Meta-Analyst (weekly) | Claude Opus 4.6 | Reviews 30-day performance + divergence stats + near-miss analysis, detects biases, suggests adjustments |
 
 The pipeline narrows a universe of ~200 stocks down to 1-2 picks:
 
@@ -205,15 +205,15 @@ src/
 ├── output/                     # L6 — Output
 │   ├── telegram.py             # Telegram alerts with validation details
 │   ├── report.py               # Jinja2 HTML report generation
-│   └── performance.py          # Outcome tracking, calibration, risk metrics
+│   └── performance.py          # Outcome tracking, calibration, risk metrics, near-miss stats
 └── db/
-    ├── models.py               # 8 SQLAlchemy models (DailyRun, Signal, Outcome, DivergenceEvent, etc.)
+    ├── models.py               # 9 SQLAlchemy models (DailyRun, Signal, Outcome, NearMiss, DivergenceEvent, etc.)
     └── session.py              # Async PostgreSQL connection
 
 api/
 └── app.py                      # FastAPI — reports, signals, outcomes, costs, artifacts
 
-tests/                          # 379 tests across all modules
+tests/                          # 403 tests across all modules
 ```
 
 ## Data Contracts
@@ -237,6 +237,7 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 - **Signal cooldown** — suppresses re-triggering same ticker for 5 calendar days
 - **Confluence detection** — multi-model agreement boosts confidence (2+ models = 10%+ score bonus)
 - **Decay detection** — rolling metrics monitor for hit rate collapse, MAE expansion, or negative expectancy
+- **Near-miss logging** — every signal rejected at the debate or risk gate stage is recorded with conviction scores, trade params, and key risk; aggregated stats feed the weekly meta-analyst to detect if filtering is too strict
 - **Divergence ledger** — tracks every LLM override (VETO/PROMOTE/RESIZE) with counterfactual return deltas; portfolio-level aggregation feeds weekly meta-analyst for second-order self-evaluation
 - **Governance audit trail** — every run captures regime, model versions, decay status, config hash, and git commit
 - **Portfolio construction** — Kelly/volatility-scaled sizing with regime exposure multipliers and liquidity caps
@@ -339,7 +340,7 @@ heroku ps:scale worker=1
 
 ## Database Schema
 
-Eight tables in PostgreSQL:
+Nine tables in PostgreSQL:
 
 | Table | Purpose |
 |---|---|
@@ -349,6 +350,7 @@ Eight tables in PostgreSQL:
 | `outcomes` | Tracks actual P&L vs predictions (entry date, exit, max favorable/adverse) |
 | `pipeline_artifacts` | Full stage envelope per run for traceability |
 | `agent_logs` | Raw LLM inputs/outputs with token counts and cost |
+| `near_misses` | Signals rejected at debate or risk gate — conviction scores, trade params for counterfactual analysis |
 | `divergence_events` | Per-decision LLM attribution — VETO/PROMOTE/RESIZE with reason codes |
 | `divergence_outcomes` | Counterfactual results — agentic vs quant return delta per divergence |
 
@@ -367,7 +369,7 @@ Every LLM call is logged with token counts and estimated USD cost. The `/api/cos
 
 ## Tests
 
-379 tests covering all modules:
+403 tests covering all modules:
 
 ```bash
 pytest tests/ -v                    # Run all tests

@@ -287,6 +287,110 @@ async def get_performance_summary(days: int = 30) -> dict:
         }
 
 
+async def get_near_miss_stats(days: int = 30) -> dict | None:
+    """Near-miss statistics for the meta-analyst.
+
+    Returns None if no near-miss data exists.
+    """
+    from src.db.models import NearMiss
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(NearMiss).where(NearMiss.run_date >= cutoff)
+        )
+        rows = result.scalars().all()
+
+    if not rows:
+        return None
+
+    total = len(rows)
+
+    # --- By stage ---
+    by_stage: dict[str, dict] = {}
+    for nm in rows:
+        bucket = by_stage.setdefault(nm.stage, {"count": 0, "convictions": []})
+        bucket["count"] += 1
+        bucket["convictions"].append(nm.net_conviction)
+
+    by_stage_out = {}
+    for stage, b in by_stage.items():
+        convs = b["convictions"]
+        by_stage_out[stage] = {
+            "count": b["count"],
+            "avg_conviction": round(sum(convs) / len(convs), 2),
+            "conviction_range": [round(min(convs), 2), round(max(convs), 2)],
+        }
+
+    # --- Conviction distribution ---
+    conviction_distribution = {"0_25": 0, "25_50": 0, "50_75": 0, "75_100": 0}
+    for nm in rows:
+        c = nm.net_conviction
+        if c < 25:
+            conviction_distribution["0_25"] += 1
+        elif c < 50:
+            conviction_distribution["25_50"] += 1
+        elif c < 75:
+            conviction_distribution["50_75"] += 1
+        else:
+            conviction_distribution["75_100"] += 1
+
+    # --- By regime ---
+    by_regime: dict[str, dict] = {}
+    for nm in rows:
+        regime = (nm.regime or "unknown").lower()
+        bucket = by_regime.setdefault(regime, {"count": 0, "convictions": []})
+        bucket["count"] += 1
+        bucket["convictions"].append(nm.net_conviction)
+
+    by_regime_out = {}
+    for regime, b in by_regime.items():
+        convs = b["convictions"]
+        by_regime_out[regime] = {
+            "count": b["count"],
+            "avg_conviction": round(sum(convs) / len(convs), 2),
+        }
+
+    # --- By signal model ---
+    by_signal_model: dict[str, dict] = {}
+    for nm in rows:
+        model = nm.signal_model or "unknown"
+        bucket = by_signal_model.setdefault(model, {"count": 0, "convictions": []})
+        bucket["count"] += 1
+        bucket["convictions"].append(nm.net_conviction)
+
+    by_signal_model_out = {}
+    for model, b in by_signal_model.items():
+        convs = b["convictions"]
+        by_signal_model_out[model] = {
+            "count": b["count"],
+            "avg_conviction": round(sum(convs) / len(convs), 2),
+        }
+
+    # --- Closest misses (top 3 by conviction) ---
+    sorted_by_conviction = sorted(rows, key=lambda nm: nm.net_conviction, reverse=True)
+    closest_misses = [
+        {
+            "ticker": nm.ticker,
+            "conviction": round(nm.net_conviction, 2),
+            "stage": nm.stage,
+            "key_risk": nm.key_risk,
+            "run_date": str(nm.run_date),
+        }
+        for nm in sorted_by_conviction[:3]
+    ]
+
+    return {
+        "period_days": days,
+        "total_near_misses": total,
+        "by_stage": by_stage_out,
+        "conviction_distribution": conviction_distribution,
+        "by_regime": by_regime_out,
+        "by_signal_model": by_signal_model_out,
+        "closest_misses": closest_misses,
+    }
+
+
 async def get_divergence_stats(days: int = 30) -> dict | None:
     """Portfolio-level divergence statistics for the meta-analyst.
 

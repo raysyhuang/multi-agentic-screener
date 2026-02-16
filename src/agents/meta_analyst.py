@@ -32,6 +32,15 @@ If divergence data is provided (under the "divergence" key), also analyze:
 9. Regime-specific LLM value: In which regimes does the LLM overlay add most/least value?
 10. Cost efficiency: Is LLM cost justified? Report net_delta_per_dollar.
 
+If near-miss data is provided (under the "near_misses" key), also analyze:
+11. Filtering aggressiveness: Are too many signals being rejected with high conviction scores?
+    A conviction score > 50 that was still REJECTED suggests the debate threshold may be too strict.
+12. Near-miss patterns: Which signal models and regimes produce the most near-misses?
+    If a model consistently produces near-misses (high conviction rejections), it may be
+    systematically penalized by the debate agent.
+13. Closest misses: Review the top near-misses — would relaxing the debate threshold
+    have been beneficial? Consider the key_risk for each.
+
 RULES:
 1. Be brutally honest. Sugar-coating leads to real money losses.
 2. Every suggestion must be specific and actionable (e.g., "reduce breakout threshold from 50 to 55").

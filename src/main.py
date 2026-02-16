@@ -30,7 +30,7 @@ from src.contracts import (
 )
 from src.data.aggregator import DataAggregator
 from sqlalchemy import select, func
-from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent
+from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
@@ -927,6 +927,36 @@ async def _run_pipeline_core(
                 outcome_resolved=False,
             ))
 
+        # Persist near-miss records
+        if hasattr(pipeline_result, 'near_misses'):
+            for nm in pipeline_result.near_misses:
+                session.add(NearMiss(
+                    run_id=run_id,
+                    run_date=today,
+                    ticker=nm.ticker,
+                    stage=nm.stage,
+                    debate_verdict=nm.debate_verdict,
+                    net_conviction=nm.net_conviction,
+                    bull_conviction=nm.bull_conviction,
+                    bear_conviction=nm.bear_conviction,
+                    key_risk=nm.key_risk,
+                    risk_gate_decision=nm.risk_gate_decision,
+                    risk_gate_reasoning=nm.risk_gate_reasoning,
+                    interpreter_confidence=nm.interpreter_confidence,
+                    signal_model=nm.signal_model,
+                    regime=regime_assessment.regime.value,
+                    entry_price=nm.entry_price,
+                    stop_loss=nm.stop_loss,
+                    target_price=nm.target_price,
+                    timeframe_days=nm.timeframe_days,
+                ))
+            if pipeline_result.near_misses:
+                logger.info(
+                    "Near-misses logged: %d — %s",
+                    len(pipeline_result.near_misses),
+                    ", ".join(f"{nm.stage}({nm.ticker}, conv={nm.net_conviction:.0f})" for nm in pipeline_result.near_misses),
+                )
+
         # Persist stage envelopes for full run traceability
         for envelope in stage_envelopes:
             try:
@@ -1125,6 +1155,19 @@ async def run_weekly_meta_review() -> None:
             )
     except Exception as e:
         logger.warning("Failed to fetch divergence stats (non-fatal): %s", e)
+
+    # Enrich with near-miss stats (fail-closed)
+    try:
+        from src.output.performance import get_near_miss_stats
+        near_miss_stats = await get_near_miss_stats(days=30)
+        if near_miss_stats is not None:
+            performance_data["near_misses"] = near_miss_stats
+            logger.info(
+                "Near-miss stats added: %d near-misses",
+                near_miss_stats.get("total_near_misses", 0),
+            )
+    except Exception as e:
+        logger.warning("Failed to fetch near-miss stats (non-fatal): %s", e)
 
     analyst = MetaAnalystAgent()
     result = await analyst.analyze(performance_data)

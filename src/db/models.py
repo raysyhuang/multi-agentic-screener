@@ -192,6 +192,51 @@ class DivergenceEvent(Base):
     )
 
 
+class NearMiss(Base):
+    """Signals rejected by debate or risk gate — tracks what was filtered and how close it was."""
+
+    __tablename__ = "near_misses"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_id: Mapped[str] = mapped_column(String(20), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+
+    # Where it was filtered
+    stage: Mapped[str] = mapped_column(String(15), nullable=False)  # debate / risk_gate
+
+    # Debate data (always present — every near-miss went through debate)
+    debate_verdict: Mapped[str] = mapped_column(String(10), nullable=False)
+    net_conviction: Mapped[float] = mapped_column(Float, nullable=False)
+    bull_conviction: Mapped[float | None] = mapped_column(Float, nullable=True)
+    bear_conviction: Mapped[float | None] = mapped_column(Float, nullable=True)
+    key_risk: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Risk gate data (only if stage == "risk_gate")
+    risk_gate_decision: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    risk_gate_reasoning: Mapped[str | None] = mapped_column(Text, nullable=True)
+
+    # Signal context
+    interpreter_confidence: Mapped[float | None] = mapped_column(Float, nullable=True)
+    signal_model: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Trade params for future counterfactual
+    entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    timeframe_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+    # Counterfactual (resolved later — NOT in this plan)
+    counterfactual_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    counterfactual_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    outcome_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class DivergenceOutcome(Base):
     """Attached after trade closes — scores the LLM divergence against realized outcomes."""
 
