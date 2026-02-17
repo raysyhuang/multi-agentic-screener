@@ -321,7 +321,17 @@
             var label = key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
             if (Array.isArray(val)) {
               notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
-              val.forEach(function (item) { notesHtml += '<li>' + escapeHtml(String(item)) + '</li>'; });
+              val.forEach(function (item) {
+                notesHtml += '<li>' + escapeHtml(typeof item === 'object' ? JSON.stringify(item) : String(item)) + '</li>';
+              });
+              notesHtml += '</ul>';
+            } else if (typeof val === 'object' && val !== null) {
+              notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
+              Object.keys(val).forEach(function (k) {
+                var v = val[k];
+                var subLabel = k.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+                notesHtml += '<li>' + escapeHtml(subLabel) + ': ' + escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v)) + '</li>';
+              });
               notesHtml += '</ul>';
             } else {
               notesHtml += '<div style="margin-bottom:0.25rem"><strong>' + escapeHtml(label) + ':</strong> ' + escapeHtml(String(val)) + '</div>';
