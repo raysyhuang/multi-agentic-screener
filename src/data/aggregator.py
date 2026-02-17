@@ -195,9 +195,12 @@ class DataAggregator:
     async def _build_polygon_universe(self) -> list[dict]:
         """Build universe from Polygon reference tickers + grouped daily bars."""
         # MIC code → exchange short name
+        # XNGS = NASDAQ Global Select (AAPL, MSFT, NVDA, GOOGL, META, TSLA, etc.)
+        # XNCM = NASDAQ Capital Market, XNMS = NASDAQ Global Market
         _EXCHANGE_MAP = {
             "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
             "ARCX": "NYSE", "BATS": "NASDAQ",
+            "XNGS": "NASDAQ", "XNCM": "NASDAQ", "XNMS": "NASDAQ",
         }
 
         # Run reference tickers (CS only) and grouped daily in parallel
@@ -232,10 +235,22 @@ class DataAggregator:
                 }
 
         mcap_count = sum(1 for v in ref_map.values() if v["market_cap"] > 0)
+        # Log exchange breakdown and unmapped exchanges for debugging
+        exchange_counts: dict[str, int] = {}
+        unmapped: dict[str, int] = {}
+        for t in ref_tickers:
+            pe = t.get("primary_exchange", "")
+            mapped = _EXCHANGE_MAP.get(pe)
+            if mapped:
+                exchange_counts[mapped] = exchange_counts.get(mapped, 0) + 1
+            else:
+                unmapped[pe] = unmapped.get(pe, 0) + 1
         logger.info(
-            "Polygon reference: %d common stocks on NYSE/NASDAQ (%d with market cap)",
-            len(ref_map), mcap_count,
+            "Polygon reference: %d common stocks on NYSE/NASDAQ (%d with market cap) | breakdown: %s",
+            len(ref_map), mcap_count, exchange_counts,
         )
+        if unmapped:
+            logger.debug("Polygon unmapped exchanges: %s", unmapped)
 
         if not grouped:
             logger.error("No grouped daily data found in the last 6 days")
