@@ -77,13 +77,15 @@ def score_mean_reversion(
 
     # --- 2. Long-term Trend Intact (25%) ---
     close = df["close"].astype(float)
-    if len(close) >= 200:
-        sma_200 = close.rolling(200).mean().iloc[-1]
-        above_200 = close.iloc[-1] > sma_200 if pd.notna(sma_200) else False
+    pct_above_sma200 = features.get("pct_above_sma200")
+    pct_above_sma50 = features.get("pct_above_sma50")
+
+    if _valid(pct_above_sma200):
+        above_200 = pct_above_sma200 > 0
+    elif _valid(pct_above_sma50):
+        above_200 = pct_above_sma50 > 0  # fallback for short history
     else:
-        # Fallback: use 50-day SMA
-        sma_50 = close.rolling(50).mean().iloc[-1]
-        above_200 = close.iloc[-1] > sma_50 if pd.notna(sma_50) else False
+        above_200 = False
 
     trend_score = 80 if above_200 else 20
     scores["trend_intact"] = trend_score

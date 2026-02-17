@@ -93,6 +93,10 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
     if volume_surge:
         volume_score = min(100, volume_score + 20)
 
+    # Gap breakouts with high volume = highest conviction
+    if features.get("is_gap_up", 0) and _valid(rvol) and rvol >= 2.0:
+        volume_score = min(100, volume_score + 15)
+
     scores["volume"] = volume_score
 
     # --- 3. Consolidation Breakout (20%) ---
@@ -111,19 +115,30 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
     if close and high_20d and close >= high_20d:
         breakout_score = min(100, breakout_score + 30)
 
+    # Gap-up breakout bonus (Humbled Trader)
+    is_gap_up = features.get("is_gap_up", 0)
+    gap_pct = features.get("gap_pct")
+    if is_gap_up and _valid(gap_pct):
+        breakout_score += 25
+
     scores["breakout"] = min(100, breakout_score)
 
     # --- 4. Trend Alignment (15%) ---
     pct_above_sma20 = features.get("pct_above_sma20", 0)
     pct_above_sma50 = features.get("pct_above_sma50", 0)
+    sma_20_slope = features.get("sma_20_slope")
 
     trend_score = 0.0
     if _valid(pct_above_sma20) and pct_above_sma20 > 0:
-        trend_score += 50
+        trend_score += 35
     if _valid(pct_above_sma50) and pct_above_sma50 > 0:
-        trend_score += 50
+        trend_score += 35
 
-    scores["trend"] = trend_score
+    # Rising 20 SMA confirms momentum direction (Emmanuel)
+    if _valid(sma_20_slope) and sma_20_slope > 0.5:
+        trend_score += 30
+
+    scores["trend"] = min(100, trend_score)
 
     # --- 5. Volatility Context (10%) ---
     atr_pct = features.get("atr_pct")

@@ -44,6 +44,35 @@ def test_breakout_returns_none_for_weak_setup(sample_ohlcv):
     assert result is None
 
 
+def test_breakout_gap_up_boost(sample_ohlcv):
+    """Gap-up with volume should score higher than without."""
+    df = compute_all_technical_features(sample_ohlcv)
+    feat_base = latest_features(df)
+    # Moderate setup
+    feat_base["rsi_14"] = 60
+    feat_base["rvol"] = 2.5
+    feat_base["near_20d_high"] = 1
+    feat_base["is_consolidating"] = 1
+    feat_base["roc_5"] = 4.0
+    feat_base["roc_10"] = 6.0
+    feat_base["pct_above_sma20"] = 2.0
+    feat_base["pct_above_sma50"] = 3.0
+    feat_base["atr_pct"] = 3.0
+    feat_base["atr_14"] = feat_base.get("close", 100) * 0.03
+
+    # Without gap
+    feat_no_gap = {**feat_base, "is_gap_up": 0, "gap_pct": 1.0}
+    result_no_gap = score_breakout("NOGAP", df, feat_no_gap)
+
+    # With gap
+    feat_gap = {**feat_base, "is_gap_up": 1, "gap_pct": 5.0}
+    result_gap = score_breakout("GAP", df, feat_gap)
+
+    assert result_no_gap is not None
+    assert result_gap is not None
+    assert result_gap.score > result_no_gap.score, "Gap-up should boost breakout score"
+
+
 def test_breakout_empty_df():
     import pandas as pd
     result = score_breakout("TEST", pd.DataFrame(), {})

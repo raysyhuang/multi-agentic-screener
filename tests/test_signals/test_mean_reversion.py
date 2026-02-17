@@ -38,6 +38,25 @@ def test_mean_reversion_skips_not_oversold(sample_ohlcv):
     assert result is None
 
 
+def test_mean_reversion_uses_precomputed_sma200(sample_ohlcv_oversold):
+    """Pre-computed pct_above_sma200 should drive trend_intact scoring."""
+    df = compute_all_technical_features(sample_ohlcv_oversold)
+    df = compute_rsi2_features(df)
+    feat = latest_features(df)
+
+    # Force oversold + above SMA(200)
+    feat["rsi_2"] = 5
+    feat["streak"] = -3
+    feat["dist_from_5d_low"] = 0.5
+    feat["rvol"] = 1.0
+    feat["atr_14"] = feat.get("close", 100) * 0.02
+    feat["pct_above_sma200"] = 5.0
+
+    result = score_mean_reversion("SMA200", df, feat)
+    assert result is not None
+    assert result.components["trend_intact"] == 80
+
+
 def test_mean_reversion_empty_df():
     import pandas as pd
     result = score_mean_reversion("TEST", pd.DataFrame(), {})

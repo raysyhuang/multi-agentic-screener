@@ -22,12 +22,17 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     df["sma_10"] = ta.sma(df["close"], length=10)
     df["sma_20"] = ta.sma(df["close"], length=20)
     df["sma_50"] = ta.sma(df["close"], length=50)
+    df["sma_200"] = ta.sma(df["close"], length=200)
     df["ema_9"] = ta.ema(df["close"], length=9)
     df["ema_21"] = ta.ema(df["close"], length=21)
 
     # Price vs MAs (guard against division by zero when SMA is NaN/0)
     df["pct_above_sma20"] = (df["close"] - df["sma_20"]) / df["sma_20"].replace(0, pd.NA) * 100
     df["pct_above_sma50"] = (df["close"] - df["sma_50"]) / df["sma_50"].replace(0, pd.NA) * 100
+    df["pct_above_sma200"] = (df["close"] - df["sma_200"]) / df["sma_200"].replace(0, pd.NA) * 100
+
+    # MA slope: normalized 10-bar change (Emmanuel — trend direction)
+    df["sma_20_slope"] = (df["sma_20"] - df["sma_20"].shift(10)) / df["sma_20"].shift(10).replace(0, pd.NA) * 100
 
     # --- Momentum ---
     df["rsi_14"] = ta.rsi(df["close"], length=14)
@@ -84,6 +89,11 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     df["range_10d"] = df["high"].rolling(10).max() - df["low"].rolling(10).min()
     if "atr_14" in df.columns:
         df["is_consolidating"] = (df["range_10d"] < df["atr_14"] * 1.5).astype(int)
+
+    # Gap detection (Humbled Trader)
+    df["gap_pct"] = (df["open"] - df["close"].shift(1)) / df["close"].shift(1).replace(0, pd.NA) * 100
+    df["is_gap_up"] = (df["gap_pct"] >= 3.0).astype(int)
+    df["is_gap_down"] = (df["gap_pct"] <= -3.0).astype(int)
 
     return df
 

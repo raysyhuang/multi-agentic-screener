@@ -34,6 +34,27 @@ def sample_ohlcv() -> pd.DataFrame:
 
 
 @pytest.fixture
+def sample_ohlcv_long() -> pd.DataFrame:
+    """Generate 250 days of synthetic OHLCV data for SMA(200) testing."""
+    np.random.seed(77)
+    n = 250
+    dates = [date(2024, 4, 1) + timedelta(days=i) for i in range(n)]
+    close = 100 + np.cumsum(np.random.randn(n) * 1.2)
+    close = np.maximum(close, 10)
+    df = pd.DataFrame({
+        "date": dates,
+        "open": close + np.random.randn(n) * 0.5,
+        "high": close + abs(np.random.randn(n)) * 1.0,
+        "low": close - abs(np.random.randn(n)) * 1.0,
+        "close": close,
+        "volume": np.random.randint(500_000, 5_000_000, n).astype(float),
+    })
+    df["high"] = df[["open", "high", "close"]].max(axis=1)
+    df["low"] = df[["open", "low", "close"]].min(axis=1)
+    return df
+
+
+@pytest.fixture
 def sample_ohlcv_oversold() -> pd.DataFrame:
     """Generate OHLCV data with a clear oversold condition at the end."""
     np.random.seed(99)
