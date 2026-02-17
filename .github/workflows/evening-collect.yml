@@ -1,0 +1,56 @@
+name: Evening Cross-Engine Collection
+
+on:
+  schedule:
+    # Weekdays at 01:30 UTC (9:30 PM ET)
+    # Runs AFTER all 3 external engines finish:
+    #   - KooCore-D Auto-Run: 5:00 PM ET (up to 3 hrs → done by 8:00 PM ET)
+    #   - KooCore-D Phase 5:  5:00 PM ET (up to 3 hrs → done by 8:00 PM ET)
+    #   - Top3-7D:            5:30 PM ET (~30 min → done by 6:00 PM ET)
+    #   - Gemini STST:        5:45 PM ET (~5 min  → done by 5:50 PM ET)
+    # 75-minute buffer after slowest engine's worst-case finish time.
+    - cron: "30 1 * * 2-6"
+  workflow_dispatch:
+
+concurrency:
+  group: evening-collect
+  cancel-in-progress: true
+
+jobs:
+  collect:
+    name: Trigger cross-engine collection
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Trigger evening collection on Heroku
+        env:
+          SCREENER_HEROKU_URL: ${{ secrets.SCREENER_HEROKU_URL }}
+          API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+        run: |
+          if [ -z "${SCREENER_HEROKU_URL}" ]; then
+            echo "Error: SCREENER_HEROKU_URL not set"
+            exit 1
+          fi
+          if [ -z "${API_SECRET_KEY}" ]; then
+            echo "Error: API_SECRET_KEY not set"
+            exit 1
+          fi
+
+          echo "Triggering evening cross-engine collection..."
+          RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+            "${SCREENER_HEROKU_URL}/api/cross-engine/collect" \
+            -H "Content-Type: application/json" \
+            -H "Authorization: Bearer ${API_SECRET_KEY}" \
+            --max-time 60)
+
+          HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+          BODY=$(echo "$RESPONSE" | head -n -1)
+
+          echo "Response (HTTP ${HTTP_CODE}): ${BODY}"
+
+          if [ "$HTTP_CODE" -ge 200 ] && [ "$HTTP_CODE" -lt 300 ]; then
+            echo "Evening collection triggered successfully"
+          else
+            echo "Evening collection trigger failed with HTTP ${HTTP_CODE}"
+            exit 1
+          fi

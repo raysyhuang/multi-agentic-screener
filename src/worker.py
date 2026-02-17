@@ -3,6 +3,7 @@
 This runs as a separate dyno from the web process:
   - Morning pipeline (6:00 AM ET)
   - Afternoon position check (4:30 PM ET)
+  - Evening cross-engine collection (9:30 PM ET)
   - Weekly meta-analyst review (Sunday 7:00 PM ET)
 """
 
@@ -16,8 +17,8 @@ import sys
 from src.config import get_settings
 from src.db.session import init_db
 from src.main import (
-    run_morning_pipeline, run_afternoon_check, run_weekly_meta_review,
-    _setup_logging,
+    run_morning_pipeline, run_afternoon_check, run_evening_collection,
+    run_weekly_meta_review, _setup_logging,
 )
 from src.output.telegram import send_alert
 
@@ -53,8 +54,8 @@ async def start_worker() -> None:
                 loop.create_task(send_alert(
                     f"WORKER JOB FAILED\nJob: {job_id}\nError: {type(exc).__name__}: {exc}"
                 ))
-        except Exception:
-            pass
+        except Exception as alert_exc:
+            logger.error("Failed to send worker failure alert for job '%s': %s", job_id, alert_exc)
 
     scheduler.add_listener(_job_error_handler, EVENT_JOB_ERROR)
 
@@ -90,6 +91,23 @@ async def start_worker() -> None:
         coalesce=True,
     )
 
+    # Evening cross-engine collection (9:30 PM ET Mon-Fri)
+    # Runs AFTER all 3 external engines finish (latest by ~8:15 PM ET)
+    scheduler.add_job(
+        run_evening_collection,
+        CronTrigger(
+            hour=21,
+            minute=30,
+            day_of_week="mon-fri",
+            timezone="US/Eastern",
+        ),
+        id="evening_collection",
+        name="Evening Cross-Engine Collection",
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
     # Weekly meta-analyst review (Sunday 7 PM ET)
     scheduler.add_job(
         run_weekly_meta_review,
@@ -108,7 +126,7 @@ async def start_worker() -> None:
 
     scheduler.start()
     logger.info(
-        "Worker started: morning=%02d:%02d (Mon-Fri), afternoon=%02d:%02d (Mon-Fri), weekly=Sun 19:00 ET",
+        "Worker started: morning=%02d:%02d, afternoon=%02d:%02d, evening=21:30, weekly=Sun 19:00 (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
     )
@@ -118,6 +136,8 @@ async def start_worker() -> None:
         await run_morning_pipeline()
     elif "--check-now" in sys.argv:
         await run_afternoon_check()
+    elif "--collect-now" in sys.argv:
+        await run_evening_collection()
     elif "--meta-now" in sys.argv:
         await run_weekly_meta_review()
 

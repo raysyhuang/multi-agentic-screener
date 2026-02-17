@@ -7,7 +7,7 @@ from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -35,6 +35,12 @@ limiter = Limiter(key_func=get_remote_address)
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     await init_db()
+    settings = get_settings()
+    if not settings.api_secret_key:
+        logger.warning(
+            "API_SECRET_KEY is not set — POST/mutation endpoints are disabled. "
+            "Set API_SECRET_KEY in .env or environment for full API access."
+        )
     yield
     await close_db()
 
@@ -66,16 +72,31 @@ _AUTH_EXEMPT_PREFIXES = ("/health", "/static", "/docs", "/openapi.json", "/redoc
 
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next) -> Response:
-    """Require Bearer token for /api/* routes when API_SECRET_KEY is configured."""
+    """Require Bearer token for /api/* routes when API_SECRET_KEY is configured.
+
+    POST/mutation endpoints fail-closed when API_SECRET_KEY is not set.
+    GET endpoints allow unauthenticated access when key is not configured.
+    """
     settings = get_settings()
     path = request.url.path
 
     # Skip auth for exempt paths and non-API paths
-    if not path.startswith("/api/") or not settings.api_secret_key:
+    if not path.startswith("/api/"):
         return await call_next(request)
 
     # Skip auth for exempt prefixes
     if any(path.startswith(prefix) for prefix in _AUTH_EXEMPT_PREFIXES):
+        return await call_next(request)
+
+    # If API_SECRET_KEY is not configured:
+    # - POST/mutation endpoints → fail-closed (reject)
+    # - GET/read endpoints → allow (convenient for local dev)
+    if not settings.api_secret_key:
+        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
+            return JSONResponse(
+                status_code=503,
+                content={"detail": "API_SECRET_KEY not configured — mutation endpoints disabled"},
+            )
         return await call_next(request)
 
     # Check Authorization header
@@ -958,6 +979,20 @@ async def position_health_history(
 
 
 # ── Cross-Engine Endpoints ──────────────────────────────────────────────────
+
+
+@app.post("/api/cross-engine/collect")
+async def cross_engine_collect(request: Request, background_tasks: BackgroundTasks):
+    """Trigger evening cross-engine collection (Steps 10-14).
+
+    Called by the evening GitHub Actions workflow or Heroku scheduler
+    after all three external engines have finished running.
+    Runs in the background so the HTTP response returns immediately.
+    """
+    from src.main import run_evening_collection
+
+    background_tasks.add_task(run_evening_collection)
+    return {"status": "started", "message": "Evening cross-engine collection triggered"}
 
 
 @app.get("/api/cross-engine/latest")

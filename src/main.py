@@ -160,23 +160,41 @@ async def run_morning_pipeline() -> None:
     logger.info("Trading mode: %s", settings.trading_mode)
     logger.info("=" * 60)
 
+    _state: dict = {}
     try:
-        await _run_pipeline_core(today, settings, run_id, start_time)
+        await _run_pipeline_core(today, settings, run_id, start_time, _state=_state)
     except Exception as exc:
         elapsed = time.monotonic() - start_time
         logger.exception("PIPELINE FAILED — fail-closed with NoTrade (run_id=%s): %s", run_id, exc)
 
+        # Finalize governance context if it was created (captures exception)
+        gov = _state.get("gov")
+        if gov:
+            try:
+                gov.__exit__(type(exc), exc, exc.__traceback__)
+            except Exception:
+                logger.error("Failed to finalize governance context on failure")
+
         # Guarantee a DailyRun + NoTrade artifact in DB
         try:
             async with get_session() as session:
-                session.add(DailyRun(
-                    run_date=today,
-                    regime="unknown",
-                    regime_details={"error": str(exc)},
-                    universe_size=0,
-                    candidates_scored=0,
-                    pipeline_duration_s=round(elapsed, 2),
-                ))
+                existing_run = await session.execute(
+                    select(DailyRun).where(DailyRun.run_date == today)
+                )
+                daily_run = existing_run.scalar_one_or_none()
+                if daily_run:
+                    daily_run.regime = "unknown"
+                    daily_run.regime_details = {"error": str(exc)}
+                    daily_run.pipeline_duration_s = round(elapsed, 2)
+                else:
+                    session.add(DailyRun(
+                        run_date=today,
+                        regime="unknown",
+                        regime_details={"error": str(exc)},
+                        universe_size=0,
+                        candidates_scored=0,
+                        pipeline_duration_s=round(elapsed, 2),
+                    ))
                 no_trade = FinalOutputPayload(
                     decision="NoTrade",
                     no_trade_reason=f"Pipeline error: {type(exc).__name__}: {exc}",
@@ -471,7 +489,8 @@ async def _run_hybrid_pipeline(
 
 
 async def _run_pipeline_core(
-    today: date, settings, run_id: str, start_time: float
+    today: date, settings, run_id: str, start_time: float,
+    _state: dict | None = None,
 ) -> None:
     """Inner pipeline logic — extracted so fail-closed wrapper can catch errors."""
     stage_envelopes: list[StageEnvelope] = []
@@ -487,6 +506,8 @@ async def _run_pipeline_core(
     # --- Governance context (audit trail for this run) ---
     gov = GovernanceContext(run_id=run_id, run_date=str(today))
     gov.__enter__()
+    if _state is not None:
+        _state["gov"] = gov
     gov.set_trading_mode(settings.trading_mode)
     gov.set_execution_mode(settings.execution_mode)
     gov.set_config_hash({
@@ -926,17 +947,30 @@ async def _run_pipeline_core(
     elapsed = time.monotonic() - start_time
 
     async with get_session() as session:
-        # Save daily run
-        daily_run = DailyRun(
-            run_date=today,
-            regime=regime_assessment.regime.value,
-            regime_details=_json_safe(regime_context),
-            universe_size=len(filtered),
-            candidates_scored=len(ranked),
-            pipeline_duration_s=round(elapsed, 2),
-            execution_mode=execution_mode.value,
+        # Save daily run (upsert: update if re-run on same day)
+        existing_run = await session.execute(
+            select(DailyRun).where(DailyRun.run_date == today)
         )
-        session.add(daily_run)
+        daily_run = existing_run.scalar_one_or_none()
+        if daily_run:
+            logger.info("Re-run detected for %s — updating existing DailyRun", today)
+            daily_run.regime = regime_assessment.regime.value
+            daily_run.regime_details = _json_safe(regime_context)
+            daily_run.universe_size = len(filtered)
+            daily_run.candidates_scored = len(ranked)
+            daily_run.pipeline_duration_s = round(elapsed, 2)
+            daily_run.execution_mode = execution_mode.value
+        else:
+            daily_run = DailyRun(
+                run_date=today,
+                regime=regime_assessment.regime.value,
+                regime_details=_json_safe(regime_context),
+                universe_size=len(filtered),
+                candidates_scored=len(ranked),
+                pipeline_duration_s=round(elapsed, 2),
+                execution_mode=execution_mode.value,
+            )
+            session.add(daily_run)
 
         # Save candidates
         for c in ranked:
@@ -1157,7 +1191,10 @@ async def _run_pipeline_core(
         key_risks=validation_result.key_risks or None,
         execution_mode=execution_mode.value,
     )
-    await send_alert(alert_msg)
+    try:
+        await send_alert(alert_msg)
+    except Exception as alert_exc:
+        logger.error("Step 9 Telegram alert failed (non-fatal): %s", alert_exc)
 
     # --- Steps 10-14: Cross-Engine Integration ---
     await _run_cross_engine_steps(
@@ -1403,7 +1440,15 @@ async def _run_cross_engine_steps(
                     if engine_name in cred_snapshot.engine_stats:
                         old_w = cred_snapshot.engine_stats[engine_name].weight
                         new_w = old_w * adj.weight_multiplier
-                        new_w = max(0.1, min(3.0, new_w))  # clamp
+                        unclamped_w = new_w
+                        new_w = max(0.1, min(3.0, new_w))  # clamp to [0.1, 3.0]
+                        if unclamped_w != new_w:
+                            logger.warning(
+                                "Verifier weight for %s clamped: %.3f → %.3f "
+                                "(requested ×%.2f would yield %.3f, outside [0.1, 3.0])",
+                                engine_name, old_w, new_w,
+                                adj.weight_multiplier, unclamped_w,
+                            )
                         cred_snapshot.engine_stats[engine_name].weight = round(new_w, 3)
                         logger.info(
                             "Verifier adjusted %s weight: %.3f → %.3f (×%.2f, reason: %s)",
@@ -1651,6 +1696,94 @@ async def run_afternoon_check() -> None:
     )
 
 
+async def run_evening_collection() -> None:
+    """Evening cross-engine collection — runs at 9:30 PM ET.
+
+    Standalone trigger for Steps 10-14 (cross-engine integration) that
+    doesn't require the full morning pipeline to re-run.  Fetches today's
+    screener picks from the DB so the synthesizer sees them alongside the
+    three external engines.
+    """
+    import uuid
+
+    today = date.today()
+    settings = get_settings()
+    run_id = f"eve-{uuid.uuid4().hex[:8]}"
+
+    logger.info("=" * 60)
+    logger.info("Starting evening cross-engine collection for %s (run_id=%s)", today, run_id)
+    logger.info("=" * 60)
+
+    if not settings.cross_engine_enabled:
+        logger.info("Cross-engine integration disabled, nothing to do")
+        return
+
+    # Fetch today's screener picks from the DB (from this morning's run)
+    screener_picks: list[dict] = []
+    regime_context: dict = {"regime": "unknown", "confidence": 0.0, "vix": None}
+    try:
+        async with get_session() as session:
+            # Get the latest DailyRun for today to extract regime info
+            daily_run_result = await session.execute(
+                select(DailyRun).where(DailyRun.run_date == today)
+                .order_by(DailyRun.id.desc()).limit(1)
+            )
+            daily_run = daily_run_result.scalar_one_or_none()
+            if daily_run and daily_run.regime:
+                regime_context["regime"] = daily_run.regime
+                if daily_run.regime_details:
+                    regime_context["confidence"] = daily_run.regime_details.get("confidence", 0.0)
+                    regime_context["vix"] = daily_run.regime_details.get("vix")
+
+            # Get today's approved picks from the final output artifact
+            artifact_result = await session.execute(
+                select(PipelineArtifact).where(
+                    PipelineArtifact.run_date == today,
+                    PipelineArtifact.stage == StageName.FINAL_OUTPUT.value,
+                ).order_by(PipelineArtifact.id.desc()).limit(1)
+            )
+            artifact = artifact_result.scalar_one_or_none()
+            if artifact and artifact.payload:
+                for pick in artifact.payload.get("picks", []):
+                    screener_picks.append({
+                        "ticker": pick.get("ticker", ""),
+                        "direction": pick.get("direction", "LONG"),
+                        "entry_price": pick.get("entry_price", 0),
+                        "stop_loss": pick.get("stop_loss", 0),
+                        "target_1": pick.get("target_1", 0),
+                        "confidence": pick.get("confidence", 0),
+                        "signal_model": pick.get("signal_model", ""),
+                        "thesis": pick.get("thesis", ""),
+                        "holding_period": pick.get("holding_period", 10),
+                    })
+    except Exception as e:
+        logger.warning("Failed to load today's screener context: %s", e)
+
+    if regime_context["regime"] == "unknown" or not screener_picks:
+        logger.warning(
+            "Evening collection running with incomplete morning context: "
+            "regime=%s, screener_picks=%d. "
+            "Morning pipeline may not have run or failed today. "
+            "Cross-engine synthesis will proceed with external engines only.",
+            regime_context["regime"], len(screener_picks),
+        )
+    else:
+        logger.info(
+            "Evening collection context: regime=%s, %d screener picks from morning run",
+            regime_context["regime"], len(screener_picks),
+        )
+
+    await _run_cross_engine_steps(
+        today=today,
+        run_id=run_id,
+        regime_context=regime_context,
+        screener_picks=screener_picks,
+        settings=settings,
+    )
+
+    logger.info("Evening cross-engine collection complete for %s", today)
+
+
 def start_scheduler() -> None:
     """Start the APScheduler with morning and afternoon jobs.
 
@@ -1676,8 +1809,8 @@ def start_scheduler() -> None:
                 loop.create_task(send_alert(
                     f"SCHEDULER JOB FAILED\nJob: {job_id}\nError: {type(exc).__name__}: {exc}"
                 ))
-        except Exception:
-            pass
+        except Exception as alert_exc:
+            logger.error("Failed to send scheduler failure alert for job '%s': %s", job_id, alert_exc)
 
     scheduler.add_listener(_job_error_handler, EVENT_JOB_ERROR)
 
@@ -1687,6 +1820,7 @@ def start_scheduler() -> None:
         CronTrigger(
             hour=settings.morning_run_hour,
             minute=settings.morning_run_minute,
+            day_of_week="mon-fri",
             timezone="US/Eastern",
         ),
         id="morning_pipeline",
@@ -1702,10 +1836,28 @@ def start_scheduler() -> None:
         CronTrigger(
             hour=settings.afternoon_check_hour,
             minute=settings.afternoon_check_minute,
+            day_of_week="mon-fri",
             timezone="US/Eastern",
         ),
         id="afternoon_check",
         name="Afternoon Position Check",
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
+    )
+
+    # Evening cross-engine collection (9:30 PM ET Mon-Fri)
+    # Runs AFTER all 3 external engines finish (latest by ~8:15 PM ET)
+    scheduler.add_job(
+        run_evening_collection,
+        CronTrigger(
+            hour=21,
+            minute=30,
+            day_of_week="mon-fri",
+            timezone="US/Eastern",
+        ),
+        id="evening_collection",
+        name="Evening Cross-Engine Collection",
         max_instances=1,
         misfire_grace_time=300,
         coalesce=True,
@@ -1729,7 +1881,7 @@ def start_scheduler() -> None:
 
     scheduler.start()
     logger.info(
-        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d, weekly=Sun 19:00 ET",
+        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d, evening=21:30, weekly=Sun 19:00 (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
     )

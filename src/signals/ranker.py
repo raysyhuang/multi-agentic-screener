@@ -123,6 +123,7 @@ def filter_correlated_picks(
     Iterates top-down by score. If a candidate's 20-day return correlation
     with any already-accepted candidate exceeds max_correlation, it is dropped.
     """
+    import math
     import pandas as pd
     import numpy as np
 
@@ -156,6 +157,8 @@ def filter_correlated_picks(
                 returns.values[-min_len:],
                 acc_returns.values[-min_len:],
             )[0, 1])
+            if math.isnan(corr):
+                continue  # can't determine correlation, keep the pick
             if abs(corr) > max_correlation:
                 logger.info(
                     "Correlation filter: dropping %s (corr=%.2f with %s)",
