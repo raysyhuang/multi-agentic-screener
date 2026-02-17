@@ -25,9 +25,9 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     df["ema_9"] = ta.ema(df["close"], length=9)
     df["ema_21"] = ta.ema(df["close"], length=21)
 
-    # Price vs MAs
-    df["pct_above_sma20"] = (df["close"] - df["sma_20"]) / df["sma_20"] * 100
-    df["pct_above_sma50"] = (df["close"] - df["sma_50"]) / df["sma_50"] * 100
+    # Price vs MAs (guard against division by zero when SMA is NaN/0)
+    df["pct_above_sma20"] = (df["close"] - df["sma_20"]) / df["sma_20"].replace(0, pd.NA) * 100
+    df["pct_above_sma50"] = (df["close"] - df["sma_50"]) / df["sma_50"].replace(0, pd.NA) * 100
 
     # --- Momentum ---
     df["rsi_14"] = ta.rsi(df["close"], length=14)
@@ -45,7 +45,7 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     atr = ta.atr(df["high"], df["low"], df["close"], length=14)
     if atr is not None:
         df["atr_14"] = atr
-        df["atr_pct"] = df["atr_14"] / df["close"] * 100  # ATR as % of price
+        df["atr_pct"] = df["atr_14"] / df["close"].replace(0, pd.NA) * 100  # ATR as % of price
 
     bb = ta.bbands(df["close"], length=20, std=2)
     if bb is not None and not bb.empty:
@@ -53,7 +53,7 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- Volume ---
     df["vol_sma_20"] = ta.sma(df["volume"], length=20)
-    df["rvol"] = df["volume"] / df["vol_sma_20"]  # relative volume
+    df["rvol"] = df["volume"] / df["vol_sma_20"].replace(0, pd.NA)  # relative volume
 
     # Volume surge: today's volume vs 20-day avg
     df["volume_surge"] = (df["volume"] > df["vol_sma_20"] * 2.0).astype(int)
@@ -65,14 +65,14 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # --- VWAP deviation ---
     if "vwap" in df.columns:
-        df["vwap_dev"] = (df["close"] - df["vwap"]) / df["vwap"] * 100
+        df["vwap_dev"] = (df["close"] - df["vwap"]) / df["vwap"].replace(0, pd.NA) * 100
     else:
         # Approximate VWAP using typical price * volume
         typical_price = (df["high"] + df["low"] + df["close"]) / 3
         cum_tp_vol = (typical_price * df["volume"]).cumsum()
         cum_vol = df["volume"].cumsum()
-        df["vwap_approx"] = cum_tp_vol / cum_vol
-        df["vwap_dev"] = (df["close"] - df["vwap_approx"]) / df["vwap_approx"] * 100
+        df["vwap_approx"] = cum_tp_vol / cum_vol.replace(0, pd.NA)
+        df["vwap_dev"] = (df["close"] - df["vwap_approx"]) / df["vwap_approx"].replace(0, pd.NA) * 100
 
     # --- Breakout signals ---
     df["high_20d"] = df["high"].rolling(20).max()
@@ -115,7 +115,7 @@ def compute_rsi2_features(df: pd.DataFrame) -> pd.DataFrame:
 
     # Distance from 5-day low
     df["low_5d"] = df["low"].rolling(5).min()
-    df["dist_from_5d_low"] = (df["close"] - df["low_5d"]) / df["low_5d"] * 100
+    df["dist_from_5d_low"] = (df["close"] - df["low_5d"]) / df["low_5d"].replace(0, pd.NA) * 100
 
     return df
 

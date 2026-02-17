@@ -9,8 +9,19 @@ Fires on day T close, execution at T+1 open.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import pandas as pd
+
+
+def _valid(x) -> bool:
+    """Check if a value is a valid, finite number (catches None, NaN, inf)."""
+    if x is None:
+        return False
+    try:
+        return math.isfinite(float(x))
+    except (TypeError, ValueError):
+        return False
 
 
 @dataclass
@@ -47,7 +58,7 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
     roc_10 = features.get("roc_10")
 
     momentum_score = 0.0
-    if rsi is not None:
+    if _valid(rsi):
         if 55 <= rsi <= 75:  # strong but not overbought
             momentum_score += 40
         elif 50 <= rsi < 55:
@@ -55,9 +66,9 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
         elif rsi > 75:
             momentum_score -= 10  # overbought penalty
 
-    if roc_5 is not None and roc_5 > 0:
+    if _valid(roc_5) and roc_5 > 0:
         momentum_score += min(30, roc_5 * 5)
-    if roc_10 is not None and roc_10 > 0:
+    if _valid(roc_10) and roc_10 > 0:
         momentum_score += min(30, roc_10 * 3)
 
     scores["momentum"] = max(0, min(100, momentum_score))
@@ -67,7 +78,7 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
     volume_surge = features.get("volume_surge", 0)
 
     volume_score = 0.0
-    if rvol is not None:
+    if _valid(rvol):
         if rvol >= 3.0:
             volume_score = 100
         elif rvol >= 2.0:
@@ -107,9 +118,9 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
     pct_above_sma50 = features.get("pct_above_sma50", 0)
 
     trend_score = 0.0
-    if pct_above_sma20 is not None and pct_above_sma20 > 0:
+    if _valid(pct_above_sma20) and pct_above_sma20 > 0:
         trend_score += 50
-    if pct_above_sma50 is not None and pct_above_sma50 > 0:
+    if _valid(pct_above_sma50) and pct_above_sma50 > 0:
         trend_score += 50
 
     scores["trend"] = trend_score
@@ -117,7 +128,7 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
     # --- 5. Volatility Context (10%) ---
     atr_pct = features.get("atr_pct")
     volatility_score = 50  # neutral default
-    if atr_pct is not None:
+    if _valid(atr_pct):
         if 2.0 <= atr_pct <= 5.0:  # sweet spot for short-term trades
             volatility_score = 80
         elif atr_pct < 1.5:
@@ -143,9 +154,13 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
 
     # --- Position sizing via ATR ---
     close_price = features.get("close", 0)
-    atr = features.get("atr_14", close_price * 0.02)
-    if not close_price or close_price <= 0:
+    atr = features.get("atr_14")
+    if not _valid(close_price) or close_price <= 0:
         return None
+    # Fallback ATR: 2% of price; enforce minimum floor of 0.5% of price
+    if not _valid(atr) or atr <= 0:
+        atr = close_price * 0.02
+    atr = max(atr, close_price * 0.005)
 
     stop_loss = close_price - 2.0 * atr
     target_1 = close_price + 2.0 * atr  # 2:1 R:R

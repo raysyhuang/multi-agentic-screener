@@ -123,11 +123,28 @@
   // -----------------------------------------------------------------------
   function loadSignals() {
     showSpinner('signals-view');
-    fetchJSON('/api/dashboard/signals').then(function (data) {
+    Promise.all([
+      fetchJSON('/api/dashboard/signals'),
+      fetchJSON('/api/dashboard/dataset-health').catch(function () { return null; }),
+      fetchJSON('/api/dashboard/pipeline-health').catch(function () { return null; }),
+    ]).then(function (results) {
+      var data = results[0];
+      var healthData = results[1];
+      var pipelineData = results[2];
       var view = document.getElementById('signals-view');
       if (!data.signals || data.signals.length === 0) {
         showEmpty('signals-view', 'No signals from the latest pipeline run.');
         return;
+      }
+
+      var pipelineBanner = '';
+      if (pipelineData && pipelineData.pipeline_health) {
+        pipelineBanner = renderPipelineHealthBanner(pipelineData.pipeline_health);
+      }
+
+      var healthBanner = '';
+      if (healthData && healthData.health) {
+        healthBanner = renderDatasetHealthBanner(healthData.health);
       }
 
       var header = '<div class="card" style="margin-bottom:1.25rem">' +
@@ -138,10 +155,97 @@
         '</div></div>';
 
       var cards = data.signals.map(renderSignalCard).join('');
-      view.innerHTML = header + '<div class="signals-grid">' + cards + '</div>';
+      view.innerHTML = pipelineBanner + healthBanner + header + '<div class="signals-grid">' + cards + '</div>';
     }).catch(function () {
       showEmpty('signals-view', 'Failed to load signals.');
     });
+  }
+
+  function renderDatasetHealthBanner(health) {
+    var passed = health.passed;
+    var passedCount = health.passed_count || 0;
+    var totalChecks = health.total_checks || 0;
+    var statusText = passed ? 'PASS' : 'WARN';
+    var statusColor = passed ? 'var(--green)' : 'var(--amber, #f59e0b)';
+    var bgColor = passed ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)';
+
+    var html = '<div class="card" style="margin-bottom:1.25rem;border-left:3px solid ' + statusColor + ';background:' + bgColor + '">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">' +
+      '<div style="display:flex;align-items:center;gap:0.5rem">' +
+      '<span style="font-weight:700;color:' + statusColor + '">' + statusText + '</span>' +
+      '<span style="font-size:0.85rem;color:var(--text-secondary)">Dataset Health</span>' +
+      '<span style="font-size:0.8rem;color:var(--text-muted)">' + passedCount + '/' + totalChecks + ' checks</span>' +
+      '</div>' +
+      '<button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" ' +
+      'style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);font-size:0.75rem">Details</button>' +
+      '<div style="display:none;width:100%;margin-top:0.5rem">';
+
+    var checks = health.checks || [];
+    checks.forEach(function (c) {
+      var icon = c.passed ? '\u2705' : '\u26A0\uFE0F';
+      html += '<div style="font-size:0.8rem;margin:0.25rem 0;color:var(--text-secondary)">' +
+        icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
+        escapeHtml(c.detail) + '</div>';
+    });
+
+    html += '</div></div></div>';
+    return html;
+  }
+
+  function renderPipelineHealthBanner(health) {
+    var severity = (health.overall_severity || 'pass').toUpperCase();
+    var stagesOk = 0;
+    var totalStages = 0;
+    var stages = health.stages || [];
+    stages.forEach(function (s) {
+      totalStages++;
+      if (s.passed) stagesOk++;
+    });
+
+    var colorMap = { PASS: 'var(--green)', WARN: 'var(--amber, #f59e0b)', FAIL: 'var(--red, #ef4444)' };
+    var bgMap = { PASS: 'rgba(34,197,94,0.08)', WARN: 'rgba(245,158,11,0.08)', FAIL: 'rgba(239,68,68,0.08)' };
+    var statusColor = colorMap[severity] || colorMap.PASS;
+    var bgColor = bgMap[severity] || bgMap.PASS;
+
+    var html = '<div class="card" style="margin-bottom:1.25rem;border-left:3px solid ' + statusColor + ';background:' + bgColor + '">' +
+      '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">' +
+      '<div style="display:flex;align-items:center;gap:0.5rem">' +
+      '<span style="font-weight:700;color:' + statusColor + '">' + severity + '</span>' +
+      '<span style="font-size:0.85rem;color:var(--text-secondary)">Pipeline Health</span>' +
+      '<span style="font-size:0.8rem;color:var(--text-muted)">' + stagesOk + '/' + totalStages + ' stages OK</span>' +
+      '</div>' +
+      '<button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" ' +
+      'style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);font-size:0.75rem">Details</button>' +
+      '<div style="display:none;width:100%;margin-top:0.5rem">';
+
+    stages.forEach(function (stage) {
+      var stageColor = stage.severity === 'pass' ? 'var(--green)' :
+                       stage.severity === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--red, #ef4444)';
+      var icon = stage.passed ? '\u2705' : (stage.severity === 'fail' ? '\u274C' : '\u26A0\uFE0F');
+      html += '<div style="font-size:0.8rem;margin:0.4rem 0;padding:0.3rem 0.5rem;border-left:2px solid ' + stageColor + '">' +
+        icon + ' <strong>' + escapeHtml((stage.stage || '').replace(/_/g, ' ')) + '</strong>';
+
+      var checks = stage.checks || [];
+      checks.forEach(function (c) {
+        if (!c.passed) {
+          html += '<div style="font-size:0.75rem;margin-left:1rem;color:var(--text-muted)">\u2022 ' + escapeHtml(c.message) + '</div>';
+        }
+      });
+      html += '</div>';
+    });
+
+    var warnings = health.warnings || [];
+    if (warnings.length > 0) {
+      html += '<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">' +
+        '<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary)">All Warnings (' + warnings.length + ')</div>';
+      warnings.forEach(function (w) {
+        html += '<div style="font-size:0.75rem;color:var(--text-muted)">\u2022 ' + escapeHtml(w) + '</div>';
+      });
+      html += '</div>';
+    }
+
+    html += '</div></div></div>';
+    return html;
   }
 
   function renderSignalCard(s) {
@@ -185,9 +289,11 @@
     Promise.all([
       fetchJSON('/api/cross-engine/latest').catch(function () { return null; }),
       fetchJSON('/api/cross-engine/credibility').catch(function () { return null; }),
+      fetchJSON('/api/dashboard/dataset-health').catch(function () { return null; }),
     ]).then(function (results) {
       var synthesis = results[0];
       var credibility = results[1];
+      var healthData = results[2];
       var view = document.getElementById('crossengine-view');
 
       if (!synthesis) {
@@ -196,6 +302,31 @@
       }
 
       var html = '';
+
+      // --- Cross-Engine Health Banner ---
+      if (healthData && healthData.cross_engine_health) {
+        var ceh = healthData.cross_engine_health;
+        var cePassed = ceh.passed;
+        var ceColor = cePassed ? 'var(--green)' : 'var(--amber, #f59e0b)';
+        var ceBg = cePassed ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)';
+        html += '<div class="card" style="margin-bottom:1.25rem;border-left:3px solid ' + ceColor + ';background:' + ceBg + '">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">' +
+          '<div style="display:flex;align-items:center;gap:0.5rem">' +
+          '<span style="font-weight:700;color:' + ceColor + '">' + (cePassed ? 'PASS' : 'WARN') + '</span>' +
+          '<span style="font-size:0.85rem;color:var(--text-secondary)">Cross-Engine Health</span>' +
+          '<span style="font-size:0.8rem;color:var(--text-muted)">' + (ceh.passed_count || 0) + '/' + (ceh.total_checks || 0) + ' checks</span>' +
+          '</div>' +
+          '<button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" ' +
+          'style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);font-size:0.75rem">Details</button>' +
+          '<div style="display:none;width:100%;margin-top:0.5rem">';
+        (ceh.checks || []).forEach(function (c) {
+          var icon = c.passed ? '\u2705' : '\u26A0\uFE0F';
+          html += '<div style="font-size:0.8rem;margin:0.25rem 0;color:var(--text-secondary)">' +
+            icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
+            escapeHtml(c.detail) + '</div>';
+        });
+        html += '</div></div></div>';
+      }
 
       // --- Header ---
       html += '<div class="card" style="margin-bottom:1.25rem">' +

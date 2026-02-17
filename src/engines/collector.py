@@ -108,6 +108,26 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     if len(payload.picks) > 20:
         warnings.append(f"unusually high pick count ({len(payload.picks)})")
 
+    # 5. Stop/target direction sanity (for long picks: stop < entry < target)
+    inverted = []
+    for p in payload.picks:
+        if p.stop_loss is not None and p.stop_loss >= p.entry_price:
+            inverted.append(f"{p.ticker}(stop={p.stop_loss}>=entry={p.entry_price})")
+        if p.target_price is not None and p.target_price <= p.entry_price:
+            inverted.append(f"{p.ticker}(target={p.target_price}<=entry={p.entry_price})")
+    if inverted:
+        warnings.append(f"inverted stop/target: {inverted[:5]}")
+
+    # 6. Stop loss too far from entry (>30% away suggests bad data)
+    wide_stops = []
+    for p in payload.picks:
+        if p.stop_loss is not None and p.entry_price > 0:
+            pct_distance = abs(p.entry_price - p.stop_loss) / p.entry_price
+            if pct_distance > 0.30:
+                wide_stops.append(f"{p.ticker}({pct_distance:.0%})")
+    if wide_stops:
+        warnings.append(f"stop loss >30% from entry: {wide_stops[:5]}")
+
     return warnings
 
 

@@ -9,8 +9,19 @@ Fires on day T close, execution at T+1 open.
 from __future__ import annotations
 
 from dataclasses import dataclass
+import math
 
 import pandas as pd
+
+
+def _valid(x) -> bool:
+    """Check if a value is a valid, finite number (catches None, NaN, inf)."""
+    if x is None:
+        return False
+    try:
+        return math.isfinite(float(x))
+    except (TypeError, ValueError):
+        return False
 
 
 @dataclass
@@ -47,7 +58,7 @@ def score_mean_reversion(
 
     # --- 1. RSI(2) Oversold (40%) ---
     rsi_2 = features.get("rsi_2")
-    if rsi_2 is None:
+    if not _valid(rsi_2):
         return None
 
     rsi_score = 0.0
@@ -80,18 +91,18 @@ def score_mean_reversion(
     # --- 3. Consecutive Down Days (15%) ---
     streak = features.get("streak", 0)
     streak_score = 0.0
-    if streak is not None and streak <= -3:
+    if _valid(streak) and streak <= -3:
         streak_score = 100
-    elif streak is not None and streak <= -2:
+    elif _valid(streak) and streak <= -2:
         streak_score = 60
-    elif streak is not None and streak <= -1:
+    elif _valid(streak) and streak <= -1:
         streak_score = 30
     scores["down_streak"] = streak_score
 
     # --- 4. Distance from Recent Low (10%) ---
     dist_from_5d_low = features.get("dist_from_5d_low", 0)
     proximity_score = 0.0
-    if dist_from_5d_low is not None:
+    if _valid(dist_from_5d_low):
         if dist_from_5d_low < 1.0:
             proximity_score = 80  # very close to 5-day low
         elif dist_from_5d_low < 2.0:
@@ -102,7 +113,7 @@ def score_mean_reversion(
     # --- 5. Volume Liquidity (10%) ---
     rvol = features.get("rvol")
     vol_score = 50  # neutral default
-    if rvol is not None:
+    if _valid(rvol):
         if rvol >= 0.5:
             vol_score = 70  # still liquid
         elif rvol < 0.3:
@@ -124,9 +135,12 @@ def score_mean_reversion(
 
     # --- Price targets ---
     close_price = features.get("close", 0)
-    atr = features.get("atr_14", close_price * 0.02)
-    if not close_price or close_price <= 0:
+    atr = features.get("atr_14")
+    if not _valid(close_price) or close_price <= 0:
         return None
+    if not _valid(atr) or atr <= 0:
+        atr = close_price * 0.02
+    atr = max(atr, close_price * 0.005)
 
     # Mean reversion target: back to 5-day SMA
     sma_5 = close.rolling(5).mean().iloc[-1]

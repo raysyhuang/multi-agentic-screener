@@ -210,10 +210,16 @@ def _compute_slope(df: pd.DataFrame, window: int = 20) -> float:
 
     close = df["close"].astype(float).iloc[-window:]
     x = np.arange(len(close))
-    coeffs = np.polyfit(x, close.values, 1)
+    try:
+        coeffs = np.polyfit(x, close.values, 1)
+    except (np.linalg.LinAlgError, ValueError):
+        return 0.0
     slope = coeffs[0]
     # Normalize by price level
-    return slope / close.mean()
+    mean_price = close.mean()
+    if mean_price == 0 or pd.isna(mean_price):
+        return 0.0
+    return slope / mean_price
 
 
 def get_regime_allowed_models(regime: Regime) -> list[str]:

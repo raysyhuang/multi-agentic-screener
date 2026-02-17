@@ -11,6 +11,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+import math
 
 
 @dataclass
@@ -44,6 +45,14 @@ def score_catalyst(
       4. Positive sentiment shift in news
       5. Insider buying preceding the event
     """
+    def _valid(x) -> bool:
+        if x is None:
+            return False
+        try:
+            return math.isfinite(float(x))
+        except (TypeError, ValueError):
+            return False
+
     scores = {}
     sentiment = sentiment or {}
 
@@ -80,7 +89,7 @@ def score_catalyst(
     elif beat_streak >= 1:
         beat_score = 30
 
-    if avg_surprise is not None and avg_surprise > 10:
+    if _valid(avg_surprise) and avg_surprise > 10:
         beat_score = min(100, beat_score + 20)
 
     scores["beat_history"] = beat_score
@@ -134,9 +143,12 @@ def score_catalyst(
 
     # --- Price targets ---
     close_price = features.get("close", 0)
-    atr = features.get("atr_14", close_price * 0.02)
-    if not close_price or close_price <= 0:
+    atr = features.get("atr_14")
+    if not _valid(close_price) or close_price <= 0:
         return None
+    if not _valid(atr) or atr <= 0:
+        atr = close_price * 0.02
+    atr = max(atr, close_price * 0.005)
 
     # Wider targets for catalyst plays (earnings can gap)
     target_1 = close_price + 2.5 * atr

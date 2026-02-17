@@ -78,7 +78,10 @@ class DataAggregator:
             )
             cached = self._cache.get(key)
             if cached is not None:
-                return json_to_df(cached)
+                try:
+                    return json_to_df(cached)
+                except Exception as e:
+                    logger.warning("Cache deserialization failed for %s, treating as miss: %s", ticker, e)
 
         async with self._semaphore:
             if not self._circuit_breaker.is_open("polygon"):
@@ -216,15 +219,23 @@ class DataAggregator:
             _fetch_grouped(),
         )
 
-        # Build lookup: ticker → exchange (only NYSE/NASDAQ)
-        ref_map: dict[str, str] = {}
+        # Build lookup: ticker → {exchange, market_cap} (only NYSE/NASDAQ)
+        ref_map: dict[str, dict] = {}
         for t in ref_tickers:
             ticker = t.get("ticker", "")
             exchange = _EXCHANGE_MAP.get(t.get("primary_exchange", ""), "")
             if exchange in ("NYSE", "NASDAQ"):
-                ref_map[ticker] = exchange
+                ref_map[ticker] = {
+                    "exchange": exchange,
+                    "market_cap": t.get("market_cap") or 0,
+                    "sic_description": t.get("sic_description") or "",
+                }
 
-        logger.info("Polygon reference: %d common stocks on NYSE/NASDAQ", len(ref_map))
+        mcap_count = sum(1 for v in ref_map.values() if v["market_cap"] > 0)
+        logger.info(
+            "Polygon reference: %d common stocks on NYSE/NASDAQ (%d with market cap)",
+            len(ref_map), mcap_count,
+        )
 
         if not grouped:
             logger.error("No grouped daily data found in the last 6 days")
@@ -235,11 +246,14 @@ class DataAggregator:
         for bar in grouped:
             ticker = bar.get("T", "")
             if ticker in ref_map:
+                ref = ref_map[ticker]
                 universe.append({
                     "symbol": ticker,
                     "price": bar.get("c", 0),
                     "volume": bar.get("v", 0),
-                    "exchangeShortName": ref_map[ticker],
+                    "marketCap": ref["market_cap"],
+                    "exchangeShortName": ref["exchange"],
+                    "sector": ref.get("sic_description", ""),
                     "type": "",  # CS → empty (passes the ETF/ETN filter)
                 })
 
@@ -301,11 +315,14 @@ class DataAggregator:
             key = DataCache.build_key("macro", "", "snapshot")
             cached = self._cache.get(key)
             if cached is not None:
-                payload = json.loads(cached)
-                # Restore DataFrames from serialized form
-                payload["spy_prices"] = json_to_df(payload["spy_prices"])
-                payload["qqq_prices"] = json_to_df(payload["qqq_prices"])
-                return payload
+                try:
+                    payload = json.loads(cached)
+                    # Restore DataFrames from serialized form
+                    payload["spy_prices"] = json_to_df(payload["spy_prices"])
+                    payload["qqq_prices"] = json_to_df(payload["qqq_prices"])
+                    return payload
+                except Exception as e:
+                    logger.warning("Macro cache deserialization failed, treating as miss: %s", e)
 
         # VIX and yield curve
         macro = await self.fred.get_macro_snapshot()

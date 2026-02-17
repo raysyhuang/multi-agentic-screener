@@ -348,6 +348,57 @@ async def dashboard_mode_comparison():
     return {"comparison": await get_mode_comparison()}
 
 
+@app.get("/api/dashboard/dataset-health")
+async def dashboard_dataset_health():
+    """Return the latest dataset health report from the most recent DailyRun."""
+    async with get_session() as session:
+        run_result = await session.execute(
+            select(DailyRun).order_by(DailyRun.run_date.desc()).limit(1)
+        )
+        run = run_result.scalar_one_or_none()
+
+    if not run or not run.dataset_health:
+        return {"run_date": None, "health": None}
+
+    # Also fetch cross-engine health if available
+    from src.db.models import CrossEngineSynthesis
+    cross_health = None
+    async with get_session() as session:
+        synth_result = await session.execute(
+            select(CrossEngineSynthesis)
+            .order_by(CrossEngineSynthesis.run_date.desc())
+            .limit(1)
+        )
+        synth = synth_result.scalar_one_or_none()
+        if synth and synth.cross_engine_health:
+            cross_health = synth.cross_engine_health
+
+    return {
+        "run_date": str(run.run_date),
+        "health": run.dataset_health,
+        "cross_engine_health": cross_health,
+    }
+
+
+@app.get("/api/dashboard/pipeline-health")
+async def dashboard_pipeline_health():
+    """Return the latest pipeline health report from the most recent DailyRun."""
+    async with get_session() as session:
+        run_result = await session.execute(
+            select(DailyRun).order_by(DailyRun.run_date.desc()).limit(1)
+        )
+        run = run_result.scalar_one_or_none()
+
+    if not run:
+        return {"run_date": None, "pipeline_health": None, "dataset_health": None}
+
+    return {
+        "run_date": str(run.run_date),
+        "pipeline_health": run.pipeline_health,
+        "dataset_health": run.dataset_health,
+    }
+
+
 @app.get("/api/cache-stats")
 async def cache_stats():
     """Return data cache performance statistics."""

@@ -39,6 +39,8 @@ class DailyRun(Base):
     execution_mode: Mapped[str | None] = mapped_column(
         String(20), nullable=True, default="agentic_full"
     )
+    dataset_health: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    pipeline_health: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -389,6 +391,7 @@ class CrossEngineSynthesis(Base):
     executive_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     verifier_notes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     credibility_weights: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    cross_engine_health: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

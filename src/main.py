@@ -10,6 +10,8 @@ import os
 import time
 from datetime import date, datetime, timedelta
 
+import pandas as pd
+
 from src.config import get_settings, ExecutionMode
 from src.contracts import (
     StageEnvelope,
@@ -37,6 +39,18 @@ from src.features.fundamental import score_earnings_surprise, score_insider_acti
 from src.features.sentiment import score_news_batch
 from src.features.regime import classify_regime, get_regime_allowed_models, compute_breadth_score
 from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
+from src.validation.stage_validator import (
+    PipelineHealthReport,
+    validate_macro_regime,
+    validate_universe,
+    validate_ohlcv,
+    validate_features,
+    validate_signals,
+    validate_ranking,
+    validate_agent_pipeline,
+    validate_final_output,
+    cross_validate_ohlcv,
+)
 from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
 from src.signals.catalyst import score_catalyst
@@ -517,12 +531,24 @@ async def _run_pipeline_core(
         "slippage": settings.slippage_pct,
     })
 
+    # --- Pipeline health report (accumulated throughout the run) ---
+    pipeline_health = PipelineHealthReport(run_date=today)
+
     # --- Step 1: Macro context and regime detection (preliminary, breadth added after OHLCV) ---
     logger.info("Step 1: Fetching macro context...")
     macro = await aggregator.get_macro_context()
+    spy_df = macro.get("spy_prices")
+    qqq_df = macro.get("qqq_prices")
+    # Validate macro DataFrames — empty/None means regime detection will be unreliable
+    if spy_df is None or (isinstance(spy_df, pd.DataFrame) and spy_df.empty):
+        logger.warning("SPY price data missing — regime detection may be inaccurate")
+        spy_df = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+    if qqq_df is None or (isinstance(qqq_df, pd.DataFrame) and qqq_df.empty):
+        logger.warning("QQQ price data missing — regime detection may be inaccurate")
+        qqq_df = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
     regime_assessment = classify_regime(
-        spy_df=macro.get("spy_prices"),
-        qqq_df=macro.get("qqq_prices"),
+        spy_df=spy_df,
+        qqq_df=qqq_df,
         vix=macro.get("vix"),
         yield_spread=macro.get("yield_spread_10y2y"),
     )
@@ -554,6 +580,14 @@ async def _run_pipeline_core(
     )
     stage_envelopes.append(regime_envelope)
 
+    # Validate: macro/regime
+    pipeline_health.add_stage(validate_macro_regime(
+        macro=macro, spy_df=spy_df, qqq_df=qqq_df,
+        regime=regime_assessment.regime.value,
+        confidence=regime_assessment.confidence,
+        vix=macro.get("vix"),
+    ))
+
     # --- Step 2: Build universe ---
     logger.info("Step 2: Building universe...")
     raw_universe = await aggregator.get_universe()
@@ -581,11 +615,25 @@ async def _run_pipeline_core(
     )
     stage_envelopes.append(ingest_envelope)
 
+    # Validate: universe
+    pipeline_health.add_stage(validate_universe(
+        raw_count=len(raw_universe),
+        filtered_count=len(filtered),
+        filtered=filtered,
+    ))
+
     # --- Step 3: Fetch OHLCV for filtered universe ---
     # Sort by market cap descending so the cap selects the largest companies,
-    # not just alphabetically-first tickers (FMP returns alpha-sorted by default).
-    # Falls back to volume for Polygon universe (no marketCap field).
-    filtered.sort(key=lambda s: (s.get("marketCap") or 0, s.get("volume") or 0), reverse=True)
+    # not just alphabetically-first tickers.
+    # Uses dollar volume (price × volume) as tiebreaker — a strong market cap proxy
+    # that works even when marketCap is missing (e.g. partial Polygon data).
+    filtered.sort(
+        key=lambda s: (
+            s.get("marketCap") or 0,
+            (s.get("price") or s.get("lastPrice") or 0) * (s.get("volume") or 0),
+        ),
+        reverse=True,
+    )
     logger.info("Step 3: Fetching OHLCV for %d tickers...", len(filtered))
     tickers = [s["symbol"] for s in filtered[:200]]  # Cap at 200 for API limits
     from_date = today - timedelta(days=300)  # 1 year of data for indicators
@@ -596,6 +644,38 @@ async def _run_pipeline_core(
     qualified_tickers = [t for t in tickers if filter_by_ohlcv(t, price_data.get(t), funnel=ohlcv_funnel)]
     ohlcv_funnel.passed = len(qualified_tickers)
     ohlcv_funnel.log_summary()
+
+    # --- Step 3c: Dataset verification ---
+    from src.data.dataset_verification import verify_dataset
+    health_report = verify_dataset(filtered, tickers, price_data, qualified_tickers, today)
+    logger.info(
+        "Dataset health: %s (%d/%d checks passed)",
+        "PASS" if health_report.passed else "WARN",
+        health_report.passed_count, health_report.total_checks,
+    )
+    if not health_report.passed:
+        for w in health_report.warnings:
+            logger.warning("Dataset: %s", w)
+
+    # Validate: OHLCV data quality (includes split artifact detection)
+    pipeline_health.add_stage(validate_ohlcv(
+        tickers_requested=len(tickers),
+        price_data=price_data,
+        qualified_count=len(qualified_tickers),
+    ))
+
+    # Cross-validate OHLCV for top tickers against second source
+    try:
+        cross_val = await cross_validate_ohlcv(
+            aggregator=aggregator,
+            top_tickers=qualified_tickers[:10],
+            primary_data=price_data,
+            from_date=from_date,
+            to_date=today,
+        )
+        pipeline_health.add_stage(cross_val)
+    except Exception as e:
+        logger.warning("OHLCV cross-validation failed (non-fatal): %s", e)
 
     # --- Step 3b: Recompute regime with breadth from actual OHLCV data ---
     breadth = compute_breadth_score(price_data)
@@ -689,6 +769,12 @@ async def _run_pipeline_core(
     )
     stage_envelopes.append(feature_envelope)
 
+    # Validate: features
+    pipeline_health.add_stage(validate_features(
+        features_by_ticker=features_by_ticker,
+        qualified_count=len(qualified_tickers),
+    ))
+
     # --- Step 5: Signal generation ---
     logger.info("Step 5: Generating signals...")
     all_signals = []
@@ -767,6 +853,13 @@ async def _run_pipeline_core(
     )
     stage_envelopes.append(signal_envelope)
 
+    # Validate: signals
+    pipeline_health.add_stage(validate_signals(
+        all_signals=all_signals,
+        qualified_count=len(qualified_tickers),
+        allowed_models=allowed_models,
+    ))
+
     # --- Step 6: Rank and select top candidates ---
     logger.info("Step 6: Ranking candidates...")
     ranked = rank_candidates(
@@ -786,6 +879,13 @@ async def _run_pipeline_core(
 
     # Update regime envelope with gated candidates
     regime_envelope.payload.gated_candidates = [c.ticker for c in ranked]
+
+    # Validate: ranking
+    pipeline_health.add_stage(validate_ranking(
+        ranked_count=len(ranked),
+        post_correlation_count=len(ranked),
+        total_signals=len(all_signals),
+    ))
 
     # --- Step 7: Agent Pipeline (mode-dependent) ---
     execution_mode = ExecutionMode(settings.execution_mode)
@@ -946,6 +1046,33 @@ async def _run_pipeline_core(
         )
     stage_envelopes.append(final_envelope)
 
+    # Validate: agent pipeline
+    pipeline_health.add_stage(validate_agent_pipeline(
+        execution_mode=execution_mode.value,
+        approved_count=len(pipeline_result.approved),
+        vetoed_count=len(pipeline_result.vetoed),
+        agent_logs=pipeline_result.agent_logs,
+        ranked_count=len(ranked),
+    ))
+
+    # Validate: final output
+    pipeline_health.add_stage(validate_final_output(
+        approved_picks=pipeline_result.approved,
+        validation_status=validation_result.validation_status,
+        regime=regime_assessment.regime.value,
+    ))
+
+    # Log pipeline health summary
+    logger.info(
+        "Pipeline health: %s (%d/%d stages OK) — %d warnings",
+        pipeline_health.overall_severity.value.upper(),
+        sum(1 for s in pipeline_health.stages if s.passed),
+        pipeline_health.total_stages,
+        len(pipeline_health.all_warnings),
+    )
+    for w in pipeline_health.all_warnings:
+        logger.warning("Pipeline: %s", w)
+
     # --- Step 8: Save to database ---
     logger.info("Step 8: Saving results to database...")
     elapsed = time.monotonic() - start_time
@@ -964,6 +1091,8 @@ async def _run_pipeline_core(
             daily_run.candidates_scored = len(ranked)
             daily_run.pipeline_duration_s = round(elapsed, 2)
             daily_run.execution_mode = execution_mode.value
+            daily_run.dataset_health = _json_safe(health_report.to_dict())
+            daily_run.pipeline_health = _json_safe(pipeline_health.to_dict())
         else:
             daily_run = DailyRun(
                 run_date=today,
@@ -973,6 +1102,8 @@ async def _run_pipeline_core(
                 candidates_scored=len(ranked),
                 pipeline_duration_s=round(elapsed, 2),
                 execution_mode=execution_mode.value,
+                dataset_health=_json_safe(health_report.to_dict()),
+                pipeline_health=_json_safe(pipeline_health.to_dict()),
             )
             session.add(daily_run)
 
@@ -1362,6 +1493,29 @@ async def _run_cross_engine_steps(
 
         logger.info("Step 10 complete: %d engines reported", len(engine_results))
 
+        # --- Step 10b: Cross-engine dataset health check ---
+        from src.data.dataset_verification import verify_cross_engine
+        cross_health = verify_cross_engine(
+            engine_results=[
+                {
+                    "engine_name": er.engine_name,
+                    "regime": er.regime,
+                    "picks": [p.model_dump() for p in er.picks],
+                    "candidates_screened": getattr(er, "candidates_screened", 0),
+                }
+                for er in engine_results
+            ],
+            regime_context=regime_context,
+        )
+        logger.info(
+            "Cross-engine health: %s (%d/%d checks passed)",
+            "PASS" if cross_health.passed else "WARN",
+            cross_health.passed_count, cross_health.total_checks,
+        )
+        if not cross_health.passed:
+            for w in cross_health.warnings:
+                logger.warning("CrossEngine: %s", w)
+
         # --- Step 11: Resolve previous engine pick outcomes ---
         logger.info("Step 11: Resolving previous engine pick outcomes...")
         feedback = await resolve_engine_outcomes()
@@ -1546,6 +1700,7 @@ async def _run_cross_engine_steps(
                 select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
             )
             row = existing_synth.scalar_one_or_none()
+            cross_health_dict = _json_safe(cross_health.to_dict())
             if row:
                 row.convergent_tickers = synthesis_dict.get("convergent_picks")
                 row.portfolio_recommendation = synthesis_dict.get("portfolio")
@@ -1554,6 +1709,7 @@ async def _run_cross_engine_steps(
                 row.executive_summary = synthesis.executive_summary
                 row.verifier_notes = verifier_output_dict
                 row.credibility_weights = cred_weights_dict
+                row.cross_engine_health = cross_health_dict
             else:
                 session.add(CrossEngineSynthesis(
                     run_date=today,
@@ -1564,6 +1720,7 @@ async def _run_cross_engine_steps(
                     executive_summary=synthesis.executive_summary,
                     verifier_notes=verifier_output_dict,
                     credibility_weights=cred_weights_dict,
+                    cross_engine_health=cross_health_dict,
                 ))
 
         # Send cross-engine Telegram alert

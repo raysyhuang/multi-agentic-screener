@@ -47,6 +47,18 @@ async def _request_with_backoff(
     raise RateLimitError("fmp")
 
 
+def _ensure_list(data, context: str = "") -> list[dict]:
+    """Ensure FMP response is a list. FMP sometimes returns error dicts instead of lists."""
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        if "Error Message" in data or "error" in data:
+            logger.warning("FMP returned error%s: %s", f" for {context}" if context else "", data)
+        return []
+    logger.warning("FMP returned unexpected type%s: %s", f" for {context}" if context else "", type(data).__name__)
+    return []
+
+
 class FMPClient:
     def __init__(self):
         self._api_key = get_settings().fmp_api_key
@@ -62,14 +74,14 @@ class FMPClient:
         params = self._params(**{"from": str(from_date), "to": str(to_date)})
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await _request_with_backoff(client, url, params)
-        return resp.json()
+        return _ensure_list(resp.json(), "earnings_calendar")
 
     async def get_earnings_surprise(self, ticker: str) -> list[dict]:
         """Historical earnings data (actual vs estimate)."""
         url = f"{BASE_URL}/earnings"
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await _request_with_backoff(client, url, self._params(symbol=ticker))
-        return resp.json()
+        return _ensure_list(resp.json(), f"earnings_surprise/{ticker}")
 
     async def get_insider_trading(self, ticker: str, limit: int = 50) -> list[dict]:
         """Recent insider transactions."""
@@ -77,14 +89,14 @@ class FMPClient:
         params = self._params(symbol=ticker, limit=limit, page=0)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await _request_with_backoff(client, url, params)
-        return resp.json()
+        return _ensure_list(resp.json(), f"insider_trading/{ticker}")
 
     async def get_institutional_holders(self, ticker: str) -> list[dict]:
         """Institutional ownership data."""
         url = f"{BASE_URL}/institutional-ownership/symbol-positions-summary"
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await _request_with_backoff(client, url, self._params(symbol=ticker))
-        return resp.json()
+        return _ensure_list(resp.json(), f"institutional_holders/{ticker}")
 
     async def get_company_profile(self, ticker: str) -> dict:
         """Company profile with sector, market cap, etc."""
@@ -113,7 +125,7 @@ class FMPClient:
         )
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await _request_with_backoff(client, url, params)
-        return resp.json()
+        return _ensure_list(resp.json(), "stock_screener")
 
     async def get_key_metrics(self, ticker: str, period: str = "annual") -> list[dict]:
         """Key financial metrics (P/E, EV/EBITDA, etc.)."""
@@ -121,7 +133,7 @@ class FMPClient:
         params = self._params(symbol=ticker, period=period)
         async with httpx.AsyncClient(timeout=30) as client:
             resp = await _request_with_backoff(client, url, params)
-        return resp.json()
+        return _ensure_list(resp.json(), f"key_metrics/{ticker}")
 
     async def get_daily_prices(
         self, ticker: str, from_date: date, to_date: date
@@ -133,6 +145,9 @@ class FMPClient:
             resp = await _request_with_backoff(client, url, params)
             data = resp.json()
 
+        if not isinstance(data, dict):
+            logger.warning("FMP daily_prices/%s returned unexpected type: %s", ticker, type(data).__name__)
+            return pd.DataFrame()
         historical = data.get("historical", [])
         if not historical:
             return pd.DataFrame()
