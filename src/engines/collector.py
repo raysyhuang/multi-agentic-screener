@@ -17,6 +17,7 @@ from pydantic import ValidationError
 
 from src.config import get_settings
 from src.contracts import EngineResultPayload
+from src.engines.koocore_adapter import fetch_koocore
 
 logger = logging.getLogger(__name__)
 
@@ -140,6 +141,11 @@ async def collect_engine_results() -> list[EngineResultPayload]:
     settings = get_settings()
     api_key = settings.engine_api_key
 
+    # Engines with custom adapters (don't use generic /api/engine/results)
+    _CUSTOM_ADAPTERS = {
+        "koocore_d": fetch_koocore,
+    }
+
     # Build tasks for configured engines only
     tasks: dict[str, asyncio.Task] = {}
     async with aiohttp.ClientSession() as session:
@@ -149,9 +155,14 @@ async def collect_engine_results() -> list[EngineResultPayload]:
                 logger.debug("Engine %s not configured (no URL), skipping", engine_name)
                 continue
 
-            tasks[engine_name] = asyncio.create_task(
-                _fetch_engine(session, engine_name, base_url, api_key)
-            )
+            if engine_name in _CUSTOM_ADAPTERS:
+                tasks[engine_name] = asyncio.create_task(
+                    _CUSTOM_ADAPTERS[engine_name](session, base_url, api_key)
+                )
+            else:
+                tasks[engine_name] = asyncio.create_task(
+                    _fetch_engine(session, engine_name, base_url, api_key)
+                )
 
         if not tasks:
             logger.info("No external engines configured")
