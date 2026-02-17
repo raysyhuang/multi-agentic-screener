@@ -1828,13 +1828,13 @@ async def _debug_engines() -> None:
         print(f"\n  {name}:")
         print(f"    Regime: {info['regime']}")
         print(f"    Picks: {', '.join(info['picks']) or 'none'}")
-    print(f"\nWeighted picks (top 10):")
+    print("\nWeighted picks (top 10):")
     for wp in weighted[:10]:
         print(
             f"  {wp['ticker']}: score={wp['combined_score']:.0f}, "
             f"engines={wp['engine_count']}, convergence={wp['convergence_multiplier']:.1f}x"
         )
-    print(f"\nSynthesis portfolio:")
+    print("\nSynthesis portfolio:")
     for pos in synthesis.portfolio:
         print(f"  {pos.ticker}: {pos.weight_pct:.0f}% [{pos.source}]")
     print(f"\nExecutive summary: {synthesis.executive_summary}")

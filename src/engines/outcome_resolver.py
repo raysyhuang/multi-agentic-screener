@@ -11,7 +11,7 @@ For each engine's unresolved picks:
 from __future__ import annotations
 
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 import pandas as pd
 import yfinance as yf

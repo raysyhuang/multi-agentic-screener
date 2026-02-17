@@ -17,7 +17,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, timedelta
 
-from sqlalchemy import select, func, and_
+from sqlalchemy import select, and_
 
 from src.config import get_settings
 from src.db.models import EnginePickOutcome

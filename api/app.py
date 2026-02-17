@@ -1027,7 +1027,6 @@ async def cross_engine_convergence(date_str: str):
         raise HTTPException(404, f"No engine results for {date_str}")
 
     # Extract tickers per engine
-    from collections import Counter
     ticker_engines: dict[str, list[str]] = {}
     for row in rows:
         payload = row.payload or {}

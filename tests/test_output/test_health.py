@@ -9,7 +9,7 @@ import numpy as np
 import pandas as pd
 import pytest
 
-from src.contracts import HealthCardConfig, HealthComponent, HealthState
+from src.contracts import HealthCardConfig, HealthState
 from src.output.health import (
     STRATEGY_FAMILY,
     _check_soft_invalidation,

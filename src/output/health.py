@@ -13,7 +13,6 @@ from __future__ import annotations
 import logging
 from datetime import date
 
-import numpy as np
 import pandas as pd
 
 from src.contracts import (

@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import MagicMock
 
 from src.contracts import HealthComponent, HealthState, PositionHealthCard
 from src.output.telegram import format_health_alert, format_near_miss_resolution_alert

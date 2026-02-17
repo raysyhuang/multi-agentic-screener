@@ -213,7 +213,7 @@ def format_daily_alert(
         lines.append("")
 
     if key_risks:
-        lines.append(f"\u26a0\ufe0f <b>Risks</b>")
+        lines.append("\u26a0\ufe0f <b>Risks</b>")
         for risk in key_risks:
             lines.append(f"   \u2022 {risk}")
         lines.append("")
@@ -237,7 +237,7 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     engine_bar = _bar(engines_count, 4, 4)
 
     lines = [
-        f"<b>\U0001f517 Cross-Engine Synthesis</b>",
+        "<b>\U0001f517 Cross-Engine Synthesis</b>",
         "",
         f"{regime_dot} Regime: <b>{regime.upper()}</b>",
         f"   Engines: {engine_bar} <b>{engines_count}/4</b> reporting",
@@ -289,7 +289,7 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     # Engine credibility — compact table
     if credibility:
         lines.append(f"{_section_line()}")
-        lines.append(f"\U0001f3af <b>Engine Credibility</b>")
+        lines.append("\U0001f3af <b>Engine Credibility</b>")
         lines.append("")
         for name, stats in credibility.items():
             hr = stats.get("hit_rate", 0)
