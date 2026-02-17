@@ -313,10 +313,27 @@
 
       // --- Verifier Notes ---
       if (synthesis.verifier_notes) {
+        var notes = synthesis.verifier_notes;
+        var notesHtml = '';
+        if (typeof notes === 'object' && notes !== null) {
+          Object.keys(notes).forEach(function (key) {
+            var val = notes[key];
+            var label = key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+            if (Array.isArray(val)) {
+              notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
+              val.forEach(function (item) { notesHtml += '<li>' + escapeHtml(String(item)) + '</li>'; });
+              notesHtml += '</ul>';
+            } else {
+              notesHtml += '<div style="margin-bottom:0.25rem"><strong>' + escapeHtml(label) + ':</strong> ' + escapeHtml(String(val)) + '</div>';
+            }
+          });
+        } else {
+          notesHtml = '<p>' + escapeHtml(String(notes)) + '</p>';
+        }
         html += '<div class="card">' +
           '<div class="card-title" style="margin-bottom:0.5rem">Verifier Notes</div>' +
-          '<p style="font-size:0.85rem;line-height:1.7;color:var(--text-secondary)">' +
-          escapeHtml(synthesis.verifier_notes) + '</p></div>';
+          '<div style="font-size:0.85rem;line-height:1.7;color:var(--text-secondary)">' +
+          notesHtml + '</div></div>';
       }
 
       view.innerHTML = html;
