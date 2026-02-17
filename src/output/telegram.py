@@ -124,6 +124,110 @@ def format_daily_alert(
     return "\n".join(lines)
 
 
+def format_health_alert(state_changes: list) -> str:
+    """Format health card state change alerts for Telegram.
+
+    Args:
+        state_changes: List of PositionHealthCard objects with state_changed=True.
+
+    Returns:
+        HTML-formatted alert string, or empty string if no changes.
+    """
+    if not state_changes:
+        return ""
+
+    state_emoji = {
+        "on_track": "\u2705",  # ✅
+        "watch": "\u26a0\ufe0f",  # ⚠️
+        "exit": "\U0001f6a8",  # 🚨
+    }
+
+    lines = ["<b>\U0001f3e5 Position Health Update</b>", ""]
+
+    for card in state_changes:
+        prev = card.previous_state.value if card.previous_state else "new"
+        curr = card.state.value
+        prev_emoji = state_emoji.get(prev, "\u2753")
+        curr_emoji = state_emoji.get(curr, "\u2753")
+
+        lines.append(
+            f"  {prev_emoji} {prev.upper()} \u2192 {curr_emoji} {curr.upper()}  "
+            f"<b>{card.ticker}</b>"
+        )
+        vel_str = f" | Vel: {card.score_velocity:+.1f}pts/d" if card.score_velocity is not None else ""
+        lines.append(
+            f"    Score: {card.promising_score:.0f}/100 | "
+            f"P&L: {card.pnl_pct:+.2f}% | "
+            f"Day {card.days_held}/{card.expected_hold_days}"
+            f"{vel_str}"
+        )
+
+        if card.invalidation_reason:
+            lines.append(f"    <b>Invalidation:</b> {card.invalidation_reason}")
+
+        # Show weakest component
+        components = [
+            card.trend_health,
+            card.momentum_health,
+            card.volume_confirmation,
+            card.risk_integrity,
+            card.regime_alignment,
+        ]
+        weakest = min(components, key=lambda c: c.score)
+        lines.append(f"    Weakest: {weakest.name} ({weakest.score:.0f}/100)")
+        lines.append("")
+
+    return "\n".join(lines)
+
+
+def format_near_miss_resolution_alert(resolved: list[dict]) -> str:
+    """Format near-miss counterfactual resolution results for Telegram.
+
+    Args:
+        resolved: List of dicts with ticker, counterfactual_return, exit_reason, etc.
+
+    Returns:
+        HTML-formatted alert string, or empty string if no results.
+    """
+    if not resolved:
+        return ""
+
+    returns = [r["counterfactual_return"] for r in resolved]
+    wins = sum(1 for r in returns if r > 0)
+    total = len(returns)
+    win_rate = wins / total if total > 0 else 0
+    avg_return = sum(returns) / total if total > 0 else 0
+
+    lines = [
+        "<b>\U0001f50d Near-Miss Counterfactual Update</b>",
+        "",
+        f"Resolved: <b>{total}</b> | "
+        f"Win Rate: <b>{win_rate:.0%}</b> | "
+        f"Avg Return: <b>{avg_return:+.2f}%</b>",
+        "",
+    ]
+
+    for r in resolved:
+        ret = r["counterfactual_return"]
+        emoji = "\u2705" if ret > 0 else "\u274c" if ret < 0 else "\u2796"
+        exit_reason = r.get("exit_reason", "?")
+        lines.append(
+            f"  {emoji} {r['ticker']}: {ret:+.2f}% ({exit_reason})"
+        )
+
+    lines.append("")
+    if win_rate > 0.5:
+        lines.append(
+            "<i>Note: filtering profitable trades — review rejection criteria</i>"
+        )
+    else:
+        lines.append(
+            "<i>Filters correctly blocked losers</i>"
+        )
+
+    return "\n".join(lines)
+
+
 def format_outcome_alert(outcomes: list[dict]) -> str:
     """Format daily outcome update."""
     if not outcomes:

@@ -53,6 +53,9 @@ def _make_near_miss(
     nm.stop_loss = stop_loss
     nm.target_price = target_price
     nm.timeframe_days = timeframe_days
+    nm.outcome_resolved = False
+    nm.counterfactual_return = None
+    nm.counterfactual_exit_reason = None
     return nm
 
 

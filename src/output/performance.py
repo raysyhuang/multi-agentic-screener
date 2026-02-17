@@ -7,20 +7,49 @@ from datetime import date, timedelta
 
 from sqlalchemy import select
 
-from src.db.models import Signal, Outcome
+import pandas as pd
+
+from src.contracts import HealthState, PositionHealthCard
+from src.db.models import Signal, Outcome, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session
 from src.data.aggregator import DataAggregator
 
 logger = logging.getLogger(__name__)
 
 
-async def check_open_positions() -> list[dict]:
-    """Check all open positions against current prices.
+async def check_open_positions() -> tuple[
+    list[dict], list[PositionHealthCard], list[PositionHealthCard], list[dict]
+]:
+    """Check all open positions against current prices and compute health cards.
 
     Called daily at 4:30 PM ET to update outcomes.
+
+    Returns:
+        (updates, all_health_cards, state_changes, resolved_near_misses)
     """
+    from src.output.health import compute_health_card
+    from src.contracts import HealthCardConfig
+    from src.features.regime import classify_regime
+
     aggregator = DataAggregator()
     updates = []
+    all_health_cards: list[PositionHealthCard] = []
+    state_changes: list[PositionHealthCard] = []
+    config = HealthCardConfig()
+
+    # Fetch current regime once for all positions
+    current_regime: str | None = None
+    try:
+        macro = await aggregator.get_macro_context()
+        regime_result = classify_regime(
+            spy_df=macro.get("spy_prices"),
+            qqq_df=macro.get("qqq_prices"),
+            vix=macro.get("vix"),
+            yield_spread=macro.get("yield_spread_10y2y"),
+        )
+        current_regime = regime_result.regime.value
+    except Exception as e:
+        logger.warning("Regime fetch failed (non-fatal): %s", e)
 
     async with get_session() as session:
         # Get all open outcomes
@@ -31,11 +60,15 @@ async def check_open_positions() -> list[dict]:
 
         if not open_outcomes:
             logger.info("No open positions to check")
-            return []
+            return [], [], [], []
 
+        # Evaluate P&L and collect OHLCV DataFrames for reuse
+        position_dfs: dict[int, pd.DataFrame] = {}
         for outcome in open_outcomes:
             try:
-                update_data = await _evaluate_position(outcome, aggregator)
+                update_data, df = await _evaluate_position(outcome, aggregator)
+                if df is not None:
+                    position_dfs[outcome.signal_id] = df
                 if update_data:
                     for key, value in update_data.items():
                         setattr(outcome, key, value)
@@ -48,7 +81,72 @@ async def check_open_positions() -> list[dict]:
             except Exception as e:
                 logger.error("Failed to evaluate %s: %s", outcome.ticker, e)
 
-    logger.info("Updated %d positions", len(updates))
+        # Health card loop — only for still-open positions
+        for outcome in open_outcomes:
+            if not outcome.still_open:
+                continue
+            try:
+                # Fetch signal
+                sig_result = await session.execute(
+                    select(Signal).where(Signal.id == outcome.signal_id)
+                )
+                signal = sig_result.scalar_one_or_none()
+                if not signal:
+                    continue
+
+                # Get previous metrics (up to 3) for state + velocity
+                prev_result = await session.execute(
+                    select(PositionDailyMetric)
+                    .where(PositionDailyMetric.signal_id == outcome.signal_id)
+                    .order_by(PositionDailyMetric.metric_date.desc())
+                    .limit(3)
+                )
+                prev_metrics = prev_result.scalars().all()
+                prev_metric = prev_metrics[0] if prev_metrics else None
+                previous_state = (
+                    HealthState(prev_metric.health_state) if prev_metric else None
+                )
+                # Chronological order (oldest first) for velocity
+                previous_scores = (
+                    [m.promising_score for m in reversed(prev_metrics)]
+                    if prev_metrics else None
+                )
+
+                # Reuse OHLCV from P&L evaluation
+                df = position_dfs.get(outcome.signal_id)
+                if df is None or df.empty:
+                    continue
+
+                card = await compute_health_card(
+                    outcome=outcome,
+                    signal=signal,
+                    df=df,
+                    config=config,
+                    previous_state=previous_state,
+                    current_regime=current_regime,
+                    previous_scores=previous_scores,
+                )
+                if card is None:
+                    continue
+
+                all_health_cards.append(card)
+                if card.state_changed:
+                    state_changes.append(card)
+
+                # Persist daily metric (upsert — idempotent on reruns)
+                await _persist_daily_metric(session, card)
+
+                # If EXIT and not already closed, persist exit event (guarded)
+                if card.state == HealthState.EXIT:
+                    await _persist_exit_event(session, card, outcome)
+
+            except Exception as e:
+                logger.error("Health card failed for %s (non-fatal): %s", outcome.ticker, e)
+
+    logger.info(
+        "Updated %d positions, %d health cards, %d state changes",
+        len(updates), len(all_health_cards), len(state_changes),
+    )
 
     # Resolve divergence outcomes for closed positions
     try:
@@ -59,11 +157,119 @@ async def check_open_positions() -> list[dict]:
     except Exception as e:
         logger.error("Divergence outcome update failed (non-fatal): %s", e)
 
-    return updates
+    # Resolve near-miss counterfactuals
+    resolved_near_misses: list[dict] = []
+    try:
+        from src.governance.divergence_ledger import resolve_near_miss_counterfactuals
+        resolved_near_misses = await resolve_near_miss_counterfactuals()
+        if resolved_near_misses:
+            logger.info("Resolved %d near-miss counterfactuals", len(resolved_near_misses))
+    except Exception as e:
+        logger.error("Near-miss resolution failed (non-fatal): %s", e)
+
+    return updates, all_health_cards, state_changes, resolved_near_misses
 
 
-async def _evaluate_position(outcome: Outcome, aggregator: DataAggregator) -> dict | None:
-    """Evaluate a single open position against current market data."""
+async def _persist_daily_metric(session, card: PositionHealthCard) -> None:
+    """Upsert a PositionDailyMetric row from a health card.
+
+    Uses delete-then-insert for idempotent reruns (unique on signal_id + metric_date).
+    """
+    from sqlalchemy import delete
+
+    details = {
+        "trend": card.trend_health.details,
+        "momentum": card.momentum_health.details,
+        "volume": card.volume_confirmation.details,
+        "risk": card.risk_integrity.details,
+        "regime": card.regime_alignment.details,
+    }
+
+    # Idempotent upsert: remove any existing row for this signal+date
+    await session.execute(
+        delete(PositionDailyMetric).where(
+            PositionDailyMetric.signal_id == card.signal_id,
+            PositionDailyMetric.metric_date == card.as_of_date,
+        )
+    )
+
+    # Extract regime context from the card's regime component details
+    regime_details = card.regime_alignment.details or {}
+
+    session.add(PositionDailyMetric(
+        signal_id=card.signal_id,
+        ticker=card.ticker,
+        metric_date=card.as_of_date,
+        promising_score=card.promising_score,
+        health_state=card.state.value,
+        trend_score=card.trend_health.score,
+        momentum_score=card.momentum_health.score,
+        volume_score=card.volume_confirmation.score,
+        risk_score=card.risk_integrity.score,
+        regime_score=card.regime_alignment.score,
+        current_price=card.current_price,
+        pnl_pct=card.pnl_pct,
+        rsi_14=card.momentum_health.details.get("rsi_14"),
+        atr_14=card.atr_14,
+        atr_stop_distance=card.atr_stop_distance,
+        rvol=card.volume_confirmation.details.get("rvol"),
+        days_held=card.days_held,
+        score_velocity=card.score_velocity,
+        signal_regime=regime_details.get("signal_regime"),
+        current_regime=regime_details.get("current_regime"),
+        details=details,
+        hard_invalidation=card.hard_invalidation,
+        invalidation_reason=card.invalidation_reason,
+    ))
+
+
+async def _persist_exit_event(session, card: PositionHealthCard, outcome: Outcome) -> None:
+    """Write a SignalExitEvent when health card triggers EXIT.
+
+    Guarded by unique(signal_id, exit_reason) — skips if an exit event
+    for this signal+reason already exists (prevents duplicates on reruns).
+    """
+    exit_reason = "invalidation" if card.hard_invalidation else "health_exit"
+
+    # Check if this exit event already exists
+    existing = await session.execute(
+        select(SignalExitEvent).where(
+            SignalExitEvent.signal_id == card.signal_id,
+            SignalExitEvent.exit_reason == exit_reason,
+        )
+    )
+    if existing.scalar_one_or_none() is not None:
+        logger.debug(
+            "Exit event already exists for signal_id=%d reason=%s — skipping",
+            card.signal_id, exit_reason,
+        )
+        return
+
+    session.add(SignalExitEvent(
+        signal_id=card.signal_id,
+        outcome_id=outcome.id,
+        ticker=card.ticker,
+        exit_date=card.as_of_date,
+        exit_price=card.current_price,
+        entry_price=outcome.entry_price,
+        pnl_pct=card.pnl_pct,
+        exit_reason=exit_reason,
+        signal_model=card.signal_model,
+        health_state_at_exit=card.state.value,
+        promising_score_at_exit=card.promising_score,
+        invalidation_reason=card.invalidation_reason,
+        days_held=card.days_held,
+    ))
+
+
+async def _evaluate_position(
+    outcome: Outcome, aggregator: DataAggregator
+) -> tuple[dict | None, pd.DataFrame | None]:
+    """Evaluate a single open position against current market data.
+
+    Returns (update_dict, ohlcv_dataframe) so the caller can reuse the
+    DataFrame for health card computation without a second API call.
+    """
     # Get the original signal for stop/target
     async with get_session() as session:
         result = await session.execute(
@@ -72,22 +278,24 @@ async def _evaluate_position(outcome: Outcome, aggregator: DataAggregator) -> di
         signal = result.scalar_one_or_none()
 
     if not signal:
-        return None
+        return None, None
 
-    # Fetch latest price data
+    # Fetch latest price data — use centralized lookback to cover all indicator windows
+    from src.output.health import HISTORY_LOOKBACK_DAYS
+
     to_date = date.today()
-    from_date = outcome.entry_date
+    from_date = outcome.entry_date - timedelta(days=HISTORY_LOOKBACK_DAYS)
     df = await aggregator.get_ohlcv(outcome.ticker, from_date, to_date)
 
     if df.empty:
-        return None
+        return None, None
 
     latest = df.iloc[-1]
     current_price = float(latest["close"])
     entry_price = outcome.entry_price
 
     # Track high/low since entry
-    since_entry = df[df["date"] >= outcome.entry_date]
+    since_entry = df[df["date"] >= outcome.entry_date] if "date" in df.columns else df
     max_price = float(since_entry["high"].max())
     min_price = float(since_entry["low"].min())
 
@@ -141,7 +349,7 @@ async def _evaluate_position(outcome: Outcome, aggregator: DataAggregator) -> di
         }
     update["daily_prices"] = daily_prices
 
-    return update
+    return update, df
 
 
 async def record_new_signals(pipeline_results: list[dict]) -> None:
@@ -380,6 +588,46 @@ async def get_near_miss_stats(days: int = 30) -> dict | None:
         for nm in sorted_by_conviction[:3]
     ]
 
+    # --- Counterfactual section (resolved near-misses) ---
+    resolved = [nm for nm in rows if nm.outcome_resolved and nm.counterfactual_return is not None]
+    counterfactual: dict | None = None
+    if resolved:
+        cf_returns = [nm.counterfactual_return for nm in resolved]
+        cf_wins = sum(1 for r in cf_returns if r > 0)
+        cf_total = len(cf_returns)
+
+        # By stage
+        cf_by_stage: dict[str, list[float]] = {}
+        cf_by_regime: dict[str, list[float]] = {}
+        cf_by_model: dict[str, list[float]] = {}
+        cf_by_exit: dict[str, int] = {}
+        for nm in resolved:
+            cf_by_stage.setdefault(nm.stage, []).append(nm.counterfactual_return)
+            regime = (nm.regime or "unknown").lower()
+            cf_by_regime.setdefault(regime, []).append(nm.counterfactual_return)
+            model = nm.signal_model or "unknown"
+            cf_by_model.setdefault(model, []).append(nm.counterfactual_return)
+            exit_reason = nm.counterfactual_exit_reason or "unknown"
+            cf_by_exit[exit_reason] = cf_by_exit.get(exit_reason, 0) + 1
+
+        def _cf_stats(rets: list[float]) -> dict:
+            wins = sum(1 for r in rets if r > 0)
+            return {
+                "count": len(rets),
+                "win_rate": round(wins / len(rets), 4) if rets else 0,
+                "avg_return": round(sum(rets) / len(rets), 4) if rets else 0,
+            }
+
+        counterfactual = {
+            "total_resolved": cf_total,
+            "win_rate": round(cf_wins / cf_total, 4),
+            "avg_return": round(sum(cf_returns) / cf_total, 4),
+            "by_stage": {s: _cf_stats(r) for s, r in cf_by_stage.items()},
+            "by_regime": {r: _cf_stats(v) for r, v in cf_by_regime.items()},
+            "by_signal_model": {m: _cf_stats(v) for m, v in cf_by_model.items()},
+            "by_exit_reason": cf_by_exit,
+        }
+
     return {
         "period_days": days,
         "total_near_misses": total,
@@ -388,6 +636,7 @@ async def get_near_miss_stats(days: int = 30) -> dict | None:
         "by_regime": by_regime_out,
         "by_signal_model": by_signal_model_out,
         "closest_misses": closest_misses,
+        "counterfactual": counterfactual,
     }
 
 

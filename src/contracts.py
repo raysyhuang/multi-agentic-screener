@@ -203,3 +203,81 @@ class FinalOutputPayload(StrictModel):
         if self.decision == "NoTrade" and not self.no_trade_reason:
             raise ValueError("no_trade_reason is required when decision is NoTrade")
         return self
+
+
+# ── Position Health Card ───────────────────────────────────────────────────
+
+
+class HealthState(str, Enum):
+    ON_TRACK = "on_track"
+    WATCH = "watch"
+    EXIT = "exit"
+
+
+class HealthComponent(StrictModel):
+    name: str
+    score: float = Field(ge=0, le=100)
+    weight: float = Field(ge=0, le=1)
+    weighted_score: float = Field(ge=0, le=100)
+    details: dict[str, float | str | None] = Field(default_factory=dict)
+
+
+class PositionHealthCard(StrictModel):
+    # Component scores
+    trend_health: HealthComponent
+    momentum_health: HealthComponent
+    volume_confirmation: HealthComponent
+    risk_integrity: HealthComponent
+    regime_alignment: HealthComponent
+
+    # Composite
+    promising_score: float = Field(ge=0, le=100)
+    state: HealthState
+    previous_state: HealthState | None = None
+    state_changed: bool = False
+    score_velocity: float | None = None
+
+    # Hard invalidation
+    hard_invalidation: bool = False
+    invalidation_reason: str | None = None
+
+    # Path metrics
+    days_held: int
+    expected_hold_days: int
+    pnl_pct: float
+    mfe_pct: float
+    mae_pct: float
+    current_price: float
+    atr_14: float | None = None
+    atr_stop_distance: float | None = None
+
+    # Identity
+    signal_id: int
+    ticker: str
+    signal_model: str
+    as_of_date: date
+
+
+class ExitEvent(StrictModel):
+    signal_id: int
+    ticker: str
+    exit_date: date
+    exit_price: float
+    entry_price: float
+    pnl_pct: float
+    exit_reason: str
+    health_state_at_exit: HealthState
+    promising_score_at_exit: float
+    invalidation_reason: str | None = None
+    days_held: int
+    signal_model: str
+
+
+class HealthCardConfig(StrictModel):
+    trend_weight: float = 0.30
+    momentum_weight: float = 0.25
+    volume_weight: float = 0.15
+    risk_weight: float = 0.20
+    regime_weight: float = 0.10
+    on_track_min: float = 70.0
+    watch_min: float = 50.0

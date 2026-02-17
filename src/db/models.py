@@ -13,6 +13,7 @@ from sqlalchemy import (
     Integer,
     String,
     Text,
+    UniqueConstraint,
     func,
 )
 from sqlalchemy.dialects.postgresql import JSONB
@@ -231,6 +232,90 @@ class NearMiss(Base):
     counterfactual_return: Mapped[float | None] = mapped_column(Float, nullable=True)
     counterfactual_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
     outcome_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class PositionDailyMetric(Base):
+    """Daily health card snapshot for each open position."""
+
+    __tablename__ = "position_daily_metrics"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "metric_date", name="uq_daily_metric_signal_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("signals.id"), nullable=False, index=True
+    )
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    metric_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+
+    # Scores
+    promising_score: Mapped[float] = mapped_column(Float, nullable=False)
+    health_state: Mapped[str] = mapped_column(String(10), nullable=False)
+    trend_score: Mapped[float] = mapped_column(Float, nullable=False)
+    momentum_score: Mapped[float] = mapped_column(Float, nullable=False)
+    volume_score: Mapped[float] = mapped_column(Float, nullable=False)
+    risk_score: Mapped[float] = mapped_column(Float, nullable=False)
+    regime_score: Mapped[float] = mapped_column(Float, nullable=False)
+
+    # Key raw indicators
+    current_price: Mapped[float] = mapped_column(Float, nullable=False)
+    pnl_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    rsi_14: Mapped[float | None] = mapped_column(Float, nullable=True)
+    atr_14: Mapped[float | None] = mapped_column(Float, nullable=True)
+    atr_stop_distance: Mapped[float | None] = mapped_column(Float, nullable=True)
+    rvol: Mapped[float | None] = mapped_column(Float, nullable=True)
+    days_held: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Velocity
+    score_velocity: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    # Regime context (for analyzing EXIT causes from regime flips)
+    signal_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    current_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Full component breakdowns
+    details: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Invalidation
+    hard_invalidation: Mapped[bool] = mapped_column(Boolean, default=False)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class SignalExitEvent(Base):
+    """Records health-driven exit events for learning loop."""
+
+    __tablename__ = "signal_exit_events"
+    __table_args__ = (
+        UniqueConstraint("signal_id", "exit_reason", name="uq_exit_event_signal_reason"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    signal_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("signals.id"), nullable=False, index=True
+    )
+    outcome_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("outcomes.id"), nullable=True, index=True
+    )
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    exit_date: Mapped[date] = mapped_column(Date, nullable=False)
+    exit_price: Mapped[float] = mapped_column(Float, nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    pnl_pct: Mapped[float] = mapped_column(Float, nullable=False)
+    exit_reason: Mapped[str] = mapped_column(String(20), nullable=False)
+    signal_model: Mapped[str] = mapped_column(String(30), nullable=False)
+    health_state_at_exit: Mapped[str] = mapped_column(String(10), nullable=False)
+    promising_score_at_exit: Mapped[float] = mapped_column(Float, nullable=False)
+    invalidation_reason: Mapped[str | None] = mapped_column(String(100), nullable=True)
+    days_held: Mapped[int] = mapped_column(Integer, nullable=False)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

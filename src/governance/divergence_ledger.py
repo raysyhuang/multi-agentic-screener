@@ -13,7 +13,7 @@ from datetime import date, timedelta
 from enum import Enum
 
 from src.data.aggregator import DataAggregator
-from src.db.models import DivergenceEvent, DivergenceOutcome, Outcome, Signal
+from src.db.models import DivergenceEvent, DivergenceOutcome, NearMiss, Outcome, Signal
 from src.db.session import get_session
 
 logger = logging.getLogger(__name__)
@@ -285,7 +285,9 @@ def simulate_quant_counterfactual(
 
     # Only consider data from entry_date onward
     if "date" in df.columns:
-        df = df[df["date"] >= entry_date]
+        import pandas as pd
+        date_col = pd.to_datetime(df["date"])
+        df = df[date_col >= pd.Timestamp(entry_date)]
     if df.empty:
         return None
 
@@ -411,6 +413,95 @@ async def update_divergence_outcomes() -> list[dict]:
                 logger.error("Failed to resolve divergence %d (%s): %s", event.id, event.ticker, e)
 
     logger.info("Resolved %d divergence outcomes", len(results))
+    return results
+
+
+async def resolve_near_miss_counterfactuals() -> list[dict]:
+    """Resolve unresolved near-miss signals against actual market data.
+
+    Checks whether trades rejected by debate/risk gate would have been
+    profitable — the key feedback loop for "are we rejecting winners?"
+
+    Only resolves near-misses where:
+    - outcome_resolved is False
+    - trade params (entry_price, stop_loss, target_price, timeframe_days) are present
+    - today >= run_date + timeframe_days + 2 day buffer (trade has had time to play out)
+
+    Returns list of resolved dicts for alerting.
+    """
+    results: list[dict] = []
+    aggregator = DataAggregator()
+    today = date.today()
+
+    async with get_session() as session:
+        from sqlalchemy import select, and_
+
+        # Query unresolved near-misses with trade params present
+        stmt = select(NearMiss).where(
+            and_(
+                NearMiss.outcome_resolved == False,
+                NearMiss.entry_price.isnot(None),
+                NearMiss.stop_loss.isnot(None),
+                NearMiss.target_price.isnot(None),
+                NearMiss.timeframe_days.isnot(None),
+            )
+        )
+        result = await session.execute(stmt)
+        near_misses = result.scalars().all()
+
+        if not near_misses:
+            return results
+
+        for nm in near_misses:
+            try:
+                # Check if enough time has passed (timeframe + 2 day buffer)
+                resolve_date = nm.run_date + timedelta(days=nm.timeframe_days + 2)
+                if today < resolve_date:
+                    continue  # Not yet ripe
+
+                # T+1 execution
+                entry_date = nm.run_date + timedelta(days=1)
+                to_date = entry_date + timedelta(days=nm.timeframe_days + 5)
+
+                df = await aggregator.get_ohlcv(nm.ticker, entry_date, to_date)
+                if df is None or df.empty:
+                    continue
+
+                sim = simulate_quant_counterfactual(
+                    entry_price=nm.entry_price,
+                    stop_loss=nm.stop_loss,
+                    target_1=nm.target_price,
+                    holding_period=nm.timeframe_days,
+                    direction="LONG",
+                    entry_date=entry_date,
+                    aggregator=aggregator,
+                    ticker=nm.ticker,
+                    price_df=df,
+                )
+                if sim is None:
+                    continue
+
+                nm.counterfactual_return = sim["quant_return"]
+                nm.counterfactual_exit_reason = sim["exit_reason"]
+                nm.outcome_resolved = True
+
+                results.append({
+                    "ticker": nm.ticker,
+                    "stage": nm.stage,
+                    "signal_model": nm.signal_model,
+                    "regime": nm.regime,
+                    "counterfactual_return": sim["quant_return"],
+                    "exit_reason": sim["exit_reason"],
+                    "run_date": str(nm.run_date),
+                })
+            except Exception as e:
+                logger.error(
+                    "Failed to resolve near-miss %d (%s): %s",
+                    nm.id, nm.ticker, e,
+                )
+
+    if results:
+        logger.info("Resolved %d near-miss counterfactuals", len(results))
     return results
 
 

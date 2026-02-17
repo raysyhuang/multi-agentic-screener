@@ -205,6 +205,7 @@ src/
 ├── output/                     # L6 — Output
 │   ├── telegram.py             # Telegram alerts with validation details
 │   ├── report.py               # Jinja2 HTML report generation
+│   ├── health.py               # Position health card engine — 5-component scoring + velocity
 │   └── performance.py          # Outcome tracking, calibration, risk metrics, near-miss stats
 └── db/
     ├── models.py               # 9 SQLAlchemy models (DailyRun, Signal, Outcome, NearMiss, DivergenceEvent, etc.)
@@ -213,7 +214,7 @@ src/
 api/
 └── app.py                      # FastAPI — reports, signals, outcomes, costs, artifacts
 
-tests/                          # 403 tests across all modules
+tests/                          # 485+ tests across all modules
 ```
 
 ## Data Contracts
@@ -237,8 +238,9 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 - **Signal cooldown** — suppresses re-triggering same ticker for 5 calendar days
 - **Confluence detection** — multi-model agreement boosts confidence (2+ models = 10%+ score bonus)
 - **Decay detection** — rolling metrics monitor for hit rate collapse, MAE expansion, or negative expectancy
-- **Near-miss logging** — every signal rejected at the debate or risk gate stage is recorded with conviction scores, trade params, and key risk; aggregated stats feed the weekly meta-analyst to detect if filtering is too strict
+- **Near-miss logging + counterfactual resolution** — every signal rejected at the debate or risk gate stage is recorded with conviction scores, trade params, and key risk; after the holding period expires, counterfactual returns are simulated against actual market data to answer "are we rejecting winners?"; aggregated stats feed the weekly meta-analyst
 - **Divergence ledger** — tracks every LLM override (VETO/PROMOTE/RESIZE) with counterfactual return deltas; portfolio-level aggregation feeds weekly meta-analyst for second-order self-evaluation
+- **Health score velocity** — position health cards track score deterioration rate (pts/day); rapid decline + low score triggers early warning before EXIT threshold is reached
 - **Governance audit trail** — every run captures regime, model versions, decay status, config hash, and git commit
 - **Portfolio construction** — Kelly/volatility-scaled sizing with regime exposure multipliers and liquidity caps
 - **No look-ahead** — signals fire on day T close, execute at T+1 open
@@ -259,6 +261,14 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 | `GET /api/costs` | Daily and per-agent cost breakdown |
 | `GET /api/artifacts/{run_id}` | Pipeline stage artifacts for full traceability |
 | `GET /api/meta-reviews` | Recent weekly meta-analyst reviews |
+| `GET /api/near-misses` | Near-miss signals with optional filters (stage, resolved) |
+| `GET /api/near-misses/summary` | Aggregated near-miss stats with counterfactual resolution data |
+| `GET /api/positions/health` | Current health cards for all open positions |
+| `GET /api/positions/health/{ticker}/history` | Health metric time series for a ticker |
+| `GET /api/positions/health/signal/{id}/history` | Health metric time series for a specific trade |
+| `GET /api/divergence/events` | Divergence events with filters |
+| `GET /api/divergence/summary` | Aggregated divergence stats |
+| `GET /api/thresholds` | Current threshold values |
 | `GET /health` | Health check |
 
 ## Setup
@@ -340,7 +350,7 @@ heroku ps:scale worker=1
 
 ## Database Schema
 
-Nine tables in PostgreSQL:
+Twelve tables in PostgreSQL:
 
 | Table | Purpose |
 |---|---|
@@ -350,7 +360,9 @@ Nine tables in PostgreSQL:
 | `outcomes` | Tracks actual P&L vs predictions (entry date, exit, max favorable/adverse) |
 | `pipeline_artifacts` | Full stage envelope per run for traceability |
 | `agent_logs` | Raw LLM inputs/outputs with token counts and cost |
-| `near_misses` | Signals rejected at debate or risk gate — conviction scores, trade params for counterfactual analysis |
+| `near_misses` | Signals rejected at debate or risk gate — conviction scores, trade params, counterfactual returns |
+| `position_daily_metrics` | Daily health card snapshots with score velocity for open positions |
+| `signal_exit_events` | Health-driven exit events for learning loop |
 | `divergence_events` | Per-decision LLM attribution — VETO/PROMOTE/RESIZE with reason codes |
 | `divergence_outcomes` | Counterfactual results — agentic vs quant return delta per divergence |
 
@@ -369,7 +381,7 @@ Every LLM call is logged with token counts and estimated USD cost. The `/api/cos
 
 ## Tests
 
-403 tests covering all modules:
+485+ tests covering all modules:
 
 ```bash
 pytest tests/ -v                    # Run all tests

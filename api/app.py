@@ -701,6 +701,199 @@ async def divergence_summary(days: int = Query(default=60, le=365)):
     }
 
 
+# ---------------------------------------------------------------------------
+# Near-Miss Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/near-misses")
+async def near_misses(
+    days: int = Query(default=30, le=365),
+    stage: str | None = Query(default=None, description="debate|risk_gate"),
+    resolved: bool | None = Query(default=None),
+):
+    """Return near-miss signals with optional filters."""
+    from datetime import timedelta
+    from src.db.models import NearMiss
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        query = select(NearMiss).where(NearMiss.run_date >= cutoff)
+
+        if stage:
+            query = query.where(NearMiss.stage == stage)
+        if resolved is not None:
+            query = query.where(NearMiss.outcome_resolved == resolved)
+
+        query = query.order_by(NearMiss.run_date.desc()).limit(200)
+        result = await session.execute(query)
+        rows = result.scalars().all()
+
+    return [
+        {
+            "id": nm.id,
+            "run_date": str(nm.run_date),
+            "ticker": nm.ticker,
+            "stage": nm.stage,
+            "debate_verdict": nm.debate_verdict,
+            "net_conviction": nm.net_conviction,
+            "signal_model": nm.signal_model,
+            "regime": nm.regime,
+            "entry_price": nm.entry_price,
+            "stop_loss": nm.stop_loss,
+            "target_price": nm.target_price,
+            "timeframe_days": nm.timeframe_days,
+            "counterfactual_return": nm.counterfactual_return,
+            "counterfactual_exit_reason": nm.counterfactual_exit_reason,
+            "outcome_resolved": nm.outcome_resolved,
+        }
+        for nm in rows
+    ]
+
+
+@app.get("/api/near-misses/summary")
+async def near_misses_summary(days: int = Query(default=30, le=365)):
+    """Aggregated near-miss stats including counterfactual resolution data."""
+    from src.output.performance import get_near_miss_stats
+    stats = await get_near_miss_stats(days)
+    if stats is None:
+        return {"period_days": days, "total_near_misses": 0}
+    return stats
+
+
+# ---------------------------------------------------------------------------
+# Position Health Endpoints
+# ---------------------------------------------------------------------------
+
+
+def _metric_to_dict(m, *, include_details: bool = True) -> dict:
+    """Serialize a PositionDailyMetric row to a JSON-safe dict."""
+    d = {
+        "ticker": m.ticker,
+        "signal_id": m.signal_id,
+        "metric_date": str(m.metric_date),
+        "promising_score": m.promising_score,
+        "health_state": m.health_state,
+        "trend_score": m.trend_score,
+        "momentum_score": m.momentum_score,
+        "volume_score": m.volume_score,
+        "risk_score": m.risk_score,
+        "regime_score": m.regime_score,
+        "current_price": m.current_price,
+        "pnl_pct": m.pnl_pct,
+        "atr_14": m.atr_14,
+        "days_held": m.days_held,
+        "score_velocity": m.score_velocity,
+        "hard_invalidation": m.hard_invalidation,
+        "invalidation_reason": m.invalidation_reason,
+    }
+    if include_details:
+        d["details"] = m.details
+    return d
+
+
+@app.get("/api/positions/health")
+async def positions_health(
+    include_details: bool = Query(default=False, description="Include component breakdowns"),
+):
+    """Current health cards for all open positions (latest daily metric per open Outcome)."""
+    from src.db.models import PositionDailyMetric
+
+    async with get_session() as session:
+        # Get open outcomes
+        open_result = await session.execute(
+            select(Outcome).where(Outcome.still_open == True)
+        )
+        open_outcomes = open_result.scalars().all()
+
+        if not open_outcomes:
+            return {"positions": []}
+
+        cards = []
+        for outcome in open_outcomes:
+            metric_result = await session.execute(
+                select(PositionDailyMetric)
+                .where(PositionDailyMetric.signal_id == outcome.signal_id)
+                .order_by(PositionDailyMetric.metric_date.desc())
+                .limit(1)
+            )
+            metric = metric_result.scalar_one_or_none()
+            if metric:
+                cards.append(_metric_to_dict(metric, include_details=include_details))
+
+    return {"positions": cards}
+
+
+@app.get("/api/positions/health/signal/{signal_id}/history")
+async def position_health_history_by_signal(
+    signal_id: int,
+    days: int = Query(default=30, le=365),
+):
+    """Time series of daily health metrics for a specific signal (trade).
+
+    Use this instead of ticker history when the same ticker has been traded
+    multiple times — this returns metrics for one specific trade only.
+    """
+    from datetime import timedelta
+    from src.db.models import PositionDailyMetric
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(PositionDailyMetric)
+            .where(
+                PositionDailyMetric.signal_id == signal_id,
+                PositionDailyMetric.metric_date >= cutoff,
+            )
+            .order_by(PositionDailyMetric.metric_date.asc())
+        )
+        metrics = result.scalars().all()
+
+    if not metrics:
+        raise HTTPException(404, f"No health history for signal_id={signal_id}")
+
+    return {
+        "signal_id": signal_id,
+        "ticker": metrics[0].ticker,
+        "history": [_metric_to_dict(m) for m in metrics],
+    }
+
+
+@app.get("/api/positions/health/{ticker}/history")
+async def position_health_history(
+    ticker: str,
+    days: int = Query(default=30, le=365),
+):
+    """Time series of daily health metrics for a ticker (all trades).
+
+    Note: if the same ticker has been traded multiple times, this returns
+    metrics for all trades combined. Use /signal/{signal_id}/history for
+    per-trade history.
+    """
+    from datetime import timedelta
+    from src.db.models import PositionDailyMetric
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(PositionDailyMetric)
+            .where(
+                PositionDailyMetric.ticker == ticker.upper(),
+                PositionDailyMetric.metric_date >= cutoff,
+            )
+            .order_by(PositionDailyMetric.metric_date.asc())
+        )
+        metrics = result.scalars().all()
+
+    if not metrics:
+        raise HTTPException(404, f"No health history for {ticker}")
+
+    return {
+        "ticker": ticker.upper(),
+        "history": [_metric_to_dict(m) for m in metrics],
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Health check for Heroku / uptime monitors."""

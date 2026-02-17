@@ -1216,7 +1216,7 @@ async def run_weekly_meta_review() -> None:
 async def run_afternoon_check() -> None:
     """Afternoon position check — runs at 4:30 PM ET."""
     logger.info("Running afternoon position check...")
-    updates = await check_open_positions()
+    updates, health_cards, state_changes, resolved_near_misses = await check_open_positions()
 
     if updates:
         from src.output.telegram import format_outcome_alert, send_alert
@@ -1224,7 +1224,24 @@ async def run_afternoon_check() -> None:
         if msg:
             await send_alert(msg)
 
-    logger.info("Afternoon check complete: %d positions updated", len(updates))
+    if state_changes:
+        from src.output.telegram import format_health_alert, send_alert
+        health_msg = format_health_alert(state_changes)
+        if health_msg:
+            await send_alert(health_msg)
+
+    if resolved_near_misses:
+        from src.output.telegram import format_near_miss_resolution_alert, send_alert
+        nm_msg = format_near_miss_resolution_alert(resolved_near_misses)
+        if nm_msg:
+            await send_alert(nm_msg)
+
+    logger.info(
+        "Afternoon check complete: %d positions updated, %d health cards, "
+        "%d state changes, %d near-misses resolved",
+        len(updates), len(health_cards), len(state_changes),
+        len(resolved_near_misses),
+    )
 
 
 def start_scheduler() -> None:
