@@ -386,7 +386,7 @@ class CrossEngineSynthesis(Base):
     run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True, unique=True)
     convergent_tickers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     portfolio_recommendation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
-    regime_consensus: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    regime_consensus: Mapped[str | None] = mapped_column(Text, nullable=True)
     engines_reporting: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
     executive_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
     verifier_notes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
