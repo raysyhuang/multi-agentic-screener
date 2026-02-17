@@ -65,8 +65,9 @@ class TestFormatHealthAlert:
         card = _make_card()
         msg = format_health_alert([card])
         assert "AAPL" in msg
-        assert "ON_TRACK" in msg
-        assert "WATCH" in msg
+        # State transition shown as emojis: on_track=✅, watch=⚠️
+        assert "\u2705" in msg  # on_track emoji
+        assert "\u26a0" in msg  # watch emoji
         assert "55/100" in msg
         assert "+2.50%" in msg
         assert "Day 5/10" in msg
@@ -102,12 +103,13 @@ class TestFormatHealthAlert:
     def test_velocity_displayed_when_present(self):
         card = _make_card(score_velocity=-7.5)
         msg = format_health_alert([card])
-        assert "Vel: -7.5pts/d" in msg
+        assert "Velocity:" in msg
+        assert "-7.5" in msg
 
     def test_velocity_not_displayed_when_none(self):
         card = _make_card(score_velocity=None)
         msg = format_health_alert([card])
-        assert "Vel:" not in msg
+        assert "Velocity:" not in msg
 
 
 class TestFormatNearMissResolution:
@@ -134,7 +136,7 @@ class TestFormatNearMissResolution:
             {"ticker": "MSFT", "counterfactual_return": 3.0, "exit_reason": "target"},
         ]
         msg = format_near_miss_resolution_alert(resolved)
-        assert "filtering profitable" in msg
+        assert "blocked profitable" in msg
 
     def test_win_rate_commentary_losers(self):
         # All losers → should note correct filtering
@@ -151,4 +153,5 @@ class TestFormatNearMissResolution:
         ]
         msg = format_near_miss_resolution_alert(resolved)
         assert "Resolved: <b>1</b>" in msg
-        assert "Win Rate: <b>100%" in msg
+        assert "WR:" in msg
+        assert "<b>100%</b>" in msg

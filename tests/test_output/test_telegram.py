@@ -20,7 +20,7 @@ def test_format_daily_alert_with_picks():
 
     msg = format_daily_alert(picks, "bull", "2025-03-15")
     assert "AAPL" in msg
-    assert "LONG" in msg
+    assert "\u25b2" in msg  # direction arrow for LONG
     assert "$195.50" in msg
     assert "breakout" in msg
     assert "78" in msg
@@ -50,7 +50,7 @@ def test_format_daily_alert_risk_reward():
     ]
 
     msg = format_daily_alert(picks, "bull", "2025-03-15")
-    assert "R:R:" in msg
+    assert "R:R" in msg
     assert "2.0:1" in msg  # (420-400)/(400-390) = 2.0
 
 
@@ -66,7 +66,7 @@ def test_format_outcome_alert():
     assert "+3.50%" in msg
     assert "MSFT" in msg
     assert "-1.20%" in msg
-    assert "still open" in msg
+    assert "(open)" in msg
 
 
 def test_format_outcome_alert_empty():
@@ -104,5 +104,5 @@ def test_format_daily_alert_with_fragility_warnings():
         key_risks=["Small sample size (15 trades)"],
     )
     assert "AAPL" in msg
-    assert "Fragility warnings" in msg
+    assert "Risks" in msg
     assert "Small sample size" in msg

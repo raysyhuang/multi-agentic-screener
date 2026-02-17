@@ -4,20 +4,36 @@
   'use strict';
 
   // -----------------------------------------------------------------------
+  // Theme-aware chart colors
+  // -----------------------------------------------------------------------
+  function chartColors() {
+    var dark = window.matchMedia('(prefers-color-scheme: dark)').matches;
+    return {
+      bg: dark ? '#1e293b' : '#ffffff',
+      text: dark ? '#94a3b8' : '#64748b',
+      grid: dark ? '#334155' : '#e2e8f0',
+      border: dark ? '#334155' : '#e2e8f0',
+      teal: '#14b8a6',
+      red: '#ef4444',
+      green: '#22c55e',
+    };
+  }
+
+  // -----------------------------------------------------------------------
   // State
   // -----------------------------------------------------------------------
-  const loaded = { signals: false, performance: false, charts: false, compare: false, pipeline: false, costs: false };
-  let equityChart = null;
-  let drawdownChart = null;
-  let calibrationChart = null;
+  var loaded = {
+    signals: false, crossengine: false, performance: false,
+    charts: false, compare: false, pipeline: false, costs: false
+  };
+  var equityChart = null;
 
   // -----------------------------------------------------------------------
   // Tab Router
   // -----------------------------------------------------------------------
   document.querySelectorAll('.nav-tab').forEach(function (btn) {
     btn.addEventListener('click', function () {
-      var tab = btn.dataset.tab;
-      switchTab(tab);
+      switchTab(btn.dataset.tab);
     });
   });
 
@@ -39,6 +55,7 @@
   function loadTab(tab) {
     switch (tab) {
       case 'signals': loadSignals(); break;
+      case 'crossengine': loadCrossEngine(); break;
       case 'performance': loadPerformance(); break;
       case 'charts': loadCharts(); break;
       case 'compare': loadCompare(); break;
@@ -67,19 +84,19 @@
   }
 
   function fmt(n, decimals) {
-    if (n == null) return '—';
+    if (n == null) return '\u2014';
     return Number(n).toFixed(decimals != null ? decimals : 2);
   }
 
   function fmtPct(n) {
-    if (n == null) return '—';
+    if (n == null) return '\u2014';
     var s = Number(n).toFixed(2);
     return (n > 0 ? '+' : '') + s + '%';
   }
 
   function confidenceColor(c) {
     if (c >= 70) return 'var(--green)';
-    if (c >= 50) return 'var(--yellow)';
+    if (c >= 50) return 'var(--amber)';
     return 'var(--red)';
   }
 
@@ -89,24 +106,16 @@
     return '<span class="' + cls + '">' + regime + '</span>';
   }
 
-  function createChart(containerId, height) {
-    var el = document.getElementById(containerId);
-    if (!el || typeof LightweightCharts === 'undefined') return null;
+  function factorClass(value) {
+    if (value >= 0.8) return 'good';
+    if (value >= 0.5) return 'warning';
+    return 'danger';
+  }
 
-    return LightweightCharts.createChart(el, {
-      width: el.clientWidth,
-      height: height || 300,
-      layout: {
-        background: { color: '#1a1d29' },
-        textColor: '#71717a',
-      },
-      grid: {
-        vertLines: { color: '#2a2d3a' },
-        horzLines: { color: '#2a2d3a' },
-      },
-      rightPriceScale: { borderColor: '#2a2d3a' },
-      timeScale: { borderColor: '#2a2d3a' },
-    });
+  function escapeHtml(text) {
+    var d = document.createElement('div');
+    d.textContent = text || '';
+    return d.innerHTML;
   }
 
   // -----------------------------------------------------------------------
@@ -121,9 +130,10 @@
         return;
       }
 
-      var header = '<div class="card" style="margin-bottom:1.5rem">' +
+      var header = '<div class="card" style="margin-bottom:1.25rem">' +
         '<div class="card-header">' +
-        '<span class="card-title">Latest Signals — ' + (data.run_date || '?') + '</span>' +
+        '<div><span class="card-title">Latest Signals</span>' +
+        '<div class="card-subtitle">' + (data.run_date || '') + '</div></div>' +
         regimeBadge(data.regime || '') +
         '</div></div>';
 
@@ -141,9 +151,9 @@
     return '<div class="card signal-card">' +
       '<div class="card-header">' +
         '<div>' +
-          '<span class="signal-ticker">' + s.ticker + '</span>' +
-          '<span class="direction-badge ' + dirClass + '">' + s.direction + '</span>' +
-          '<span class="signal-model">' + (s.signal_model || '') + '</span>' +
+          '<span class="signal-ticker">' + escapeHtml(s.ticker) + '</span>' +
+          '<span class="direction-badge ' + dirClass + '">' + escapeHtml(s.direction) + '</span>' +
+          '<span class="signal-model">' + escapeHtml(s.signal_model || '') + '</span>' +
         '</div>' +
       '</div>' +
       '<div class="confidence-label">Confidence: ' + fmt(conf, 0) + '/100</div>' +
@@ -152,9 +162,9 @@
         gridItem('Entry', '$' + fmt(s.entry_price)) +
         gridItem('Stop', '$' + fmt(s.stop_loss), 'var(--red)') +
         gridItem('Target', '$' + fmt(s.target_1), 'var(--green)') +
-        gridItem('Hold', (s.holding_period_days || '—') + 'd') +
+        gridItem('Hold', (s.holding_period_days || '\u2014') + 'd') +
       '</div>' +
-      (s.thesis ? '<div class="signal-thesis">' + s.thesis + '</div>' : '') +
+      (s.thesis ? '<div class="signal-thesis">' + escapeHtml(s.thesis) + '</div>' : '') +
     '</div>';
   }
 
@@ -164,6 +174,155 @@
       '<div class="label">' + label + '</div>' +
       '<div class="value"' + style + '>' + value + '</div>' +
     '</div>';
+  }
+
+  // -----------------------------------------------------------------------
+  // Cross-Engine Tab
+  // -----------------------------------------------------------------------
+  function loadCrossEngine() {
+    showSpinner('crossengine-view');
+
+    Promise.all([
+      fetchJSON('/api/cross-engine/latest').catch(function () { return null; }),
+      fetchJSON('/api/cross-engine/credibility').catch(function () { return null; }),
+    ]).then(function (results) {
+      var synthesis = results[0];
+      var credibility = results[1];
+      var view = document.getElementById('crossengine-view');
+
+      if (!synthesis) {
+        showEmpty('crossengine-view', 'No cross-engine synthesis data yet. Run the pipeline first.');
+        return;
+      }
+
+      var html = '';
+
+      // --- Header ---
+      html += '<div class="card" style="margin-bottom:1.25rem">' +
+        '<div class="card-header">' +
+        '<div><span class="card-title">Cross-Engine Synthesis</span>' +
+        '<div class="card-subtitle">' + (synthesis.run_date || '') + '</div></div>' +
+        regimeBadge(synthesis.regime_consensus || '') +
+        '</div>' +
+        '<div class="metrics-grid" style="margin-bottom:0">' +
+        metricCard(synthesis.engines_reporting || 0, 'Engines', null) +
+        metricCard(synthesis.convergent_tickers ? Object.keys(synthesis.convergent_tickers).length : 0, 'Convergent', null) +
+        metricCard(synthesis.portfolio_recommendation ? synthesis.portfolio_recommendation.length : 0, 'Positions', null) +
+        '</div></div>';
+
+      // --- Engine Credibility Cards ---
+      if (credibility && credibility.engines && Object.keys(credibility.engines).length > 0) {
+        html += '<div class="section-header">' +
+          '<div class="section-icon">\uD83C\uDFAF</div>' +
+          '<span class="section-title">Engine Credibility</span></div>';
+
+        html += '<div class="engine-grid">';
+        Object.keys(credibility.engines).forEach(function (name) {
+          var e = credibility.engines[name];
+          var hr = e.hit_rate || 0;
+          var w = e.weight || 1.0;
+          var n = e.resolved_picks || 0;
+          var hrPct = Math.round(hr * 100);
+          var hrColor = hrPct >= 55 ? 'green' : (hrPct < 45 ? 'red' : 'amber');
+          var displayName = name.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+
+          html += '<div class="engine-card">' +
+            '<div class="engine-name">' + escapeHtml(displayName) + '</div>' +
+            '<div class="progress-bar"><div class="progress-fill ' + hrColor + '" style="width:' + hrPct + '%"></div></div>' +
+            '<div class="engine-stats">' +
+              '<div class="engine-stat"><div class="engine-stat-value">' + hrPct + '%</div><div class="engine-stat-label">Hit Rate</div></div>' +
+              '<div class="engine-stat"><div class="engine-stat-value">' + fmt(w, 2) + 'x</div><div class="engine-stat-label">Weight</div></div>' +
+              '<div class="engine-stat"><div class="engine-stat-value">' + n + '</div><div class="engine-stat-label">Picks</div></div>' +
+            '</div></div>';
+        });
+        html += '</div>';
+      }
+
+      // --- Convergent Picks ---
+      if (synthesis.convergent_tickers && Object.keys(synthesis.convergent_tickers).length > 0) {
+        html += '<div class="section-header">' +
+          '<div class="section-icon">\uD83E\uDD1D</div>' +
+          '<span class="section-title">Convergent Picks</span></div>';
+
+        html += '<div class="card"><div class="convergent-list">';
+        var tickers = synthesis.convergent_tickers;
+        Object.keys(tickers).forEach(function (ticker) {
+          var engines = tickers[ticker];
+          var engineDots = (Array.isArray(engines) ? engines : []).map(function (e) {
+            return '<span class="engine-dot">' + escapeHtml(e) + '</span>';
+          }).join('');
+
+          html += '<div class="convergent-item">' +
+            '<span class="convergent-ticker">' + escapeHtml(ticker) + '</span>' +
+            '<div class="convergent-engines">' + engineDots + '</div>' +
+            '<span class="convergent-score">' + (Array.isArray(engines) ? engines.length : 0) + ' engines</span>' +
+          '</div>';
+        });
+        html += '</div></div>';
+      }
+
+      // --- Portfolio Recommendation ---
+      if (synthesis.portfolio_recommendation && synthesis.portfolio_recommendation.length > 0) {
+        html += '<div class="section-header">' +
+          '<div class="section-icon">\uD83D\uDCBC</div>' +
+          '<span class="section-title">Portfolio</span></div>';
+
+        html += '<div class="portfolio-grid">';
+        synthesis.portfolio_recommendation.forEach(function (pos) {
+          var ticker = pos.ticker || '?';
+          var weight = pos.weight_pct || 0;
+          var entry = pos.entry_price || 0;
+          var stop = pos.stop_loss || 0;
+          var target = pos.target_price || 0;
+          var hold = pos.holding_period_days || 0;
+          var source = pos.source || '';
+          var guardianAdj = pos.guardian_adjusted || false;
+
+          var riskPct = entry > 0 && stop > 0 ? Math.abs(entry - stop) / entry * 100 : 0;
+          var rewardPct = entry > 0 && target > 0 ? Math.abs(target - entry) / entry * 100 : 0;
+
+          var adjTag = guardianAdj
+            ? ' <span class="guardian-adjusted-tag">\u21E9 adj</span>'
+            : '';
+
+          html += '<div class="portfolio-card">' +
+            '<div class="portfolio-card-header">' +
+              '<span class="portfolio-ticker">' + escapeHtml(ticker) + adjTag + '</span>' +
+              '<span class="portfolio-weight">' + fmt(weight, 0) + '%</span>' +
+            '</div>' +
+            '<div class="portfolio-detail">' +
+              '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Entry</div><div class="portfolio-detail-value">$' + fmt(entry) + '</div></div>' +
+              '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Target</div><div class="portfolio-detail-value positive">+' + fmt(rewardPct, 1) + '%</div></div>' +
+              '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Risk</div><div class="portfolio-detail-value negative">' + fmt(riskPct, 1) + '%</div></div>' +
+            '</div>' +
+            '<div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-muted)">' +
+              'Stop $' + fmt(stop) + ' \u2022 ' + hold + 'd hold \u2022 ' + escapeHtml(source) +
+            '</div>' +
+          '</div>';
+        });
+        html += '</div>';
+      }
+
+      // --- Executive Summary ---
+      if (synthesis.executive_summary) {
+        html += '<div class="card" style="margin-top:1rem">' +
+          '<div class="card-title" style="margin-bottom:0.5rem">Executive Summary</div>' +
+          '<p style="font-size:0.85rem;line-height:1.7;color:var(--text-secondary)">' +
+          escapeHtml(synthesis.executive_summary) + '</p></div>';
+      }
+
+      // --- Verifier Notes ---
+      if (synthesis.verifier_notes) {
+        html += '<div class="card">' +
+          '<div class="card-title" style="margin-bottom:0.5rem">Verifier Notes</div>' +
+          '<p style="font-size:0.85rem;line-height:1.7;color:var(--text-secondary)">' +
+          escapeHtml(synthesis.verifier_notes) + '</p></div>';
+      }
+
+      view.innerHTML = html;
+    }).catch(function () {
+      showEmpty('crossengine-view', 'Failed to load cross-engine data.');
+    });
   }
 
   // -----------------------------------------------------------------------
@@ -183,17 +342,16 @@
       var risk = data.risk_metrics || {};
 
       var html = '<div class="metrics-grid">' +
-        metricCard(data.total_signals, 'Total Trades') +
+        metricCard(data.total_signals, 'Total Trades', null) +
         metricCard(fmtPct(overall.win_rate * 100), 'Win Rate', overall.win_rate >= 0.5) +
         metricCard(fmtPct(overall.avg_pnl), 'Avg P&L', overall.avg_pnl > 0) +
-        metricCard(fmt(risk.sharpe_ratio), 'Sharpe Ratio', risk.sharpe_ratio > 0) +
-        metricCard(fmt(risk.sortino_ratio), 'Sortino Ratio', risk.sortino_ratio > 0) +
+        metricCard(fmt(risk.sharpe_ratio), 'Sharpe', risk.sharpe_ratio > 0) +
+        metricCard(fmt(risk.sortino_ratio), 'Sortino', risk.sortino_ratio > 0) +
         metricCard(fmtPct(risk.max_drawdown_pct), 'Max Drawdown', false) +
         metricCard(fmt(risk.profit_factor), 'Profit Factor', risk.profit_factor > 1) +
         metricCard(fmt(risk.expectancy), 'Expectancy', risk.expectancy > 0) +
       '</div>';
 
-      // Equity curve
       if (data.equity_curve && data.equity_curve.length > 0) {
         html += '<div class="chart-container">' +
           '<div class="chart-title">Cumulative P&L (Equity Curve)</div>' +
@@ -201,7 +359,6 @@
         '</div>';
       }
 
-      // Breakdown tables
       if (data.by_model && Object.keys(data.by_model).length > 0) {
         html += breakdownTable('By Signal Model', data.by_model);
       }
@@ -211,7 +368,6 @@
 
       view.innerHTML = html;
 
-      // Render chart after DOM insert
       if (data.equity_curve && data.equity_curve.length > 0) {
         renderEquityCurve(data.equity_curve);
       }
@@ -223,7 +379,7 @@
   function metricCard(value, label, isPositive) {
     var cls = '';
     if (isPositive === true) cls = ' positive';
-    else if (isPositive === false && value !== '—') cls = ' negative';
+    else if (isPositive === false && value !== '\u2014') cls = ' negative';
     return '<div class="metric-card">' +
       '<div class="metric-value' + cls + '">' + value + '</div>' +
       '<div class="metric-label">' + label + '</div>' +
@@ -235,7 +391,7 @@
       var d = data[key];
       var pnlClass = d.avg_pnl > 0 ? 'positive' : (d.avg_pnl < 0 ? 'negative' : '');
       return '<tr>' +
-        '<td>' + key + '</td>' +
+        '<td>' + escapeHtml(key) + '</td>' +
         '<td>' + d.trades + '</td>' +
         '<td>' + fmtPct(d.win_rate * 100) + '</td>' +
         '<td class="' + pnlClass + '">' + fmtPct(d.avg_pnl) + '</td>' +
@@ -253,54 +409,32 @@
 
   function renderEquityCurve(data) {
     var el = document.getElementById('equity-chart');
-    if (!el) return;
+    if (!el || typeof LightweightCharts === 'undefined') return;
 
-    if (typeof LightweightCharts === 'undefined') {
-      el.innerHTML = '<div class="empty-state"><p>Chart library unavailable.</p></div>';
-      return;
-    }
+    if (equityChart) { equityChart.remove(); equityChart = null; }
 
-    if (equityChart) {
-      equityChart.remove();
-      equityChart = null;
-    }
-
+    var c = chartColors();
     var chart = LightweightCharts.createChart(el, {
       width: el.clientWidth,
       height: 350,
-      layout: {
-        background: { color: '#1a1d29' },
-        textColor: '#71717a',
-      },
-      grid: {
-        vertLines: { color: '#2a2d3a' },
-        horzLines: { color: '#2a2d3a' },
-      },
-      rightPriceScale: { borderColor: '#2a2d3a' },
-      timeScale: { borderColor: '#2a2d3a' },
+      layout: { background: { color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
     });
     equityChart = chart;
 
-    var series = chart.addLineSeries({
-      color: '#3b82f6',
-      lineWidth: 2,
-    });
-
-    var chartData = data.map(function (p) {
-      return { time: p.time, value: p.value };
-    });
-    series.setData(chartData);
+    var series = chart.addLineSeries({ color: c.teal, lineWidth: 2 });
+    series.setData(data.map(function (p) { return { time: p.time, value: p.value }; }));
     chart.timeScale().fitContent();
 
     window.addEventListener('resize', function () {
-      if (equityChart && el.clientWidth > 0) {
-        equityChart.applyOptions({ width: el.clientWidth });
-      }
+      if (equityChart && el.clientWidth > 0) equityChart.applyOptions({ width: el.clientWidth });
     });
   }
 
   // -----------------------------------------------------------------------
-  // Charts Tab (PR4: 5 statistical charts)
+  // Charts Tab
   // -----------------------------------------------------------------------
   function loadCharts() {
     showSpinner('charts-view');
@@ -321,27 +455,22 @@
 
       var html = '';
 
-      // 1. Equity Curve
       if (equity.equity_curve && equity.equity_curve.length > 0) {
         html += '<div class="chart-container">' +
           '<div class="chart-title">Equity Curve (Cumulative Returns)</div>' +
-          '<div id="charts-equity"></div>' +
-        '</div>';
+          '<div id="charts-equity"></div></div>';
       } else {
         html += '<div class="card"><div class="empty-state"><p>No equity curve data yet.</p></div></div>';
       }
 
-      // 2. Drawdown Curve
       if (drawdown.drawdown && drawdown.drawdown.length > 0) {
         html += '<div class="chart-container">' +
           '<div class="chart-title">Drawdown</div>' +
-          '<div id="charts-drawdown"></div>' +
-        '</div>';
+          '<div id="charts-drawdown"></div></div>';
       } else {
         html += '<div class="card"><div class="empty-state"><p>No drawdown data yet.</p></div></div>';
       }
 
-      // 3. Return Distribution by Model
       if (distribution.distribution && Object.keys(distribution.distribution).length > 0) {
         html += '<div class="card">' +
           '<div class="card-title" style="margin-bottom:0.75rem">Return Distribution by Model</div>';
@@ -349,24 +478,21 @@
           var d = distribution.distribution[model];
           var histogram = renderHistogram(d.returns);
           html += '<div style="margin-bottom:1rem">' +
-            '<div style="font-weight:600;margin-bottom:0.25rem">' + model +
-            ' <span style="color:#71717a">(n=' + d.count + ', mean=' + fmtPct(d.mean) + ', std=' + fmt(d.std) + ')</span></div>' +
-            histogram +
-          '</div>';
+            '<div style="font-weight:600;margin-bottom:0.25rem">' + escapeHtml(model) +
+            ' <span style="color:var(--text-muted)">(n=' + d.count + ', mean=' + fmtPct(d.mean) + ', std=' + fmt(d.std) + ')</span></div>' +
+            histogram + '</div>';
         });
         html += '</div>';
       } else {
         html += '<div class="card"><div class="empty-state"><p>No return distribution data yet.</p></div></div>';
       }
 
-      // 4. Regime Matrix
       if (regimeMatrix.matrix && regimeMatrix.matrix.length > 0) {
         html += renderRegimeMatrix(regimeMatrix.matrix);
       } else {
         html += '<div class="card"><div class="empty-state"><p>No regime matrix data yet.</p></div></div>';
       }
 
-      // 5. Calibration Curve
       if (calibration.calibration && calibration.calibration.length > 0) {
         html += renderCalibrationTable(calibration.calibration);
       } else {
@@ -375,12 +501,11 @@
 
       view.innerHTML = html;
 
-      // Render LightweightCharts after DOM
       if (equity.equity_curve && equity.equity_curve.length > 0) {
-        renderTimeChart('charts-equity', equity.equity_curve, '#3b82f6', 'line');
+        renderTimeChart('charts-equity', equity.equity_curve, chartColors().teal, 'line');
       }
       if (drawdown.drawdown && drawdown.drawdown.length > 0) {
-        renderTimeChart('charts-drawdown', drawdown.drawdown, '#ef4444', 'area');
+        renderTimeChart('charts-drawdown', drawdown.drawdown, chartColors().red, 'area');
       }
     }).catch(function () {
       showEmpty('charts-view', 'Failed to load chart data.');
@@ -391,13 +516,14 @@
     var el = document.getElementById(containerId);
     if (!el || typeof LightweightCharts === 'undefined') return;
 
+    var c = chartColors();
     var chart = LightweightCharts.createChart(el, {
       width: el.clientWidth,
       height: 300,
-      layout: { background: { color: '#1a1d29' }, textColor: '#71717a' },
-      grid: { vertLines: { color: '#2a2d3a' }, horzLines: { color: '#2a2d3a' } },
-      rightPriceScale: { borderColor: '#2a2d3a' },
-      timeScale: { borderColor: '#2a2d3a' },
+      layout: { background: { color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
     });
 
     var series;
@@ -421,10 +547,9 @@
   }
 
   function renderHistogram(returns) {
-    if (!returns || returns.length === 0) return '<p>No data</p>';
-    // Simple text-based histogram using buckets
+    if (!returns || returns.length === 0) return '<p style="color:var(--text-muted)">No data</p>';
     var buckets = {};
-    var step = 1; // 1% buckets
+    var step = 1;
     returns.forEach(function (r) {
       var bucket = Math.floor(r / step) * step;
       var key = bucket + '%';
@@ -440,8 +565,8 @@
       var color = parseFloat(key) >= 0 ? 'var(--green)' : 'var(--red)';
       return '<div style="display:flex;align-items:center;gap:0.5rem;margin:2px 0">' +
         '<span style="min-width:50px;text-align:right;font-size:0.8rem">' + key + '</span>' +
-        '<div style="background:' + color + ';height:16px;width:' + width + '%;border-radius:2px;min-width:2px"></div>' +
-        '<span style="font-size:0.75rem;color:#71717a">' + count + '</span>' +
+        '<div style="background:' + color + ';height:16px;width:' + width + '%;border-radius:4px;min-width:2px"></div>' +
+        '<span style="font-size:0.75rem;color:var(--text-muted)">' + count + '</span>' +
       '</div>';
     }).join('');
 
@@ -449,7 +574,6 @@
   }
 
   function renderRegimeMatrix(matrix) {
-    // Group by model
     var models = {};
     var regimes = new Set();
     matrix.forEach(function (m) {
@@ -459,20 +583,20 @@
     });
 
     var regimeList = Array.from(regimes).sort();
-    var headerCells = regimeList.map(function (r) { return '<th>' + r + '</th>'; }).join('');
+    var headerCells = regimeList.map(function (r) { return '<th>' + escapeHtml(r) + '</th>'; }).join('');
 
     var rows = Object.keys(models).map(function (model) {
       var cells = regimeList.map(function (regime) {
         var cell = models[model][regime];
-        if (!cell) return '<td style="color:#71717a">—</td>';
+        if (!cell) return '<td style="color:var(--text-muted)">\u2014</td>';
         var wr = cell.win_rate * 100;
-        var bg = wr >= 55 ? 'rgba(34,197,94,0.2)' : (wr < 45 ? 'rgba(239,68,68,0.2)' : 'rgba(234,179,8,0.2)');
-        return '<td style="background:' + bg + '">' +
+        var bg = wr >= 55 ? 'var(--green-soft)' : (wr < 45 ? 'var(--red-soft)' : 'var(--amber-soft)');
+        return '<td style="background:' + bg + ';border-radius:6px">' +
           '<div>' + fmtPct(wr) + '</div>' +
-          '<div style="font-size:0.7rem;color:#71717a">' + cell.trades + ' trades</div>' +
+          '<div style="font-size:0.7rem;color:var(--text-muted)">' + cell.trades + ' trades</div>' +
         '</td>';
       }).join('');
-      return '<tr><td><b>' + model + '</b></td>' + cells + '</tr>';
+      return '<tr><td><b>' + escapeHtml(model) + '</b></td>' + cells + '</tr>';
     }).join('');
 
     return '<div class="card">' +
@@ -480,8 +604,7 @@
       '<table class="data-table">' +
         '<thead><tr><th>Model</th>' + headerCells + '</tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
-      '</table>' +
-    '</div>';
+      '</table></div>';
   }
 
   function renderCalibrationTable(data) {
@@ -489,7 +612,7 @@
       var error = b.calibration_error;
       var errClass = error > 0.15 ? 'negative' : (error < 0.05 ? 'positive' : '');
       return '<tr>' +
-        '<td>' + b.bucket + '</td>' +
+        '<td>' + escapeHtml(b.bucket) + '</td>' +
         '<td>' + b.trades + '</td>' +
         '<td>' + fmtPct(b.expected_win_rate * 100) + '</td>' +
         '<td>' + fmtPct(b.actual_win_rate * 100) + '</td>' +
@@ -503,12 +626,11 @@
       '<table class="data-table">' +
         '<thead><tr><th>Bucket</th><th>Trades</th><th>Expected WR</th><th>Actual WR</th><th>Cal. Error</th><th>Avg P&L</th></tr></thead>' +
         '<tbody>' + rows + '</tbody>' +
-      '</table>' +
-    '</div>';
+      '</table></div>';
   }
 
   // -----------------------------------------------------------------------
-  // Compare Tab (PR4: LLM uplift — mode comparison)
+  // Compare Tab
   // -----------------------------------------------------------------------
   function loadCompare() {
     showSpinner('compare-view');
@@ -521,15 +643,16 @@
       }
 
       var html = '<div class="card">' +
-        '<div class="card-title" style="margin-bottom:0.75rem">LLM Uplift: Mode Comparison</div>' +
-        '<p style="color:#71717a;margin-bottom:1rem">Compare quant_only vs hybrid vs agentic_full performance</p>';
+        '<div class="card-title" style="margin-bottom:0.5rem">LLM Uplift: Mode Comparison</div>' +
+        '<p class="card-subtitle" style="margin-bottom:1rem">Compare quant_only vs hybrid vs agentic_full performance</p>';
 
-      // Metrics grid per mode
+      var modeColors = { agentic_full: 'var(--teal-500)', hybrid: '#a855f7', quant_only: 'var(--green)' };
+
       html += '<div class="metrics-grid">';
       data.comparison.forEach(function (m) {
         var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
-        html += '<div class="metric-card" style="border-left:3px solid ' +
-          (m.mode === 'agentic_full' ? '#3b82f6' : (m.mode === 'hybrid' ? '#a855f7' : '#22c55e')) + '">' +
+        var borderColor = modeColors[m.mode] || 'var(--teal-500)';
+        html += '<div class="metric-card" style="border-top:3px solid ' + borderColor + '">' +
           '<div class="metric-value">' + (m.mode || 'unknown').toUpperCase() + '</div>' +
           '<div class="metric-label">' + m.trades + ' trades</div>' +
           '<div class="metric-label ' + pnlClass + '">WR: ' + fmtPct(m.win_rate * 100) +
@@ -539,7 +662,6 @@
       });
       html += '</div>';
 
-      // Comparison table
       var rows = data.comparison.map(function (m) {
         var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
         return '<tr>' +
@@ -576,12 +698,12 @@
       }
 
       var rows = runs.map(function (r) {
-        return '<tr class="run-row" data-run-date="' + r.run_date + '">' +
-          '<td>' + r.run_date + '</td>' +
+        return '<tr>' +
+          '<td>' + escapeHtml(r.run_date) + '</td>' +
           '<td>' + regimeBadge(r.regime) + '</td>' +
-          '<td>' + (r.universe_size || '—') + '</td>' +
-          '<td>' + (r.candidates_scored || '—') + '</td>' +
-          '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '—') + '</td>' +
+          '<td>' + (r.universe_size || '\u2014') + '</td>' +
+          '<td>' + (r.candidates_scored || '\u2014') + '</td>' +
+          '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '\u2014') + '</td>' +
         '</tr>';
       }).join('');
 
@@ -590,9 +712,8 @@
         '<table class="data-table">' +
           '<thead><tr><th>Date</th><th>Regime</th><th>Universe</th><th>Scored</th><th>Duration</th></tr></thead>' +
           '<tbody>' + rows + '</tbody>' +
-        '</table>' +
-      '</div>' +
-      '<div id="run-detail"></div>';
+        '</table></div>' +
+        '<div id="run-detail"></div>';
     }).catch(function () {
       showEmpty('pipeline-view', 'Failed to load pipeline runs.');
     });
@@ -613,20 +734,19 @@
       var view = document.getElementById('costs-view');
 
       var html = '<div class="metrics-grid">' +
-        metricCard('$' + fmt(costs.total_cost_usd, 4), 'Total Cost (30d)') +
-        metricCard(numberFormat(costs.total_tokens_in), 'Tokens In') +
-        metricCard(numberFormat(costs.total_tokens_out), 'Tokens Out') +
+        metricCard('$' + fmt(costs.total_cost_usd, 4), 'Total Cost (30d)', null) +
+        metricCard(numberFormat(costs.total_tokens_in), 'Tokens In', null) +
+        metricCard(numberFormat(costs.total_tokens_out), 'Tokens Out', null) +
         metricCard(fmtPct(cache.hit_rate * 100), 'Cache Hit Rate', cache.hit_rate > 0.5) +
-        metricCard(cache.hits, 'Cache Hits') +
-        metricCard(cache.misses, 'Cache Misses') +
-        metricCard(cache.total_entries, 'Cached Entries') +
-        metricCard(cache.evictions, 'Evictions') +
+        metricCard(cache.hits, 'Cache Hits', null) +
+        metricCard(cache.misses, 'Cache Misses', null) +
+        metricCard(cache.total_entries, 'Cached Entries', null) +
+        metricCard(cache.evictions, 'Evictions', null) +
       '</div>';
 
-      // By-agent breakdown
       if (costs.by_agent && Object.keys(costs.by_agent).length > 0) {
         var agentRows = Object.keys(costs.by_agent).map(function (agent) {
-          return '<tr><td>' + agent + '</td><td>$' + fmt(costs.by_agent[agent], 4) + '</td></tr>';
+          return '<tr><td>' + escapeHtml(agent) + '</td><td>$' + fmt(costs.by_agent[agent], 4) + '</td></tr>';
         }).join('');
 
         html += '<div class="card">' +
@@ -634,14 +754,12 @@
           '<table class="data-table">' +
             '<thead><tr><th>Agent</th><th>Cost (USD)</th></tr></thead>' +
             '<tbody>' + agentRows + '</tbody>' +
-          '</table>' +
-        '</div>';
+          '</table></div>';
       }
 
-      // Daily breakdown
       if (costs.by_date && Object.keys(costs.by_date).length > 0) {
         var dateRows = Object.keys(costs.by_date).sort().reverse().map(function (d) {
-          return '<tr><td>' + d + '</td><td>$' + fmt(costs.by_date[d], 4) + '</td></tr>';
+          return '<tr><td>' + escapeHtml(d) + '</td><td>$' + fmt(costs.by_date[d], 4) + '</td></tr>';
         }).join('');
 
         html += '<div class="card">' +
@@ -649,8 +767,7 @@
           '<table class="data-table">' +
             '<thead><tr><th>Date</th><th>Cost (USD)</th></tr></thead>' +
             '<tbody>' + dateRows + '</tbody>' +
-          '</table>' +
-        '</div>';
+          '</table></div>';
       }
 
       view.innerHTML = html;
@@ -660,7 +777,7 @@
   }
 
   function numberFormat(n) {
-    if (n == null) return '—';
+    if (n == null) return '\u2014';
     return Number(n).toLocaleString();
   }
 

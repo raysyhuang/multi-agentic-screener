@@ -171,10 +171,21 @@ async def compute_credibility_snapshot() -> CredibilitySnapshot:
 def _compute_weight(stats: EngineStats, avg_hit_rate: float) -> float:
     """Compute dynamic weight for an engine.
 
-    weight = base_weight * hit_rate_multiplier * calibration_bonus * recency_factor
+    weight = base_weight * hit_rate_multiplier * calibration_bonus * data_maturity
+
+    Cold-start engines (< min_picks resolved) get a ramped weight:
+    weight scales linearly from 0.1 (0 picks) to 1.0 (min_picks).
+    This prevents untested engines from getting equal influence.
     """
+    settings = get_settings()
+    min_picks = settings.credibility_min_picks_for_weight
+
     if not stats.has_enough_data:
-        return 1.0  # default weight until enough data
+        # Ramp weight linearly: 0 picks → 0.1, min_picks → 1.0
+        if stats.resolved_picks <= 0:
+            return 0.1
+        ramp = stats.resolved_picks / min_picks  # 0.0 to ~1.0
+        return round(max(0.1, min(1.0, ramp)), 3)
 
     base_weight = 1.0
 

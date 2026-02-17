@@ -2,6 +2,7 @@
 
 Fail-open per engine: one engine being down does not block the others.
 Returns a list of validated EngineResultPayload objects.
+Quality validation rejects stale, degenerate, or mock-looking data.
 """
 
 from __future__ import annotations
@@ -9,6 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
+from datetime import date, datetime, timedelta
 
 import aiohttp
 from pydantic import ValidationError
@@ -17,6 +19,9 @@ from src.config import get_settings
 from src.contracts import EngineResultPayload
 
 logger = logging.getLogger(__name__)
+
+# Maximum age of engine run_date before it's considered stale
+_MAX_STALENESS_DAYS = 2
 
 # Map engine name -> settings attribute for URL
 _ENGINE_CONFIG = {
@@ -70,10 +75,47 @@ async def _fetch_engine(
         return None
 
 
+def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) -> list[str]:
+    """Check an engine payload for signs of stale, mock, or degenerate data.
+
+    Returns a list of warning strings. Empty list means the payload is clean.
+    """
+    warnings: list[str] = []
+
+    # 1. Stale run_date
+    try:
+        run_date = datetime.strptime(payload.run_date, "%Y-%m-%d").date()
+        staleness = (date.today() - run_date).days
+        if staleness > _MAX_STALENESS_DAYS:
+            warnings.append(f"stale run_date ({payload.run_date}, {staleness}d old)")
+    except ValueError:
+        warnings.append(f"unparseable run_date: {payload.run_date}")
+
+    if not payload.picks:
+        return warnings  # no picks to validate further
+
+    # 2. Zero or negative entry prices
+    bad_prices = [p.ticker for p in payload.picks if p.entry_price <= 0]
+    if bad_prices:
+        warnings.append(f"{len(bad_prices)} picks with zero/negative entry price: {bad_prices[:5]}")
+
+    # 3. All confidence scores identical (suggests mock/hardcoded data)
+    confidences = [p.confidence for p in payload.picks]
+    if len(set(confidences)) == 1 and len(confidences) > 1:
+        warnings.append(f"all {len(confidences)} picks have identical confidence={confidences[0]}")
+
+    # 4. Unreasonable pick count (too many suggests no filtering)
+    if len(payload.picks) > 20:
+        warnings.append(f"unusually high pick count ({len(payload.picks)})")
+
+    return warnings
+
+
 async def collect_engine_results() -> list[EngineResultPayload]:
     """Fetch results from all configured external engines in parallel.
 
     Returns only the engines that responded successfully with valid payloads.
+    Payloads are quality-validated; those with critical issues are rejected.
     """
     settings = get_settings()
     api_key = settings.engine_api_key
@@ -103,10 +145,22 @@ async def collect_engine_results() -> list[EngineResultPayload]:
         if isinstance(result, Exception):
             logger.warning("Engine %s raised exception: %s", engine_name, result)
         elif result is not None:
+            # Quality validation — reject payloads with critical issues
+            quality_warnings = _validate_payload_quality(engine_name, result)
+            if quality_warnings:
+                has_critical = any(
+                    w.startswith("stale") or w.startswith("unparseable") or "zero/negative" in w
+                    for w in quality_warnings
+                )
+                for w in quality_warnings:
+                    logger.warning("Engine %s quality issue: %s", engine_name, w)
+                if has_critical:
+                    logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
+                    continue
             payloads.append(result)
 
     logger.info(
-        "Engine collection complete: %d/%d engines responded",
+        "Engine collection complete: %d/%d engines responded and passed quality checks",
         len(payloads), len(tasks),
     )
     return payloads

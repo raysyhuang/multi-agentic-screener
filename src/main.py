@@ -1366,12 +1366,11 @@ async def _run_cross_engine_steps(
                 "risk_factors": [],
             })
 
-        weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
-
-        logger.info("Step 11 complete: %d weighted picks computed", len(weighted_picks))
+        logger.info("Step 11 complete: %d picks collected for weighting", len(all_picks))
 
         # --- Step 12: Cross-Engine Verifier ---
         verifier_output_dict = {}
+        verifier_result = None
         if settings.cross_engine_verify_before_synthesize:
             logger.info("Step 12: Running cross-engine verifier...")
             verifier = CrossEngineVerifierAgent()
@@ -1396,12 +1395,33 @@ async def _run_cross_engine_steps(
             )
             verifier_output_dict = _json_safe(verifier_result.model_dump())
 
+            # Apply verifier weight adjustments to credibility stats before
+            # computing weighted picks — this closes the gap where the verifier's
+            # regime-aware adjustments were only seen as LLM context, never applied.
+            if verifier_result.weight_adjustments:
+                for engine_name, adj in verifier_result.weight_adjustments.items():
+                    if engine_name in cred_snapshot.engine_stats:
+                        old_w = cred_snapshot.engine_stats[engine_name].weight
+                        new_w = old_w * adj.weight_multiplier
+                        new_w = max(0.1, min(3.0, new_w))  # clamp
+                        cred_snapshot.engine_stats[engine_name].weight = round(new_w, 3)
+                        logger.info(
+                            "Verifier adjusted %s weight: %.3f → %.3f (×%.2f, reason: %s)",
+                            engine_name, old_w, new_w,
+                            adj.weight_multiplier, adj.reason,
+                        )
+
             logger.info(
-                "Step 12 complete: %d verified picks, %d red flags",
+                "Step 12 complete: %d verified picks, %d red flags, %d weight adjustments applied",
                 len(verifier_result.verified_picks), len(verifier_result.red_flags),
+                len(verifier_result.weight_adjustments),
             )
         else:
             logger.info("Step 12: Verifier disabled, skipping")
+
+        # Compute weighted picks AFTER verifier adjustments are applied
+        weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
+        logger.info("Weighted picks computed: %d tickers ranked", len(weighted_picks))
 
         # --- Step 13: Cross-Engine Synthesizer ---
         logger.info("Step 13: Running cross-engine synthesizer...")
@@ -1424,6 +1444,49 @@ async def _run_cross_engine_steps(
             "Step 13 complete: %d convergent, %d portfolio positions",
             len(synthesis.convergent_picks), len(synthesis.portfolio),
         )
+
+        # --- Step 13.5: Capital Guardian (portfolio-level risk defense) ---
+        guardian_summary = ""
+        if settings.guardian_enabled:
+            from src.portfolio.capital_guardian import (
+                compute_portfolio_risk_state,
+                compute_guardian_verdict,
+                apply_guardian_to_portfolio,
+                format_guardian_summary,
+            )
+
+            logger.info("Step 13.5: Running Capital Guardian...")
+            risk_state = await compute_portfolio_risk_state()
+            guardian_verdict = compute_guardian_verdict(
+                risk_state=risk_state,
+                regime=regime_context.get("regime", "bull"),
+            )
+
+            # Apply sizing adjustments to the synthesis portfolio
+            original_portfolio = [p.model_dump() for p in synthesis.portfolio]
+            adjusted_portfolio = apply_guardian_to_portfolio(
+                original_portfolio, guardian_verdict
+            )
+
+            # Update synthesis with guardian-adjusted portfolio
+            from src.agents.cross_engine_synthesizer import PortfolioPosition
+            synthesis.portfolio = [
+                PortfolioPosition.model_validate(p) for p in adjusted_portfolio
+            ]
+
+            guardian_summary = format_guardian_summary(guardian_verdict)
+
+            if guardian_verdict.halt:
+                logger.warning("Capital Guardian HALTED trading: %s", guardian_verdict.halt_reason)
+            else:
+                logger.info(
+                    "Step 13.5 complete: sizing=%.0f%%, %d→%d positions, warnings=%d",
+                    guardian_verdict.sizing_multiplier * 100,
+                    len(original_portfolio), len(adjusted_portfolio),
+                    len(guardian_verdict.warnings),
+                )
+        else:
+            logger.info("Step 13.5: Capital Guardian disabled, skipping")
 
         # --- Step 14: Save to DB + send Telegram ---
         logger.info("Step 14: Saving synthesis and sending alert...")
@@ -1462,6 +1525,8 @@ async def _run_cross_engine_steps(
             },
             credibility=cred_weights_dict,
         )
+        if guardian_summary:
+            cross_alert += guardian_summary
         await send_alert(cross_alert)
 
         logger.info("Steps 10-14 complete: cross-engine synthesis saved and alert sent")
