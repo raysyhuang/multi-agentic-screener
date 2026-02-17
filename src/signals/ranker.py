@@ -37,6 +37,13 @@ REGIME_MULTIPLIERS = {
     Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1},
 }
 
+# Regime target multipliers: scale stop/target distances in adverse regimes
+REGIME_TARGET_MULTIPLIERS = {
+    Regime.BULL:   {"stop": 1.0, "target": 1.0},
+    Regime.BEAR:   {"stop": 0.8, "target": 0.6},
+    Regime.CHOPPY: {"stop": 0.9, "target": 0.75},
+}
+
 
 @dataclass
 class RankedCandidate:
@@ -88,16 +95,27 @@ def rank_candidates(
 
         features = features_by_ticker.get(signal.ticker, {})
 
+        # Apply regime-adaptive target scaling
+        target_mults = REGIME_TARGET_MULTIPLIERS.get(regime, {"stop": 1.0, "target": 1.0})
+        entry = signal.entry_price
+        stop = signal.stop_loss
+        t1 = signal.target_1
+        t2 = getattr(signal, "target_2", None)
+
+        adj_stop = round(entry - (entry - stop) * target_mults["stop"], 2)
+        adj_t1 = round(entry + (t1 - entry) * target_mults["target"], 2)
+        adj_t2 = round(entry + (t2 - entry) * target_mults["target"], 2) if t2 is not None else None
+
         candidates.append(RankedCandidate(
             ticker=signal.ticker,
             signal_model=model_name,
             raw_score=signal.score,
             regime_adjusted_score=round(adjusted_score, 2),
             direction=signal.direction,
-            entry_price=signal.entry_price,
-            stop_loss=signal.stop_loss,
-            target_1=signal.target_1,
-            target_2=getattr(signal, "target_2", None),
+            entry_price=entry,
+            stop_loss=adj_stop,
+            target_1=adj_t1,
+            target_2=adj_t2,
             holding_period=signal.holding_period,
             components=signal.components,
             features=features,
