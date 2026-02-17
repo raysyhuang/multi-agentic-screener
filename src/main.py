@@ -31,8 +31,8 @@ from src.contracts import (
     FinalPick,
 )
 from src.data.aggregator import DataAggregator
-from sqlalchemy import select, func
-from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss
+from sqlalchemy import delete, select, func
+from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
@@ -1084,7 +1084,55 @@ async def _run_pipeline_core(
         )
         daily_run = existing_run.scalar_one_or_none()
         if daily_run:
-            logger.info("Re-run detected for %s — updating existing DailyRun", today)
+            logger.info("Re-run detected for %s — purging child tables", today)
+
+            # Delete in dependency order (outcomes depend on signals)
+            # 1. Find signals from this run_date
+            stale_signals = await session.execute(
+                select(Signal.id).where(Signal.run_date == today)
+            )
+            stale_signal_ids = [row[0] for row in stale_signals.fetchall()]
+            if stale_signal_ids:
+                # Only delete unresolved outcomes — preserve closed ones with real exit data
+                await session.execute(
+                    delete(Outcome).where(
+                        Outcome.signal_id.in_(stale_signal_ids),
+                        Outcome.still_open == True,  # noqa: E712
+                    )
+                )
+                # Warn about resolved outcomes we're preserving
+                resolved_count_result = await session.execute(
+                    select(func.count()).select_from(Outcome).where(
+                        Outcome.signal_id.in_(stale_signal_ids),
+                        Outcome.still_open == False,  # noqa: E712
+                    )
+                )
+                resolved_count = resolved_count_result.scalar() or 0
+                if resolved_count:
+                    logger.warning(
+                        "Preserving %d resolved outcome(s) from previous run", resolved_count
+                    )
+                await session.execute(
+                    delete(PositionDailyMetric).where(
+                        PositionDailyMetric.signal_id.in_(stale_signal_ids)
+                    )
+                )
+                await session.execute(
+                    delete(SignalExitEvent).where(
+                        SignalExitEvent.signal_id.in_(stale_signal_ids)
+                    )
+                )
+
+            # 2. Delete flat child tables keyed on run_date
+            for model in (Candidate, Signal, AgentLog, PipelineArtifact):
+                await session.execute(delete(model).where(model.run_date == today))
+
+            # 3. Delete divergence/near-miss keyed on run_date
+            await session.execute(delete(DivergenceEvent).where(DivergenceEvent.run_date == today))
+            await session.execute(delete(NearMiss).where(NearMiss.run_date == today))
+
+            # Update the existing DailyRun row
+            logger.info("Updating existing DailyRun for %s", today)
             daily_run.regime = regime_assessment.regime.value
             daily_run.regime_details = _json_safe(regime_context)
             daily_run.universe_size = len(filtered)
@@ -1147,12 +1195,13 @@ async def _run_pipeline_core(
         await session.flush()
 
         # Create Outcome records so afternoon check can track them
-        next_trading_day = today + timedelta(days=1)
+        from src.utils.trading_calendar import next_trading_day as _next_td
+        next_entry_date = _next_td(today)
         for signal in new_signals:
             outcome = Outcome(
                 signal_id=signal.id,
                 ticker=signal.ticker,
-                entry_date=next_trading_day,  # T+1 open execution
+                entry_date=next_entry_date,  # T+1 open execution (trading day)
                 entry_price=signal.entry_price,
                 still_open=True,
             )

@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from html import escape as _html_escape
 
 from telegram import Bot
 from telegram.constants import ParseMode
@@ -15,6 +16,13 @@ from telegram.constants import ParseMode
 from src.config import get_settings
 
 logger = logging.getLogger(__name__)
+
+
+def _esc(text: str | None) -> str:
+    """Escape HTML special characters for Telegram parse_mode=HTML."""
+    if not text:
+        return ""
+    return _html_escape(str(text), quote=False)
 
 # Telegram message limit (API max is 4096, leave margin)
 MAX_MESSAGE_LENGTH = 4000
@@ -203,13 +211,13 @@ def format_daily_alert(
         conf_bar = _bar(confidence, 100, 10)
 
         lines.extend([
-            f"<b>{dir_arrow} {ticker}</b>  <code>{model}</code>",
+            f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>{_esc(model)}</code>",
             f"   {conf_bar} {confidence:.0f}/100",
             f"   Entry <b>${entry:.2f}</b>  \u2192  Target <b>${target:.2f}</b> (+{reward_pct:.1f}%)",
             f"   Stop  <b>${stop:.2f}</b>  ({risk_pct:.1f}% risk)   R:R <b>{rr:.1f}:1</b>   {holding}d",
         ])
         if thesis:
-            lines.append(f"   <i>{thesis[:120]}</i>")
+            lines.append(f"   <i>{_esc(thesis[:120])}</i>")
         lines.append("")
 
     if key_risks:
@@ -254,8 +262,8 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
             engines = pick.get("engines", [])
             score = pick.get("combined_score", 0)
             score_bar = _bar(score, 200, 8)
-            lines.append(f"   <b>{ticker}</b>  {score_bar} score {score:.0f}")
-            lines.append(f"   {len(engines)} engines: {', '.join(engines)}")
+            lines.append(f"   <b>{_esc(ticker)}</b>  {score_bar} score {score:.0f}")
+            lines.append(f"   {len(engines)} engines: {_esc(', '.join(engines))}")
             lines.append("")
 
     # Portfolio positions — the final recommendation
@@ -278,11 +286,11 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
             reward_pct = abs(target - entry) / entry * 100 if entry > 0 else 0
 
             lines.append(
-                f"   <b>{ticker}</b>  {weight:.0f}%{adj_tag}  |  "
+                f"   <b>{_esc(ticker)}</b>  {weight:.0f}%{adj_tag}  |  "
                 f"${entry:.2f} \u2192 ${target:.2f} (+{reward_pct:.1f}%)"
             )
             lines.append(
-                f"   Stop ${stop:.2f} ({risk_pct:.1f}%)  |  {hold}d  [{source}]"
+                f"   Stop ${stop:.2f} ({risk_pct:.1f}%)  |  {hold}d  [{_esc(source)}]"
             )
             lines.append("")
 
@@ -298,7 +306,7 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
             hr_bar = _bar(hr * 100, 100, 6)
             short_name = name.replace("_", " ").title()
             lines.append(
-                f"   {hr_bar} {short_name}: <b>{hr:.0%}</b> hit, "
+                f"   {hr_bar} {_esc(short_name)}: <b>{hr:.0%}</b> hit, "
                 f"{w:.2f}x wt ({n})"
             )
         lines.append("")
@@ -306,7 +314,7 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     # Executive summary
     if summary:
         lines.append(f"{_section_line()}")
-        lines.append(f"<i>{summary}</i>")
+        lines.append(f"<i>{_esc(summary)}</i>")
 
     return "\n".join(lines)
 
@@ -337,7 +345,7 @@ def format_health_alert(state_changes: list) -> str:
         score_bar = _bar(card.promising_score, 100, 8)
 
         lines.append(
-            f"{prev_emoji} \u2192 {curr_emoji}  <b>{card.ticker}</b>"
+            f"{prev_emoji} \u2192 {curr_emoji}  <b>{_esc(card.ticker)}</b>"
         )
         lines.append(
             f"   {score_bar} {card.promising_score:.0f}/100  |  "
@@ -350,7 +358,7 @@ def format_health_alert(state_changes: list) -> str:
             lines.append(f"   Velocity: {vel_dir} {card.score_velocity:+.1f} pts/d")
 
         if card.invalidation_reason:
-            lines.append(f"   \u274c Invalidation: {card.invalidation_reason}")
+            lines.append(f"   \u274c Invalidation: {_esc(card.invalidation_reason)}")
 
         components = [
             card.trend_health,
@@ -396,7 +404,7 @@ def format_near_miss_resolution_alert(resolved: list[dict]) -> str:
         emoji = _pnl_emoji(ret)
         exit_reason = r.get("exit_reason", "?")
         lines.append(
-            f"   {emoji} <b>{r['ticker']}</b>: {ret:+.2f}% ({exit_reason})"
+            f"   {emoji} <b>{_esc(r['ticker'])}</b>: {ret:+.2f}% ({_esc(exit_reason)})"
         )
 
     lines.append("")
@@ -438,8 +446,8 @@ def format_outcome_alert(outcomes: list[dict]) -> str:
         emoji = _pnl_emoji(pnl)
 
         if status == "open":
-            lines.append(f"   {emoji} <b>{ticker}</b>: {pnl:+.2f}% (open)")
+            lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% (open)")
         else:
-            lines.append(f"   {emoji} <b>{ticker}</b>: {pnl:+.2f}% ({status})")
+            lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% ({_esc(status)})")
 
     return "\n".join(lines)

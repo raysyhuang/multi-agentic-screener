@@ -1,5 +1,7 @@
 """Tests for Telegram alert formatting."""
 
+import re
+
 from src.output.telegram import format_daily_alert, format_outcome_alert
 
 
@@ -106,3 +108,37 @@ def test_format_daily_alert_with_fragility_warnings():
     assert "AAPL" in msg
     assert "Risks" in msg
     assert "Small sample size" in msg
+
+
+def test_format_daily_alert_escapes_html():
+    """HTML special characters in dynamic fields must be escaped."""
+    picks = [
+        {
+            "ticker": "A<B>C",
+            "direction": "LONG",
+            "entry_price": 100.0,
+            "stop_loss": 95.0,
+            "target_1": 110.0,
+            "confidence": 70,
+            "signal_model": "breakout",
+            "thesis": 'Price > 50 & volume < 1M "test"',
+            "holding_period": 10,
+        },
+    ]
+    msg = format_daily_alert(picks, "bull", "2025-03-15")
+    assert "A&lt;B&gt;C" in msg
+    assert "&amp;" in msg
+    # No raw < or > outside of known HTML tags
+    stripped = re.sub(r"</?(?:b|i|code)>", "", msg)
+    assert "<" not in stripped
+    assert ">" not in stripped
+
+
+def test_format_outcome_alert_escapes_html():
+    """Outcome alerts must escape ticker and exit reason."""
+    outcomes = [
+        {"ticker": "X&Y", "pnl_pct": 1.0, "exit_reason": "target<1>"},
+    ]
+    msg = format_outcome_alert(outcomes)
+    assert "X&amp;Y" in msg
+    assert "target&lt;1&gt;" in msg
