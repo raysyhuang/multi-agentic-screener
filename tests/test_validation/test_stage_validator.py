@@ -3,7 +3,6 @@
 from datetime import date
 
 import pandas as pd
-import pytest
 
 from src.validation.stage_validator import (
     PipelineHealthReport,
