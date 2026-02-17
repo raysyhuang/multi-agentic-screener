@@ -2064,7 +2064,7 @@ async def main():
     # SIGTERM handler for graceful shutdown
     def _sigterm_handler(signum, frame):
         logger.info("Received SIGTERM — initiating graceful shutdown")
-        scheduler.shutdown(wait=True)
+        scheduler.shutdown(wait=False)
         raise SystemExit(0)
 
     signal.signal(signal.SIGTERM, _sigterm_handler)

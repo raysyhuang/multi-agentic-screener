@@ -146,7 +146,9 @@ async def start_worker() -> None:
 
     def _shutdown(signum, frame):
         logger.info("Received signal %s, initiating graceful shutdown...", signum)
-        scheduler.shutdown(wait=True)
+        # Use wait=False so we don't block past Heroku's 30s SIGTERM grace period.
+        # Running jobs will be interrupted, but the pipeline is idempotent (re-run safe).
+        scheduler.shutdown(wait=False)
         stop_event.set()
 
     signal.signal(signal.SIGTERM, _shutdown)
