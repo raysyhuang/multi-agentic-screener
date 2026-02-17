@@ -281,3 +281,39 @@ class HealthCardConfig(StrictModel):
     regime_weight: float = 0.10
     on_track_min: float = 70.0
     watch_min: float = 50.0
+
+
+# ── External Engine Contract ───────────────────────────────────────────────
+
+
+class EnginePick(StrictModel):
+    """A single pick from an external engine."""
+
+    ticker: str
+    strategy: str  # "breakout", "mean_reversion", "swing", "momentum", "top3_gate", etc.
+    entry_price: float
+    stop_loss: float | None = None
+    target_price: float | None = None
+    confidence: float = Field(ge=0, le=100, description="0-100 normalized confidence")
+    holding_period_days: int
+    thesis: str | None = None
+    risk_factors: list[str] = Field(default_factory=list)
+    raw_score: float | None = None
+    metadata: dict = Field(default_factory=dict)
+
+
+class EngineResultPayload(StrictModel):
+    """Standardized result payload from any external screening engine.
+
+    All engines expose GET /api/engine/results returning this schema.
+    """
+
+    engine_name: str  # "koocore_d", "gemini_stst", "top3_7d"
+    engine_version: str
+    run_date: str  # YYYY-MM-DD
+    run_timestamp: str  # ISO 8601
+    regime: str | None = None
+    picks: list[EnginePick]
+    candidates_screened: int
+    pipeline_duration_s: float | None = None
+    status: str = "success"

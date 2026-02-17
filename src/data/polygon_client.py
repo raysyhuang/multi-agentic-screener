@@ -2,14 +2,49 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
 from datetime import date, timedelta
 
 import httpx
 import pandas as pd
 
 from src.config import get_settings
+from src.data.circuit_breaker import RateLimitError
+
+logger = logging.getLogger(__name__)
 
 BASE_URL = "https://api.polygon.io"
+
+MAX_RETRIES = 3
+BACKOFF_BASE = 0.5  # seconds: 0.5, 1.0, 2.0
+
+
+async def _request_with_backoff(
+    client: httpx.AsyncClient, url: str, params: dict,
+) -> httpx.Response:
+    """Make an HTTP GET with exponential backoff on 429 responses."""
+    for attempt in range(MAX_RETRIES):
+        resp = await client.get(url, params=params)
+        if resp.status_code == 429:
+            if attempt < MAX_RETRIES - 1:
+                delay = BACKOFF_BASE * (2 ** attempt)
+                retry_after = resp.headers.get("Retry-After")
+                if retry_after:
+                    try:
+                        delay = max(delay, float(retry_after))
+                    except ValueError:
+                        pass
+                logger.warning(
+                    "Polygon 429 rate limited (attempt %d/%d) — retrying in %.1fs",
+                    attempt + 1, MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise RateLimitError("polygon", retry_after=None)
+        resp.raise_for_status()
+        return resp
+    raise RateLimitError("polygon")
 
 
 class PolygonClient:
@@ -29,8 +64,9 @@ class PolygonClient:
         """Fetch daily OHLCV bars."""
         url = f"{BASE_URL}/v2/aggs/ticker/{ticker}/range/1/{timespan}/{from_date}/{to_date}"
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=self._params(adjusted="true", limit=5000))
-            resp.raise_for_status()
+            resp = await _request_with_backoff(
+                client, url, self._params(adjusted="true", limit=5000),
+            )
             data = resp.json()
 
         results = data.get("results", [])
@@ -56,8 +92,7 @@ class PolygonClient:
             limit=100,
         )
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
+            resp = await _request_with_backoff(client, url, params)
             data = resp.json()
         return data.get("results", [])
 
@@ -66,8 +101,7 @@ class PolygonClient:
         url = f"{BASE_URL}/v2/reference/news"
         params = self._params(ticker=ticker, limit=limit, order="desc")
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=params)
-            resp.raise_for_status()
+            resp = await _request_with_backoff(client, url, params)
             data = resp.json()
         return data.get("results", [])
 
@@ -92,8 +126,7 @@ class PolygonClient:
         page = 0
         async with httpx.AsyncClient(timeout=30) as client:
             while url and page < max_pages:
-                resp = await client.get(url, params=params)
-                resp.raise_for_status()
+                resp = await _request_with_backoff(client, url, params)
                 data = resp.json()
                 all_tickers.extend(data.get("results", []))
                 url = data.get("next_url")
@@ -105,8 +138,9 @@ class PolygonClient:
         """Fetch grouped daily bars for all US stocks on a given date."""
         url = f"{BASE_URL}/v2/aggs/grouped/locale/us/market/stocks/{on_date}"
         async with httpx.AsyncClient(timeout=60) as client:
-            resp = await client.get(url, params=self._params(adjusted="true"))
-            resp.raise_for_status()
+            resp = await _request_with_backoff(
+                client, url, self._params(adjusted="true"),
+            )
             data = resp.json()
         return data.get("results", [])
 
@@ -114,7 +148,6 @@ class PolygonClient:
         """Get current-day snapshot (prev close, today's OHLCV, etc.)."""
         url = f"{BASE_URL}/v2/snapshot/locale/us/markets/stocks/tickers/{ticker}"
         async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(url, params=self._params())
-            resp.raise_for_status()
+            resp = await _request_with_backoff(client, url, self._params())
             data = resp.json()
         return data.get("ticker", {})

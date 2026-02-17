@@ -27,6 +27,7 @@ from src.data.polygon_client import PolygonClient
 from src.data.fmp_client import FMPClient
 from src.data.yfinance_client import YFinanceClient
 from src.data.fred_client import FREDClient
+from src.data.circuit_breaker import APICircuitBreaker
 from src.data.cache import (
     DataCache,
     TTL_FUNDAMENTALS,
@@ -58,6 +59,7 @@ class DataAggregator:
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
         self._cache = DataCache()
         self._cache_enabled = True
+        self._circuit_breaker = APICircuitBreaker()
 
     async def get_ohlcv(
         self,
@@ -79,25 +81,35 @@ class DataAggregator:
                 return json_to_df(cached)
 
         async with self._semaphore:
-            try:
-                df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
-                if not df.empty:
-                    if self._cache_enabled:
-                        ttl = classify_ohlcv_ttl(to_date)
-                        self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
-                    return df
-            except Exception as e:
-                logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
+            if not self._circuit_breaker.is_open("polygon"):
+                try:
+                    df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
+                    if not df.empty:
+                        self._circuit_breaker.record_success("polygon")
+                        if self._cache_enabled:
+                            ttl = classify_ohlcv_ttl(to_date)
+                            self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
+                        return df
+                except Exception as e:
+                    self._circuit_breaker.record_failure("polygon")
+                    logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
+            else:
+                logger.debug("Polygon circuit open, skipping for %s", ticker)
 
-            try:
-                df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
-                if not df.empty:
-                    if self._cache_enabled:
-                        ttl = classify_ohlcv_ttl(to_date)
-                        self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
-                    return df
-            except Exception as e:
-                logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
+            if not self._circuit_breaker.is_open("fmp"):
+                try:
+                    df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
+                    if not df.empty:
+                        self._circuit_breaker.record_success("fmp")
+                        if self._cache_enabled:
+                            ttl = classify_ohlcv_ttl(to_date)
+                            self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
+                        return df
+                except Exception as e:
+                    self._circuit_breaker.record_failure("fmp")
+                    logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
+            else:
+                logger.debug("FMP circuit open, skipping for %s", ticker)
 
             try:
                 df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)

@@ -2,23 +2,34 @@
 
 from __future__ import annotations
 
+import logging
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
-from fastapi import FastAPI, HTTPException
-from fastapi.responses import HTMLResponse, FileResponse
+from fastapi import FastAPI, HTTPException, Request, Response
+from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
-from sqlalchemy import select
+from fastapi.middleware.cors import CORSMiddleware
+from sqlalchemy import select, text
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 
 from fastapi import Query
 
+from src.config import get_settings
 from src.db.session import init_db, close_db, get_session
 from src.db.models import DailyRun, Signal, Outcome, AgentLog
 from src.output.report import generate_daily_report, generate_performance_report
 from src.output.performance import get_performance_summary
 
+logger = logging.getLogger(__name__)
+
 STATIC_DIR = Path(__file__).resolve().parent.parent / "static"
+
+# Rate limiter
+limiter = Limiter(key_func=get_remote_address)
 
 
 @asynccontextmanager
@@ -33,6 +44,57 @@ app = FastAPI(
     version="0.1.0",
     lifespan=lifespan,
 )
+
+# Rate limiting
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
+
+# CORS middleware
+_settings = get_settings()
+_origins = [o.strip() for o in _settings.allowed_origins.split(",") if o.strip()] if _settings.allowed_origins else []
+app.add_middleware(
+    CORSMiddleware,
+    allow_origins=_origins or [],  # empty = no cross-origin allowed (same-origin only)
+    allow_credentials=True,
+    allow_methods=["GET", "POST"],
+    allow_headers=["Authorization", "Content-Type"],
+)
+
+# Paths exempt from API auth
+_AUTH_EXEMPT_PREFIXES = ("/health", "/static", "/docs", "/openapi.json", "/redoc")
+
+
+@app.middleware("http")
+async def api_auth_middleware(request: Request, call_next) -> Response:
+    """Require Bearer token for /api/* routes when API_SECRET_KEY is configured."""
+    settings = get_settings()
+    path = request.url.path
+
+    # Skip auth for exempt paths and non-API paths
+    if not path.startswith("/api/") or not settings.api_secret_key:
+        return await call_next(request)
+
+    # Skip auth for exempt prefixes
+    if any(path.startswith(prefix) for prefix in _AUTH_EXEMPT_PREFIXES):
+        return await call_next(request)
+
+    # Check Authorization header
+    auth_header = request.headers.get("Authorization", "")
+    if not auth_header.startswith("Bearer "):
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Missing or invalid Authorization header. Use: Authorization: Bearer <key>"},
+        )
+
+    token = auth_header[7:]  # strip "Bearer "
+    if token != settings.api_secret_key:
+        return JSONResponse(
+            status_code=401,
+            content={"detail": "Invalid API key"},
+        )
+
+    return await call_next(request)
+
 
 # Mount static files
 if STATIC_DIR.is_dir():
@@ -522,7 +584,8 @@ async def threshold_history(limit: int = Query(default=20, le=50)):
 
 
 @app.post("/api/thresholds/apply/{run_date}")
-async def apply_threshold_snapshot(run_date: str):
+@limiter.limit("10/minute")
+async def apply_threshold_snapshot(request: Request, run_date: str):
     """Apply a dry-run threshold snapshot (human approval step)."""
     from src.governance.threshold_manager import apply_snapshot
     try:
@@ -894,7 +957,156 @@ async def position_health_history(
     }
 
 
+# ── Cross-Engine Endpoints ──────────────────────────────────────────────────
+
+
+@app.get("/api/cross-engine/latest")
+async def cross_engine_latest():
+    """Latest cross-engine synthesis results."""
+    from src.db.models import CrossEngineSynthesis
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(CrossEngineSynthesis)
+            .order_by(CrossEngineSynthesis.run_date.desc())
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+
+    if not row:
+        raise HTTPException(404, "No cross-engine synthesis found")
+
+    return {
+        "run_date": str(row.run_date),
+        "regime_consensus": row.regime_consensus,
+        "engines_reporting": row.engines_reporting,
+        "convergent_tickers": row.convergent_tickers,
+        "portfolio_recommendation": row.portfolio_recommendation,
+        "executive_summary": row.executive_summary,
+        "verifier_notes": row.verifier_notes,
+        "credibility_weights": row.credibility_weights,
+    }
+
+
+@app.get("/api/cross-engine/credibility")
+async def cross_engine_credibility():
+    """Current engine credibility weights and hit rates."""
+    from src.db.models import CrossEngineSynthesis
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(CrossEngineSynthesis)
+            .order_by(CrossEngineSynthesis.run_date.desc())
+            .limit(1)
+        )
+        row = result.scalar_one_or_none()
+
+    if not row or not row.credibility_weights:
+        return {"engines": {}, "note": "No credibility data yet — need 10+ resolved picks per engine"}
+
+    return {"engines": row.credibility_weights, "as_of": str(row.run_date)}
+
+
+@app.get("/api/cross-engine/convergence/{date_str}")
+async def cross_engine_convergence(date_str: str):
+    """Which tickers appeared in multiple engines on a given date."""
+    from src.db.models import ExternalEngineResult
+
+    try:
+        query_date = date.fromisoformat(date_str)
+    except ValueError:
+        raise HTTPException(400, "Invalid date format, use YYYY-MM-DD")
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(ExternalEngineResult).where(ExternalEngineResult.run_date == query_date)
+        )
+        rows = result.scalars().all()
+
+    if not rows:
+        raise HTTPException(404, f"No engine results for {date_str}")
+
+    # Extract tickers per engine
+    from collections import Counter
+    ticker_engines: dict[str, list[str]] = {}
+    for row in rows:
+        payload = row.payload or {}
+        picks = payload.get("picks", [])
+        for pick in picks:
+            ticker = pick.get("ticker", "")
+            if ticker:
+                ticker_engines.setdefault(ticker, []).append(row.engine_name)
+
+    # Filter to convergent (2+ engines)
+    convergent = {
+        ticker: engines
+        for ticker, engines in ticker_engines.items()
+        if len(engines) >= 2
+    }
+
+    return {
+        "date": date_str,
+        "total_engines": len(rows),
+        "convergent_tickers": convergent,
+        "all_tickers": {t: e for t, e in ticker_engines.items()},
+    }
+
+
+@app.get("/api/cross-engine/history")
+async def cross_engine_history(
+    limit: int = Query(default=30, le=90),
+):
+    """Synthesis history for the last N days."""
+    from src.db.models import CrossEngineSynthesis
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(CrossEngineSynthesis)
+            .order_by(CrossEngineSynthesis.run_date.desc())
+            .limit(limit)
+        )
+        rows = result.scalars().all()
+
+    return [
+        {
+            "run_date": str(row.run_date),
+            "regime_consensus": row.regime_consensus,
+            "engines_reporting": row.engines_reporting,
+            "convergent_count": len(row.convergent_tickers) if row.convergent_tickers else 0,
+            "portfolio_size": len(row.portfolio_recommendation) if row.portfolio_recommendation else 0,
+            "executive_summary": row.executive_summary,
+        }
+        for row in rows
+    ]
+
+
 @app.get("/health")
 async def health_check():
-    """Health check for Heroku / uptime monitors."""
-    return {"status": "ok"}
+    """Health check for Heroku / uptime monitors.
+
+    Tests DB connectivity and verifies critical API keys are present.
+    Returns 200 with status=healthy, or 503 with status=degraded and issue list.
+    """
+    issues: list[str] = []
+
+    # Test DB connectivity
+    try:
+        async with get_session() as session:
+            await session.execute(text("SELECT 1"))
+    except Exception as e:
+        issues.append(f"database: {e}")
+
+    # Check critical API keys
+    settings = get_settings()
+    if not settings.polygon_api_key and not settings.fmp_api_key:
+        issues.append("no data provider API key configured (polygon or fmp)")
+    if settings.execution_mode != "quant_only":
+        if not settings.anthropic_api_key and not settings.openai_api_key:
+            issues.append("no LLM API key configured (anthropic or openai)")
+
+    if issues:
+        return JSONResponse(
+            status_code=503,
+            content={"status": "degraded", "issues": issues},
+        )
+    return {"status": "healthy"}

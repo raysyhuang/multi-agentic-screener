@@ -31,6 +31,7 @@ class AttemptRecord:
     failure_reason: FailureReason | None = None
     error_message: str | None = None
     raw_output: str | None = None
+    quality_warning: bool = False
 
 
 @dataclass

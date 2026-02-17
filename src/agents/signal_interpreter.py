@@ -180,9 +180,19 @@ class SignalInterpreterAgent(BaseAgent):
                         attempt_num + 1, FailureReason.LOW_QUALITY, quality.summary
                     )
                     continue
-                # Accept low quality result rather than returning None
+                # Retries exhausted on low quality — mark as failed with quality warning
                 result.value = interpretation
-                result.add_attempt(AttemptRecord(attempt_num=attempt_num, success=True))
+                result.add_attempt(AttemptRecord(
+                    attempt_num=attempt_num,
+                    success=False,
+                    failure_reason=FailureReason.LOW_QUALITY,
+                    error_message=quality.summary,
+                    quality_warning=True,
+                ))
+                logger.warning(
+                    "Accepting low-quality interpretation for %s (quality_warning=True): %s",
+                    candidate.ticker, quality.summary,
+                )
                 return result
 
             # Success

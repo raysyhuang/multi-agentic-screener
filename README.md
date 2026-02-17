@@ -15,9 +15,109 @@ L4  Autonomous Runtime Planner → [Interpret → Skills → Debate → Risk Gat
 L5  Validation         7-check NoSilentPass gate + Deflated Sharpe Ratio
 L6  Output             PostgreSQL, Telegram alerts, HTML reports, FastAPI
 L7  Governance         Audit trail, decay detection, retrain policy, portfolio construction
+L8  Cross-Engine       Collect → Verify → Synthesize across 4 independent engines
 ```
 
-Layers 1-3 and 5 produce useful candidates with zero LLM cost. Layer 4 adds autonomous reasoning with memory, tool-use, and self-correction. Layer 7 provides model lifecycle management and position sizing.
+Layers 1-3 and 5 produce useful candidates with zero LLM cost. Layer 4 adds autonomous reasoning with memory, tool-use, and self-correction. Layer 7 provides model lifecycle management and position sizing. Layer 8 aggregates signals from three external engines alongside L4's own picks.
+
+## Cross-Engine Synthesis (Layer 8)
+
+The system acts as the **hub** in a four-engine architecture, collecting and synthesizing results from three independent external engines alongside its own pipeline output. Each engine approaches the market with a different methodology — the combined system produces higher-conviction picks through convergence detection and dynamic credibility weighting.
+
+```
+                       +------------------------------------------+
+                       |     Multi-Agentic Screener (THE HUB)     |
+                       |                                          |
+  +-----------+  REST  |  +----------+  +-------------------+     |
+  | KooCore-D |------->|  | Engine   |  | Credibility       |     |
+  +-----------+        |  | Collector|->| Tracker (DB)      |     |
+  +-----------+  REST  |  |          |  | - hit rates       |     |
+  |Gemini     |------->|  +----------+  | - dynamic weights |     |
+  |STST       |        |       |        +--------+----------+     |
+  +-----------+        |       v                 v                |
+  +-----------+  REST  |  +------------------------+              |
+  | Top3-7D   |------->|  | Cross-Engine Verifier  |              |
+  +-----------+        |  | (Claude Opus 4.6)      |              |
+                       |  | - Convergence detect   |              |
+                       |  | - Credibility audit    |              |
+                       |  | - Anomaly detection    |              |
+                       |  +----------+-------------+              |
+                       |             v                            |
+                       |  +------------------------+              |
+                       |  | Synthesizer Agent      |              |
+                       |  | (Claude Opus 4.6)      |              |
+                       |  | - Final portfolio      |              |
+                       |  | - Executive summary    |              |
+                       |  +----------+-------------+              |
+                       |             v                            |
+                       |  DB + Telegram + Dashboard               |
+                       +------------------------------------------+
+```
+
+### The Four Engines
+
+| Engine | Strategy | Holds | Location |
+|---|---|---|---|
+| **Multi-Agentic Screener** | Breakout + Mean Reversion + Catalyst, 4 LLM agents | 5-15d | Heroku |
+| **KooCore-D** | Weekly/Pro30/Swing momentum, self-learning, regime-gated | 7-30d | Heroku |
+| **Gemini STST** | Momentum (RVOL>2, ATR>8%) + Reversion (RSI2<10) | 5-7d | Heroku |
+| **Top3-7D** | Energy/Release/Amplification 3-gate, top 3 picks | 7d | Heroku |
+
+All engines expose a standardized REST API (`GET /api/engine/results`) returning an `EngineResultPayload` with normalized picks, confidence scores (0-100), and metadata.
+
+### Pipeline Steps (10-14)
+
+After the core pipeline (Steps 1-9) completes, five cross-engine steps run:
+
+1. **Step 10 — Collect**: Async HTTP calls to all three external engines in parallel via `aiohttp`. Fail-open per engine (one engine down doesn't block others). Results are stored in the `external_engine_results` table.
+
+2. **Step 11 — Resolve Outcomes**: Resolves previous-day engine pick outcomes against actual market prices via yfinance. Updates the `engine_pick_outcomes` table and recomputes credibility weights.
+
+3. **Step 12 — Verify** (optional): Claude Opus 4.6 audits each engine's picks against historical accuracy, detects anomalies, resolves conflicts between disagreeing engines, and recommends weight adjustments.
+
+4. **Step 13 — Synthesize**: Claude Opus 4.6 produces the final cross-engine output: convergent picks (multi-engine agreement), unique opportunities, portfolio recommendation, and executive summary.
+
+5. **Step 14 — Save + Alert**: Results saved to `cross_engine_synthesis` table and sent via Telegram.
+
+### Dynamic Credibility Weighting
+
+Engines **earn their weight** through proven track record — not equal weighting:
+
+```
+engine_weight = base_weight * hit_rate_multiplier * calibration_bonus
+```
+
+- `hit_rate_multiplier` = engine hit rate / average hit rate across all engines
+- `calibration_bonus` = 1.2x if the engine's Brier score < 0.15 (well-calibrated confidence)
+- Weights clamped to [0.3, 3.0] range
+- Requires 10+ resolved picks before differentiation begins
+
+### Convergence Multipliers
+
+When multiple engines independently identify the same ticker, conviction increases:
+
+| Engines Agreeing | Multiplier |
+|---|---|
+| 1 engine | 1.0x (base) |
+| 2 engines | 1.5x |
+| 3 engines | 2.0x |
+| 4 engines | 3.0x |
+
+### Outcome Resolution and Learning
+
+The outcome resolver runs daily and tracks per-pick results for every engine:
+- Was the target hit within the holding period?
+- Actual return, max favorable excursion (MFE), max adverse excursion (MAE)
+- Per-strategy breakdown (e.g., "KooCore-D swing picks: 45% hit rate, +2.1% avg return")
+- Learning feedback surfaced to the weekly meta-analyst
+
+### Debug Mode
+
+```bash
+python -m src.main --run-now --debug-engines
+```
+
+Runs all four engines, prints side-by-side comparison of picks, confidence alignment, regime agreement, and saves comprehensive JSON to `outputs/debug/`.
 
 ## Autonomous Runtime (Layer 4)
 
@@ -25,24 +125,26 @@ The core of the system is an autonomous runtime that plans, executes, verifies, 
 
 ### Planner
 
-An LLM planner (GPT-5.2-mini) decomposes the daily goal into an execution plan with step dependencies and a cost budget. If the planner fails, a default linear plan mirrors the proven pipeline — guaranteeing no regression.
+An LLM planner (GPT-5.2) decomposes the daily goal into an execution plan with step dependencies and a cost budget. If the planner fails, a default linear plan mirrors the proven pipeline — guaranteeing no regression.
 
 ### Agent Pipeline with Retry
 
-Four agents with intentional model diversity for cross-validation. Each agent call is wrapped in a `RetryResult` that automatically retries on parse errors and API failures, with correction prompts and cost caps per candidate:
+Six agents with intentional model diversity for cross-validation. Each agent call is wrapped in a `RetryResult` that automatically retries on parse errors and API failures, with correction prompts and cost caps per candidate:
 
 | Agent | Model | Role |
 |---|---|---|
 | Signal Interpreter | Claude Sonnet 4.5 | Reads features, produces thesis + confidence 0-100 + risk flags |
 | Adversarial Validator | GPT-5.2 | Attacks thesis from a different model's perspective (bull/bear debate) |
 | Risk Gatekeeper | Claude Opus 4.6 | Final approve/veto/adjust — fail-safe to VETO on any error |
-| Meta-Analyst (weekly) | Claude Opus 4.6 | Reviews 30-day performance + divergence stats + near-miss analysis, detects biases, suggests adjustments |
+| Meta-Analyst (weekly) | Claude Opus 4.6 | Reviews 30-day performance + divergence stats + near-miss analysis |
+| Cross-Engine Verifier | Claude Opus 4.6 | Audits external engine credibility, detects anomalies |
+| Cross-Engine Synthesizer | Claude Opus 4.6 | Produces final portfolio from all 4 engines' picks |
 
 The pipeline narrows a universe of ~200 stocks down to 1-2 picks:
 
 ```
-~3000 NYSE/NASDAQ  →  ~200 filtered  →  ~50 scored  →  10 interpreted
-→  5 debated  →  1-2 risk-gated  →  7-check validation  →  Final picks
+~3000 NYSE/NASDAQ  ->  ~200 filtered  ->  ~50 scored  ->  10 interpreted
+->  5 debated  ->  1-2 risk-gated  ->  7-check validation  ->  Final picks
 ```
 
 ### Memory Service
@@ -80,7 +182,7 @@ Skills execute tool calls and inject prompt addons into downstream agents (e.g.,
 
 ### Verifier with Verify-Redo-Converge Loop
 
-After the pipeline completes, a verifier agent (GPT-5.2-mini) checks output against the plan's acceptance criteria. If the verifier flags issues:
+After the pipeline completes, a verifier agent (GPT-5.2) checks output against the plan's acceptance criteria. If the verifier flags issues:
 
 1. Suggestions are injected into working memory
 2. Targeted candidates are re-run through the full pipeline
@@ -99,7 +201,7 @@ A global cost budget (`max_run_cost_usd`, default $2.00) is enforced at three le
 - **Between stages**: budget check after interpretation and debate stages — early stop if exhausted
 - **Retry loop**: verifier retries halt when the run budget is exceeded
 
-Typical run cost: ~$0.30-0.45 including retries and verification.
+Typical run cost: ~$0.30-0.80 including retries, verification, and cross-engine synthesis.
 
 ## Signal Models
 
@@ -148,7 +250,7 @@ The system also computes a **Deflated Sharpe Ratio** (Bailey & Lopez de Prado) t
 src/
 ├── config.py                   # Environment + typed settings (incl. cost caps, retry limits)
 ├── main.py                     # Pipeline orchestration, scheduling, fail-closed wrapper
-├── contracts.py                # StageEnvelope + 16 typed payload models
+├── contracts.py                # StageEnvelope + typed payload models + engine contracts
 ├── worker.py                   # Heroku worker process
 ├── data/                       # L1 — Data ingestion
 │   ├── aggregator.py           # Unified interface with fallback chains
@@ -177,9 +279,15 @@ src/
 │   ├── adversarial.py          # GPT — bull/bear debate with retry
 │   ├── risk_gate.py            # Claude Opus — approve/veto/adjust with retry
 │   ├── meta_analyst.py         # Claude Opus — weekly self-review
+│   ├── cross_engine_verifier.py   # Claude Opus — engine credibility audit
+│   ├── cross_engine_synthesizer.py # Claude Opus — cross-engine portfolio synthesis
 │   ├── retry.py                # RetryPolicy, RetryResult, AttemptRecord
 │   ├── quality.py              # Output quality checks for each agent
 │   └── tools.py                # ToolRegistry, 5 built-in tools (stub + DB-backed)
+├── engines/                    # L8 — Cross-engine system
+│   ├── collector.py            # Async HTTP engine fetcher (aiohttp, fail-open)
+│   ├── credibility.py          # Dynamic weight tracker (hit rate, Brier score, convergence)
+│   └── outcome_resolver.py     # Resolve past picks, update credibility, generate feedback
 ├── memory/                     # Agent memory
 │   ├── episodic.py             # DB-backed historical recall (ticker history, model stats)
 │   ├── working.py              # In-process run state + verifier feedback
@@ -203,26 +311,31 @@ src/
 │   ├── metrics.py              # Sharpe, Sortino, Calmar, DSR, profit factor
 │   └── validation_card.py      # Fragility report + 7-check validation gate
 ├── output/                     # L6 — Output
-│   ├── telegram.py             # Telegram alerts with validation details
+│   ├── telegram.py             # Telegram alerts (daily picks, health, cross-engine)
 │   ├── report.py               # Jinja2 HTML report generation
 │   ├── health.py               # Position health card engine — 5-component scoring + velocity
 │   └── performance.py          # Outcome tracking, calibration, risk metrics, near-miss stats
 └── db/
-    ├── models.py               # 9 SQLAlchemy models (DailyRun, Signal, Outcome, NearMiss, DivergenceEvent, etc.)
+    ├── models.py               # 14 SQLAlchemy models
     └── session.py              # Async PostgreSQL connection
 
 api/
-└── app.py                      # FastAPI — reports, signals, outcomes, costs, artifacts
+└── app.py                      # FastAPI — reports, signals, outcomes, costs, cross-engine
 
 tests/                          # 485+ tests across all modules
 ```
 
 ## Data Contracts
 
-Every pipeline stage communicates through typed `StageEnvelope` wrappers with `extra="forbid"` enforcement. Seven stage payloads are defined in `src/contracts.py`:
+Every pipeline stage communicates through typed `StageEnvelope` wrappers with `extra="forbid"` enforcement. Stage payloads are defined in `src/contracts.py`:
 
 ```
-DataIngest → Feature → SignalPrefilter → Regime → AgentReview → Validation → FinalOutput
+DataIngest -> Feature -> SignalPrefilter -> Regime -> AgentReview -> Validation -> FinalOutput
+```
+
+Cross-engine contracts:
+```
+EnginePick -> EngineResultPayload  (standardized format for all external engines)
 ```
 
 All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown fields cause immediate rejection.
@@ -246,6 +359,7 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 - **No look-ahead** — signals fire on day T close, execute at T+1 open
 - **Realistic costs** — 10 bps slippage + commissions in all validation
 - **Memory-safe batching** — semaphore-controlled concurrency (20 max) + batch+GC for Heroku 512 MB
+- **Cross-engine fail-open** — external engine failures or LLM synthesis errors never block the core pipeline
 
 ## API Endpoints
 
@@ -269,7 +383,32 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 | `GET /api/divergence/events` | Divergence events with filters |
 | `GET /api/divergence/summary` | Aggregated divergence stats |
 | `GET /api/thresholds` | Current threshold values |
+| `GET /api/cross-engine/latest` | Latest cross-engine synthesis (portfolio, convergent picks) |
+| `GET /api/cross-engine/credibility` | Current engine weights and hit rates |
+| `GET /api/cross-engine/convergence/{date}` | Multi-engine agreement for a date |
+| `GET /api/cross-engine/history` | Cross-engine synthesis history |
 | `GET /health` | Health check |
+
+## Daily Orchestration
+
+```
+Previous evening:
+  5:30 PM ET   Top3-7D runs (GitHub Actions) -> pushes results to Heroku API
+  6:15 PM ET   KooCore-D runs (GitHub Actions) -> pushes results to Heroku API
+  6:00 PM ET   Gemini STST runs (GitHub Actions triggers Heroku pipeline)
+
+Next morning:
+  6:00 AM ET   Multi-Agentic Screener morning pipeline:
+    Steps 1-9    Normal pipeline (data -> features -> signals -> agents -> validation -> DB)
+    Step 10      Collect external engine results (3 parallel HTTP calls)
+    Step 11      Resolve previous-day engine pick outcomes -> update credibility weights
+    Step 12      Cross-Engine Verifier Agent (audit credibility, detect anomalies)
+    Step 13      Cross-Engine Synthesizer Agent (final portfolio, executive summary)
+    Step 14      Save to DB + send Telegram cross-engine alert
+
+  4:30 PM ET   Afternoon check (position health + outcome resolution)
+  Sunday 7 PM  Weekly meta-review (includes cross-engine analysis)
+```
 
 ## Setup
 
@@ -300,23 +439,42 @@ cp .env.example .env
 ### Environment Variables
 
 ```
-ANTHROPIC_API_KEY          # Claude API (signal interpreter, risk gate, meta-analyst)
+# API Keys
+ANTHROPIC_API_KEY          # Claude API (signal interpreter, risk gate, meta-analyst, cross-engine)
 OPENAI_API_KEY             # GPT API (adversarial validator, planner, verifier)
 POLYGON_API_KEY            # Market data — OHLCV, news
 FMP_API_KEY                # Fundamentals, earnings, insider transactions
 FINANCIAL_DATASETS_API_KEY # Additional data source
 FRED_API_KEY               # Macro indicators (optional — yfinance fallback)
+
+# Output
 TELEGRAM_BOT_TOKEN         # Telegram alerts
 TELEGRAM_CHAT_ID           # Target chat for alerts
 DATABASE_URL               # PostgreSQL connection string
+
+# API Security
+API_SECRET_KEY             # Bearer token for /api/* routes
+ALLOWED_ORIGINS            # Comma-separated CORS origins
+
+# Trading
 TRADING_MODE               # PAPER (default) or LIVE
+
+# Cross-Engine System
+KOOCORE_API_URL            # KooCore-D Heroku URL
+GEMINI_API_URL             # Gemini STST Heroku URL
+TOP3_API_URL               # Top3-7D Heroku URL
+ENGINE_API_KEY             # Shared API key for engine-to-engine auth
+CROSS_ENGINE_ENABLED       # true (default) or false
 ```
 
 ### Running
 
 ```bash
-# Run the full pipeline once
+# Run the full pipeline once (includes cross-engine synthesis)
 python -m src.main --run-now
+
+# Run with cross-engine debug mode (side-by-side comparison)
+python -m src.main --run-now --debug-engines
 
 # Run afternoon position check
 python -m src.main --check-now
@@ -344,13 +502,14 @@ worker: python -m src.worker  (APScheduler with SIGTERM handling)
 heroku create your-app-name
 heroku addons:create heroku-postgresql:essential-0
 heroku config:set ANTHROPIC_API_KEY=... OPENAI_API_KEY=... # etc.
+heroku config:set KOOCORE_API_URL=... GEMINI_API_URL=... TOP3_API_URL=...
 git push heroku main
 heroku ps:scale worker=1
 ```
 
 ## Database Schema
 
-Twelve tables in PostgreSQL:
+Fifteen tables in PostgreSQL:
 
 | Table | Purpose |
 |---|---|
@@ -365,6 +524,9 @@ Twelve tables in PostgreSQL:
 | `signal_exit_events` | Health-driven exit events for learning loop |
 | `divergence_events` | Per-decision LLM attribution — VETO/PROMOTE/RESIZE with reason codes |
 | `divergence_outcomes` | Counterfactual results — agentic vs quant return delta per divergence |
+| `external_engine_results` | Raw results from each external engine per day (JSONB payload) |
+| `engine_pick_outcomes` | Per-pick outcome tracking for engine credibility (entry, target, confidence, actual return) |
+| `cross_engine_synthesis` | Daily synthesis results (convergent tickers, portfolio, regime consensus, credibility weights) |
 
 ## Cost Tracking
 
@@ -376,7 +538,7 @@ Every LLM call is logged with token counts and estimated USD cost. The `/api/cos
 | Claude Sonnet 4.5 | $3.00 | $15.00 |
 | Claude Haiku 4.5 | $0.80 | $4.00 |
 | GPT-5.2 | $2.00 | $8.00 |
-| GPT-5.2-mini | $0.40 | $1.60 |
+| GPT-5.2-nano | $0.10 | $0.40 |
 | o3-mini | $1.10 | $4.40 |
 
 ## Tests

@@ -51,7 +51,7 @@ from src.signals.ranker import (
 )
 from src.agents.orchestrator import run_agent_pipeline, PipelineRun
 from src.backtest.validation_card import run_validation_checks
-from src.output.telegram import send_alert, format_daily_alert
+from src.output.telegram import send_alert, format_daily_alert, format_cross_engine_alert
 from src.output.performance import check_open_positions
 from src.governance.artifacts import GovernanceContext
 from src.governance.performance_monitor import (
@@ -64,11 +64,51 @@ from src.governance.divergence_ledger import (
     compute_divergences,
 )
 
-logging.basicConfig(
-    level=logging.INFO,
-    format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
-)
+def _setup_logging() -> None:
+    """Configure logging — text or JSON format based on LOG_FORMAT env var."""
+    settings = get_settings()
+    if settings.log_format == "json":
+        import json as _json
+
+        class JSONFormatter(logging.Formatter):
+            def format(self, record):
+                log_entry = {
+                    "timestamp": self.formatTime(record),
+                    "level": record.levelname,
+                    "logger": record.name,
+                    "message": record.getMessage(),
+                }
+                if hasattr(record, "run_id"):
+                    log_entry["run_id"] = record.run_id
+                if record.exc_info and record.exc_info[0]:
+                    log_entry["exception"] = self.formatException(record.exc_info)
+                return _json.dumps(log_entry)
+
+        handler = logging.StreamHandler()
+        handler.setFormatter(JSONFormatter())
+        logging.root.handlers = [handler]
+        logging.root.setLevel(logging.INFO)
+    else:
+        logging.basicConfig(
+            level=logging.INFO,
+            format="%(asctime)s [%(name)s] %(levelname)s: %(message)s",
+        )
+
+
+_setup_logging()
 logger = logging.getLogger(__name__)
+
+
+class RunIDFilter(logging.Filter):
+    """Attach run_id to all log records within a pipeline execution."""
+
+    def __init__(self, run_id: str):
+        super().__init__()
+        self.run_id = run_id
+
+    def filter(self, record):
+        record.run_id = self.run_id
+        return True
 
 
 def _json_safe(obj):
@@ -110,6 +150,10 @@ async def run_morning_pipeline() -> None:
     today = date.today()
     settings = get_settings()
     run_id = uuid.uuid4().hex[:12]
+
+    # Attach run_id to all log records for this pipeline execution
+    run_id_filter = RunIDFilter(run_id)
+    logging.getLogger().addFilter(run_id_filter)
 
     logger.info("=" * 60)
     logger.info("Starting morning pipeline for %s (run_id=%s)", today, run_id)
@@ -157,6 +201,8 @@ async def run_morning_pipeline() -> None:
             )
         except Exception:
             logger.error("Failed to send fail-closed Telegram alert")
+    finally:
+        logging.getLogger().removeFilter(run_id_filter)
 
 
 async def _check_paper_gate(settings) -> bool:
@@ -164,13 +210,44 @@ async def _check_paper_gate(settings) -> bool:
 
     Returns True if pipeline should proceed, False if blocked.
     Logs a warning and forces PAPER mode if gate fails.
+    Override with FORCE_LIVE=true for emergency use (logged as warning).
     """
     if settings.trading_mode != "LIVE":
         return True  # PAPER mode always allowed
 
+    # FORCE_LIVE override for emergency use
+    if settings.force_live:
+        logger.warning(
+            "FORCE_LIVE=true — bypassing 30-day paper trading gate. "
+            "This should only be used in emergencies."
+        )
+        return True
+
     from src.backtest.metrics import compute_metrics
 
+    # Check run count in last 30 days (non-LIVE runs)
     async with get_session() as session:
+        cutoff_30d = date.today() - timedelta(days=30)
+        run_count_result = await session.execute(
+            select(func.count(DailyRun.id)).where(
+                DailyRun.run_date >= cutoff_30d,
+            )
+        )
+        run_count = run_count_result.scalar() or 0
+
+        if run_count < 30:
+            msg = (
+                f"LIVE GATE BLOCKED: Only {run_count} pipeline runs in last 30 days "
+                f"(need 30). Forcing PAPER mode."
+            )
+            logger.error(msg)
+            try:
+                await send_alert(f"LIVE GATE BLOCKED\n{msg}")
+            except Exception:
+                pass
+            settings.trading_mode = "PAPER"
+            return True
+
         result = await session.execute(
             select(
                 func.count(Outcome.id),
@@ -528,6 +605,7 @@ async def _run_pipeline_core(
         feat["ticker"] = ticker
 
         # Fundamental + sentiment (parallel per ticker would be ideal, but rate-limited)
+        degraded_components: list[str] = []
         try:
             fund_data = await aggregator.get_ticker_fundamentals(ticker)
             fund_data["earnings_surprises"] = score_earnings_surprise(
@@ -540,12 +618,22 @@ async def _run_pipeline_core(
         except Exception as e:
             logger.debug("Fundamental fetch failed for %s: %s", ticker, e)
             feat["fundamental"] = {}
+            degraded_components.append("fundamentals")
 
         try:
             news = await aggregator.get_ticker_news(ticker)
             feat["sentiment"] = score_news_batch(news)
         except Exception:
             feat["sentiment"] = {}
+            degraded_components.append("sentiment")
+
+        if degraded_components:
+            feat["_degraded"] = True
+            feat["_degraded_components"] = degraded_components
+            logger.warning(
+                "Degraded data for %s: missing %s",
+                ticker, ", ".join(degraded_components),
+            )
 
         feat["days_to_earnings"] = days_to_next_earnings(earnings_calendar, ticker)
         features_by_ticker[ticker] = feat
@@ -607,6 +695,21 @@ async def _run_pipeline_core(
             all_signals.append(catalyst)
 
     logger.info("Generated %d raw signals", len(all_signals))
+
+    # Propagate data quality flags to signals
+    for sig in all_signals:
+        feat = features_by_ticker.get(sig.ticker, {})
+        if feat.get("_degraded"):
+            sig.data_quality = "degraded"
+            sig.degraded_components = feat.get("_degraded_components", [])
+            logger.warning(
+                "Signal %s/%s fired on degraded data (missing: %s)",
+                sig.ticker, getattr(sig, 'signal_model', 'unknown'),
+                ", ".join(feat.get("_degraded_components", [])),
+            )
+        else:
+            sig.data_quality = "full"
+            sig.degraded_components = []
 
     # Confluence detection: identify tickers flagged by multiple models
     confluence_map = detect_confluence(all_signals)
@@ -1056,6 +1159,19 @@ async def _run_pipeline_core(
     )
     await send_alert(alert_msg)
 
+    # --- Steps 10-14: Cross-Engine Integration ---
+    await _run_cross_engine_steps(
+        today=today,
+        run_id=run_id,
+        regime_context={
+            "regime": regime_assessment.regime.value,
+            "confidence": regime_assessment.confidence,
+            "vix": regime_context.get("vix"),
+        },
+        screener_picks=picks_for_alert,
+        settings=settings,
+    )
+
     logger.info(
         "Pipeline complete in %.1fs: %d picks, %d stage envelopes, run_id=%s",
         elapsed, len(pipeline_result.approved), len(stage_envelopes), run_id,
@@ -1126,6 +1242,232 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
 
     except Exception as e:
         logger.warning("Decay check failed: %s", e)
+
+
+async def _run_cross_engine_steps(
+    today: date,
+    run_id: str,
+    regime_context: dict,
+    screener_picks: list[dict],
+    settings,
+) -> None:
+    """Steps 10-14: Cross-engine integration pipeline.
+
+    Step 10: Collect external engine results (3 parallel HTTP calls)
+    Step 11: Resolve previous day's engine pick outcomes → update credibility weights
+    Step 12: Cross-Engine Verifier Agent (audit credibility, detect anomalies)
+    Step 13: Cross-Engine Synthesizer Agent (final portfolio, executive summary)
+    Step 14: Save to DB + send Telegram cross-engine alert
+    """
+    if not settings.cross_engine_enabled:
+        logger.info("Cross-engine integration disabled, skipping steps 10-14")
+        return
+
+    from src.engines.collector import collect_engine_results
+    from src.engines.credibility import (
+        compute_credibility_snapshot,
+        compute_weighted_picks,
+    )
+    from src.engines.outcome_resolver import resolve_engine_outcomes
+    from src.agents.cross_engine_verifier import CrossEngineVerifierAgent
+    from src.agents.cross_engine_synthesizer import CrossEngineSynthesizerAgent
+    from src.db.models import ExternalEngineResult, EnginePickOutcome, CrossEngineSynthesis
+
+    try:
+        # --- Step 10: Collect external engine results ---
+        logger.info("Step 10: Collecting external engine results...")
+        engine_results = await collect_engine_results()
+
+        if not engine_results:
+            logger.info("No external engine results available, skipping cross-engine synthesis")
+            return
+
+        # Store raw results in DB (upsert to handle same-day re-runs)
+        async with get_session() as session:
+            for er in engine_results:
+                # Check if already stored today (re-run safety)
+                existing = await session.execute(
+                    select(ExternalEngineResult).where(
+                        ExternalEngineResult.engine_name == er.engine_name,
+                        ExternalEngineResult.run_date == today,
+                    )
+                )
+                if existing.scalar_one_or_none():
+                    logger.info("Engine %s already stored for %s, skipping", er.engine_name, today)
+                    continue
+
+                session.add(ExternalEngineResult(
+                    engine_name=er.engine_name,
+                    run_date=today,
+                    status=er.status,
+                    regime=er.regime,
+                    picks_count=len(er.picks),
+                    payload=_json_safe(er.model_dump()),
+                ))
+
+                # Store individual picks for outcome tracking
+                for pick in er.picks:
+                    session.add(EnginePickOutcome(
+                        engine_name=er.engine_name,
+                        run_date=today,
+                        ticker=pick.ticker,
+                        strategy=pick.strategy,
+                        entry_price=pick.entry_price,
+                        target_price=pick.target_price,
+                        stop_loss=pick.stop_loss,
+                        confidence=pick.confidence,
+                        holding_period_days=pick.holding_period_days,
+                    ))
+
+        logger.info("Step 10 complete: %d engines reported", len(engine_results))
+
+        # --- Step 11: Resolve previous engine pick outcomes ---
+        logger.info("Step 11: Resolving previous engine pick outcomes...")
+        feedback = await resolve_engine_outcomes()
+        for fb in feedback:
+            logger.info(
+                "Engine feedback — %s: %d resolved, %.0f%% hit rate, avg return %+.1f%%",
+                fb["engine_name"], fb["resolved_count"],
+                fb["hit_rate"] * 100, fb["avg_return_pct"],
+            )
+
+        # Compute credibility snapshot
+        cred_snapshot = await compute_credibility_snapshot()
+
+        # Build flat pick list for weighting
+        all_picks: list[dict] = []
+        for er in engine_results:
+            for pick in er.picks:
+                all_picks.append({
+                    "engine_name": er.engine_name,
+                    "ticker": pick.ticker,
+                    "strategy": pick.strategy,
+                    "entry_price": pick.entry_price,
+                    "stop_loss": pick.stop_loss,
+                    "target_price": pick.target_price,
+                    "confidence": pick.confidence,
+                    "holding_period_days": pick.holding_period_days,
+                    "thesis": pick.thesis,
+                    "risk_factors": pick.risk_factors,
+                })
+
+        # Add screener's own picks with engine_name="multi_agentic_screener"
+        for sp in screener_picks:
+            all_picks.append({
+                "engine_name": "multi_agentic_screener",
+                "ticker": sp.get("ticker", ""),
+                "strategy": sp.get("signal_model", ""),
+                "entry_price": sp.get("entry_price", 0),
+                "stop_loss": sp.get("stop_loss", 0),
+                "target_price": sp.get("target_1", 0),
+                "confidence": sp.get("confidence", 0),
+                "holding_period_days": sp.get("holding_period", 10),
+                "thesis": sp.get("thesis", ""),
+                "risk_factors": [],
+            })
+
+        weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
+
+        logger.info("Step 11 complete: %d weighted picks computed", len(weighted_picks))
+
+        # --- Step 12: Cross-Engine Verifier ---
+        verifier_output_dict = {}
+        if settings.cross_engine_verify_before_synthesize:
+            logger.info("Step 12: Running cross-engine verifier...")
+            verifier = CrossEngineVerifierAgent()
+
+            engine_results_dicts = [_json_safe(er.model_dump()) for er in engine_results]
+            cred_stats_dict = {
+                name: {
+                    "hit_rate": s.hit_rate,
+                    "weight": s.weight,
+                    "resolved_picks": s.resolved_picks,
+                    "brier_score": s.brier_score,
+                    "has_enough_data": s.has_enough_data,
+                    "per_strategy": s.per_strategy,
+                }
+                for name, s in cred_snapshot.engine_stats.items()
+            }
+
+            verifier_result = await verifier.verify(
+                engine_results=engine_results_dicts,
+                credibility_stats=cred_stats_dict,
+                regime_context=regime_context,
+            )
+            verifier_output_dict = _json_safe(verifier_result.model_dump())
+
+            logger.info(
+                "Step 12 complete: %d verified picks, %d red flags",
+                len(verifier_result.verified_picks), len(verifier_result.red_flags),
+            )
+        else:
+            logger.info("Step 12: Verifier disabled, skipping")
+
+        # --- Step 13: Cross-Engine Synthesizer ---
+        logger.info("Step 13: Running cross-engine synthesizer...")
+        synthesizer = CrossEngineSynthesizerAgent()
+
+        cred_weights_dict = {
+            name: {"weight": s.weight, "hit_rate": s.hit_rate, "resolved_picks": s.resolved_picks}
+            for name, s in cred_snapshot.engine_stats.items()
+        }
+
+        synthesis = await synthesizer.synthesize(
+            weighted_picks=weighted_picks,
+            verifier_output=verifier_output_dict,
+            credibility_weights=cred_weights_dict,
+            regime_context=regime_context,
+            screener_picks=screener_picks,
+        )
+
+        logger.info(
+            "Step 13 complete: %d convergent, %d portfolio positions",
+            len(synthesis.convergent_picks), len(synthesis.portfolio),
+        )
+
+        # --- Step 14: Save to DB + send Telegram ---
+        logger.info("Step 14: Saving synthesis and sending alert...")
+        synthesis_dict = _json_safe(synthesis.model_dump())
+        async with get_session() as session:
+            # Check for existing synthesis (re-run safety)
+            existing_synth = await session.execute(
+                select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
+            )
+            row = existing_synth.scalar_one_or_none()
+            if row:
+                row.convergent_tickers = synthesis_dict.get("convergent_picks")
+                row.portfolio_recommendation = synthesis_dict.get("portfolio")
+                row.regime_consensus = synthesis.regime_consensus
+                row.engines_reporting = len(engine_results)
+                row.executive_summary = synthesis.executive_summary
+                row.verifier_notes = verifier_output_dict
+                row.credibility_weights = cred_weights_dict
+            else:
+                session.add(CrossEngineSynthesis(
+                    run_date=today,
+                    convergent_tickers=synthesis_dict.get("convergent_picks"),
+                    portfolio_recommendation=synthesis_dict.get("portfolio"),
+                    regime_consensus=synthesis.regime_consensus,
+                    engines_reporting=len(engine_results),
+                    executive_summary=synthesis.executive_summary,
+                    verifier_notes=verifier_output_dict,
+                    credibility_weights=cred_weights_dict,
+                ))
+
+        # Send cross-engine Telegram alert
+        cross_alert = format_cross_engine_alert(
+            synthesis={
+                **synthesis_dict,
+                "engines_reporting": len(engine_results),
+            },
+            credibility=cred_weights_dict,
+        )
+        await send_alert(cross_alert)
+
+        logger.info("Steps 10-14 complete: cross-engine synthesis saved and alert sent")
+
+    except Exception as e:
+        logger.error("Cross-engine steps failed (non-fatal): %s", e, exc_info=True)
 
 
 async def run_weekly_meta_review() -> None:
@@ -1245,12 +1587,34 @@ async def run_afternoon_check() -> None:
 
 
 def start_scheduler() -> None:
-    """Start the APScheduler with morning and afternoon jobs."""
+    """Start the APScheduler with morning and afternoon jobs.
+
+    Hardened with max_instances, misfire_grace_time, coalesce, and error listener.
+    """
     from apscheduler.schedulers.asyncio import AsyncIOScheduler
     from apscheduler.triggers.cron import CronTrigger
+    from apscheduler.events import EVENT_JOB_ERROR
 
     settings = get_settings()
     scheduler = AsyncIOScheduler(timezone="US/Eastern")
+
+    # Error listener — log and alert on job failures
+    def _job_error_handler(event):
+        job_id = event.job_id
+        exc = event.exception
+        logger.error("Scheduler job '%s' FAILED: %s", job_id, exc, exc_info=exc)
+        # Fire-and-forget Telegram alert
+        import asyncio
+        try:
+            loop = asyncio.get_event_loop()
+            if loop.is_running():
+                loop.create_task(send_alert(
+                    f"SCHEDULER JOB FAILED\nJob: {job_id}\nError: {type(exc).__name__}: {exc}"
+                ))
+        except Exception:
+            pass
+
+    scheduler.add_listener(_job_error_handler, EVENT_JOB_ERROR)
 
     # Morning pipeline
     scheduler.add_job(
@@ -1262,6 +1626,9 @@ def start_scheduler() -> None:
         ),
         id="morning_pipeline",
         name="Daily Morning Pipeline",
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
     )
 
     # Afternoon check
@@ -1274,6 +1641,9 @@ def start_scheduler() -> None:
         ),
         id="afternoon_check",
         name="Afternoon Position Check",
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
     )
 
     # Weekly meta-analyst review (Sunday 7 PM ET)
@@ -1287,6 +1657,9 @@ def start_scheduler() -> None:
         ),
         id="weekly_meta_review",
         name="Weekly Meta-Analyst Review",
+        max_instances=1,
+        misfire_grace_time=300,
+        coalesce=True,
     )
 
     scheduler.start()
@@ -1298,12 +1671,132 @@ def start_scheduler() -> None:
     return scheduler
 
 
+async def _debug_engines() -> None:
+    """Debug mode: collect all engine results, run verifier + synthesizer, print comparison."""
+    import json as _json
+    from pathlib import Path
+
+    from src.engines.collector import collect_engine_results
+    from src.engines.credibility import compute_credibility_snapshot, compute_weighted_picks
+    from src.agents.cross_engine_verifier import CrossEngineVerifierAgent
+    from src.agents.cross_engine_synthesizer import CrossEngineSynthesizerAgent
+
+    today = date.today()
+    logger.info("=" * 60)
+    logger.info("DEBUG ENGINES MODE — %s", today)
+    logger.info("=" * 60)
+
+    # Collect
+    engine_results = await collect_engine_results()
+    logger.info("Collected from %d engines", len(engine_results))
+
+    # Credibility
+    cred_snapshot = await compute_credibility_snapshot()
+
+    # Build picks
+    all_picks: list[dict] = []
+    engine_summary: dict[str, dict] = {}
+    for er in engine_results:
+        tickers = [p.ticker for p in er.picks]
+        engine_summary[er.engine_name] = {
+            "picks": tickers,
+            "regime": er.regime,
+            "candidates_screened": er.candidates_screened,
+            "status": er.status,
+        }
+        for pick in er.picks:
+            all_picks.append({
+                "engine_name": er.engine_name,
+                "ticker": pick.ticker,
+                "strategy": pick.strategy,
+                "entry_price": pick.entry_price,
+                "stop_loss": pick.stop_loss,
+                "target_price": pick.target_price,
+                "confidence": pick.confidence,
+                "holding_period_days": pick.holding_period_days,
+                "thesis": pick.thesis,
+                "risk_factors": pick.risk_factors,
+            })
+
+    weighted = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
+
+    # Verifier
+    cred_stats_dict = {
+        name: {
+            "hit_rate": s.hit_rate, "weight": s.weight,
+            "resolved_picks": s.resolved_picks, "brier_score": s.brier_score,
+        }
+        for name, s in cred_snapshot.engine_stats.items()
+    }
+    verifier = CrossEngineVerifierAgent()
+    verifier_result = await verifier.verify(
+        engine_results=[_json_safe(er.model_dump()) for er in engine_results],
+        credibility_stats=cred_stats_dict,
+        regime_context={"regime": "debug"},
+    )
+
+    # Synthesizer
+    synthesizer = CrossEngineSynthesizerAgent()
+    synthesis = await synthesizer.synthesize(
+        weighted_picks=weighted,
+        verifier_output=_json_safe(verifier_result.model_dump()),
+        credibility_weights=cred_stats_dict,
+        regime_context={"regime": "debug"},
+    )
+
+    # Build debug output
+    debug_output = {
+        "date": str(today),
+        "engines": engine_summary,
+        "credibility": cred_stats_dict,
+        "weighted_picks": weighted,
+        "verifier": _json_safe(verifier_result.model_dump()),
+        "synthesis": _json_safe(synthesis.model_dump()),
+    }
+
+    # Print summary
+    print("\n" + "=" * 60)
+    print("CROSS-ENGINE DEBUG SUMMARY")
+    print("=" * 60)
+    print(f"\nEngines reporting: {len(engine_results)}")
+    for name, info in engine_summary.items():
+        print(f"\n  {name}:")
+        print(f"    Regime: {info['regime']}")
+        print(f"    Picks: {', '.join(info['picks']) or 'none'}")
+    print(f"\nWeighted picks (top 10):")
+    for wp in weighted[:10]:
+        print(
+            f"  {wp['ticker']}: score={wp['combined_score']:.0f}, "
+            f"engines={wp['engine_count']}, convergence={wp['convergence_multiplier']:.1f}x"
+        )
+    print(f"\nSynthesis portfolio:")
+    for pos in synthesis.portfolio:
+        print(f"  {pos.ticker}: {pos.weight_pct:.0f}% [{pos.source}]")
+    print(f"\nExecutive summary: {synthesis.executive_summary}")
+
+    # Save debug JSON
+    debug_dir = Path("outputs/debug")
+    debug_dir.mkdir(parents=True, exist_ok=True)
+    debug_path = debug_dir / f"cross_engine_{today}.json"
+    debug_path.write_text(_json.dumps(debug_output, indent=2, default=str))
+    logger.info("Debug output saved to %s", debug_path)
+
+
 async def main():
     """Entry point — init DB, optionally run pipeline now, start scheduler."""
+    import signal
     import sys
     import uvicorn
 
     await init_db()
+
+    # Validate API keys for the configured execution mode
+    settings = get_settings()
+    try:
+        settings.validate_keys_for_mode()
+    except ValueError as e:
+        logger.error("Startup validation failed:\n%s", e)
+        sys.exit(1)
 
     # Parse --mode flag to override execution_mode at runtime
     for arg in sys.argv:
@@ -1340,8 +1833,20 @@ async def main():
         await run_weekly_meta_review()
         return
 
+    if "--debug-engines" in sys.argv:
+        await _debug_engines()
+        return
+
     # Start scheduler + API server
     scheduler = start_scheduler()
+
+    # SIGTERM handler for graceful shutdown
+    def _sigterm_handler(signum, frame):
+        logger.info("Received SIGTERM — initiating graceful shutdown")
+        scheduler.shutdown(wait=True)
+        raise SystemExit(0)
+
+    signal.signal(signal.SIGTERM, _sigterm_handler)
 
     port = int(os.environ.get("PORT", 8000))
     config = uvicorn.Config(

@@ -322,6 +322,78 @@ class SignalExitEvent(Base):
     )
 
 
+class ExternalEngineResult(Base):
+    """Raw results from each external engine per day."""
+
+    __tablename__ = "external_engine_results"
+    __table_args__ = (
+        UniqueConstraint("engine_name", "run_date", name="uq_engine_result_name_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    engine_name: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="success")
+    regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    picks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class EnginePickOutcome(Base):
+    """Per-pick outcome tracking for engine credibility scoring."""
+
+    __tablename__ = "engine_pick_outcomes"
+    __table_args__ = (
+        UniqueConstraint("engine_name", "run_date", "ticker", name="uq_engine_pick_name_date_ticker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    engine_name: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    strategy: Mapped[str] = mapped_column(String(30), nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    holding_period_days: Mapped[int] = mapped_column(Integer, nullable=False)
+
+    # Outcome fields (resolved later)
+    outcome_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    actual_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    hit_target: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    days_held: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_favorable_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_adverse_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class CrossEngineSynthesis(Base):
+    """Cross-engine synthesis results per day."""
+
+    __tablename__ = "cross_engine_synthesis"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True, unique=True)
+    convergent_tickers: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    portfolio_recommendation: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    regime_consensus: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    engines_reporting: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    executive_summary: Mapped[str | None] = mapped_column(Text, nullable=True)
+    verifier_notes: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    credibility_weights: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class DivergenceOutcome(Base):
     """Attached after trade closes — scores the LLM divergence against realized outcomes."""
 

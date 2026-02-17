@@ -34,6 +34,18 @@ from src.signals.ranker import RankedCandidate
 logger = logging.getLogger(__name__)
 
 
+class BudgetExhaustedError(Exception):
+    """Raised when the pipeline cost budget is exhausted."""
+
+    def __init__(self, spent: float, budget: float, stage: str):
+        self.spent = spent
+        self.budget = budget
+        self.stage = stage
+        super().__init__(
+            f"Budget exhausted at {stage}: ${spent:.4f} >= ${budget:.4f}"
+        )
+
+
 @dataclass
 class PipelineResult:
     ticker: str
@@ -149,6 +161,11 @@ async def run_agent_pipeline(
     })
 
     # --- Step C: Verifier checks output ---
+    # Skip verifier if budget already exhausted
+    if pipeline_run.convergence_state == "budget_exhausted":
+        logger.info("Skipping verifier — budget exhausted")
+        return pipeline_run
+
     verifier = VerifierAgent()
     pipeline_output_for_verify = {
         "approved": [
@@ -272,6 +289,20 @@ async def run_agent_pipeline(
     return pipeline_run
 
 
+def _check_budget(
+    memory_service: MemoryService,
+    budget_usd: float | None,
+    stage: str,
+) -> None:
+    """Raise BudgetExhaustedError if the cost budget has been exceeded."""
+    if budget_usd and memory_service.working.total_cost_usd >= budget_usd:
+        raise BudgetExhaustedError(
+            spent=memory_service.working.total_cost_usd,
+            budget=budget_usd,
+            stage=stage,
+        )
+
+
 async def _execute_pipeline_stages(
     candidates: list[RankedCandidate],
     regime_context: dict,
@@ -284,7 +315,9 @@ async def _execute_pipeline_stages(
     """Execute the 3-stage pipeline: interpret → skills → debate → risk gate.
 
     Integrates memory context and skill execution at each stage.
-    Checks cost budget between stages and stops early if exhausted.
+    Checks cost budget before and after each agent call.
+    Raises BudgetExhaustedError when budget is exceeded — caller catches and
+    returns gracefully with partial results.
     """
     interpreter = SignalInterpreterAgent()
     adversarial = AdversarialAgent()
@@ -295,11 +328,71 @@ async def _execute_pipeline_stages(
     vetoed: list[str] = []
     near_misses: list[NearMissRecord] = []
 
+    # Shared mutable state for partial result tracking
+    partial_state = {"interpreted": 0, "debated": 0}
+
+    try:
+        return await _execute_pipeline_inner(
+            candidates=candidates,
+            regime_context=regime_context,
+            existing_positions=existing_positions,
+            settings=settings,
+            memory_service=memory_service,
+            skill_engine=skill_engine,
+            budget_usd=budget_usd,
+            interpreter=interpreter,
+            adversarial=adversarial,
+            risk_gate=risk_gate,
+            agent_logs=agent_logs,
+            approved=approved,
+            vetoed=vetoed,
+            near_misses=near_misses,
+            partial_state=partial_state,
+        )
+    except BudgetExhaustedError as e:
+        logger.warning("Budget exhausted at %s: $%.4f >= $%.4f",
+                        e.stage, e.spent, e.budget)
+        return PipelineRun(
+            run_date=date.today(),
+            regime=regime_context.get("regime", "unknown"),
+            regime_details=regime_context,
+            candidates_scored=len(candidates),
+            interpreted=partial_state["interpreted"],
+            debated=partial_state["debated"],
+            approved=approved,
+            vetoed=vetoed,
+            agent_logs=agent_logs,
+            convergence_state="budget_exhausted",
+            near_misses=near_misses,
+        )
+
+
+async def _execute_pipeline_inner(
+    candidates: list[RankedCandidate],
+    regime_context: dict,
+    existing_positions: list[dict] | None,
+    settings,
+    memory_service: MemoryService,
+    skill_engine: SkillEngine,
+    budget_usd: float | None,
+    interpreter: SignalInterpreterAgent,
+    adversarial: AdversarialAgent,
+    risk_gate: RiskGateAgent,
+    agent_logs: list[dict],
+    approved: list[PipelineResult],
+    vetoed: list[str],
+    near_misses: list[NearMissRecord],
+    partial_state: dict | None = None,
+) -> PipelineRun:
+    """Inner pipeline logic — extracted so BudgetExhaustedError propagates cleanly."""
     # --- Stage 1: Signal Interpretation (top 10 → top 5) ---
     logger.info("Stage 1: Interpreting %d candidates", len(candidates))
     interpretations: list[tuple[RankedCandidate, SignalInterpretation]] = []
 
     for candidate in candidates[:settings.top_n_for_interpretation]:
+        # Budget check before each interpreter call
+        _check_budget(memory_service, budget_usd, "pre_interpretation")
+
         memory_ctx = await memory_service.get_context_for_candidate(
             candidate.ticker, candidate.signal_model,
         )
@@ -321,6 +414,9 @@ async def _execute_pipeline_stages(
                 "failure_reasons": [r.value for r in retry_result.failure_reasons],
                 **interpreter.last_call_meta,
             })
+            # Track partial state incrementally for budget exhaustion recovery
+            if partial_state is not None:
+                partial_state["interpreted"] = len(interpretations)
 
     # Sort by confidence, take top 5
     interpretations.sort(key=lambda x: x[1].confidence, reverse=True)
@@ -331,25 +427,8 @@ async def _execute_pipeline_stages(
         len(interpretations), len(candidates), len(top_interpretations),
     )
 
-    # Cost circuit breaker after interpretation
-    if budget_usd and memory_service.working.total_cost_usd >= budget_usd:
-        logger.warning(
-            "Budget exhausted ($%.2f >= $%.2f) after interpretation",
-            memory_service.working.total_cost_usd, budget_usd,
-        )
-        return PipelineRun(
-            run_date=date.today(),
-            regime=regime_context.get("regime", "unknown"),
-            regime_details=regime_context,
-            candidates_scored=len(candidates),
-            interpreted=len(interpretations),
-            debated=0,
-            approved=[],
-            vetoed=[],
-            agent_logs=agent_logs,
-            convergence_state="budget_exhausted",
-            near_misses=near_misses,
-        )
+    # Budget check after interpretation stage
+    _check_budget(memory_service, budget_usd, "post_interpretation")
 
     # --- Stage 1b: Skill Execution ---
     skill_addons_by_ticker: dict[str, list[str]] = {}
@@ -390,6 +469,9 @@ async def _execute_pipeline_stages(
     ] = []
 
     for candidate, interpretation in top_interpretations:
+        # Budget check before each debate call
+        _check_budget(memory_service, budget_usd, "pre_debate")
+
         signal_data = {
             "ticker": candidate.ticker,
             "signal_model": candidate.signal_model,
@@ -456,30 +538,19 @@ async def _execute_pipeline_stages(
         len(debate_survivors), len(top_interpretations),
     )
 
-    # Cost circuit breaker after debate
-    if budget_usd and memory_service.working.total_cost_usd >= budget_usd:
-        logger.warning(
-            "Budget exhausted ($%.2f >= $%.2f) after debate",
-            memory_service.working.total_cost_usd, budget_usd,
-        )
-        return PipelineRun(
-            run_date=date.today(),
-            regime=regime_context.get("regime", "unknown"),
-            regime_details=regime_context,
-            candidates_scored=len(candidates),
-            interpreted=len(interpretations),
-            debated=len(debate_survivors),
-            approved=[],
-            vetoed=vetoed,
-            agent_logs=agent_logs,
-            convergence_state="budget_exhausted",
-            near_misses=near_misses,
-        )
+    # Track partial state for budget exhaustion recovery
+    if partial_state is not None:
+        partial_state["debated"] = len(debate_survivors)
+
+    # Budget check after debate stage
+    _check_budget(memory_service, budget_usd, "post_debate")
 
     # --- Stage 3: Risk Gate (survivors → final 1-2) ---
     logger.info("Stage 3: Risk gate for %d survivors", len(debate_survivors))
 
     for candidate, interpretation, debate in debate_survivors:
+        # Budget check before each risk gate call
+        _check_budget(memory_service, budget_usd, "pre_risk_gate")
         # Build memory context with skill addons
         memory_ctx = await memory_service.get_context_for_candidate(
             candidate.ticker, candidate.signal_model,
