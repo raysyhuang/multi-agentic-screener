@@ -217,10 +217,22 @@ class DataAggregator:
                     continue
             return []
 
-        ref_tickers, grouped = await asyncio.gather(
-            self.polygon.get_all_tickers(market="stocks", ticker_type="CS"),
+        # Alphabet ranges to stay under Starter plan's ~1000 result cap per query
+        _RANGES = [
+            ("A", "D"), ("D", "G"), ("G", "J"), ("J", "M"),
+            ("M", "P"), ("P", "S"), ("S", "V"), ("V", None),
+        ]
+
+        ref_chunks, grouped = await asyncio.gather(
+            asyncio.gather(*(
+                self.polygon.get_all_tickers(
+                    market="stocks", ticker_type="CS",
+                    ticker_gte=gte, ticker_lt=lt,
+                ) for gte, lt in _RANGES
+            )),
             _fetch_grouped(),
         )
+        ref_tickers = [t for chunk in ref_chunks for t in chunk]
 
         # Build lookup: ticker → {exchange, market_cap} (only NYSE/NASDAQ)
         ref_map: dict[str, dict] = {}

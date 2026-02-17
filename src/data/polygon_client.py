@@ -110,6 +110,8 @@ class PolygonClient:
         market: str = "stocks",
         ticker_type: str | None = None,
         max_pages: int = 20,
+        ticker_gte: str | None = None,
+        ticker_lt: str | None = None,
     ) -> list[dict]:
         """Fetch ticker list for universe construction.
 
@@ -117,11 +119,17 @@ class PolygonClient:
             market: Market type (default "stocks")
             ticker_type: Filter by type (e.g. "CS" for Common Stock)
             max_pages: Safety limit on pagination (default 20 = 20,000 tickers)
+            ticker_gte: Only return tickers >= this value (alphabetical range start)
+            ticker_lt: Only return tickers < this value (alphabetical range end)
         """
         url = f"{BASE_URL}/v3/reference/tickers"
         params = self._params(market=market, active="true", limit=1000)
         if ticker_type:
             params["type"] = ticker_type
+        if ticker_gte:
+            params["ticker.gte"] = ticker_gte
+        if ticker_lt:
+            params["ticker.lt"] = ticker_lt
         all_tickers = []
         page = 0
         async with httpx.AsyncClient(timeout=30) as client:
