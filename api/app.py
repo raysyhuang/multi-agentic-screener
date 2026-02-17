@@ -66,21 +66,21 @@ app.add_middleware(
     allow_headers=["Authorization", "Content-Type"],
 )
 
-# Paths exempt from API auth
+# Paths that skip auth entirely (not under /api/)
 _AUTH_EXEMPT_PREFIXES = ("/health", "/static", "/docs", "/openapi.json", "/redoc")
 
 
 @app.middleware("http")
 async def api_auth_middleware(request: Request, call_next) -> Response:
-    """Require Bearer token for /api/* routes when API_SECRET_KEY is configured.
+    """Require Bearer token only for mutation (POST/PUT/PATCH/DELETE) on /api/* routes.
 
-    POST/mutation endpoints fail-closed when API_SECRET_KEY is not set.
-    GET endpoints allow unauthenticated access when key is not configured.
+    GET/read endpoints are public — the dashboard and report pages need them.
+    POST/mutation endpoints require auth, and fail-closed when API_SECRET_KEY is not set.
     """
     settings = get_settings()
     path = request.url.path
 
-    # Skip auth for exempt paths and non-API paths
+    # Skip auth for non-API paths
     if not path.startswith("/api/"):
         return await call_next(request)
 
@@ -88,16 +88,18 @@ async def api_auth_middleware(request: Request, call_next) -> Response:
     if any(path.startswith(prefix) for prefix in _AUTH_EXEMPT_PREFIXES):
         return await call_next(request)
 
-    # If API_SECRET_KEY is not configured:
-    # - POST/mutation endpoints → fail-closed (reject)
-    # - GET/read endpoints → allow (convenient for local dev)
-    if not settings.api_secret_key:
-        if request.method in ("POST", "PUT", "PATCH", "DELETE"):
-            return JSONResponse(
-                status_code=503,
-                content={"detail": "API_SECRET_KEY not configured — mutation endpoints disabled"},
-            )
+    # GET requests are public (dashboard, reports, read-only data)
+    if request.method == "GET":
         return await call_next(request)
+
+    # --- Mutation endpoints (POST/PUT/PATCH/DELETE) require auth below ---
+
+    # If API_SECRET_KEY is not configured, fail-closed for mutations
+    if not settings.api_secret_key:
+        return JSONResponse(
+            status_code=503,
+            content={"detail": "API_SECRET_KEY not configured — mutation endpoints disabled"},
+        )
 
     # Check Authorization header
     auth_header = request.headers.get("Authorization", "")
