@@ -81,11 +81,13 @@ async def check_open_positions() -> tuple[
             except Exception as e:
                 logger.error("Failed to evaluate %s: %s", outcome.ticker, e)
 
-        # Health card loop — only for still-open positions
-        for outcome in open_outcomes:
-            if not outcome.still_open:
-                continue
-            try:
+    # Health card loop — each position gets its own session to prevent
+    # one failure from cascading and poisoning the transaction for others.
+    for outcome in open_outcomes:
+        if not outcome.still_open:
+            continue
+        try:
+            async with get_session() as session:
                 # Fetch signal
                 sig_result = await session.execute(
                     select(Signal).where(Signal.id == outcome.signal_id)
@@ -140,8 +142,8 @@ async def check_open_positions() -> tuple[
                 if card.state == HealthState.EXIT:
                     await _persist_exit_event(session, card, outcome)
 
-            except Exception as e:
-                logger.error("Health card failed for %s (non-fatal): %s", outcome.ticker, e)
+        except Exception as e:
+            logger.error("Health card failed for %s (non-fatal): %s", outcome.ticker, e)
 
     logger.info(
         "Updated %d positions, %d health cards, %d state changes",
