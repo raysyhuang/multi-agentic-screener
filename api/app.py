@@ -1167,6 +1167,45 @@ async def cross_engine_history(
     ]
 
 
+# ---------------------------------------------------------------------------
+# Backtest Comparison Endpoints
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/backtest/compare")
+async def backtest_compare():
+    """Cross-engine backtest comparison.
+
+    Reads standardized JSON reports from all four engines and produces:
+    - Head-to-head metrics table
+    - Regime breakdown
+    - Correlation matrix (ticker overlap)
+    - Blend simulation (equal-weight + credibility-weight)
+    - Statistical significance tests
+    """
+    from src.engines.backtest_comparator import run_comparison
+    return run_comparison()
+
+
+@app.get("/api/backtest/engines")
+async def backtest_engines():
+    """List available engine backtest reports."""
+    from src.engines.backtest_comparator import load_all_reports
+    reports = load_all_reports()
+    return {
+        "engines": [
+            {
+                "engine": name,
+                "total_trades": r.get("summary", {}).get("total_trades", 0),
+                "date_range": r.get("date_range", {}),
+                "run_date": r.get("run_date"),
+            }
+            for name, r in reports.items()
+        ],
+        "total_engines": len(reports),
+    }
+
+
 @app.get("/health")
 async def health_check():
     """Health check for Heroku / uptime monitors.

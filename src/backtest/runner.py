@@ -3,6 +3,7 @@
 Usage:
     python -m src.backtest.runner --config configs/backtest_default.yaml --mode quant_only
     python -m src.backtest.runner --start 2024-06-01 --end 2025-01-31
+    python -m src.backtest.runner --live-replay --start 2025-01-01 --end 2026-02-17
 """
 
 from __future__ import annotations
@@ -17,11 +18,12 @@ from dataclasses import dataclass, field, asdict
 from datetime import date, timedelta
 from pathlib import Path
 
+import numpy as np
 import pandas as pd
 import yaml
 
 from src.backtest.metrics import compute_metrics
-from src.backtest.walk_forward import run_walk_forward
+from src.backtest.walk_forward import run_walk_forward, _simulate_trade
 from src.config import get_settings
 from src.data.aggregator import DataAggregator
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
@@ -285,6 +287,205 @@ async def run_backtest(config: BacktestConfig) -> BacktestReport:
     return report
 
 
+async def replay_from_db(config: BacktestConfig) -> dict:
+    """Replay actual DB signals against historical prices.
+
+    Unlike run_backtest() which re-generates signals, this mode tests only
+    the prediction quality of *stored* signals. It queries the signals table,
+    looks up T+1 open entry prices from OHLCV, and simulates holds with
+    stop/target logic from walk_forward.py.
+
+    Returns a standardized JSON dict for cross-engine comparison.
+    """
+    start_time = time.monotonic()
+    logger.info("=" * 60)
+    logger.info("MAS Live Replay: %s → %s", config.start_date, config.end_date)
+    logger.info("=" * 60)
+
+    from src.db.session import init_db, get_session
+    from src.db.models import Signal
+
+    from sqlalchemy import select
+
+    await init_db()
+
+    # 1. Query approved signals from DB for date range
+    async with get_session() as session:
+        result = await session.execute(
+            select(Signal).where(
+                Signal.run_date >= config.start_date,
+                Signal.run_date <= config.end_date,
+                Signal.risk_gate_decision.in_(["APPROVE", "ADJUST"]),
+            ).order_by(Signal.run_date.asc())
+        )
+        signals = result.scalars().all()
+
+    if not signals:
+        logger.warning("No approved signals found in date range")
+        elapsed = time.monotonic() - start_time
+        return _empty_replay_report(config, elapsed)
+
+    logger.info("Found %d approved signals in DB", len(signals))
+
+    # 2. Fetch OHLCV for all tickers involved
+    aggregator = DataAggregator()
+    tickers = list({s.ticker for s in signals})
+    lookback_start = config.start_date - timedelta(days=5)
+    lookback_end = config.end_date + timedelta(days=max(config.holding_periods) + 5)
+    price_data = await aggregator.get_bulk_ohlcv(tickers, lookback_start, lookback_end)
+
+    # 3. Simulate each signal
+    settings = get_settings()
+    all_trades = []
+    by_regime: dict[str, list] = {}
+
+    for signal in signals:
+        ticker = signal.ticker
+        if ticker not in price_data or price_data[ticker].empty:
+            continue
+
+        df = price_data[ticker].copy()
+        if "date" not in df.columns:
+            continue
+
+        df["date"] = pd.to_datetime(df["date"]).dt.date if not isinstance(df["date"].iloc[0], date) else df["date"]
+        signal_date = signal.run_date
+
+        for period in config.holding_periods:
+            trade = _simulate_trade(
+                df=df,
+                signal_date=signal_date,
+                direction=signal.direction,
+                stop_loss=signal.stop_loss,
+                target=signal.target_1,
+                max_holding_days=period,
+                slippage_pct=config.slippage_pct,
+                commission=config.commission_per_trade,
+                entry_price_hint=signal.entry_price,
+            )
+            if not trade:
+                continue
+
+            trade_dict = {
+                "ticker": ticker,
+                "signal_date": str(signal_date),
+                "signal_model": signal.signal_model,
+                "direction": signal.direction,
+                "confidence": signal.confidence,
+                "regime": signal.regime,
+                "holding_period": period,
+                "entry_date": str(trade["entry_date"]),
+                "entry_price": trade["entry_price"],
+                "exit_date": str(trade["exit_date"]),
+                "exit_price": trade["exit_price"],
+                "exit_reason": trade["exit_reason"],
+                "pnl_pct": trade["pnl_after_costs"],
+                "mfe_pct": trade["max_favorable_excursion"],
+                "mae_pct": trade["max_adverse_excursion"],
+                "hold_days": trade["holding_days"],
+            }
+            all_trades.append(trade_dict)
+
+            # Track by regime
+            regime = signal.regime or "Unknown"
+            by_regime.setdefault(regime, []).append(trade_dict)
+
+    logger.info("Simulated %d trades from DB signals", len(all_trades))
+
+    if not all_trades:
+        elapsed = time.monotonic() - start_time
+        return _empty_replay_report(config, elapsed)
+
+    # 4. Compute summary metrics
+    pnls = [t["pnl_pct"] for t in all_trades]
+    perf = compute_metrics(pnls)
+
+    # Regime breakdown
+    regime_summary = {}
+    for regime, trades in by_regime.items():
+        r_pnls = [t["pnl_pct"] for t in trades]
+        r_arr = np.array(r_pnls)
+        r_wins = r_arr[r_arr > 0]
+        r_std = float(np.std(r_arr, ddof=1)) if len(r_arr) > 1 else 1.0
+        regime_summary[regime] = {
+            "trades": len(trades),
+            "win_rate": round(len(r_wins) / len(r_arr), 4) if len(r_arr) > 0 else 0,
+            "sharpe": round(float(np.mean(r_arr)) / r_std * np.sqrt(50), 2) if r_std > 0 else 0,
+        }
+
+    # Equity curve
+    sorted_trades = sorted(all_trades, key=lambda t: t["exit_date"])
+    equity_curve = []
+    cumulative = 0.0
+    for t in sorted_trades:
+        cumulative += t["pnl_pct"]
+        equity_curve.append({
+            "date": t["exit_date"],
+            "cumulative_pnl_pct": round(cumulative, 2),
+        })
+
+    elapsed = time.monotonic() - start_time
+
+    report = {
+        "engine": "multi-agentic-screener",
+        "run_date": str(date.today()),
+        "date_range": {
+            "start": str(config.start_date),
+            "end": str(config.end_date),
+        },
+        "config": {
+            "holding_period_days": config.holding_periods,
+            "max_positions": config.top_n_candidates,
+            "slippage_bps": config.slippage_pct * 10000,
+            "mode": "replay_from_db",
+        },
+        "summary": {
+            "total_trades": perf.total_trades,
+            "win_rate": perf.win_rate,
+            "avg_return_pct": perf.avg_return_pct,
+            "sharpe": perf.sharpe_ratio,
+            "sortino": perf.sortino_ratio,
+            "max_drawdown_pct": -perf.max_drawdown_pct,
+            "profit_factor": perf.profit_factor,
+            "expectancy_pct": perf.expectancy,
+            "calmar": perf.calmar_ratio,
+            "avg_hold_days": round(
+                np.mean([t["hold_days"] for t in all_trades]), 1
+            ) if all_trades else 0,
+        },
+        "by_regime": regime_summary,
+        "trades": all_trades,
+        "equity_curve": equity_curve,
+        "elapsed_s": round(elapsed, 2),
+    }
+
+    # Save
+    output_dir = Path(config.output_dir)
+    output_dir.mkdir(parents=True, exist_ok=True)
+    report_path = output_dir / f"mas_replay_{config.start_date}_{config.end_date}.json"
+    report_path.write_text(json.dumps(report, indent=2, default=str))
+
+    logger.info(
+        "Replay complete in %.1fs: %d trades, Sharpe=%.2f, report=%s",
+        elapsed, perf.total_trades, perf.sharpe_ratio, report_path,
+    )
+
+    return report
+
+
+def _empty_replay_report(config: BacktestConfig, elapsed: float) -> dict:
+    return {
+        "engine": "multi-agentic-screener",
+        "run_date": str(date.today()),
+        "date_range": {"start": str(config.start_date), "end": str(config.end_date)},
+        "config": {"mode": "replay_from_db"},
+        "summary": {"total_trades": 0},
+        "trades": [],
+        "equity_curve": [],
+        "elapsed_s": round(elapsed, 2),
+    }
+
+
 def main():
     parser = argparse.ArgumentParser(description="Reproducible backtest runner")
     parser.add_argument("--config", type=str, help="Path to YAML config file")
@@ -293,15 +494,27 @@ def main():
     parser.add_argument("--mode", type=str, default="quant_only",
                         choices=["quant_only", "hybrid", "agentic_full"])
     parser.add_argument("--version-tag", type=str, default="v1")
+    parser.add_argument("--live-replay", action="store_true",
+                        help="Replay actual DB signals instead of re-generating")
     args = parser.parse_args()
 
-    if args.config:
+    if args.live_replay:
+        if not args.start or not args.end:
+            parser.error("--live-replay requires both --start and --end")
+        config = BacktestConfig(
+            start_date=date.fromisoformat(args.start),
+            end_date=date.fromisoformat(args.end),
+            mode="replay_from_db",
+            version_tag=args.version_tag or "replay",
+        )
+        asyncio.run(replay_from_db(config))
+    elif args.config:
         config = BacktestConfig.from_yaml(args.config)
-        # CLI overrides
         if args.mode:
             config.mode = args.mode
         if args.version_tag:
             config.version_tag = args.version_tag
+        asyncio.run(run_backtest(config))
     elif args.start and args.end:
         config = BacktestConfig(
             start_date=date.fromisoformat(args.start),
@@ -309,10 +522,9 @@ def main():
             mode=args.mode,
             version_tag=args.version_tag,
         )
+        asyncio.run(run_backtest(config))
     else:
-        parser.error("Provide --config or both --start and --end")
-
-    asyncio.run(run_backtest(config))
+        parser.error("Provide --config, both --start and --end, or --live-replay")
 
 
 if __name__ == "__main__":
