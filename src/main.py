@@ -582,6 +582,10 @@ async def _run_pipeline_core(
     stage_envelopes.append(ingest_envelope)
 
     # --- Step 3: Fetch OHLCV for filtered universe ---
+    # Sort by market cap descending so the cap selects the largest companies,
+    # not just alphabetically-first tickers (FMP returns alpha-sorted by default).
+    # Falls back to volume for Polygon universe (no marketCap field).
+    filtered.sort(key=lambda s: (s.get("marketCap") or 0, s.get("volume") or 0), reverse=True)
     logger.info("Step 3: Fetching OHLCV for %d tickers...", len(filtered))
     tickers = [s["symbol"] for s in filtered[:200]]  # Cap at 200 for API limits
     from_date = today - timedelta(days=300)  # 1 year of data for indicators
