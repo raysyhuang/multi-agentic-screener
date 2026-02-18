@@ -1508,7 +1508,40 @@ async def _run_cross_engine_steps(
         engine_results = await collect_engine_results()
 
         if not engine_results:
-            logger.info("No external engine results available, skipping cross-engine synthesis")
+            logger.info("No external engine results available, recording degraded synthesis state")
+            from src.data.dataset_verification import verify_cross_engine
+            cross_health = verify_cross_engine(engine_results=[], regime_context=regime_context)
+
+            async with get_session() as session:
+                existing_synth = await session.execute(
+                    select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
+                )
+                row = existing_synth.scalar_one_or_none()
+                summary = (
+                    "No external engine results passed validation this cycle. "
+                    "Cross-engine synthesis skipped and marked degraded."
+                )
+                if row:
+                    row.convergent_tickers = []
+                    row.portfolio_recommendation = []
+                    row.regime_consensus = summary
+                    row.engines_reporting = 0
+                    row.executive_summary = summary
+                    row.verifier_notes = {"skipped": "no_engine_results"}
+                    row.credibility_weights = {}
+                    row.cross_engine_health = _json_safe(cross_health.to_dict())
+                else:
+                    session.add(CrossEngineSynthesis(
+                        run_date=today,
+                        convergent_tickers=[],
+                        portfolio_recommendation=[],
+                        regime_consensus=summary,
+                        engines_reporting=0,
+                        executive_summary=summary,
+                        verifier_notes={"skipped": "no_engine_results"},
+                        credibility_weights={},
+                        cross_engine_health=_json_safe(cross_health.to_dict()),
+                    ))
             return
 
         # Store raw results in DB (upsert to handle same-day re-runs)

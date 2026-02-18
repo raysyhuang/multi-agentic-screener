@@ -116,6 +116,7 @@ async def fetch_koocore(
     base_url: str,
     api_key: str,
     timeout_s: float = 45.0,
+    max_attempts: int = 2,
 ) -> EngineResultPayload | None:
     """Fetch KooCore /api/picks and transform into EngineResultPayload."""
     picks_url = f"{base_url.rstrip('/')}/api/picks"
@@ -123,7 +124,6 @@ async def fetch_koocore(
 
     # 1. Fetch raw picks from KooCore
     raw: dict | None = None
-    max_attempts = 3
     for attempt in range(1, max_attempts + 1):
         try:
             async with session.get(

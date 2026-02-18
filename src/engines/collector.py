@@ -40,40 +40,55 @@ async def _fetch_engine(
     timeout_s: float = 30.0,
 ) -> EngineResultPayload | None:
     """Fetch results from a single engine. Returns None on failure."""
-    url = f"{base_url.rstrip('/')}/api/engine/results"
     headers = {}
     if api_key:
         headers["X-Engine-Key"] = api_key
 
-    try:
-        start = time.monotonic()
-        async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout_s)) as resp:
-            elapsed = time.monotonic() - start
-            if resp.status != 200:
-                body = await resp.text()
-                logger.warning(
-                    "Engine %s returned HTTP %d (%.1fs): %s",
-                    engine_name, resp.status, elapsed, body[:200],
+    candidate_paths = (
+        "/api/engine/results",
+        "/api/engine/results/latest",
+        "/api/results",
+    )
+
+    for path in candidate_paths:
+        url = f"{base_url.rstrip('/')}{path}"
+        try:
+            start = time.monotonic()
+            async with session.get(url, headers=headers, timeout=aiohttp.ClientTimeout(total=timeout_s)) as resp:
+                elapsed = time.monotonic() - start
+                if resp.status == 404:
+                    continue
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.warning(
+                        "Engine %s returned HTTP %d on %s (%.1fs): %s",
+                        engine_name, resp.status, path, elapsed, body[:200],
+                    )
+                    return None
+
+                data = await resp.json()
+                payload = EngineResultPayload.model_validate(data)
+                logger.info(
+                    "Engine %s: %d picks, status=%s via %s (%.1fs)",
+                    engine_name, len(payload.picks), payload.status, path, elapsed,
                 )
-                return None
+                return payload
 
-            data = await resp.json()
-            payload = EngineResultPayload.model_validate(data)
-            logger.info(
-                "Engine %s: %d picks, status=%s (%.1fs)",
-                engine_name, len(payload.picks), payload.status, elapsed,
+        except ValidationError as e:
+            logger.warning("Engine %s returned invalid payload on %s: %s", engine_name, path, e)
+            return None
+        except asyncio.TimeoutError:
+            logger.warning("Engine %s timed out after %.0fs on %s", engine_name, timeout_s, path)
+            return None
+        except Exception as e:
+            logger.warning(
+                "Engine %s fetch failed on %s: %s: %s",
+                engine_name, path, type(e).__name__, e,
             )
-            return payload
+            return None
 
-    except ValidationError as e:
-        logger.warning("Engine %s returned invalid payload: %s", engine_name, e)
-        return None
-    except asyncio.TimeoutError:
-        logger.warning("Engine %s timed out after %.0fs", engine_name, timeout_s)
-        return None
-    except Exception as e:
-        logger.warning("Engine %s fetch failed: %s: %s", engine_name, type(e).__name__, e)
-        return None
+    logger.warning("Engine %s has no recognized results endpoint", engine_name)
+    return None
 
 
 def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) -> list[str]:
@@ -165,7 +180,9 @@ async def collect_engine_results() -> list[EngineResultPayload]:
 
             if engine_name in _CUSTOM_ADAPTERS:
                 tasks[engine_name] = asyncio.create_task(
-                    _CUSTOM_ADAPTERS[engine_name](session, base_url, api_key)
+                    _CUSTOM_ADAPTERS[engine_name](
+                        session, base_url, api_key, timeout_s=timeout_s,
+                    )
                 )
             else:
                 tasks[engine_name] = asyncio.create_task(
