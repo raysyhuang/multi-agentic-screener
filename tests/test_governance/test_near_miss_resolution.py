@@ -11,6 +11,7 @@ import pytest
 
 from src.governance.divergence_ledger import (
     simulate_quant_counterfactual,
+    resolve_near_miss_counterfactuals,
 )
 
 
@@ -246,3 +247,48 @@ class TestNearMissStatsCounterfactual:
 
         assert stats is not None
         assert stats["counterfactual"] is None
+
+
+class TestNearMissResolverDateGuard:
+    @pytest.mark.asyncio
+    async def test_resolver_never_fetches_future_to_date(self):
+        """Resolver should clamp OHLCV fetch end-date to today (no future fetches)."""
+        fake_today = date(2026, 2, 17)
+        # timeframe=5 and run_date=today-7 means current logic would request today+4 without clamping
+        nm = _make_near_miss_mock(
+            run_date=fake_today - timedelta(days=7),
+            timeframe_days=5,
+            outcome_resolved=False,
+        )
+
+        df = _make_price_df(entry_date=nm.run_date + timedelta(days=1), outcome="expiry", days=8)
+
+        with patch("src.governance.divergence_ledger.get_session") as mock_session_ctx, \
+             patch("src.governance.divergence_ledger.DataAggregator") as mock_agg_cls, \
+             patch("src.governance.divergence_ledger.simulate_quant_counterfactual") as mock_sim, \
+             patch("src.governance.divergence_ledger.date") as mock_date:
+            mock_date.today.return_value = fake_today
+
+            mock_session = AsyncMock()
+            mock_session_ctx.return_value.__aenter__ = AsyncMock(return_value=mock_session)
+            mock_session_ctx.return_value.__aexit__ = AsyncMock(return_value=False)
+            mock_result = MagicMock()
+            mock_result.scalars.return_value.all.return_value = [nm]
+            mock_session.execute.return_value = mock_result
+
+            mock_agg = AsyncMock()
+            mock_agg.get_ohlcv.return_value = df
+            mock_agg_cls.return_value = mock_agg
+
+            mock_sim.return_value = {
+                "quant_return": 1.2,
+                "exit_reason": "expiry",
+                "max_adverse": -0.5,
+                "max_favorable": 2.0,
+            }
+
+            await resolve_near_miss_counterfactuals()
+
+        # to_date must not exceed fake_today
+        _, from_date, to_date = mock_agg.get_ohlcv.await_args.args
+        assert to_date <= fake_today

@@ -461,7 +461,10 @@ async def resolve_near_miss_counterfactuals() -> list[dict]:
 
                 # T+1 execution
                 entry_date = nm.run_date + timedelta(days=1)
-                to_date = entry_date + timedelta(days=nm.timeframe_days + 5)
+                # Never query future dates; providers may reject future windows.
+                to_date = min(today, entry_date + timedelta(days=nm.timeframe_days + 5))
+                if to_date <= entry_date:
+                    continue
 
                 df = await aggregator.get_ohlcv(nm.ticker, entry_date, to_date)
                 if df is None or df.empty:
