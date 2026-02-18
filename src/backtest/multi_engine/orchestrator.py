@@ -444,8 +444,9 @@ def main():
     if args.config:
         cfg = load_config(args.config)
         dr = cfg.get("date_range", {})
-        start = date.fromisoformat(dr.get("start", args.start or "2024-01-01"))
-        end = date.fromisoformat(dr.get("end", args.end or "2026-02-17"))
+        # CLI --start/--end override config date_range when provided
+        start = date.fromisoformat(args.start if args.start else dr.get("start", "2024-01-01"))
+        end = date.fromisoformat(args.end if args.end else dr.get("end", "2026-02-17"))
         output_dir = cfg.get("output_dir", args.output_dir)
 
         asyncio.run(
