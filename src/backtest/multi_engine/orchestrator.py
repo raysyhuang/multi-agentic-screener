@@ -44,6 +44,7 @@ from src.backtest.multi_engine.portfolio_sim import (
 )
 from src.backtest.multi_engine.report_generator import generate_report
 from src.data.aggregator import DataAggregator
+from src.data.universe_selection import select_ohlcv_tickers
 
 logging.basicConfig(
     level=logging.INFO,
@@ -187,7 +188,7 @@ async def run_multi_engine_backtest(
         from src.signals.filter import filter_universe
 
         filtered = filter_universe(raw_universe)
-        tickers = [s["symbol"] for s in filtered[:200]]
+        tickers = select_ohlcv_tickers(filtered, max_tickers=200)
     else:
         tickers = universe
 
