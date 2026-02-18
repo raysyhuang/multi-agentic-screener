@@ -233,9 +233,38 @@ def format_daily_alert(
 # Cross-Engine Synthesis Alert
 # ---------------------------------------------------------------------------
 
+def _extract_regime_label(regime_text: str) -> str:
+    """Extract a short regime label (bull/bear/choppy/unknown) from LLM text."""
+    if not regime_text:
+        return "unknown"
+    # Short labels pass through directly
+    if len(regime_text) <= 20:
+        lower = regime_text.strip().lower()
+        for label in ("bull", "bear", "choppy", "unknown"):
+            if label in lower:
+                return label
+        return regime_text.strip()
+
+    # For long text, count bear/bull mentions to find dominant signal
+    lower = regime_text.lower()
+    bear_count = lower.count("bear")
+    bull_count = lower.count("bull")
+
+    if "choppy" in lower or "sideways" in lower or "range-bound" in lower:
+        return "choppy"
+    if bear_count > bull_count:
+        return "bear"
+    if bull_count > bear_count:
+        return "bull"
+    if "ambiguous" in lower or "unknown" in lower or "uncertain" in lower:
+        return "unknown"
+    return "unknown"
+
+
 def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     """Format multi-engine synthesis with clear visual hierarchy."""
-    regime = synthesis.get("regime_consensus", "unknown")
+    regime_raw = synthesis.get("regime_consensus", "unknown")
+    regime = _extract_regime_label(regime_raw)
     engines_count = synthesis.get("engines_reporting", 0)
     summary = synthesis.get("executive_summary", "")
     convergent = synthesis.get("convergent_picks", [])
