@@ -1,0 +1,47 @@
+date_range:
+  start: "2023-02-01"
+  end: "2026-02-17"
+
+engines:
+  mas:
+    enabled: true
+    mode: "quant_only"
+    top_n: 10
+  koocore_d:
+    enabled: true
+    pit_mode: true
+  gemini_stst:
+    enabled: true
+    skip_enrichment: true
+
+synthesis:
+  initial_weights:
+    mas: 0.7
+    koocore_d: 1.3
+    gemini_stst: 1.2
+  convergence_multipliers:
+    2_engines: 1.3
+    3_engines: 1.0
+  rolling_credibility: true
+  top_n_per_day: 5
+  min_confidence: 35.0
+  regime_convergence_overrides:
+    bull:
+      2_engines: 1.3
+      3_engines: 1.0
+    bear:
+      2_engines: 1.0
+      3_engines: 0.8
+    choppy:
+      2_engines: 1.1
+      3_engines: 0.9
+
+portfolio:
+  capital: 100000
+  max_positions: 10
+  slippage_pct: 0.001
+  commission_per_trade: 1.0
+  holding_periods: [5, 10, 15]
+  confidence_sizing: true
+
+output_dir: "backtest_results/multi_engine"
