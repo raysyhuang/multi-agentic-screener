@@ -245,8 +245,26 @@ def _extract_regime_label(regime_text: str) -> str:
                 return label
         return regime_text.strip()
 
-    # For long text, count bear/bull mentions to find dominant signal
+    # For long text, first detect explicit uncertainty/offline signals.
+    # This avoids false "bear" labels when text says "unknown" but mentions
+    # a single engine self-reporting bearish.
     lower = regime_text.lower()
+    uncertainty_markers = (
+        "unknown",
+        "indeterminate",
+        "ambiguous",
+        "uncertain",
+        "no consensus",
+        "non-functional",
+        "offline",
+        "null vix",
+        "0.0 confidence",
+        "0% confidence",
+    )
+    if any(marker in lower for marker in uncertainty_markers):
+        return "unknown"
+
+    # Otherwise, count dominant directional language.
     bear_count = lower.count("bear")
     bull_count = lower.count("bull")
 

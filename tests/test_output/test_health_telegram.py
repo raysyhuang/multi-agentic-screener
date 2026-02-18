@@ -5,7 +5,12 @@ from __future__ import annotations
 from datetime import date
 
 from src.contracts import HealthComponent, HealthState, PositionHealthCard
-from src.output.telegram import format_health_alert, format_near_miss_resolution_alert
+from src.output.telegram import (
+    _extract_regime_label,
+    format_cross_engine_alert,
+    format_health_alert,
+    format_near_miss_resolution_alert,
+)
 
 
 def _make_component(name: str, score: float, weight: float = 0.20) -> HealthComponent:
@@ -154,3 +159,29 @@ class TestFormatNearMissResolution:
         assert "Resolved: <b>1</b>" in msg
         assert "WR:" in msg
         assert "<b>100%</b>" in msg
+
+
+class TestCrossEngineRegimeExtraction:
+    def test_indeterminate_with_bearish_reference_stays_unknown(self):
+        text = (
+            "INDETERMINATE — NO CONSENSUS POSSIBLE. CENTRAL MODEL REPORTS UNKNOWN "
+            "WITH 0.0 CONFIDENCE AND NULL VIX. GEMINI SELF-ASSESSED BEARISH."
+        )
+        assert _extract_regime_label(text) == "unknown"
+
+    def test_bear_when_no_uncertainty_markers(self):
+        text = "Regime consensus is bearish with broad weakness across engines."
+        assert _extract_regime_label(text) == "bear"
+
+    def test_format_cross_engine_alert_uses_unknown_label(self):
+        synthesis = {
+            "regime_consensus": (
+                "Regime is unknown with 0.0 confidence; one engine self-reported bearish."
+            ),
+            "engines_reporting": 2,
+            "executive_summary": "No positions recommended.",
+            "convergent_picks": [],
+            "portfolio": [],
+        }
+        msg = format_cross_engine_alert(synthesis=synthesis, credibility={})
+        assert "Regime: <b>UNKNOWN</b>" in msg
