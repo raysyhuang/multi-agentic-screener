@@ -9,6 +9,7 @@ import logging
 import os
 import time
 from datetime import date, datetime, timedelta
+from zoneinfo import ZoneInfo
 
 import pandas as pd
 
@@ -111,6 +112,7 @@ def _setup_logging() -> None:
 
 _setup_logging()
 logger = logging.getLogger(__name__)
+_EASTERN_TZ = ZoneInfo("America/New_York")
 
 
 class RunIDFilter(logging.Filter):
@@ -152,6 +154,15 @@ def _json_safe(obj):
     return obj
 
 
+def _trading_date_et(now: datetime | None = None) -> date:
+    """Return trading date in US/Eastern.
+
+    Prevents UTC date rollovers from mislabeling evening jobs as "tomorrow".
+    """
+    current = now.astimezone(_EASTERN_TZ) if now else datetime.now(_EASTERN_TZ)
+    return current.date()
+
+
 async def run_morning_pipeline() -> None:
     """Main daily pipeline — runs at 6:00 AM ET.
 
@@ -161,7 +172,7 @@ async def run_morning_pipeline() -> None:
     import uuid
 
     start_time = time.monotonic()
-    today = date.today()
+    today = _trading_date_et()
     settings = get_settings()
     run_id = uuid.uuid4().hex[:12]
 
@@ -1506,20 +1517,32 @@ async def _run_cross_engine_steps(
         # Store raw results in DB (upsert to handle same-day re-runs)
         async with get_session() as session:
             for er in engine_results:
+                try:
+                    engine_run_date = date.fromisoformat(er.run_date)
+                except ValueError:
+                    logger.warning(
+                        "Engine %s returned invalid run_date '%s'; falling back to %s",
+                        er.engine_name, er.run_date, today,
+                    )
+                    engine_run_date = today
+
                 # Check if already stored today (re-run safety)
                 existing = await session.execute(
                     select(ExternalEngineResult).where(
                         ExternalEngineResult.engine_name == er.engine_name,
-                        ExternalEngineResult.run_date == today,
+                        ExternalEngineResult.run_date == engine_run_date,
                     )
                 )
                 if existing.scalar_one_or_none():
-                    logger.info("Engine %s already stored for %s, skipping", er.engine_name, today)
+                    logger.info(
+                        "Engine %s already stored for %s, skipping",
+                        er.engine_name, engine_run_date,
+                    )
                     continue
 
                 session.add(ExternalEngineResult(
                     engine_name=er.engine_name,
-                    run_date=today,
+                    run_date=engine_run_date,
                     status=er.status,
                     regime=er.regime,
                     picks_count=len(er.picks),
@@ -1530,7 +1553,7 @@ async def _run_cross_engine_steps(
                 for pick in er.picks:
                     session.add(EnginePickOutcome(
                         engine_name=er.engine_name,
-                        run_date=today,
+                        run_date=engine_run_date,
                         ticker=pick.ticker,
                         strategy=pick.strategy,
                         entry_price=pick.entry_price,
@@ -1916,7 +1939,7 @@ async def run_evening_collection() -> None:
     """
     import uuid
 
-    today = date.today()
+    today = _trading_date_et()
     settings = get_settings()
     run_id = f"eve-{uuid.uuid4().hex[:8]}"
 
@@ -1955,12 +1978,13 @@ async def run_evening_collection() -> None:
             artifact = artifact_result.scalar_one_or_none()
             if artifact and artifact.payload:
                 for pick in artifact.payload.get("picks", []):
+                    targets = pick.get("targets") or []
                     screener_picks.append({
                         "ticker": pick.get("ticker", ""),
                         "direction": pick.get("direction", "LONG"),
-                        "entry_price": pick.get("entry_price", 0),
+                        "entry_price": pick.get("entry_price", pick.get("entry_zone", 0)),
                         "stop_loss": pick.get("stop_loss", 0),
-                        "target_1": pick.get("target_1", 0),
+                        "target_1": pick.get("target_1", targets[0] if targets else 0),
                         "confidence": pick.get("confidence", 0),
                         "signal_model": pick.get("signal_model", ""),
                         "thesis": pick.get("thesis", ""),

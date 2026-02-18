@@ -7,6 +7,7 @@ from Polygon and computes default stop/target/confidence per strategy.
 
 from __future__ import annotations
 
+import asyncio
 import logging
 import time
 from datetime import date, datetime
@@ -114,27 +115,52 @@ async def fetch_koocore(
     session: aiohttp.ClientSession,
     base_url: str,
     api_key: str,
-    timeout_s: float = 30.0,
+    timeout_s: float = 45.0,
 ) -> EngineResultPayload | None:
     """Fetch KooCore /api/picks and transform into EngineResultPayload."""
     picks_url = f"{base_url.rstrip('/')}/api/picks"
     start = time.monotonic()
 
     # 1. Fetch raw picks from KooCore
-    try:
-        async with session.get(
-            picks_url,
-            timeout=aiohttp.ClientTimeout(total=timeout_s),
-        ) as resp:
-            if resp.status != 200:
-                body = await resp.text()
-                logger.warning(
-                    "KooCore /api/picks HTTP %d: %s", resp.status, body[:200],
-                )
-                return None
-            raw = await resp.json()
-    except Exception as e:
-        logger.warning("KooCore fetch failed: %s: %s", type(e).__name__, e)
+    raw: dict | None = None
+    max_attempts = 3
+    for attempt in range(1, max_attempts + 1):
+        try:
+            async with session.get(
+                picks_url,
+                timeout=aiohttp.ClientTimeout(total=timeout_s),
+            ) as resp:
+                if resp.status != 200:
+                    body = await resp.text()
+                    logger.warning(
+                        "KooCore /api/picks HTTP %d (attempt %d/%d): %s",
+                        resp.status, attempt, max_attempts, body[:200],
+                    )
+                    if attempt < max_attempts:
+                        await asyncio.sleep(1.0 * attempt)
+                        continue
+                    return None
+                raw = await resp.json()
+                break
+        except asyncio.TimeoutError:
+            logger.warning(
+                "KooCore /api/picks timed out after %.0fs (attempt %d/%d)",
+                timeout_s, attempt, max_attempts,
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0 * attempt)
+                continue
+            return None
+        except Exception as e:
+            logger.warning(
+                "KooCore fetch failed (attempt %d/%d): %s: %s",
+                attempt, max_attempts, type(e).__name__, e,
+            )
+            if attempt < max_attempts:
+                await asyncio.sleep(1.0 * attempt)
+                continue
+            return None
+    if raw is None:
         return None
 
     # 2. Parse picks_data — format: {"picks_data": {"2026-02-17": {"movers": [...], ...}}}

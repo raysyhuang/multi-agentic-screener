@@ -41,6 +41,20 @@ async def start_worker() -> None:
         logger.error("Startup validation failed:\n%s", e)
         sys.exit(1)
 
+    # One-off mode: run exactly one job and exit (no scheduler loop).
+    one_off_jobs = {
+        "--run-now": run_morning_pipeline,
+        "--check-now": run_afternoon_check,
+        "--collect-now": run_evening_collection,
+        "--meta-now": run_weekly_meta_review,
+    }
+    for flag, job in one_off_jobs.items():
+        if flag in sys.argv:
+            logger.info("Running one-off job %s", flag)
+            await job()
+            logger.info("One-off job %s complete; exiting worker", flag)
+            return
+
     scheduler = AsyncIOScheduler(timezone="US/Eastern")
 
     # Error listener — log and alert on job failures
@@ -130,16 +144,6 @@ async def start_worker() -> None:
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
     )
-
-    # Handle one-off commands
-    if "--run-now" in sys.argv:
-        await run_morning_pipeline()
-    elif "--check-now" in sys.argv:
-        await run_afternoon_check()
-    elif "--collect-now" in sys.argv:
-        await run_evening_collection()
-    elif "--meta-now" in sys.argv:
-        await run_weekly_meta_review()
 
     # Keep alive
     stop_event = asyncio.Event()

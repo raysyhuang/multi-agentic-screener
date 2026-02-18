@@ -25,6 +25,8 @@ from src.db.session import get_session
 
 logger = logging.getLogger(__name__)
 
+_DEFAULT_UNKNOWN_ENGINE_WEIGHT = 0.3
+
 
 @dataclass
 class EngineStats:
@@ -235,7 +237,17 @@ def compute_weighted_picks(
 
     weighted_results: list[dict] = []
     for ticker, ticker_picks in by_ticker.items():
-        engine_count = len(set(p["engine_name"] for p in ticker_picks))
+        # One vote per engine per ticker: if an engine emits duplicates for the
+        # same ticker, keep only its highest-confidence pick to avoid bias.
+        by_engine: dict[str, dict] = {}
+        for pick in ticker_picks:
+            engine_name = pick["engine_name"]
+            current = by_engine.get(engine_name)
+            if current is None or pick["confidence"] > current["confidence"]:
+                by_engine[engine_name] = pick
+        deduped_picks = list(by_engine.values())
+
+        engine_count = len(deduped_picks)
         convergence_mult = compute_convergence_multiplier(engine_count)
 
         # Compute weighted confidence
@@ -244,10 +256,17 @@ def compute_weighted_picks(
         engines_agreeing: list[str] = []
         strategies: list[str] = []
 
-        for pick in ticker_picks:
+        for pick in deduped_picks:
             engine_name = pick["engine_name"]
             stats = engine_stats.get(engine_name)
-            weight = stats.weight if stats else 1.0
+            if stats:
+                weight = stats.weight
+            elif engine_name == "multi_agentic_screener":
+                # Preserve baseline influence for the host engine.
+                weight = 1.0
+            else:
+                # Unknown external engines should not get full influence.
+                weight = _DEFAULT_UNKNOWN_ENGINE_WEIGHT
 
             total_weighted_conf += pick["confidence"] * weight
             total_weight += weight
@@ -259,9 +278,13 @@ def compute_weighted_picks(
 
         # Aggregate best entry/stop/target from highest-weighted engine
         best_pick = max(
-            ticker_picks,
-            key=lambda p: (engine_stats.get(p["engine_name"], EngineStats(engine_name="")).weight)
-            * p["confidence"],
+            deduped_picks,
+            key=lambda p: (
+                engine_stats[p["engine_name"]].weight
+                if p["engine_name"] in engine_stats
+                else (1.0 if p["engine_name"] == "multi_agentic_screener"
+                      else _DEFAULT_UNKNOWN_ENGINE_WEIGHT)
+            ) * p["confidence"],
         )
 
         weighted_results.append({

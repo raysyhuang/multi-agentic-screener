@@ -7,6 +7,7 @@ are eliminated at each filter stage. Critical for debugging filter chains.
 from __future__ import annotations
 
 import logging
+import re
 from dataclasses import dataclass
 
 import pandas as pd
@@ -18,6 +19,14 @@ logger = logging.getLogger(__name__)
 # Exclude problematic categories
 EXCLUDED_SUFFIXES = {".W", ".U", ".R"}  # warrants, units, rights
 EXCLUDED_TYPES = {"ETF", "ETN", "FUND", "REIT"}
+_VALID_TICKER_RE = re.compile(r"^[A-Z]{1,5}([.-][A-Z])?$")
+
+
+def _is_valid_ticker(ticker: str) -> bool:
+    """Allow normal US symbols, including class shares like BRK.B/BF-B."""
+    if not ticker:
+        return False
+    return bool(_VALID_TICKER_RE.match(ticker.upper()))
 
 
 @dataclass
@@ -150,8 +159,8 @@ def filter_universe(
             funnel.failed_type += 1
             continue
 
-        # Ticker sanity: max 5 chars, no special characters
-        if len(ticker) > 5 or not ticker.isalpha():
+        # Ticker sanity
+        if not _is_valid_ticker(ticker):
             funnel.failed_ticker_format += 1
             continue
 

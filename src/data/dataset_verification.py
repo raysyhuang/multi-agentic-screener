@@ -22,6 +22,22 @@ MIN_OHLCV_BARS = 100         # Minimum bars per ticker for completeness
 MAX_STALE_TRADING_DAYS = 3   # OHLCV freshness threshold
 
 
+def _canonical_regime(regime: str | None) -> str:
+    """Normalize regime labels across engines."""
+    if not regime:
+        return "unknown"
+    r = regime.strip().lower()
+    if any(k in r for k in ("unknown", "indeterminate", "ambiguous", "uncertain")):
+        return "unknown"
+    if "bull" in r:
+        return "bull"
+    if "bear" in r:
+        return "bear"
+    if "choppy" in r or "sideways" in r or "range" in r:
+        return "choppy"
+    return r
+
+
 @dataclass
 class CheckResult:
     name: str
@@ -127,7 +143,8 @@ def verify_dataset(
     tier_100m = sum(1 for dv in dollar_volumes if dv >= 100_000_000)
     tier_50m = sum(1 for dv in dollar_volumes if 50_000_000 <= dv < 100_000_000)
     tier_10m = sum(1 for dv in dollar_volumes if 10_000_000 <= dv < 50_000_000)
-    dv_ok = tier_100m >= 5 and (tier_50m + tier_10m) >= 10
+    # Pass either a balanced spread OR an ultra-liquid universe.
+    dv_ok = (tier_100m >= 5 and (tier_50m + tier_10m) >= 10) or (tier_100m >= 20)
     checks.append(CheckResult(
         name="dollar_volume_distribution",
         passed=dv_ok,
@@ -259,23 +276,37 @@ def verify_cross_engine(
             checks=[CheckResult("no_engines", True, "No external engines reporting", None)],
         )
 
+    # 0. Minimum reporting engines
+    engines_reporting = len(engine_results)
+    enough_engines = engines_reporting >= 2
+    checks.append(CheckResult(
+        name="engines_reporting",
+        passed=enough_engines,
+        detail=f"{engines_reporting} engines reporting (minimum 2 for synthesis confidence)",
+        value=engines_reporting,
+    ))
+    if not enough_engines:
+        warnings.append(
+            f"Low engine coverage: only {engines_reporting} engine reporting."
+        )
+
     # 1. Regime consensus
-    our_regime = regime_context.get("regime", "unknown")
+    our_regime = _canonical_regime(regime_context.get("regime", "unknown"))
     engine_regimes = {}
     for er in engine_results:
         name = er.get("engine_name", "unknown")
         regime = er.get("regime")
         if regime:
-            engine_regimes[name] = regime.lower()
+            engine_regimes[name] = _canonical_regime(regime)
 
     if engine_regimes:
         unique_regimes = set(engine_regimes.values())
-        if our_regime.lower() != "unknown":
-            unique_regimes.add(our_regime.lower())
+        if our_regime != "unknown":
+            unique_regimes.add(our_regime)
 
         consensus_ok = len(unique_regimes) <= 1
         regime_detail = ", ".join(f"{k}={v}" for k, v in sorted(engine_regimes.items()))
-        if our_regime.lower() != "unknown":
+        if our_regime != "unknown":
             regime_detail = f"screener={our_regime}, " + regime_detail
         checks.append(CheckResult(
             name="regime_consensus",
@@ -302,18 +333,21 @@ def verify_cross_engine(
     convergent = {t: engines for t, engines in ticker_engines.items() if len(engines) >= 2}
     total_unique = len(ticker_engines)
     overlap_count = len(convergent)
-    overlap_ok = overlap_count >= 1 if total_unique > 0 else True
+    overlap_ok = overlap_count >= 1 if total_unique > 0 else False
     checks.append(CheckResult(
         name="pick_overlap",
         passed=overlap_ok,
         detail=f"{overlap_count} tickers in 2+ engines out of {total_unique} unique",
         value=overlap_count,
     ))
-    if not overlap_ok and total_unique > 0:
-        warnings.append(
-            f"Zero pick convergence: {total_unique} unique tickers across engines, "
-            "none appearing in 2+."
-        )
+    if not overlap_ok:
+        if total_unique > 0:
+            warnings.append(
+                f"Zero pick convergence: {total_unique} unique tickers across engines, "
+                "none appearing in 2+."
+            )
+        else:
+            warnings.append("Zero pick convergence: no tickers produced by reporting engines.")
 
     # 3. Price consistency for overlapping tickers
     if convergent:

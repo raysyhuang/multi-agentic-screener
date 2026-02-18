@@ -53,18 +53,18 @@ async def resolve_engine_outcomes() -> list[dict]:
         updates: list[dict] = []
 
         for outcome in unresolved:
-            today = date.today()
             entry_date = outcome.run_date
-            days_since_entry = (today - entry_date).days
             hold_days = outcome.holding_period_days
-
-            # Only resolve if holding period has elapsed
-            if days_since_entry < hold_days:
-                continue
 
             prices = price_data.get(outcome.ticker)
             if not prices:
                 logger.warning("No price data for %s, skipping", outcome.ticker)
+                continue
+
+            # Resolve by available trading bars, not calendar days.
+            # This avoids weekend/holiday bias in holding-period resolution.
+            trading_bars = [p for p in prices if p["date"] > entry_date]
+            if len(trading_bars) < hold_days:
                 continue
 
             # Compute outcome using actual stop_loss from the pick
