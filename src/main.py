@@ -32,6 +32,7 @@ from src.contracts import (
     FinalPick,
 )
 from src.data.aggregator import DataAggregator
+from src.data.universe_selection import select_ohlcv_tickers
 from sqlalchemy import delete, select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session, init_db
@@ -634,19 +635,15 @@ async def _run_pipeline_core(
     ))
 
     # --- Step 3: Fetch OHLCV for filtered universe ---
-    # Sort by market cap descending so the cap selects the largest companies,
-    # not just alphabetically-first tickers.
-    # Uses dollar volume (price × volume) as tiebreaker — a strong market cap proxy
-    # that works even when marketCap is missing (e.g. partial Polygon data).
-    filtered.sort(
-        key=lambda s: (
-            s.get("marketCap") or 0,
-            (s.get("price") or s.get("lastPrice") or 0) * (s.get("volume") or 0),
-        ),
-        reverse=True,
-    )
     logger.info("Step 3: Fetching OHLCV for %d tickers...", len(filtered))
-    tickers = [s["symbol"] for s in filtered[:200]]  # Cap at 200 for API limits
+    tickers = select_ohlcv_tickers(
+        filtered_universe=filtered,
+        max_tickers=settings.max_ohlcv_tickers,
+    )
+    logger.info(
+        "OHLCV selection: %d selected (cap=%d) from %d filtered",
+        len(tickers), settings.max_ohlcv_tickers, len(filtered),
+    )
     from_date = today - timedelta(days=300)  # 1 year of data for indicators
     price_data = await aggregator.get_bulk_ohlcv(tickers, from_date, today)
 

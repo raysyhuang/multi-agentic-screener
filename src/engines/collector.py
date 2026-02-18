@@ -83,6 +83,11 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     """
     warnings: list[str] = []
 
+    # 0. Non-success status
+    status = (payload.status or "").strip().lower()
+    if status not in {"success", "ok"}:
+        warnings.append(f"non-success status={payload.status}")
+
     # 1. Stale run_date
     try:
         run_date = datetime.strptime(payload.run_date, "%Y-%m-%d").date()
@@ -92,8 +97,10 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     except ValueError:
         warnings.append(f"unparseable run_date: {payload.run_date}")
 
-    if not payload.picks:
-        return warnings  # no picks to validate further
+    # 1b. Pipeline-failure signature: screened nothing and emitted nothing
+    if payload.candidates_screened == 0 and not payload.picks:
+        warnings.append("zero candidates screened and zero picks")
+        return warnings  # nothing else to validate
 
     # 2. Zero or negative entry prices
     bad_prices = [p.ticker for p in payload.picks if p.entry_price <= 0]
@@ -140,6 +147,7 @@ async def collect_engine_results() -> list[EngineResultPayload]:
     """
     settings = get_settings()
     api_key = settings.engine_api_key
+    timeout_s = settings.engine_fetch_timeout_s
 
     # Engines with custom adapters (don't use generic /api/engine/results)
     _CUSTOM_ADAPTERS = {
@@ -161,7 +169,9 @@ async def collect_engine_results() -> list[EngineResultPayload]:
                 )
             else:
                 tasks[engine_name] = asyncio.create_task(
-                    _fetch_engine(session, engine_name, base_url, api_key)
+                    _fetch_engine(
+                        session, engine_name, base_url, api_key, timeout_s=timeout_s,
+                    )
                 )
 
         if not tasks:
@@ -180,7 +190,11 @@ async def collect_engine_results() -> list[EngineResultPayload]:
             quality_warnings = _validate_payload_quality(engine_name, result)
             if quality_warnings:
                 has_critical = any(
-                    w.startswith("stale") or w.startswith("unparseable") or "zero/negative" in w
+                    w.startswith("stale")
+                    or w.startswith("unparseable")
+                    or "zero/negative" in w
+                    or w.startswith("non-success status")
+                    or w.startswith("zero candidates screened and zero picks")
                     for w in quality_warnings
                 )
                 for w in quality_warnings:

@@ -62,6 +62,7 @@ class Settings(BaseSettings):
     # --- Pipeline parameters ---
     min_price: float = 5.0
     min_avg_daily_volume: int = 500_000
+    max_ohlcv_tickers: int = 1000
     top_n_for_interpretation: int = 10
     top_n_for_debate: int = 5
     max_final_picks: int = 2
@@ -113,13 +114,15 @@ class Settings(BaseSettings):
     cross_engine_model: str = "claude-opus-4-6"
     cross_engine_max_cost_usd: float = 0.50
     cross_engine_verify_before_synthesize: bool = True
+    engine_fetch_timeout_s: float = 30.0
+    llm_request_timeout_s: float = 90.0
 
     # --- Credibility Tracking ---
     credibility_lookback_days: int = 30
     credibility_min_picks_for_weight: int = 10
-    convergence_2_engine_multiplier: float = 1.5
-    convergence_3_engine_multiplier: float = 2.0
-    convergence_4_engine_multiplier: float = 3.0
+    convergence_2_engine_multiplier: float = 1.3
+    convergence_3_engine_multiplier: float = 1.0
+    convergence_4_engine_multiplier: float = 1.0
 
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True

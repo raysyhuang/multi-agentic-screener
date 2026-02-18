@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 import time
@@ -107,13 +108,22 @@ async def _call_anthropic(
 ) -> dict:
     client = anthropic.AsyncAnthropic(api_key=settings.anthropic_api_key)
 
-    response = await client.messages.create(
-        model=model,
-        max_tokens=max_tokens,
-        temperature=temperature,
-        system=system_prompt,
-        messages=[{"role": "user", "content": user_prompt}],
-    )
+    try:
+        response = await asyncio.wait_for(
+            client.messages.create(
+                model=model,
+                max_tokens=max_tokens,
+                temperature=temperature,
+                system=system_prompt,
+                messages=[{"role": "user", "content": user_prompt}],
+            ),
+            timeout=settings.llm_request_timeout_s,
+        )
+    except asyncio.TimeoutError as e:
+        raise TimeoutError(
+            f"Anthropic call timed out after {settings.llm_request_timeout_s:.0f}s "
+            f"(model={model})"
+        ) from e
 
     content = response.content[0].text
     # Try to parse as JSON
@@ -161,7 +171,16 @@ async def _call_openai(
     else:
         kwargs["response_format"] = {"type": "json_object"}
 
-    response = await client.chat.completions.create(**kwargs)
+    try:
+        response = await asyncio.wait_for(
+            client.chat.completions.create(**kwargs),
+            timeout=settings.llm_request_timeout_s,
+        )
+    except asyncio.TimeoutError as e:
+        raise TimeoutError(
+            f"OpenAI call timed out after {settings.llm_request_timeout_s:.0f}s "
+            f"(model={model})"
+        ) from e
 
     content = response.choices[0].message.content
     parsed = _try_parse_json(content)
@@ -261,14 +280,23 @@ async def _call_anthropic_with_tools(
     total_out = 0
 
     for round_num in range(max_tool_rounds + 1):
-        response = await client.messages.create(
-            model=model,
-            max_tokens=max_tokens,
-            temperature=temperature,
-            system=system_prompt,
-            messages=messages,
-            tools=tool_schemas if tool_schemas else None,
-        )
+        try:
+            response = await asyncio.wait_for(
+                client.messages.create(
+                    model=model,
+                    max_tokens=max_tokens,
+                    temperature=temperature,
+                    system=system_prompt,
+                    messages=messages,
+                    tools=tool_schemas if tool_schemas else None,
+                ),
+                timeout=settings.llm_request_timeout_s,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutError(
+                f"Anthropic tool-use call timed out after {settings.llm_request_timeout_s:.0f}s "
+                f"(model={model}, round={round_num})"
+            ) from e
 
         total_in += response.usage.input_tokens
         total_out += response.usage.output_tokens
@@ -341,7 +369,16 @@ async def _call_openai_with_tools(
         if tool_schemas:
             kwargs["tools"] = tool_schemas
 
-        response = await client.chat.completions.create(**kwargs)
+        try:
+            response = await asyncio.wait_for(
+                client.chat.completions.create(**kwargs),
+                timeout=settings.llm_request_timeout_s,
+            )
+        except asyncio.TimeoutError as e:
+            raise TimeoutError(
+                f"OpenAI tool-use call timed out after {settings.llm_request_timeout_s:.0f}s "
+                f"(model={model}, round={round_num})"
+            ) from e
         choice = response.choices[0]
 
         total_in += response.usage.prompt_tokens
