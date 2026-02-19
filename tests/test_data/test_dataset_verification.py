@@ -315,6 +315,38 @@ class TestVerifyCrossEngine:
         assert price is not None
         assert price.passed is False
 
+    def test_engine_specific_breadth_thresholds_avoid_false_warning(self):
+        """Small-universe engines should use engine-specific screened thresholds."""
+        run_date = date.today().isoformat()
+        engines = [
+            {
+                "engine_name": "koocore_d",
+                "run_date": run_date,
+                "regime": "bear",
+                "picks": [{"ticker": "AAPL", "entry_price": 200}],
+                "candidates_screened": 7,
+            },
+            {
+                "engine_name": "gemini_stst",
+                "run_date": run_date,
+                "regime": "bear",
+                "picks": [{"ticker": "AAPL", "entry_price": 201}],
+                "candidates_screened": 5,
+            },
+            {
+                "engine_name": "top3_7d",
+                "run_date": run_date,
+                "regime": "bear",
+                "picks": [],
+                "candidates_screened": 10,
+            },
+        ]
+        report = verify_cross_engine(engines, {"regime": "bear"})
+        breadth = next((c for c in report.checks if c.name == "universe_breadth"), None)
+        assert breadth is not None
+        assert breadth.passed is True
+        assert all("Universe breadth issues:" not in w for w in report.warnings)
+
 
 # ---------------------------------------------------------------------------
 # Sort fix test

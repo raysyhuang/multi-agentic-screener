@@ -21,6 +21,15 @@ MIN_UNIVERSE_SIZE = 50       # Minimum qualified tickers
 MIN_OHLCV_BARS = 100         # Minimum bars per ticker for completeness
 MAX_STALE_TRADING_DAYS = 3   # OHLCV freshness threshold
 
+# Engine-specific breadth expectations. External engines intentionally screen
+# at different scales; one global threshold creates false warnings.
+MIN_SCREENED_BY_ENGINE: dict[str, int] = {
+    "koocore_d": 5,
+    "gemini_stst": 5,
+    "top3_7d": 10,
+}
+DEFAULT_MIN_SCREENED = 20
+
 
 def _canonical_regime(regime: str | None) -> str:
     """Normalize regime labels across engines."""
@@ -429,11 +438,14 @@ def verify_cross_engine(
     # 4. Universe breadth per engine
     breadth_issues = []
     for er in engine_results:
-        name = er.get("engine_name", "unknown")
+        name = str(er.get("engine_name", "unknown")).lower()
         screened = er.get("candidates_screened", 0)
         picks_count = len(er.get("picks", []))
-        if screened > 0 and screened < 20:
-            breadth_issues.append(f"{name}: only {screened} screened")
+        min_screened = MIN_SCREENED_BY_ENGINE.get(name, DEFAULT_MIN_SCREENED)
+        if screened > 0 and screened < min_screened:
+            breadth_issues.append(
+                f"{name}: only {screened} screened (expected >= {min_screened})"
+            )
         elif picks_count == 0 and screened == 0:
             breadth_issues.append(f"{name}: no picks or screening data")
 
