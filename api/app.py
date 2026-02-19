@@ -3,6 +3,8 @@
 from __future__ import annotations
 
 import logging
+import glob
+import re
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -1232,9 +1234,6 @@ async def backtest_engines():
 # ---------------------------------------------------------------------------
 # Dashboard Backtest Browser Endpoints
 # ---------------------------------------------------------------------------
-
-import glob
-import re
 
 BACKTEST_DIR = Path(__file__).resolve().parent.parent / "backtest_results" / "multi_engine"
 _BACKTEST_FILENAME_RE = re.compile(r"^multi_engine_[\d-]+_[\d-]+\.json$")
