@@ -1783,11 +1783,11 @@ async def _run_cross_engine_steps(
 
             if guardian_verdict.halt:
                 logger.warning("Capital Guardian HALTED trading: %s", guardian_verdict.halt_reason)
-                # Keep persisted/alerted summary consistent with guardian-enforced no-trade state.
+                # Keep persisted/alerted summary strictly consistent with guardian-enforced no-trade state.
                 synthesis.executive_summary = (
-                    f"HALT — NO TRADES THIS CYCLE. {guardian_verdict.halt_reason} "
-                    f"{synthesis.executive_summary}"
-                ).strip()
+                    f"HALT — NO TRADES THIS CYCLE. {guardian_verdict.halt_reason}. "
+                    "All candidate positions are blocked until risk state improves."
+                )
             else:
                 logger.info(
                     "Step 13.5 complete: sizing=%.0f%%, %d→%d positions, warnings=%d",
