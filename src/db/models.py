@@ -338,8 +338,49 @@ class ExternalEngineResult(Base):
     status: Mapped[str] = mapped_column(String(20), nullable=False, default="success")
     regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
     picks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    ingest_revision: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    source_run_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    last_ingested_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
     payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ExternalEngineResultRevision(Base):
+    """Immutable audit trail for each same-day external engine rerun."""
+
+    __tablename__ = "external_engine_result_revisions"
+    __table_args__ = (
+        UniqueConstraint(
+            "engine_name",
+            "run_date",
+            "revision",
+            name="uq_engine_result_revision_name_date_rev",
+        ),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    engine_result_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("external_engine_results.id"), nullable=False, index=True
+    )
+    engine_name: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    revision: Mapped[int] = mapped_column(Integer, nullable=False)
+    status: Mapped[str] = mapped_column(String(20), nullable=False, default="success")
+    regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    picks_count: Mapped[int] = mapped_column(Integer, nullable=False, default=0)
+    source_run_timestamp: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    source_payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    ingested_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
 

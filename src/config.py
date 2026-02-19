@@ -130,17 +130,17 @@ class Settings(BaseSettings):
     guardian_max_drawdown_pct: float = 20.0       # Halt all trading beyond this drawdown
     guardian_streak_reduction_after: int = 3       # Start reducing size after N consecutive losses
     guardian_halt_after_consecutive_losses: int = 6  # Full halt after N consecutive losses
-    guardian_max_portfolio_heat_pct: float = 10.0  # Max total risk across all open positions
-    guardian_halt_portfolio_heat_pct: float = 20.0  # Hard halt only beyond this heat level
-    guardian_overheat_sizing_floor: float = 0.2     # Sizing floor when above soft heat cap
+    guardian_max_portfolio_heat_pct: float = 12.0  # Soft cap for total open portfolio heat
+    guardian_halt_portfolio_heat_pct: float = 25.0  # Hard halt only beyond this heat level
+    guardian_overheat_sizing_floor: float = 0.35    # Sizing floor when above soft heat cap
     guardian_max_sector_concentration: int = 3     # Max positions in any single sector
     guardian_per_trade_risk_cap_pct: float = 2.0   # Max risk per trade as % of portfolio
-    guardian_bear_sizing: float = 0.5              # Position size multiplier in bear regime
-    guardian_choppy_sizing: float = 0.75           # Position size multiplier in choppy regime
+    guardian_bear_sizing: float = 0.65             # Position size multiplier in bear regime
+    guardian_choppy_sizing: float = 0.85           # Position size multiplier in choppy regime
 
     # --- Low-overlap portfolio guardrails ---
-    low_overlap_max_positions: int = 2
-    low_overlap_max_total_weight_pct: float = 20.0
+    low_overlap_max_positions: int = 3
+    low_overlap_max_total_weight_pct: float = 30.0
 
     @model_validator(mode="after")
     def _validate_model_names(self) -> "Settings":

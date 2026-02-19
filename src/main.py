@@ -9,7 +9,7 @@ import json
 import logging
 import os
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -164,6 +164,30 @@ def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
         if t:
             out.add(t)
     return out
+
+
+def _stable_payload_hash(payload: dict) -> str:
+    """Deterministic SHA-256 hash for payload revision tracking."""
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _parse_engine_run_timestamp(run_timestamp: str | None) -> datetime | None:
+    """Parse engine ISO timestamp into timezone-aware UTC datetime."""
+    if not run_timestamp:
+        return None
+    raw = str(run_timestamp).strip()
+    if not raw:
+        return None
+    if raw.endswith("Z"):
+        raw = f"{raw[:-1]}+00:00"
+    try:
+        dt = datetime.fromisoformat(raw)
+    except ValueError:
+        return None
+    if dt.tzinfo is None:
+        dt = dt.replace(tzinfo=timezone.utc)
+    return dt.astimezone(timezone.utc)
 
 
 def _trading_date_et(now: datetime | None = None) -> date:
@@ -1556,7 +1580,12 @@ async def _run_cross_engine_steps(
     from src.engines.outcome_resolver import resolve_engine_outcomes
     from src.agents.cross_engine_verifier import CrossEngineVerifierAgent
     from src.agents.cross_engine_synthesizer import CrossEngineSynthesizerAgent
-    from src.db.models import ExternalEngineResult, EnginePickOutcome, CrossEngineSynthesis
+    from src.db.models import (
+        ExternalEngineResult,
+        ExternalEngineResultRevision,
+        EnginePickOutcome,
+        CrossEngineSynthesis,
+    )
 
     try:
         # --- Step 10: Collect external engine results ---
@@ -1600,7 +1629,7 @@ async def _run_cross_engine_steps(
                     ))
             return
 
-        # Store raw results in DB (true upsert for same-day re-runs)
+        # Store raw results in DB (true upsert + immutable revision trail)
         async with get_session() as session:
             for er in engine_results:
                 try:
@@ -1611,6 +1640,16 @@ async def _run_cross_engine_steps(
                         er.engine_name, er.run_date, today,
                     )
                     engine_run_date = today
+
+                payload_dict = _json_safe(er.model_dump())
+                payload_hash = _stable_payload_hash(payload_dict)
+                source_run_ts = _parse_engine_run_timestamp(er.run_timestamp)
+                if source_run_ts is None:
+                    logger.warning(
+                        "Engine %s returned unparseable run_timestamp '%s'",
+                        er.engine_name,
+                        er.run_timestamp,
+                    )
 
                 # Check for existing result row for this engine/date.
                 existing = await session.execute(
@@ -1623,19 +1662,54 @@ async def _run_cross_engine_steps(
 
                 # Upsert metadata row.
                 if existing_row:
+                    new_revision = (existing_row.ingest_revision or 1) + 1
+                    existing_row.ingest_revision = new_revision
                     existing_row.status = er.status
                     existing_row.regime = er.regime
                     existing_row.picks_count = len(er.picks)
-                    existing_row.payload = _json_safe(er.model_dump())
+                    existing_row.payload = payload_dict
+                    existing_row.source_run_timestamp = source_run_ts
+                    existing_row.source_payload_hash = payload_hash
+                    existing_row.last_ingested_at = datetime.now(timezone.utc)
+                    engine_result_id = existing_row.id
                 else:
-                    session.add(ExternalEngineResult(
+                    new_revision = 1
+                    row = ExternalEngineResult(
                         engine_name=er.engine_name,
                         run_date=engine_run_date,
                         status=er.status,
                         regime=er.regime,
                         picks_count=len(er.picks),
-                        payload=_json_safe(er.model_dump()),
-                    ))
+                        ingest_revision=new_revision,
+                        source_run_timestamp=source_run_ts,
+                        source_payload_hash=payload_hash,
+                        last_ingested_at=datetime.now(timezone.utc),
+                        payload=payload_dict,
+                    )
+                    session.add(row)
+                    await session.flush()
+                    engine_result_id = row.id
+
+                # Append immutable revision snapshot for rerun auditability.
+                session.add(ExternalEngineResultRevision(
+                    engine_result_id=engine_result_id,
+                    engine_name=er.engine_name,
+                    run_date=engine_run_date,
+                    revision=new_revision,
+                    status=er.status,
+                    regime=er.regime,
+                    picks_count=len(er.picks),
+                    source_run_timestamp=source_run_ts,
+                    source_payload_hash=payload_hash,
+                    payload=payload_dict,
+                ))
+                logger.info(
+                    "Engine %s upserted for %s at revision=%d (hash=%s)",
+                    er.engine_name,
+                    engine_run_date,
+                    new_revision,
+                    payload_hash[:12],
+                )
 
                 # Upsert per-pick outcomes for this engine/date.
                 # If any outcomes are already resolved, preserve them for historical integrity.

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from src.config import get_settings
 
 from src.portfolio.capital_guardian import (
     PortfolioRiskState,
@@ -118,12 +119,12 @@ class TestRegimeScaling:
     def test_bear_reduced(self):
         state = _make_state()
         verdict = compute_guardian_verdict(state, regime="bear")
-        assert verdict.regime_factor == 0.5
+        assert verdict.regime_factor == get_settings().guardian_bear_sizing
 
     def test_choppy_reduced(self):
         state = _make_state()
         verdict = compute_guardian_verdict(state, regime="choppy")
-        assert verdict.regime_factor == 0.75
+        assert verdict.regime_factor == get_settings().guardian_choppy_sizing
 
     def test_unknown_regime_conservative(self):
         state = _make_state()
@@ -138,20 +139,23 @@ class TestPortfolioHeat:
         assert verdict.heat_factor == 1.0
 
     def test_high_heat_soft_caps_not_full_halt(self):
-        state = _make_state(total_open_risk_pct=10.0)  # at max
+        soft_cap = get_settings().guardian_max_portfolio_heat_pct
+        state = _make_state(total_open_risk_pct=soft_cap)  # at soft cap
         verdict = compute_guardian_verdict(state, regime="bull")
         assert 0.0 < verdict.heat_factor <= 0.5
         assert not verdict.halt
 
     def test_hard_heat_halts(self):
-        state = _make_state(total_open_risk_pct=21.0)  # above hard cap
+        hard_cap = get_settings().guardian_halt_portfolio_heat_pct
+        state = _make_state(total_open_risk_pct=hard_cap + 1.0)  # above hard cap
         verdict = compute_guardian_verdict(state, regime="bull")
         assert verdict.heat_factor == 0.0
         assert verdict.halt
         assert "heat circuit breaker" in verdict.halt_reason.lower()
 
     def test_approaching_heat_cap_reduces(self):
-        state = _make_state(total_open_risk_pct=8.0)  # 80% of 10% cap
+        soft_cap = get_settings().guardian_max_portfolio_heat_pct
+        state = _make_state(total_open_risk_pct=soft_cap * 0.8)  # pre-cap taper zone
         verdict = compute_guardian_verdict(state, regime="bull")
         assert 0.5 < verdict.heat_factor < 1.0
 
@@ -163,13 +167,14 @@ class TestCombinedFactors:
         # Both drawdown and regime should reduce
         assert verdict.sizing_multiplier < 0.5
         assert verdict.drawdown_factor < 1.0
-        assert verdict.regime_factor == 0.5
+        assert verdict.regime_factor == get_settings().guardian_bear_sizing
 
     def test_all_factors_multiply(self):
+        soft_cap = get_settings().guardian_max_portfolio_heat_pct
         state = _make_state(
             current_drawdown_pct=-5.0,
             consecutive_losses=4,
-            total_open_risk_pct=8.0,
+            total_open_risk_pct=soft_cap * 0.8,
         )
         verdict = compute_guardian_verdict(state, regime="choppy")
         # All four factors should be < 1.0
