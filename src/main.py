@@ -8,6 +8,7 @@ import hashlib
 import json
 import logging
 import os
+import re
 import time
 from datetime import date, datetime, timedelta, timezone
 from zoneinfo import ZoneInfo
@@ -1534,7 +1535,14 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
 
 def _validate_cross_engine_pick_risk(pick: dict) -> tuple[bool, str]:
     """Require complete long-side risk parameters for cross-engine picks."""
-    ticker = pick.get("ticker", "?")
+    ticker = str(pick.get("ticker", "")).upper().strip()
+    if not ticker:
+        return False, "missing ticker"
+    if ticker in {"CASH", "USD", "USDT", "USDC", "NONE", "N/A", "NA"}:
+        return False, f"{ticker}: non-tradable placeholder ticker"
+    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", ticker):
+        return False, f"{ticker}: invalid ticker format"
+
     entry = pick.get("entry_price")
     stop = pick.get("stop_loss")
     target = pick.get("target_price")
@@ -1959,6 +1967,27 @@ async def _run_cross_engine_steps(
                     "parameter checks (missing/invalid stop-loss or target)."
                 ),
             )
+
+        # Final safety gate: drop any synthesized portfolio positions with
+        # non-tradable/invalid ticker or invalid risk tuple.
+        if synthesis.portfolio:
+            valid_portfolio = []
+            dropped_portfolio_reasons: list[str] = []
+            for pos in synthesis.portfolio:
+                ok, reason = _validate_cross_engine_pick_risk(pos.model_dump())
+                if ok:
+                    valid_portfolio.append(pos)
+                else:
+                    if len(dropped_portfolio_reasons) < 5:
+                        dropped_portfolio_reasons.append(reason)
+            if len(valid_portfolio) != len(synthesis.portfolio):
+                logger.warning(
+                    "Step 13 safety gate dropped %d synthesized positions due to "
+                    "invalid ticker/risk schema: %s",
+                    len(synthesis.portfolio) - len(valid_portfolio),
+                    dropped_portfolio_reasons,
+                )
+                synthesis.portfolio = valid_portfolio
 
         # Low-overlap guardrail: when there are no convergent picks, force a
         # smaller, lighter portfolio rather than allowing broad unique-only risk.
