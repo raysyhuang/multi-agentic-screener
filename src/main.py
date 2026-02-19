@@ -156,20 +156,14 @@ def _json_safe(obj):
     return obj
 
 
-def _cross_engine_signature(
-    *,
-    portfolio_recommendation: list[dict] | None,
-    engines_reporting: int,
-    executive_summary: str | None,
-) -> str:
-    """Stable signature for deduping same-day cross-engine alerts."""
-    payload = {
-        "portfolio_recommendation": portfolio_recommendation or [],
-        "engines_reporting": int(engines_reporting),
-        "executive_summary": executive_summary or "",
-    }
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
+    """Ticker set used for same-day cross-engine alert dedupe."""
+    out: set[str] = set()
+    for p in portfolio or []:
+        t = str(p.get("ticker") or "").upper().strip()
+        if t:
+            out.add(t)
+    return out
 
 
 def _trading_date_et(now: datetime | None = None) -> date:
@@ -1959,18 +1953,30 @@ async def _run_cross_engine_steps(
             )
             row = existing_synth.scalar_one_or_none()
             cross_health_dict = _json_safe(cross_health.to_dict())
-            new_signature = _cross_engine_signature(
-                portfolio_recommendation=synthesis_dict.get("portfolio"),
-                engines_reporting=len(engine_results),
-                executive_summary=synthesis.executive_summary,
-            )
             if row:
-                existing_signature = _cross_engine_signature(
-                    portfolio_recommendation=row.portfolio_recommendation,
-                    engines_reporting=row.engines_reporting,
-                    executive_summary=row.executive_summary,
+                existing_tickers = _portfolio_ticker_set(row.portfolio_recommendation)
+                new_tickers = _portfolio_ticker_set(synthesis_dict.get("portfolio"))
+                existing_halt = "HALT" in (row.executive_summary or "").upper()
+                new_halt = "HALT" in (synthesis.executive_summary or "").upper()
+                engines_increased = row.engines_reporting < len(engine_results)
+
+                # Re-alert only when actionable state changes.
+                should_send_alert = (
+                    engines_increased
+                    or existing_tickers != new_tickers
+                    or existing_halt != new_halt
                 )
-                should_send_alert = existing_signature != new_signature
+
+                logger.info(
+                    "Step 14 dedupe: engines %d→%d, tickers %s→%s, halt %s→%s, send=%s",
+                    row.engines_reporting,
+                    len(engine_results),
+                    sorted(existing_tickers),
+                    sorted(new_tickers),
+                    existing_halt,
+                    new_halt,
+                    should_send_alert,
+                )
                 row.convergent_tickers = synthesis_dict.get("convergent_picks")
                 row.portfolio_recommendation = synthesis_dict.get("portfolio")
                 row.regime_consensus = synthesis.regime_consensus
