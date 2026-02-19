@@ -1647,7 +1647,9 @@ async def _run_cross_engine_steps(
             engine_results=[
                 {
                     "engine_name": er.engine_name,
+                    "run_date": er.run_date,
                     "regime": er.regime,
+                    "status": er.status,
                     "picks": [p.model_dump() for p in er.picks],
                     "candidates_screened": getattr(er, "candidates_screened", 0),
                 }
