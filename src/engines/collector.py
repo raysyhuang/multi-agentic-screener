@@ -106,11 +106,13 @@ async def _fetch_with_custom_fallback(
         api_key,
         timeout_s=timeout_s,
     )
-    if result is not None:
+    if result is not None and not (
+        result.candidates_screened == 0 and not result.picks
+    ):
         return result
 
     logger.warning(
-        "Engine %s custom adapter returned no data; trying generic results endpoint",
+        "Engine %s custom adapter returned no usable data; trying generic results endpoint",
         engine_name,
     )
     return await _fetch_engine(
