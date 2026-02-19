@@ -162,13 +162,19 @@ def _fetch_prices_batch(tickers: list[str]) -> dict[str, list[dict]]:
     single_ticker = len(tickers) == 1
 
     try:
+        # Avoid yfinance cache lock contention on ephemeral dyno filesystems.
+        try:
+            yf.set_tz_cache_location("/tmp/py-yfinance")
+        except Exception:
+            pass
+
         # Fetch 60 days of data to cover any holding period
         data = yf.download(
             tickers,
             period="60d",
             progress=False,
             auto_adjust=True,
-            threads=True,
+            threads=False,
         )
         if data.empty:
             return result

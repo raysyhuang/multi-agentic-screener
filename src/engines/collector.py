@@ -173,6 +173,20 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     return warnings
 
 
+def _is_critical_quality_issue(warnings: list[str]) -> bool:
+    """Return True if any warning should reject an engine payload."""
+    return any(
+        w.startswith("stale")
+        or w.startswith("unparseable")
+        or "zero/negative" in w
+        or w.startswith("non-success status")
+        or w.startswith("zero candidates screened and zero picks")
+        or "missing stop_loss" in w
+        or "missing target_price" in w
+        for w in warnings
+    )
+
+
 async def collect_engine_results() -> list[EngineResultPayload]:
     """Fetch results from all configured external engines in parallel.
 
@@ -225,15 +239,7 @@ async def collect_engine_results() -> list[EngineResultPayload]:
             # Quality validation — reject payloads with critical issues
             quality_warnings = _validate_payload_quality(engine_name, result)
             if quality_warnings:
-                has_critical = any(
-                    w.startswith("stale")
-                    or w.startswith("unparseable")
-                    or "zero/negative" in w
-                    or w.startswith("non-success status")
-                    or w.startswith("zero candidates screened and zero picks")
-                    or "missing stop_loss" in w
-                for w in quality_warnings
-                )
+                has_critical = _is_critical_quality_issue(quality_warnings)
                 for w in quality_warnings:
                     logger.warning("Engine %s quality issue: %s", engine_name, w)
                 if has_critical:

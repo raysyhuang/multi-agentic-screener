@@ -40,6 +40,12 @@ def test_parse_nested_json():
     assert result["flag"] is True
 
 
+def test_parse_unclosed_markdown_fence_does_not_raise():
+    text = "```json\n{\"ticker\": \"AAPL\", \"score\": 75}"
+    result = _try_parse_json(text)
+    assert result == {"ticker": "AAPL", "score": 75}
+
+
 @pytest.mark.asyncio
 async def test_gemini_model_raises_disabled():
     """Gemini provider is disabled per MVP scope."""

@@ -1,5 +1,5 @@
 from src.contracts import EngineResultPayload
-from src.engines.collector import _validate_payload_quality
+from src.engines.collector import _is_critical_quality_issue, _validate_payload_quality
 
 
 def _payload(
@@ -48,3 +48,25 @@ def test_quality_flags_missing_stop_loss():
     )
     warnings = _validate_payload_quality("gemini_stst", p)
     assert any("missing stop_loss" in w for w in warnings)
+
+
+def test_quality_flags_missing_target_price():
+    p = _payload(
+        candidates_screened=10,
+        picks=[{
+            "ticker": "AAPL",
+            "strategy": "momentum",
+            "entry_price": 100.0,
+            "stop_loss": 95.0,
+            "target_price": None,
+            "confidence": 65.0,
+            "holding_period_days": 7,
+        }],
+    )
+    warnings = _validate_payload_quality("gemini_stst", p)
+    assert any("missing target_price" in w for w in warnings)
+
+
+def test_missing_target_is_critical_quality_issue():
+    warnings = ["1 picks missing target_price: ['AAPL']"]
+    assert _is_critical_quality_issue(warnings) is True

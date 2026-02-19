@@ -425,18 +425,20 @@ def _try_parse_json(text: str) -> dict | None:
 
     # Try extracting from markdown code block
     if "```json" in text:
-        start = text.index("```json") + 7
-        end = text.index("```", start)
+        start = text.find("```json") + 7
+        end = text.find("```", start)
+        fenced = text[start:end] if end != -1 else text[start:]
         try:
-            return json.loads(text[start:end].strip())
+            return json.loads(fenced.strip())
         except (json.JSONDecodeError, ValueError):
             pass
 
     if "```" in text:
-        start = text.index("```") + 3
-        end = text.index("```", start)
+        start = text.find("```") + 3
+        end = text.find("```", start)
+        fenced = text[start:end] if end != -1 else text[start:]
         try:
-            return json.loads(text[start:end].strip())
+            return json.loads(fenced.strip())
         except (json.JSONDecodeError, ValueError):
             pass
 
