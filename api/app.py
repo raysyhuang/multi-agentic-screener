@@ -1060,13 +1060,20 @@ async def cross_engine_collect(request: Request, background_tasks: BackgroundTas
 @app.get("/api/cross-engine/latest")
 async def cross_engine_latest():
     """Latest cross-engine synthesis results."""
-    from src.db.models import CrossEngineSynthesis
+    from src.db.models import CrossEngineSynthesis, DailyRun
 
     async with get_session() as session:
+        latest_daily_run_result = await session.execute(
+            select(DailyRun.run_date).order_by(DailyRun.run_date.desc()).limit(1)
+        )
+        latest_daily_run_date = latest_daily_run_result.scalar_one_or_none()
+
+        query = select(CrossEngineSynthesis)
+        if latest_daily_run_date:
+            query = query.where(CrossEngineSynthesis.run_date <= latest_daily_run_date)
+
         result = await session.execute(
-            select(CrossEngineSynthesis)
-            .order_by(CrossEngineSynthesis.run_date.desc())
-            .limit(1)
+            query.order_by(CrossEngineSynthesis.run_date.desc()).limit(1)
         )
         row = result.scalar_one_or_none()
 
@@ -1088,13 +1095,20 @@ async def cross_engine_latest():
 @app.get("/api/cross-engine/credibility")
 async def cross_engine_credibility():
     """Current engine credibility weights and hit rates."""
-    from src.db.models import CrossEngineSynthesis
+    from src.db.models import CrossEngineSynthesis, DailyRun
 
     async with get_session() as session:
+        latest_daily_run_result = await session.execute(
+            select(DailyRun.run_date).order_by(DailyRun.run_date.desc()).limit(1)
+        )
+        latest_daily_run_date = latest_daily_run_result.scalar_one_or_none()
+
+        query = select(CrossEngineSynthesis)
+        if latest_daily_run_date:
+            query = query.where(CrossEngineSynthesis.run_date <= latest_daily_run_date)
+
         result = await session.execute(
-            select(CrossEngineSynthesis)
-            .order_by(CrossEngineSynthesis.run_date.desc())
-            .limit(1)
+            query.order_by(CrossEngineSynthesis.run_date.desc()).limit(1)
         )
         row = result.scalar_one_or_none()
 
@@ -1213,6 +1227,138 @@ async def backtest_engines():
         ],
         "total_engines": len(reports),
     }
+
+
+# ---------------------------------------------------------------------------
+# Dashboard Backtest Browser Endpoints
+# ---------------------------------------------------------------------------
+
+import glob
+import re
+
+BACKTEST_DIR = Path(__file__).resolve().parent.parent / "backtest_results" / "multi_engine"
+_BACKTEST_FILENAME_RE = re.compile(r"^multi_engine_[\d-]+_[\d-]+\.json$")
+
+
+@app.get("/api/dashboard/backtest/runs")
+async def dashboard_backtest_runs():
+    """List available multi-engine backtest result files (lightweight metadata only)."""
+    import json as _json
+
+    pattern = str(BACKTEST_DIR / "multi_engine_*.json")
+    files = sorted(glob.glob(pattern), reverse=True)
+    runs = []
+    for fpath in files:
+        try:
+            with open(fpath) as f:
+                data = _json.load(f)
+            runs.append({
+                "filename": Path(fpath).name,
+                "run_date": data.get("run_date"),
+                "date_range": data.get("date_range"),
+                "trading_days": data.get("trading_days"),
+                "engines": data.get("engines"),
+                "total_trades_all_tracks": data.get("total_trades_all_tracks"),
+                "elapsed_s": data.get("elapsed_s"),
+            })
+        except Exception:
+            continue
+    return {"runs": runs}
+
+
+@app.get("/api/dashboard/backtest/compare")
+async def dashboard_backtest_compare(files: str = Query(..., description="Comma-separated filenames, max 4")):
+    """Side-by-side comparison of multiple backtest runs."""
+    import json as _json
+
+    filenames = [f.strip() for f in files.split(",") if f.strip()][:4]
+    results = []
+    for fname in filenames:
+        if not _BACKTEST_FILENAME_RE.match(fname):
+            continue
+        fpath = BACKTEST_DIR / fname
+        if not fpath.is_file():
+            continue
+        try:
+            with open(fpath) as f:
+                data = _json.load(f)
+            entry = {
+                "filename": fname,
+                "run_date": data.get("run_date"),
+                "date_range": data.get("date_range"),
+                "trading_days": data.get("trading_days"),
+                "engines": data.get("engines"),
+                "total_trades_all_tracks": data.get("total_trades_all_tracks"),
+                "per_engine": {},
+                "synthesis": {},
+            }
+            for eng_name, eng_data in data.get("per_engine", {}).items():
+                entry["per_engine"][eng_name] = eng_data.get("summary", {})
+            for track_name, track_data in data.get("synthesis", {}).items():
+                entry["synthesis"][track_name] = track_data.get("summary", {})
+            results.append(entry)
+        except Exception:
+            continue
+    return {"comparison": results}
+
+
+@app.get("/api/dashboard/backtest/{filename}/equity")
+async def dashboard_backtest_equity(filename: str):
+    """Return equity curves from a backtest result file."""
+    import json as _json
+
+    if not _BACKTEST_FILENAME_RE.match(filename):
+        raise HTTPException(400, "Invalid filename")
+    fpath = BACKTEST_DIR / filename
+    if not fpath.is_file():
+        raise HTTPException(404, "File not found")
+
+    with open(fpath) as f:
+        data = _json.load(f)
+
+    curves: dict[str, list] = {}
+
+    # Per-engine equity curves
+    for eng_name, eng_data in data.get("per_engine", {}).items():
+        raw = eng_data.get("equity_curve", [])
+        seen: dict[str, dict] = {}
+        for pt in raw:
+            seen[pt["date"]] = pt
+        curves[eng_name] = [{"date": d, "cumulative_pnl_pct": v["cumulative_pnl_pct"]} for d, v in sorted(seen.items())]
+
+    # Synthesis equity curves
+    for track_name, track_data in data.get("synthesis", {}).items():
+        raw = track_data.get("equity_curve", [])
+        seen: dict[str, dict] = {}
+        for pt in raw:
+            seen[pt["date"]] = pt
+        curves[track_name] = [{"date": d, "cumulative_pnl_pct": v["cumulative_pnl_pct"]} for d, v in sorted(seen.items())]
+
+    return {"curves": curves}
+
+
+@app.get("/api/dashboard/backtest/{filename}")
+async def dashboard_backtest_detail(filename: str):
+    """Return full backtest detail (minus trades and equity curves)."""
+    import json as _json
+
+    if not _BACKTEST_FILENAME_RE.match(filename):
+        raise HTTPException(400, "Invalid filename")
+    fpath = BACKTEST_DIR / filename
+    if not fpath.is_file():
+        raise HTTPException(404, "File not found")
+
+    with open(fpath) as f:
+        data = _json.load(f)
+
+    # Strip heavy arrays
+    data.pop("trades", None)
+    for eng_data in data.get("per_engine", {}).values():
+        eng_data.pop("equity_curve", None)
+    for track_data in data.get("synthesis", {}).values():
+        track_data.pop("equity_curve", None)
+
+    return data
 
 
 @app.get("/health")
