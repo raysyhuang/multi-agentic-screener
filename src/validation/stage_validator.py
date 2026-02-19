@@ -265,6 +265,7 @@ def validate_ohlcv(
     tickers_requested: int,
     price_data: dict[str, pd.DataFrame],
     qualified_count: int,
+    split_check_tickers: list[str] | None = None,
 ) -> StageValidation:
     """Validate OHLCV data fetching and quality filtering."""
     sv = StageValidation(stage_name="ohlcv_data", executed=True)
@@ -311,7 +312,14 @@ def validate_ohlcv(
     ))
 
     # Check for split/dividend artifacts: overnight gaps > 15% in last 30 days
-    suspect_splits = _detect_split_artifacts(price_data)
+    split_price_data = price_data
+    if split_check_tickers:
+        split_price_data = {
+            t: price_data.get(t)
+            for t in split_check_tickers
+            if t in price_data
+        }
+    suspect_splits = _detect_split_artifacts(split_price_data)
     split_ok = len(suspect_splits) == 0
     sv.checks.append(StageCheck(
         name="split_artifacts",

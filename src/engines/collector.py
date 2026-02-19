@@ -151,6 +151,25 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     if wide_stops:
         warnings.append(f"stop loss >30% from entry: {wide_stops[:5]}")
 
+    # 7. Missing risk parameters (strict): picks without stop/target are not tradable
+    missing_stop = [
+        p.ticker for p in payload.picks
+        if p.stop_loss is None or p.stop_loss <= 0
+    ]
+    if missing_stop:
+        warnings.append(
+            f"{len(missing_stop)} picks missing stop_loss: {missing_stop[:5]}"
+        )
+
+    missing_target = [
+        p.ticker for p in payload.picks
+        if p.target_price is None or p.target_price <= 0
+    ]
+    if missing_target:
+        warnings.append(
+            f"{len(missing_target)} picks missing target_price: {missing_target[:5]}"
+        )
+
     return warnings
 
 
@@ -212,7 +231,8 @@ async def collect_engine_results() -> list[EngineResultPayload]:
                     or "zero/negative" in w
                     or w.startswith("non-success status")
                     or w.startswith("zero candidates screened and zero picks")
-                    for w in quality_warnings
+                    or "missing stop_loss" in w
+                for w in quality_warnings
                 )
                 for w in quality_warnings:
                     logger.warning("Engine %s quality issue: %s", engine_name, w)

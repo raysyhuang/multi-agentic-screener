@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import asyncio
+from collections import defaultdict
 import hashlib
 import json
 import logging
@@ -670,6 +671,7 @@ async def _run_pipeline_core(
         tickers_requested=len(tickers),
         price_data=price_data,
         qualified_count=len(qualified_tickers),
+        split_check_tickers=qualified_tickers,
     ))
 
     # Cross-validate OHLCV for top tickers against second source
@@ -1473,6 +1475,27 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
         logger.warning("Decay check failed: %s", e)
 
 
+def _validate_cross_engine_pick_risk(pick: dict) -> tuple[bool, str]:
+    """Require complete long-side risk parameters for cross-engine picks."""
+    ticker = pick.get("ticker", "?")
+    entry = pick.get("entry_price")
+    stop = pick.get("stop_loss")
+    target = pick.get("target_price")
+
+    if entry is None or entry <= 0:
+        return False, f"{ticker}: invalid entry_price={entry}"
+    if stop is None or stop <= 0:
+        return False, f"{ticker}: missing/invalid stop_loss={stop}"
+    if target is None or target <= 0:
+        return False, f"{ticker}: missing/invalid target_price={target}"
+    if not (stop < entry < target):
+        return False, (
+            f"{ticker}: invalid ordering stop/entry/target "
+            f"({stop}, {entry}, {target})"
+        )
+    return True, ""
+
+
 async def _run_cross_engine_steps(
     today: date,
     run_id: str,
@@ -1631,11 +1654,13 @@ async def _run_cross_engine_steps(
         # Compute credibility snapshot
         cred_snapshot = await compute_credibility_snapshot()
 
-        # Build flat pick list for weighting
+        # Build flat pick list for weighting (strict risk-schema gate)
         all_picks: list[dict] = []
+        dropped_by_engine: dict[str, int] = defaultdict(int)
+        drop_reasons: dict[str, list[str]] = defaultdict(list)
         for er in engine_results:
             for pick in er.picks:
-                all_picks.append({
+                normalized_pick = {
                     "engine_name": er.engine_name,
                     "ticker": pick.ticker,
                     "strategy": pick.strategy,
@@ -1646,11 +1671,18 @@ async def _run_cross_engine_steps(
                     "holding_period_days": pick.holding_period_days,
                     "thesis": pick.thesis,
                     "risk_factors": pick.risk_factors,
-                })
+                }
+                ok, reason = _validate_cross_engine_pick_risk(normalized_pick)
+                if not ok:
+                    dropped_by_engine[er.engine_name] += 1
+                    if len(drop_reasons[er.engine_name]) < 5:
+                        drop_reasons[er.engine_name].append(reason)
+                    continue
+                all_picks.append(normalized_pick)
 
         # Add screener's own picks with engine_name="multi_agentic_screener"
         for sp in screener_picks:
-            all_picks.append({
+            normalized_pick = {
                 "engine_name": "multi_agentic_screener",
                 "ticker": sp.get("ticker", ""),
                 "strategy": sp.get("signal_model", ""),
@@ -1661,7 +1693,22 @@ async def _run_cross_engine_steps(
                 "holding_period_days": sp.get("holding_period", 10),
                 "thesis": sp.get("thesis", ""),
                 "risk_factors": [],
-            })
+            }
+            ok, reason = _validate_cross_engine_pick_risk(normalized_pick)
+            if not ok:
+                dropped_by_engine["multi_agentic_screener"] += 1
+                if len(drop_reasons["multi_agentic_screener"]) < 5:
+                    drop_reasons["multi_agentic_screener"].append(reason)
+                continue
+            all_picks.append(normalized_pick)
+
+        for engine_name, dropped in sorted(dropped_by_engine.items()):
+            logger.warning(
+                "Step 11 risk gate dropped %d picks from %s due to missing/invalid risk params: %s",
+                dropped,
+                engine_name,
+                drop_reasons.get(engine_name, [])[:3],
+            )
 
         logger.info("Step 11 complete: %d picks collected for weighting", len(all_picks))
 
@@ -1728,22 +1775,39 @@ async def _run_cross_engine_steps(
         weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
         logger.info("Weighted picks computed: %d tickers ranked", len(weighted_picks))
 
-        # --- Step 13: Cross-Engine Synthesizer ---
-        logger.info("Step 13: Running cross-engine synthesizer...")
-        synthesizer = CrossEngineSynthesizerAgent()
-
         cred_weights_dict = {
             name: {"weight": s.weight, "hit_rate": s.hit_rate, "resolved_picks": s.resolved_picks}
             for name, s in cred_snapshot.engine_stats.items()
         }
 
-        synthesis = await synthesizer.synthesize(
-            weighted_picks=weighted_picks,
-            verifier_output=verifier_output_dict,
-            credibility_weights=cred_weights_dict,
-            regime_context=regime_context,
-            screener_picks=screener_picks,
-        )
+        # --- Step 13: Cross-Engine Synthesizer ---
+        if weighted_picks:
+            logger.info("Step 13: Running cross-engine synthesizer...")
+            synthesizer = CrossEngineSynthesizerAgent()
+            synthesis = await synthesizer.synthesize(
+                weighted_picks=weighted_picks,
+                verifier_output=verifier_output_dict,
+                credibility_weights=cred_weights_dict,
+                regime_context=regime_context,
+                screener_picks=screener_picks,
+            )
+        else:
+            from src.agents.cross_engine_synthesizer import SynthesizerOutput
+
+            logger.warning("Step 13 skipped: no risk-defined weighted picks available")
+            synthesis = SynthesizerOutput(
+                convergent_picks=[],
+                unique_picks=[],
+                portfolio=[],
+                regime_consensus=(
+                    "No risk-defined picks available after stop/target validation "
+                    "across reporting engines."
+                ),
+                executive_summary=(
+                    "NO TRADES THIS CYCLE — all candidate picks failed strict risk "
+                    "parameter checks (missing/invalid stop-loss or target)."
+                ),
+            )
 
         logger.info(
             "Step 13 complete: %d convergent, %d portfolio positions",

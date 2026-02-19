@@ -47,6 +47,18 @@ def test_filter_by_ohlcv_empty():
     assert filter_by_ohlcv("TEST", pd.DataFrame()) is False
 
 
+def test_filter_by_ohlcv_rejects_split_artifact():
+    closes = [200, 201, 202, 100, 101] + [101] * 25
+    rows = len(closes)
+    df = pd.DataFrame({
+        "close": closes,
+        "volume": [2_000_000] * rows,
+        "high": [c * 1.01 for c in closes],
+        "low": [c * 0.99 for c in closes],
+    })
+    assert filter_by_ohlcv("SPLIT", df) is False
+
+
 # --- Funnel Counter Tests ---
 
 

@@ -20,6 +20,8 @@ logger = logging.getLogger(__name__)
 EXCLUDED_SUFFIXES = {".W", ".U", ".R"}  # warrants, units, rights
 EXCLUDED_TYPES = {"ETF", "ETN", "FUND", "REIT"}
 _VALID_TICKER_RE = re.compile(r"^[A-Z]{1,5}([.-][A-Z])?$")
+_SPLIT_DROP_RATIOS = (0.50, 0.333, 0.25, 0.20)  # 2:1, 3:1, 4:1, 5:1
+_SPLIT_RATIO_TOLERANCE = 0.05
 
 
 def _is_valid_ticker(ticker: str) -> bool:
@@ -194,6 +196,15 @@ def filter_by_ohlcv(
         if funnel:
             funnel.failed_extreme_move += 1
         return False
+
+    # Detect likely unadjusted split artifacts in the recent window.
+    recent_returns = daily_returns.tail(30).dropna()
+    for abs_ret in recent_returns:
+        if any(abs(abs_ret - ratio) < _SPLIT_RATIO_TOLERANCE for ratio in _SPLIT_DROP_RATIOS):
+            logger.debug("Excluded %s: likely unadjusted split artifact (%.1f%% gap)", ticker, abs_ret * 100)
+            if funnel:
+                funnel.failed_extreme_move += 1
+            return False
 
     # Minimum dollar volume
     avg_dollar_vol = (df["close"] * df["volume"]).tail(20).mean()

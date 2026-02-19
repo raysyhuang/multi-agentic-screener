@@ -32,3 +32,19 @@ def test_quality_flags_non_success_status():
     warnings = _validate_payload_quality("gemini_stst", p)
     assert any("non-success status" in w for w in warnings)
 
+
+def test_quality_flags_missing_stop_loss():
+    p = _payload(
+        candidates_screened=10,
+        picks=[{
+            "ticker": "AAPL",
+            "strategy": "momentum",
+            "entry_price": 100.0,
+            "stop_loss": None,
+            "target_price": 110.0,
+            "confidence": 65.0,
+            "holding_period_days": 7,
+        }],
+    )
+    warnings = _validate_payload_quality("gemini_stst", p)
+    assert any("missing stop_loss" in w for w in warnings)

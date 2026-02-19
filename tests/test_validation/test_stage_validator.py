@@ -215,6 +215,19 @@ class TestValidateOhlcv:
         schema_check = next(c for c in sv.checks if c.name == "ohlcv_schema")
         assert schema_check.passed is False
 
+    def test_split_check_scoped_to_qualified_tickers(self):
+        good_df = _make_df(40, close=100)
+        bad_df = _make_df(10, close=200, include_split=True)
+        price_data = {"GOOD": good_df, "BAD": bad_df}
+        sv = validate_ohlcv(
+            tickers_requested=2,
+            price_data=price_data,
+            qualified_count=1,
+            split_check_tickers=["GOOD"],
+        )
+        split_check = next(c for c in sv.checks if c.name == "split_artifacts")
+        assert split_check.passed is True
+
 
 class TestDetectSplitArtifacts:
     def test_clean_data_no_splits(self):
