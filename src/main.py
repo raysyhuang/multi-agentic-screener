@@ -156,6 +156,28 @@ def _json_safe(obj):
     return obj
 
 
+def _cross_engine_signature(
+    *,
+    convergent_tickers: list[dict] | list[str] | None,
+    portfolio_recommendation: list[dict] | None,
+    regime_consensus: str | None,
+    engines_reporting: int,
+    executive_summary: str | None,
+    credibility_weights: dict | None,
+) -> str:
+    """Stable signature for deduping same-day cross-engine alerts."""
+    payload = {
+        "convergent_tickers": convergent_tickers or [],
+        "portfolio_recommendation": portfolio_recommendation or [],
+        "regime_consensus": regime_consensus or "",
+        "engines_reporting": int(engines_reporting),
+        "executive_summary": executive_summary or "",
+        "credibility_weights": credibility_weights or {},
+    }
+    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"))
+    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
 def _trading_date_et(now: datetime | None = None) -> date:
     """Return trading date in US/Eastern.
 
@@ -1935,6 +1957,7 @@ async def _run_cross_engine_steps(
         # --- Step 14: Save to DB + send Telegram ---
         logger.info("Step 14: Saving synthesis and sending alert...")
         synthesis_dict = _json_safe(synthesis.model_dump())
+        should_send_alert = True
         async with get_session() as session:
             # Check for existing synthesis (re-run safety)
             existing_synth = await session.execute(
@@ -1942,7 +1965,24 @@ async def _run_cross_engine_steps(
             )
             row = existing_synth.scalar_one_or_none()
             cross_health_dict = _json_safe(cross_health.to_dict())
+            new_signature = _cross_engine_signature(
+                convergent_tickers=synthesis_dict.get("convergent_picks"),
+                portfolio_recommendation=synthesis_dict.get("portfolio"),
+                regime_consensus=synthesis.regime_consensus,
+                engines_reporting=len(engine_results),
+                executive_summary=synthesis.executive_summary,
+                credibility_weights=cred_weights_dict,
+            )
             if row:
+                existing_signature = _cross_engine_signature(
+                    convergent_tickers=row.convergent_tickers,
+                    portfolio_recommendation=row.portfolio_recommendation,
+                    regime_consensus=row.regime_consensus,
+                    engines_reporting=row.engines_reporting,
+                    executive_summary=row.executive_summary,
+                    credibility_weights=row.credibility_weights,
+                )
+                should_send_alert = existing_signature != new_signature
                 row.convergent_tickers = synthesis_dict.get("convergent_picks")
                 row.portfolio_recommendation = synthesis_dict.get("portfolio")
                 row.regime_consensus = synthesis.regime_consensus
@@ -1965,18 +2005,27 @@ async def _run_cross_engine_steps(
                 ))
 
         # Send cross-engine Telegram alert
-        cross_alert = format_cross_engine_alert(
-            synthesis={
-                **synthesis_dict,
-                "engines_reporting": len(engine_results),
-            },
-            credibility=cred_weights_dict,
-        )
-        if guardian_summary:
-            cross_alert += guardian_summary
-        await send_alert(cross_alert)
+        if should_send_alert:
+            cross_alert = format_cross_engine_alert(
+                synthesis={
+                    **synthesis_dict,
+                    "engines_reporting": len(engine_results),
+                },
+                credibility=cred_weights_dict,
+            )
+            if guardian_summary:
+                cross_alert += guardian_summary
+            await send_alert(cross_alert)
+        else:
+            logger.info(
+                "Step 14: synthesis unchanged for %s; suppressing duplicate cross-engine alert",
+                today,
+            )
 
-        logger.info("Steps 10-14 complete: cross-engine synthesis saved and alert sent")
+        logger.info(
+            "Steps 10-14 complete: cross-engine synthesis saved; alert_sent=%s",
+            should_send_alert,
+        )
 
     except Exception as e:
         logger.error("Cross-engine steps failed (non-fatal): %s", e, exc_info=True)
