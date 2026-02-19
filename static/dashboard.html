@@ -13,13 +13,19 @@
 <body>
   <nav class="nav">
     <span class="nav-title">Screener</span>
-    <button class="nav-tab active" data-tab="signals">Signals</button>
-    <button class="nav-tab" data-tab="crossengine">Engines</button>
-    <button class="nav-tab" data-tab="performance">Performance</button>
-    <button class="nav-tab" data-tab="charts">Charts</button>
-    <button class="nav-tab" data-tab="compare">Compare</button>
-    <button class="nav-tab" data-tab="pipeline">Pipeline</button>
-    <button class="nav-tab" data-tab="costs">Costs</button>
+    <span class="nav-active-label">Signals</span>
+    <button class="nav-hamburger" aria-label="Menu" aria-expanded="false">
+      <span></span><span></span><span></span>
+    </button>
+    <div class="nav-tabs">
+      <button class="nav-tab active" data-tab="signals">Signals</button>
+      <button class="nav-tab" data-tab="crossengine">Engines</button>
+      <button class="nav-tab" data-tab="performance">Performance</button>
+      <button class="nav-tab" data-tab="charts">Charts</button>
+      <button class="nav-tab" data-tab="compare">Compare</button>
+      <button class="nav-tab" data-tab="pipeline">Pipeline</button>
+      <button class="nav-tab" data-tab="costs">Costs</button>
+    </div>
   </nav>
 
   <div class="container">

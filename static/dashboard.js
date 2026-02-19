@@ -29,6 +29,21 @@
   var equityChart = null;
 
   // -----------------------------------------------------------------------
+  // Mobile Hamburger Menu
+  // -----------------------------------------------------------------------
+  var hamburger = document.querySelector('.nav-hamburger');
+  var navTabs = document.querySelector('.nav-tabs');
+  var activeLabel = document.querySelector('.nav-active-label');
+
+  if (hamburger) {
+    hamburger.addEventListener('click', function () {
+      var expanded = hamburger.getAttribute('aria-expanded') === 'true';
+      hamburger.setAttribute('aria-expanded', String(!expanded));
+      navTabs.classList.toggle('open');
+    });
+  }
+
+  // -----------------------------------------------------------------------
   // Tab Router
   // -----------------------------------------------------------------------
   document.querySelectorAll('.nav-tab').forEach(function (btn) {
@@ -42,9 +57,18 @@
     document.querySelectorAll('.view').forEach(function (v) { v.classList.remove('active'); });
 
     var btn = document.querySelector('[data-tab="' + tab + '"]');
-    if (btn) btn.classList.add('active');
+    if (btn) {
+      btn.classList.add('active');
+      if (activeLabel) activeLabel.textContent = btn.textContent;
+    }
     var view = document.getElementById(tab + '-view');
     if (view) view.classList.add('active');
+
+    // Close mobile menu after selection
+    if (hamburger && navTabs) {
+      hamburger.setAttribute('aria-expanded', 'false');
+      navTabs.classList.remove('open');
+    }
 
     if (!loaded[tab]) {
       loaded[tab] = true;
