@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import logging
+import math
 from datetime import date, timedelta
 
 from sqlalchemy import select
@@ -296,8 +297,13 @@ async def _evaluate_position(
     current_price = float(latest["close"])
     entry_price = outcome.entry_price
 
-    # Track high/low since entry
-    since_entry = df[df["date"] >= outcome.entry_date] if "date" in df.columns else df
+    # Track high/low since entry (normalize date type to Timestamp for comparison)
+    if "date" in df.columns:
+        entry_ts = pd.Timestamp(outcome.entry_date)
+        date_series = pd.to_datetime(df["date"])
+        since_entry = df[date_series >= entry_ts]
+    else:
+        since_entry = df
     max_price = float(since_entry["high"].max())
     min_price = float(since_entry["low"].min())
 
@@ -474,22 +480,29 @@ async def get_performance_summary(days: int = 30) -> dict:
         from src.backtest.metrics import compute_metrics
         overall_metrics = compute_metrics(all_pnls)
 
+        def _finite_or_none(value):
+            if value is None:
+                return None
+            if isinstance(value, (int, float)) and not math.isfinite(value):
+                return None
+            return value
+
         return {
             "period_days": days,
             "total_signals": len(closed),
             "overall": _summary(all_pnls),
             "risk_metrics": {
-                "sharpe_ratio": overall_metrics.sharpe_ratio,
-                "sortino_ratio": overall_metrics.sortino_ratio,
-                "max_drawdown_pct": overall_metrics.max_drawdown_pct,
-                "profit_factor": overall_metrics.profit_factor,
-                "calmar_ratio": overall_metrics.calmar_ratio,
-                "expectancy": overall_metrics.expectancy,
-                "payoff_ratio": overall_metrics.payoff_ratio,
-                "avg_win_pct": overall_metrics.avg_win_pct,
-                "avg_loss_pct": overall_metrics.avg_loss_pct,
-                "max_consecutive_wins": overall_metrics.max_consecutive_wins,
-                "max_consecutive_losses": overall_metrics.max_consecutive_losses,
+                "sharpe_ratio": _finite_or_none(overall_metrics.sharpe_ratio),
+                "sortino_ratio": _finite_or_none(overall_metrics.sortino_ratio),
+                "max_drawdown_pct": _finite_or_none(overall_metrics.max_drawdown_pct),
+                "profit_factor": _finite_or_none(overall_metrics.profit_factor),
+                "calmar_ratio": _finite_or_none(overall_metrics.calmar_ratio),
+                "expectancy": _finite_or_none(overall_metrics.expectancy),
+                "payoff_ratio": _finite_or_none(overall_metrics.payoff_ratio),
+                "avg_win_pct": _finite_or_none(overall_metrics.avg_win_pct),
+                "avg_loss_pct": _finite_or_none(overall_metrics.avg_loss_pct),
+                "max_consecutive_wins": _finite_or_none(overall_metrics.max_consecutive_wins),
+                "max_consecutive_losses": _finite_or_none(overall_metrics.max_consecutive_losses),
             },
             "by_model": {k: _summary(v) for k, v in by_model.items()},
             "by_regime": {k: _summary(v) for k, v in by_regime.items()},
