@@ -274,8 +274,6 @@ def simulate_quant_counterfactual(
     Returns {quant_return, exit_reason, max_adverse, max_favorable} or None
     if the holding period hasn't expired or no data is available.
     """
-    to_date = entry_date + timedelta(days=holding_period + 5)  # buffer for weekends
-
     if price_df is None:
         return None  # caller should have fetched async; sync fallback returns None
 
@@ -714,8 +712,13 @@ async def _resolve_veto(
                 event.quant_target_1, event.quant_holding_period]):
         return None
 
+    today = date.today()
     entry_date = event.run_date + timedelta(days=1)  # T+1 execution
-    to_date = entry_date + timedelta(days=event.quant_holding_period + 10)
+    if today <= entry_date:
+        return None  # Not yet entered; avoid future-date data fetches.
+    to_date = min(today, entry_date + timedelta(days=event.quant_holding_period + 10))
+    if to_date <= entry_date:
+        return None
 
     df = await aggregator.get_ohlcv(event.ticker, entry_date, to_date)
     if df is None or df.empty:
@@ -819,8 +822,13 @@ async def _resolve_resize(
     quant_exit_reason = outcome.exit_reason
     if all([event.quant_entry_price, event.quant_stop_loss,
             event.quant_target_1, event.quant_holding_period]):
+        today = date.today()
         entry_date = event.run_date + timedelta(days=1)
-        to_date = entry_date + timedelta(days=event.quant_holding_period + 10)
+        if today <= entry_date:
+            return None  # Not yet entered; defer resolution.
+        to_date = min(today, entry_date + timedelta(days=event.quant_holding_period + 10))
+        if to_date <= entry_date:
+            return None
         df = await aggregator.get_ohlcv(event.ticker, entry_date, to_date)
         if df is not None and not df.empty:
             sim = simulate_quant_counterfactual(
