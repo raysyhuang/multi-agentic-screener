@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import date, datetime
+from datetime import datetime
 
 import aiohttp
 

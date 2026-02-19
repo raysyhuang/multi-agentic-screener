@@ -15,7 +15,7 @@ from datetime import date
 import pandas as pd
 
 from src.backtest.multi_engine.adapters.base import EngineAdapter, NormalizedPick
-from src.features.regime import classify_regime, compute_breadth_score, Regime
+from src.features.regime import classify_regime, compute_breadth_score
 from src.features.technical import (
     compute_all_technical_features,
     compute_rsi2_features,

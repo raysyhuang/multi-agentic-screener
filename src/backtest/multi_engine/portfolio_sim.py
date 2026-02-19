@@ -24,7 +24,6 @@ import logging
 from dataclasses import dataclass, field, asdict
 from datetime import date, timedelta
 
-import numpy as np
 import pandas as pd
 
 from src.backtest.walk_forward import _simulate_trade

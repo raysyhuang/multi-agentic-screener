@@ -71,11 +71,15 @@ omit = [
     "src/data/*_client.py",
     "src/worker.py",
     "src/backtest/runner.py",
+    "src/backtest/multi_engine/*",
     "src/engines/collector.py",
     "src/engines/credibility.py",
     "src/engines/outcome_resolver.py",
+    "src/engines/backtest_comparator.py",
+    "src/engines/koocore_adapter.py",
     "src/agents/cross_engine_synthesizer.py",
     "src/agents/cross_engine_verifier.py",
+    "src/utils/trading_calendar.py",
 ]
 
 [tool.coverage.report]

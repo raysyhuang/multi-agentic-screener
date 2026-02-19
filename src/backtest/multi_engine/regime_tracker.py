@@ -13,7 +13,6 @@ import pandas as pd
 
 from src.features.regime import (
     RegimeAssessment,
-    Regime,
     classify_regime,
     compute_breadth_score,
 )
