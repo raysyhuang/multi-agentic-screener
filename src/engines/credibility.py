@@ -216,7 +216,7 @@ def compute_convergence_multiplier(engine_count: int) -> float:
         return settings.convergence_3_engine_multiplier
     elif engine_count == 2:
         return settings.convergence_2_engine_multiplier
-    return 1.0
+    return settings.convergence_1_engine_multiplier
 
 
 def compute_weighted_picks(

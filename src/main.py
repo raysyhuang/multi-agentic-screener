@@ -1834,6 +1834,35 @@ async def _run_cross_engine_steps(
                 ),
             )
 
+        # Low-overlap guardrail: when there are no convergent picks, force a
+        # smaller, lighter portfolio rather than allowing broad unique-only risk.
+        if not synthesis.convergent_picks and synthesis.portfolio:
+            max_positions = max(1, int(settings.low_overlap_max_positions))
+            max_total_weight = max(1.0, float(settings.low_overlap_max_total_weight_pct))
+
+            original_count = len(synthesis.portfolio)
+            original_total_weight = sum(float(p.weight_pct) for p in synthesis.portfolio)
+
+            # Keep only top-N positions in declared order.
+            if original_count > max_positions:
+                synthesis.portfolio = synthesis.portfolio[:max_positions]
+
+            # Cap total gross exposure in low-overlap sessions.
+            new_total_weight = sum(float(p.weight_pct) for p in synthesis.portfolio)
+            if new_total_weight > max_total_weight:
+                scale = max_total_weight / new_total_weight
+                for p in synthesis.portfolio:
+                    p.weight_pct = round(float(p.weight_pct) * scale, 2)
+
+            logger.info(
+                "Low-overlap guardrail applied: convergent=0, positions %d→%d, "
+                "weight %.1f%%→%.1f%%",
+                original_count,
+                len(synthesis.portfolio),
+                original_total_weight,
+                sum(float(p.weight_pct) for p in synthesis.portfolio),
+            )
+
         logger.info(
             "Step 13 complete: %d convergent, %d portfolio positions",
             len(synthesis.convergent_picks), len(synthesis.portfolio),

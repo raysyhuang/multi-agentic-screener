@@ -137,15 +137,23 @@ class TestPortfolioHeat:
         verdict = compute_guardian_verdict(state, regime="bull")
         assert verdict.heat_factor == 1.0
 
-    def test_high_heat_blocks(self):
+    def test_high_heat_soft_caps_not_full_halt(self):
         state = _make_state(total_open_risk_pct=10.0)  # at max
         verdict = compute_guardian_verdict(state, regime="bull")
+        assert 0.0 < verdict.heat_factor <= 0.5
+        assert not verdict.halt
+
+    def test_hard_heat_halts(self):
+        state = _make_state(total_open_risk_pct=21.0)  # above hard cap
+        verdict = compute_guardian_verdict(state, regime="bull")
         assert verdict.heat_factor == 0.0
+        assert verdict.halt
+        assert "heat circuit breaker" in verdict.halt_reason.lower()
 
     def test_approaching_heat_cap_reduces(self):
         state = _make_state(total_open_risk_pct=8.0)  # 80% of 10% cap
         verdict = compute_guardian_verdict(state, regime="bull")
-        assert 0.0 < verdict.heat_factor < 1.0
+        assert 0.5 < verdict.heat_factor < 1.0
 
 
 class TestCombinedFactors:
@@ -170,7 +178,7 @@ class TestCombinedFactors:
         assert verdict.regime_factor < 1.0
         assert verdict.heat_factor < 1.0
         # Combined should be quite small
-        assert verdict.sizing_multiplier < 0.35
+        assert verdict.sizing_multiplier < 0.45
 
 
 class TestApplyGuardian:

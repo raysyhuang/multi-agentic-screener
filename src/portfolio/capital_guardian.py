@@ -221,20 +221,41 @@ def compute_guardian_verdict(
         )
 
     # --- 4. Portfolio heat cap ---
-    max_heat = settings.guardian_max_portfolio_heat_pct
-    if risk_state.total_open_risk_pct >= max_heat:
-        verdict.heat_factor = 0.0
-        verdict.warnings.append(
-            f"Portfolio heat cap: {risk_state.total_open_risk_pct:.1f}% risk "
-            f"already deployed (max {max_heat}%)"
+    soft_heat = max(settings.guardian_max_portfolio_heat_pct, 0.1)
+    hard_heat = max(settings.guardian_halt_portfolio_heat_pct, soft_heat + 0.1)
+    overheat_floor = max(0.0, min(1.0, settings.guardian_overheat_sizing_floor))
+    current_heat = risk_state.total_open_risk_pct
+
+    # Hard heat breaker: portfolio already too loaded to add risk.
+    if current_heat >= hard_heat:
+        verdict.halt = True
+        verdict.halt_reason = (
+            f"Portfolio heat circuit breaker: {current_heat:.1f}% "
+            f"exceeds {hard_heat:.1f}% threshold"
         )
-    elif risk_state.total_open_risk_pct > max_heat * 0.7:
-        # Scale down as we approach the heat cap
-        remaining = max_heat - risk_state.total_open_risk_pct
-        verdict.heat_factor = remaining / (max_heat * 0.3)
+        verdict.sizing_multiplier = 0.0
+        verdict.heat_factor = 0.0
+        return verdict
+
+    # Soft heat zone: gradual de-risking, not full halt.
+    if current_heat >= soft_heat:
+        # 0.5x at soft cap, decays linearly to floor at hard cap.
+        ratio = (current_heat - soft_heat) / (hard_heat - soft_heat)
+        verdict.heat_factor = max(
+            overheat_floor,
+            0.5 - (0.5 - overheat_floor) * ratio,
+        )
         verdict.warnings.append(
-            f"Approaching heat cap: {risk_state.total_open_risk_pct:.1f}% "
-            f"of {max_heat}% deployed"
+            f"Portfolio heat above soft cap: {current_heat:.1f}% "
+            f"(soft {soft_heat:.1f}%, hard {hard_heat:.1f}%)"
+        )
+    elif current_heat > soft_heat * 0.7:
+        # Pre-cap zone: taper from 1.0x at 70% cap utilization to 0.5x at soft cap.
+        ratio = (current_heat - soft_heat * 0.7) / (soft_heat * 0.3)
+        verdict.heat_factor = max(0.5, 1.0 - 0.5 * ratio)
+        verdict.warnings.append(
+            f"Approaching heat cap: {current_heat:.1f}% "
+            f"of {soft_heat:.1f}% deployed"
         )
 
     # --- 5. Sector concentration (if sector data available) ---
