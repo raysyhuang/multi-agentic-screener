@@ -66,7 +66,7 @@ class Settings(BaseSettings):
     top_n_for_interpretation: int = 10
     top_n_for_debate: int = 5
     max_final_picks: int = 2
-    holding_periods: list[int] = Field(default=[5, 10, 15])
+    holding_periods: list[int] = Field(default=[3, 5, 7])
     slippage_pct: float = 0.001  # 0.10%
     commission_per_trade: float = 1.0  # dollars
 

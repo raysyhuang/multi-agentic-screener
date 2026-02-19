@@ -24,7 +24,7 @@ def test_mean_reversion_fires_on_oversold(sample_ohlcv_oversold):
     result = score_mean_reversion("OVERSOLD", df, feat)
     assert result is not None
     assert result.direction == "LONG"
-    assert result.holding_period == 5
+    assert result.holding_period == 3
     assert result.stop_loss < result.entry_price
 
 

@@ -28,20 +28,20 @@ synthesis:
   regime_convergence_overrides:
     bull:
       2_engines: 1.3
-      3_engines: 1.0
+      3_engines: 0.85
     bear:
       2_engines: 1.0
-      3_engines: 0.8
+      3_engines: 0.7
     choppy:
       2_engines: 1.1
-      3_engines: 0.9
+      3_engines: 0.8
 
 portfolio:
   capital: 100000
   max_positions: 10
   slippage_pct: 0.001
   commission_per_trade: 1.0
-  holding_periods: [5, 10, 15]
+  holding_periods: [3, 5, 7]
   confidence_sizing: true
 
 output_dir: "backtest_results/multi_engine"

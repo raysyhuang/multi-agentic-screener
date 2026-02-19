@@ -126,6 +126,15 @@ if STATIC_DIR.is_dir():
 
 @app.get("/", response_class=HTMLResponse)
 async def index():
+    """Serve the dashboard as the main entry page."""
+    html_path = STATIC_DIR / "dashboard.html"
+    if not html_path.is_file():
+        raise HTTPException(404, "Dashboard not found")
+    return FileResponse(str(html_path), media_type="text/html")
+
+
+@app.get("/reports", response_class=HTMLResponse)
+async def reports_index():
     """List all available daily reports."""
     async with get_session() as session:
         result = await session.execute(

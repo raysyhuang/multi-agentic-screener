@@ -242,11 +242,34 @@ def test_static_files_exist():
 
 
 @pytest.mark.asyncio
-async def test_index_has_dashboard_link(app_client):
-    """The index page should have a link to /dashboard."""
+async def test_root_serves_dashboard(app_client):
+    """/ should serve the dashboard as the main page."""
     app, _ = app_client
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/")
     assert resp.status_code == 200
-    assert "/dashboard" in resp.text
+    assert "Dashboard" in resp.text
+    assert 'data-tab="signals"' in resp.text
+
+
+@pytest.mark.asyncio
+async def test_dashboard_has_histories_tab(app_client):
+    """Dashboard should expose a Histories tab."""
+    app, _ = app_client
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/dashboard")
+    assert resp.status_code == 200
+    assert 'data-tab="histories"' in resp.text
+
+
+@pytest.mark.asyncio
+async def test_reports_page_exists(app_client):
+    """The old date-based reports page should remain available at /reports."""
+    app, _ = app_client
+    transport = ASGITransport(app=app)
+    async with AsyncClient(transport=transport, base_url="http://test") as client:
+        resp = await client.get("/reports")
+    assert resp.status_code == 200
+    assert "Daily Reports" in resp.text

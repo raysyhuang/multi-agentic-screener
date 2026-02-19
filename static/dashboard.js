@@ -24,7 +24,7 @@
   // -----------------------------------------------------------------------
   var loaded = {
     signals: false, crossengine: false, performance: false,
-    charts: false, compare: false, pipeline: false, costs: false
+    charts: false, compare: false, pipeline: false, costs: false, histories: false
   };
   var equityChart = null;
 
@@ -85,6 +85,7 @@
       case 'compare': loadCompare(); break;
       case 'pipeline': loadPipeline(); break;
       case 'costs': loadCosts(); break;
+      case 'histories': loadHistories(); break;
     }
   }
 
@@ -898,6 +899,42 @@
         '<div id="run-detail"></div>';
     }).catch(function () {
       showEmpty('pipeline-view', 'Failed to load pipeline runs.');
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Histories Tab
+  // -----------------------------------------------------------------------
+  function loadHistories() {
+    showSpinner('histories-view');
+    fetchJSON('/api/runs?limit=100').then(function (runs) {
+      var view = document.getElementById('histories-view');
+
+      if (!runs || runs.length === 0) {
+        showEmpty('histories-view', 'No historical runs recorded yet.');
+        return;
+      }
+
+      var rows = runs.map(function (r) {
+        var reportUrl = '/report/' + encodeURIComponent(r.run_date);
+        return '<tr>' +
+          '<td><a class="report-link" href="' + reportUrl + '">' + escapeHtml(r.run_date) + '</a></td>' +
+          '<td>' + regimeBadge(r.regime) + '</td>' +
+          '<td>' + (r.candidates_scored || '\u2014') + '</td>' +
+          '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '\u2014') + '</td>' +
+        '</tr>';
+      }).join('');
+
+      view.innerHTML = '<div class="card">' +
+        '<div class="card-title" style="margin-bottom:0.5rem">Run History</div>' +
+        '<p class="card-subtitle" style="margin-bottom:1rem">Open any date to view its full daily report.</p>' +
+        '<table class="data-table">' +
+          '<thead><tr><th>Date</th><th>Regime</th><th>Scored</th><th>Duration</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table>' +
+      '</div>';
+    }).catch(function () {
+      showEmpty('histories-view', 'Failed to load historical runs.');
     });
   }
 

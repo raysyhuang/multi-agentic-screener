@@ -105,9 +105,15 @@ class MASAdapter(EngineAdapter):
             top_n=self._top_n,
         )
 
-        # Convert to NormalizedPick
+        # Convert to NormalizedPick with linear confidence rescaling
+        # Raw scores cluster in 50-100 range → rescale to spread across 30-90
         picks: list[NormalizedPick] = []
         for c in ranked:
+            raw_conf = min(100.0, c.regime_adjusted_score)
+            # Linear rescale: [50, 100] → [30, 90], clamped to [25, 95]
+            rescaled = 30.0 + (raw_conf - 50.0) * (60.0 / 50.0)
+            confidence = max(25.0, min(95.0, rescaled))
+
             picks.append(NormalizedPick(
                 ticker=c.ticker,
                 engine_name=self.engine_name,
@@ -115,7 +121,7 @@ class MASAdapter(EngineAdapter):
                 entry_price=c.entry_price,
                 stop_loss=c.stop_loss,
                 target_price=c.target_1,
-                confidence=min(100.0, c.regime_adjusted_score),
+                confidence=round(confidence, 2),
                 holding_period_days=c.holding_period,
                 direction=c.direction,
                 raw_score=c.raw_score,
@@ -123,6 +129,7 @@ class MASAdapter(EngineAdapter):
                     "regime": regime.value,
                     "components": c.components,
                     "target_2": c.target_2,
+                    "raw_confidence": raw_conf,
                 },
             ))
 

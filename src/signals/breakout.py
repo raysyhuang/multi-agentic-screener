@@ -189,6 +189,6 @@ def score_breakout(ticker: str, df: pd.DataFrame, features: dict) -> BreakoutSig
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
-        holding_period=10,
+        holding_period=7,
         components=scores,
     )

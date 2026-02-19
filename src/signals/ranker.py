@@ -33,15 +33,22 @@ MODEL_MAP = {
 # Regime multipliers: boost signals that work well in current regime
 REGIME_MULTIPLIERS = {
     Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0},
-    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.3, "catalyst": 0.7},
+    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7},
     Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1},
 }
 
 # Regime target multipliers: scale stop/target distances in adverse regimes
+# Bear stop reduced to 0.6 (symmetric with 0.6x target — maintains R:R)
+# Choppy stop tightened to 0.8
 REGIME_TARGET_MULTIPLIERS = {
     Regime.BULL:   {"stop": 1.0, "target": 1.0},
-    Regime.BEAR:   {"stop": 0.8, "target": 0.6},
-    Regime.CHOPPY: {"stop": 0.9, "target": 0.75},
+    Regime.BEAR:   {"stop": 0.6, "target": 0.6},
+    Regime.CHOPPY: {"stop": 0.8, "target": 0.75},
+}
+
+# Model-specific bear overrides: mean_reversion gets extra-tight stops in bear
+_BEAR_MODEL_STOP_OVERRIDES = {
+    "mean_reversion": 0.5,
 }
 
 
@@ -102,7 +109,12 @@ def rank_candidates(
         t1 = signal.target_1
         t2 = getattr(signal, "target_2", None)
 
-        adj_stop = round(entry - (entry - stop) * target_mults["stop"], 2)
+        # Model-specific stop override (e.g. mean_reversion gets extra-tight in bear)
+        stop_mult = target_mults["stop"]
+        if regime == Regime.BEAR and model_name in _BEAR_MODEL_STOP_OVERRIDES:
+            stop_mult = _BEAR_MODEL_STOP_OVERRIDES[model_name]
+
+        adj_stop = round(entry - (entry - stop) * stop_mult, 2)
         adj_t1 = round(entry + (t1 - entry) * target_mults["target"], 2)
         adj_t2 = round(entry + (t2 - entry) * target_mults["target"], 2) if t2 is not None else None
 

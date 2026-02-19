@@ -17,6 +17,35 @@ from src.backtest.multi_engine.adapters.base import NormalizedPick
 
 logger = logging.getLogger(__name__)
 
+# ── Strategy taxonomy for diversity scoring ──────────────────────────────
+
+MOMENTUM_STRATEGIES = {"breakout", "momentum", "weekly_momentum", "pro30_momentum"}
+REVERSION_STRATEGIES = {"mean_reversion", "reversion"}
+EVENT_STRATEGIES = {"catalyst"}
+
+_STRATEGY_CATEGORY = {}
+for _s in MOMENTUM_STRATEGIES:
+    _STRATEGY_CATEGORY[_s] = "momentum"
+for _s in REVERSION_STRATEGIES:
+    _STRATEGY_CATEGORY[_s] = "reversion"
+for _s in EVENT_STRATEGIES:
+    _STRATEGY_CATEGORY[_s] = "event"
+
+
+def _compute_diversity_score(strategies: list[str]) -> float:
+    """Return a diversity multiplier based on strategy category mix.
+
+    - 2+ distinct categories (e.g. trend + reversion) → 1.15x (diverse, higher WR)
+    - 3+ strategies all in the same category → 0.70x (homogeneous, crowding penalty)
+    - Otherwise → 1.0x (neutral)
+    """
+    categories = {_STRATEGY_CATEGORY.get(s, "other") for s in strategies}
+    if len(categories) >= 2:
+        return 1.15
+    if len(strategies) >= 3 and len(categories) == 1:
+        return 0.70
+    return 1.0
+
 
 @dataclass
 class SynthesisConfig:
@@ -44,14 +73,15 @@ class SynthesisPick:
     combined_score: float
     avg_weighted_confidence: float
     convergence_multiplier: float
-    engine_count: int
-    engines: list[str]
-    strategies: list[str]
-    entry_price: float
-    stop_loss: float | None
-    target_price: float | None
-    holding_period_days: int
-    direction: str
+    diversity_multiplier: float = 1.0
+    engine_count: int = 1
+    engines: list[str] = field(default_factory=list)
+    strategies: list[str] = field(default_factory=list)
+    entry_price: float = 0.0
+    stop_loss: float | None = None
+    target_price: float | None = None
+    holding_period_days: int = 5
+    direction: str = "LONG"
     source_picks: list[NormalizedPick] = field(default_factory=list)
 
     def to_dict(self) -> dict:
@@ -60,6 +90,7 @@ class SynthesisPick:
             "combined_score": self.combined_score,
             "avg_weighted_confidence": self.avg_weighted_confidence,
             "convergence_multiplier": self.convergence_multiplier,
+            "diversity_multiplier": self.diversity_multiplier,
             "engine_count": self.engine_count,
             "engines": self.engines,
             "strategies": self.strategies,
@@ -246,7 +277,9 @@ def synthesize_picks(
         if avg_weighted_conf < config.min_confidence:
             continue
 
-        combined_score = avg_weighted_conf * convergence_mult
+        # Diversity scoring: penalize homogeneous combos, boost diverse ones
+        diversity_mult = _compute_diversity_score(strategies)
+        combined_score = avg_weighted_conf * convergence_mult * diversity_mult
 
         # Best pick = highest weighted contribution
         best_pick = max(
@@ -259,6 +292,7 @@ def synthesize_picks(
             combined_score=round(combined_score, 2),
             avg_weighted_confidence=round(avg_weighted_conf, 2),
             convergence_multiplier=convergence_mult,
+            diversity_multiplier=diversity_mult,
             engine_count=engine_count,
             engines=engine_names,
             strategies=strategies,

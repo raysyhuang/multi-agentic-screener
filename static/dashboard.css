@@ -424,6 +424,16 @@ body {
   background: var(--gradient-brand-soft);
 }
 
+.report-link {
+  color: var(--blue);
+  text-decoration: none;
+  font-weight: 600;
+}
+
+.report-link:hover {
+  text-decoration: underline;
+}
+
 /* ---- Status badges ---- */
 
 .badge {

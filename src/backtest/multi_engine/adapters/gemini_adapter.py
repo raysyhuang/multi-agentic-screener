@@ -164,7 +164,7 @@ class GeminiAdapter(EngineAdapter):
                     stop_loss=round(close - 2.0 * atr, 2),
                     target_price=round(close + 2.5 * atr, 2),
                     confidence=quality,
-                    holding_period_days=10,
+                    holding_period_days=7,
                     direction="LONG",
                     raw_score=quality,
                     metadata={
@@ -235,18 +235,19 @@ class GeminiAdapter(EngineAdapter):
                 if not _valid(atr) or atr <= 0:
                     atr = close * 0.02
 
-                # Target = revert to 5-day SMA
+                # Target = revert to 5-day SMA with 1x ATR floor
                 sma_5 = latest.get("sma_5", close * 1.03)
+                target = max(sma_5, close + 1.0 * atr) if _valid(sma_5) else close + 1.0 * atr
 
                 picks.append(NormalizedPick(
                     ticker=ticker,
                     engine_name=self.engine_name,
                     strategy="reversion",
                     entry_price=round(close, 2),
-                    stop_loss=round(close - 1.5 * atr, 2),
-                    target_price=round(sma_5, 2) if _valid(sma_5) else round(close * 1.03, 2),
+                    stop_loss=round(close - 1.0 * atr, 2),
+                    target_price=round(target, 2),
                     confidence=quality,
-                    holding_period_days=5,
+                    holding_period_days=3,
                     direction="LONG",
                     raw_score=quality,
                     metadata={

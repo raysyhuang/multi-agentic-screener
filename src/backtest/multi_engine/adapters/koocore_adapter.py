@@ -179,7 +179,7 @@ class KooCoreAdapter(EngineAdapter):
                     stop_loss=round(close * (1 - 1.5 * atr_pct / 100), 2),
                     target_price=round(close * (1 + 2.0 * atr_pct / 100 * target_scale), 2),
                     confidence=min(100.0, score * 10),  # 0-10 → 0-100
-                    holding_period_days=10,
+                    holding_period_days=7,
                     direction="LONG",
                     raw_score=score,
                     metadata={
@@ -258,7 +258,7 @@ class KooCoreAdapter(EngineAdapter):
                     stop_loss=round(close * (1 - 1.5 * atr_pct / 100), 2),
                     target_price=round(close * (1 + 2.5 * atr_pct / 100 * target_scale), 2),
                     confidence=min(100.0, total_score * 8),  # ~0-12 → 0-100
-                    holding_period_days=15,
+                    holding_period_days=10,
                     direction="LONG",
                     raw_score=total_score,
                     metadata={

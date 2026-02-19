@@ -144,16 +144,18 @@ def score_mean_reversion(
         atr = close_price * 0.02
     atr = max(atr, close_price * 0.005)
 
-    # Mean reversion target: back to 5-day SMA
+    # Mean reversion target: back to 5-day SMA with 1x ATR floor
     sma_5 = close.rolling(5).mean().iloc[-1]
-    target_1 = float(sma_5) if pd.notna(sma_5) else close_price * 1.03
+    sma_5_val = float(sma_5) if pd.notna(sma_5) else close_price * 1.03
+    target_1 = max(sma_5_val, close_price + 1.0 * atr)
 
-    # Extended target: back to 10-day SMA
+    # Extended target: back to 10-day SMA with 1.5x ATR floor
     sma_10 = close.rolling(10).mean().iloc[-1]
-    target_2 = float(sma_10) if pd.notna(sma_10) else close_price * 1.05
+    sma_10_val = float(sma_10) if pd.notna(sma_10) else close_price * 1.05
+    target_2 = max(sma_10_val, close_price + 1.5 * atr)
 
-    # Tight stop: 1.5x ATR below current price
-    stop_loss = close_price - 1.5 * atr
+    # Tight stop: 1.0x ATR below current price (thesis invalidated quickly)
+    stop_loss = close_price - 1.0 * atr
 
     return MeanReversionSignal(
         ticker=ticker,
@@ -163,6 +165,6 @@ def score_mean_reversion(
         stop_loss=round(stop_loss, 2),
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
-        holding_period=5,  # short hold for mean reversion
+        holding_period=3,  # short hold for mean reversion (WR decays after day 3)
         components=scores,
     )
