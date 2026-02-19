@@ -6,7 +6,7 @@ Assesses how robust a signal is across:
 - Threshold sensitivity
 - Number of variants tested (multiple testing penalty)
 
-Also implements the 6 validation checks from docs/validation_contract.md
+Also implements the validation checks from docs/validation_contract.md
 as a pipeline gate (NoSilentPass rule: any failed check blocks picks).
 """
 
@@ -200,8 +200,10 @@ def run_validation_checks(
     feature_columns: list[str],
     validation_card: ValidationCard | None = None,
     slippage_bps: float = 10.0,
+    risk_reward_ratios: list[float] | None = None,
+    min_risk_reward: float = 1.0,
 ) -> ValidationPayload:
-    """Run the 6 validation checks from docs/validation_contract.md.
+    """Run validation checks from docs/validation_contract.md.
 
     Any single failure sets validation_status to 'fail', enforcing the
     NoSilentPass rule: failed validation blocks picks.
@@ -213,6 +215,8 @@ def run_validation_checks(
         feature_columns: Column names used in feature engineering.
         validation_card: Pre-computed fragility card for the signal model.
         slippage_bps: Slippage assumption in basis points.
+        risk_reward_ratios: Optional per-pick reward/risk values from current run.
+        min_risk_reward: Minimum acceptable reward/risk floor for new picks.
     """
     checks: dict[str, str] = {}
     key_risks: list[str] = []
@@ -310,6 +314,21 @@ def run_validation_checks(
     if not regime_survival_ok:
         key_risks.append(f"Positive in only {regimes_positive}/3 regimes (need 2)")
 
+    # ── Check 8: risk_reward_floor_check ──
+    rr_values = list(risk_reward_ratios or [])
+    if rr_values:
+        bad_rr = [rr for rr in rr_values if rr < min_risk_reward]
+        rr_ok = len(bad_rr) == 0
+    else:
+        bad_rr = []
+        rr_ok = True
+    checks["risk_reward_floor_check"] = _PASS if rr_ok else _FAIL
+    if not rr_ok:
+        key_risks.append(
+            f"Risk:reward below floor ({min_risk_reward:.2f}): "
+            f"{[round(rr, 2) for rr in bad_rr[:5]]}"
+        )
+
     # ── Aggregate ──
     all_passed = all(v == _PASS for v in checks.values())
     n_failed = sum(1 for v in checks.values() if v == _FAIL)
@@ -317,7 +336,7 @@ def run_validation_checks(
     if not all_passed:
         notes_parts.append(f"{n_failed}/{len(checks)} checks failed — NoSilentPass blocks picks")
     else:
-        notes_parts.append("All 7 validation checks passed")
+        notes_parts.append(f"All {len(checks)} validation checks passed")
 
     fragility_score = (
         validation_card.fragility_score / 100.0  # normalize 0-100 → 0-1

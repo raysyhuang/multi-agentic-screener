@@ -1000,12 +1000,35 @@ async def _run_pipeline_core(
     else:
         logger.info("No historical validation card (< 10 closed trades) — structural checks only")
 
+    # Current-run per-pick reward:risk ratios (used by NoSilentPass gate).
+    rr_values: list[float] = []
+    for p in pipeline_result.approved:
+        ep = float(getattr(p, "entry_price", 0) or 0)
+        sl = float(getattr(p, "stop_loss", 0) or 0)
+        t1 = float(getattr(p, "target_1", 0) or 0)
+        direction = str(getattr(p, "direction", "LONG") or "LONG").upper()
+
+        if ep <= 0 or sl <= 0 or t1 <= 0:
+            rr_values.append(0.0)
+            continue
+
+        if direction == "SHORT":
+            risk = sl - ep
+            reward = ep - t1
+        else:
+            risk = ep - sl
+            reward = t1 - ep
+
+        rr_values.append((reward / risk) if risk > 0 and reward > 0 else 0.0)
+
     validation_result = run_validation_checks(
         run_date=today,
         signal_dates=[today] * len(pipeline_result.approved),
         execution_dates=[next_business_day] * len(pipeline_result.approved),
         feature_columns=feature_cols,
         validation_card=hist_card,
+        risk_reward_ratios=rr_values,
+        min_risk_reward=1.0,
     )
 
     validation_envelope = StageEnvelope(

@@ -1,6 +1,6 @@
 """Tests for validation gate enforcement (NoSilentPass rule).
 
-Tests the 7 validation checks from docs/validation_contract.md:
+Tests the validation checks from docs/validation_contract.md:
 1. timestamp_integrity_check
 2. next_bar_execution_check
 3. future_data_guard_check
@@ -8,6 +8,7 @@ Tests the 7 validation checks from docs/validation_contract.md:
 5. threshold_sensitivity_check
 6. confidence_calibration_check
 7. regime_survival_check
+8. risk_reward_floor_check
 """
 
 from datetime import date, timedelta
@@ -298,3 +299,34 @@ def test_regime_survival_passes_insufficient_data():
         validation_card=card,
     )
     assert result.checks["regime_survival_check"] == "pass"
+
+
+# ── Check 8: risk_reward_floor ──
+
+
+def test_risk_reward_floor_fails_on_low_rr():
+    today = date(2025, 3, 15)
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=_make_card(),
+        risk_reward_ratios=[0.6, 1.2],
+        min_risk_reward=1.0,
+    )
+    assert result.checks["risk_reward_floor_check"] == "fail"
+    assert result.validation_status == "fail"
+    assert any("Risk:reward below floor" in r for r in result.key_risks)
+
+
+def test_risk_reward_floor_passes_when_not_provided():
+    today = date(2025, 3, 15)
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=_make_card(),
+    )
+    assert result.checks["risk_reward_floor_check"] == "pass"
