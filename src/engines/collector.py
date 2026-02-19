@@ -21,8 +21,10 @@ from src.engines.koocore_adapter import fetch_koocore
 
 logger = logging.getLogger(__name__)
 
-# Maximum age of engine run_date before it's considered stale
-_MAX_STALENESS_DAYS = 2
+# Maximum age of engine run_date before it's considered stale.
+# Kept intentionally strict because cross-engine synthesis should operate on
+# same-day or previous-trading-day data, not lagging multi-day payloads.
+_MAX_STALENESS_DAYS = 1
 
 # Map engine name -> settings attribute for URL
 _ENGINE_CONFIG = {
@@ -120,6 +122,41 @@ async def _fetch_with_custom_fallback(
         engine_name=engine_name,
         base_url=base_url,
         api_key=api_key,
+        timeout_s=timeout_s,
+    )
+
+
+async def _fetch_with_generic_then_custom(
+    session: aiohttp.ClientSession,
+    engine_name: str,
+    base_url: str,
+    api_key: str,
+    timeout_s: float,
+    custom_fetcher,
+) -> EngineResultPayload | None:
+    """Try generic endpoint first, then fall back to engine-specific adapter.
+
+    This avoids noisy legacy-path failures when an engine already exposes
+    a standardized `/api/engine/results` payload.
+    """
+    generic = await _fetch_engine(
+        session=session,
+        engine_name=engine_name,
+        base_url=base_url,
+        api_key=api_key,
+        timeout_s=timeout_s,
+    )
+    if generic is not None:
+        return generic
+
+    logger.warning(
+        "Engine %s generic endpoint unavailable; falling back to custom adapter",
+        engine_name,
+    )
+    return await custom_fetcher(
+        session,
+        base_url,
+        api_key,
         timeout_s=timeout_s,
     )
 
@@ -234,6 +271,7 @@ async def collect_engine_results() -> list[EngineResultPayload]:
     _CUSTOM_ADAPTERS = {
         "koocore_d": fetch_koocore,
     }
+    _PREFER_GENERIC_THEN_CUSTOM = {"koocore_d"}
 
     # Build tasks for configured engines only
     tasks: dict[str, asyncio.Task] = {}
@@ -245,16 +283,28 @@ async def collect_engine_results() -> list[EngineResultPayload]:
                 continue
 
             if engine_name in _CUSTOM_ADAPTERS:
-                tasks[engine_name] = asyncio.create_task(
-                    _fetch_with_custom_fallback(
-                        session=session,
-                        engine_name=engine_name,
-                        base_url=base_url,
-                        api_key=api_key,
-                        timeout_s=timeout_s,
-                        custom_fetcher=_CUSTOM_ADAPTERS[engine_name],
-                    ),
-                )
+                if engine_name in _PREFER_GENERIC_THEN_CUSTOM:
+                    tasks[engine_name] = asyncio.create_task(
+                        _fetch_with_generic_then_custom(
+                            session=session,
+                            engine_name=engine_name,
+                            base_url=base_url,
+                            api_key=api_key,
+                            timeout_s=timeout_s,
+                            custom_fetcher=_CUSTOM_ADAPTERS[engine_name],
+                        ),
+                    )
+                else:
+                    tasks[engine_name] = asyncio.create_task(
+                        _fetch_with_custom_fallback(
+                            session=session,
+                            engine_name=engine_name,
+                            base_url=base_url,
+                            api_key=api_key,
+                            timeout_s=timeout_s,
+                            custom_fetcher=_CUSTOM_ADAPTERS[engine_name],
+                        ),
+                    )
             else:
                 tasks[engine_name] = asyncio.create_task(
                     _fetch_engine(

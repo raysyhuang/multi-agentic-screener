@@ -290,6 +290,49 @@ def verify_cross_engine(
             f"Low engine coverage: only {engines_reporting} engine reporting."
         )
 
+    # 0b. Run-date coherence across engines
+    parsed_run_dates: dict[str, date] = {}
+    bad_run_date: list[str] = []
+    for er in engine_results:
+        name = er.get("engine_name", "unknown")
+        run_date_raw = er.get("run_date")
+        try:
+            parsed_run_dates[name] = date.fromisoformat(str(run_date_raw))
+        except Exception:
+            bad_run_date.append(f"{name}={run_date_raw}")
+
+    if bad_run_date:
+        checks.append(CheckResult(
+            name="run_date_parse",
+            passed=False,
+            detail=f"Unparseable run_date for {len(bad_run_date)} engines",
+            value=len(bad_run_date),
+        ))
+        warnings.append(f"Invalid engine run_date values: {', '.join(bad_run_date[:3])}")
+    elif len(parsed_run_dates) >= 2:
+        latest_run_date = max(parsed_run_dates.values())
+        lagging = [
+            f"{name}={rd.isoformat()}"
+            for name, rd in parsed_run_dates.items()
+            if _business_days_between(rd, latest_run_date) >= 1
+        ]
+        coherent = len(lagging) == 0
+        checks.append(CheckResult(
+            name="run_date_coherence",
+            passed=coherent,
+            detail=(
+                f"All engines aligned on {latest_run_date.isoformat()}"
+                if coherent else
+                f"{len(lagging)} engines lag latest run_date {latest_run_date.isoformat()}"
+            ),
+            value=len(lagging),
+        ))
+        if not coherent:
+            warnings.append(
+                "Run-date mismatch across engines: "
+                + "; ".join(lagging[:3])
+            )
+
     # 1. Regime consensus
     our_regime = _canonical_regime(regime_context.get("regime", "unknown"))
     engine_regimes = {}

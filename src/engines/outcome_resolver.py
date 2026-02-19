@@ -51,6 +51,8 @@ async def resolve_engine_outcomes() -> list[dict]:
 
         resolved_count = 0
         updates: list[dict] = []
+        no_price_count = 0
+        insufficient_bars_count = 0
 
         for outcome in unresolved:
             entry_date = outcome.run_date
@@ -59,12 +61,14 @@ async def resolve_engine_outcomes() -> list[dict]:
             prices = price_data.get(outcome.ticker)
             if not prices:
                 logger.warning("No price data for %s, skipping", outcome.ticker)
+                no_price_count += 1
                 continue
 
             # Resolve by available trading bars, not calendar days.
             # This avoids weekend/holiday bias in holding-period resolution.
             trading_bars = [p for p in prices if p["date"] > entry_date]
             if len(trading_bars) < hold_days:
+                insufficient_bars_count += 1
                 continue
 
             # Compute outcome using actual stop_loss from the pick
@@ -99,6 +103,14 @@ async def resolve_engine_outcomes() -> list[dict]:
         await session.commit()
 
     logger.info("Resolved %d engine pick outcomes", resolved_count)
+    if unresolved:
+        logger.info(
+            "Outcome resolver summary: unresolved=%d, resolved=%d, no_price=%d, insufficient_bars=%d",
+            len(unresolved),
+            resolved_count,
+            no_price_count,
+            insufficient_bars_count,
+        )
 
     # Generate per-engine feedback
     feedback = _generate_feedback(updates)
