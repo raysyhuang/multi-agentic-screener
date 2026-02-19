@@ -263,7 +263,7 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
         warnings.append(f"duplicate price tuples across tickers: {sample}")
 
     # 9. Optional quality hint: all picks have empty score metadata
-    if payload.picks and all(
+    if engine_name == "koocore_d" and payload.picks and all(
         not ((p.metadata or {}).get("scores"))
         for p in payload.picks
     ):
