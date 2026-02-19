@@ -2063,39 +2063,61 @@ async def run_evening_collection() -> None:
     """
     import uuid
 
-    today = _trading_date_et()
+    requested_date = _trading_date_et()
+    context_date = requested_date
     settings = get_settings()
     run_id = f"eve-{uuid.uuid4().hex[:8]}"
 
     logger.info("=" * 60)
-    logger.info("Starting evening cross-engine collection for %s (run_id=%s)", today, run_id)
+    logger.info(
+        "Starting evening cross-engine collection for %s (run_id=%s)",
+        requested_date,
+        run_id,
+    )
     logger.info("=" * 60)
 
     if not settings.cross_engine_enabled:
         logger.info("Cross-engine integration disabled, nothing to do")
         return
 
-    # Fetch today's screener picks from the DB (from this morning's run)
+    # Fetch screener context from DB. If requested date has no morning run yet
+    # (for example manual trigger after midnight ET), fall back to latest prior
+    # run_date so synthesis stays aligned with a real pipeline cycle.
     screener_picks: list[dict] = []
     regime_context: dict = {"regime": "unknown", "confidence": 0.0, "vix": None}
     try:
         async with get_session() as session:
-            # Get the latest DailyRun for today to extract regime info
+            # Get the latest DailyRun for the requested date.
             daily_run_result = await session.execute(
-                select(DailyRun).where(DailyRun.run_date == today)
+                select(DailyRun).where(DailyRun.run_date == requested_date)
                 .order_by(DailyRun.id.desc()).limit(1)
             )
             daily_run = daily_run_result.scalar_one_or_none()
+            if not daily_run:
+                fallback_daily_run_result = await session.execute(
+                    select(DailyRun)
+                    .where(DailyRun.run_date <= requested_date)
+                    .order_by(DailyRun.run_date.desc(), DailyRun.id.desc())
+                    .limit(1)
+                )
+                daily_run = fallback_daily_run_result.scalar_one_or_none()
+                if daily_run:
+                    context_date = daily_run.run_date
+                    logger.warning(
+                        "No morning run for requested date %s; using fallback context date %s",
+                        requested_date,
+                        context_date,
+                    )
             if daily_run and daily_run.regime:
                 regime_context["regime"] = daily_run.regime
                 if daily_run.regime_details:
                     regime_context["confidence"] = daily_run.regime_details.get("confidence", 0.0)
                     regime_context["vix"] = daily_run.regime_details.get("vix")
 
-            # Get today's approved picks from the final output artifact
+            # Get approved picks from the aligned context date.
             artifact_result = await session.execute(
                 select(PipelineArtifact).where(
-                    PipelineArtifact.run_date == today,
+                    PipelineArtifact.run_date == context_date,
                     PipelineArtifact.stage == StageName.FINAL_OUTPUT.value,
                 ).order_by(PipelineArtifact.id.desc()).limit(1)
             )
@@ -2120,26 +2142,30 @@ async def run_evening_collection() -> None:
     if regime_context["regime"] == "unknown" or not screener_picks:
         logger.warning(
             "Evening collection running with incomplete morning context: "
-            "regime=%s, screener_picks=%d. "
+            "requested_date=%s, context_date=%s, regime=%s, screener_picks=%d. "
             "Morning pipeline may not have run or failed today. "
             "Cross-engine synthesis will proceed with external engines only.",
-            regime_context["regime"], len(screener_picks),
+            requested_date, context_date, regime_context["regime"], len(screener_picks),
         )
     else:
         logger.info(
-            "Evening collection context: regime=%s, %d screener picks from morning run",
-            regime_context["regime"], len(screener_picks),
+            "Evening collection context: requested_date=%s, context_date=%s, regime=%s, %d screener picks",
+            requested_date, context_date, regime_context["regime"], len(screener_picks),
         )
 
     await _run_cross_engine_steps(
-        today=today,
+        today=context_date,
         run_id=run_id,
         regime_context=regime_context,
         screener_picks=screener_picks,
         settings=settings,
     )
 
-    logger.info("Evening cross-engine collection complete for %s", today)
+    logger.info(
+        "Evening cross-engine collection complete for requested_date=%s (context_date=%s)",
+        requested_date,
+        context_date,
+    )
 
 
 def start_scheduler() -> None:
