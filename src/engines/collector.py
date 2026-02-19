@@ -91,6 +91,37 @@ async def _fetch_engine(
     return None
 
 
+async def _fetch_with_custom_fallback(
+    session: aiohttp.ClientSession,
+    engine_name: str,
+    base_url: str,
+    api_key: str,
+    timeout_s: float,
+    custom_fetcher,
+) -> EngineResultPayload | None:
+    """Try engine-specific adapter first, then generic endpoint fallback."""
+    result = await custom_fetcher(
+        session,
+        base_url,
+        api_key,
+        timeout_s=timeout_s,
+    )
+    if result is not None:
+        return result
+
+    logger.warning(
+        "Engine %s custom adapter returned no data; trying generic results endpoint",
+        engine_name,
+    )
+    return await _fetch_engine(
+        session=session,
+        engine_name=engine_name,
+        base_url=base_url,
+        api_key=api_key,
+        timeout_s=timeout_s,
+    )
+
+
 def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) -> list[str]:
     """Check an engine payload for signs of stale, mock, or degenerate data.
 
@@ -213,9 +244,14 @@ async def collect_engine_results() -> list[EngineResultPayload]:
 
             if engine_name in _CUSTOM_ADAPTERS:
                 tasks[engine_name] = asyncio.create_task(
-                    _CUSTOM_ADAPTERS[engine_name](
-                        session, base_url, api_key, timeout_s=timeout_s,
-                    )
+                    _fetch_with_custom_fallback(
+                        session=session,
+                        engine_name=engine_name,
+                        base_url=base_url,
+                        api_key=api_key,
+                        timeout_s=timeout_s,
+                        custom_fetcher=_CUSTOM_ADAPTERS[engine_name],
+                    ),
                 )
             else:
                 tasks[engine_name] = asyncio.create_task(
