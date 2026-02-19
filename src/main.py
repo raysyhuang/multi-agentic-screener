@@ -1600,7 +1600,7 @@ async def _run_cross_engine_steps(
                     ))
             return
 
-        # Store raw results in DB (upsert to handle same-day re-runs)
+        # Store raw results in DB (true upsert for same-day re-runs)
         async with get_session() as session:
             for er in engine_results:
                 try:
@@ -1612,31 +1612,73 @@ async def _run_cross_engine_steps(
                     )
                     engine_run_date = today
 
-                # Check if already stored today (re-run safety)
+                # Check for existing result row for this engine/date.
                 existing = await session.execute(
                     select(ExternalEngineResult).where(
                         ExternalEngineResult.engine_name == er.engine_name,
                         ExternalEngineResult.run_date == engine_run_date,
                     )
                 )
-                if existing.scalar_one_or_none():
-                    logger.info(
-                        "Engine %s already stored for %s, skipping",
-                        er.engine_name, engine_run_date,
+                existing_row = existing.scalar_one_or_none()
+
+                # Upsert metadata row.
+                if existing_row:
+                    existing_row.status = er.status
+                    existing_row.regime = er.regime
+                    existing_row.picks_count = len(er.picks)
+                    existing_row.payload = _json_safe(er.model_dump())
+                else:
+                    session.add(ExternalEngineResult(
+                        engine_name=er.engine_name,
+                        run_date=engine_run_date,
+                        status=er.status,
+                        regime=er.regime,
+                        picks_count=len(er.picks),
+                        payload=_json_safe(er.model_dump()),
+                    ))
+
+                # Upsert per-pick outcomes for this engine/date.
+                # If any outcomes are already resolved, preserve them for historical integrity.
+                existing_pick_rows = (
+                    await session.execute(
+                        select(EnginePickOutcome).where(
+                            EnginePickOutcome.engine_name == er.engine_name,
+                            EnginePickOutcome.run_date == engine_run_date,
+                        )
+                    )
+                ).scalars().all()
+                resolved_rows = sum(1 for row in existing_pick_rows if row.outcome_resolved)
+                if resolved_rows > 0:
+                    logger.warning(
+                        "Engine %s rerun for %s has %d resolved pick outcomes; "
+                        "preserving existing outcomes and skipping pick refresh",
+                        er.engine_name,
+                        engine_run_date,
+                        resolved_rows,
                     )
                     continue
 
-                session.add(ExternalEngineResult(
-                    engine_name=er.engine_name,
-                    run_date=engine_run_date,
-                    status=er.status,
-                    regime=er.regime,
-                    picks_count=len(er.picks),
-                    payload=_json_safe(er.model_dump()),
-                ))
+                if existing_pick_rows:
+                    await session.execute(
+                        delete(EnginePickOutcome).where(
+                            EnginePickOutcome.engine_name == er.engine_name,
+                            EnginePickOutcome.run_date == engine_run_date,
+                        )
+                    )
 
-                # Store individual picks for outcome tracking
+                seen_tickers: set[str] = set()
                 for pick in er.picks:
+                    ticker_key = str(pick.ticker).upper()
+                    if ticker_key in seen_tickers:
+                        logger.warning(
+                            "Engine %s returned duplicate ticker %s for %s; "
+                            "keeping first occurrence only",
+                            er.engine_name,
+                            ticker_key,
+                            engine_run_date,
+                        )
+                        continue
+                    seen_tickers.add(ticker_key)
                     session.add(EnginePickOutcome(
                         engine_name=er.engine_name,
                         run_date=engine_run_date,
