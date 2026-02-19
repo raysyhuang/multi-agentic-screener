@@ -1907,6 +1907,22 @@ async def _run_cross_engine_steps(
                     "All candidate positions are blocked until risk state improves."
                 )
             else:
+                # Reconcile narrative with executed portfolio after guardian sizing.
+                original_total_weight = sum(float(p.get("weight_pct", 0.0)) for p in original_portfolio)
+                adjusted_total_weight = sum(float(p.get("weight_pct", 0.0)) for p in adjusted_portfolio)
+                changed = (
+                    len(original_portfolio) != len(adjusted_portfolio)
+                    or round(original_total_weight, 2) != round(adjusted_total_weight, 2)
+                )
+                if changed:
+                    tickers = ", ".join(
+                        f"{p['ticker']} ({p.get('weight_pct', 0):.2f}%)"
+                        for p in adjusted_portfolio
+                    ) if adjusted_portfolio else "none"
+                    synthesis.executive_summary = (
+                        f"Guardian-adjusted allocation: {len(adjusted_portfolio)} positions, "
+                        f"{adjusted_total_weight:.1f}% gross exposure. Active names: {tickers}."
+                    )
                 logger.info(
                     "Step 13.5 complete: sizing=%.0f%%, %d→%d positions, warnings=%d",
                     guardian_verdict.sizing_multiplier * 100,
