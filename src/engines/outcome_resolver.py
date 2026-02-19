@@ -11,6 +11,8 @@ For each engine's unresolved picks:
 from __future__ import annotations
 
 import logging
+import os
+import tempfile
 from datetime import date
 
 import pandas as pd
@@ -162,6 +164,51 @@ def _get_col(row, name: str) -> float:
     raise KeyError(f"Column '{name}' not found in {list(row.index)}")
 
 
+def _set_yfinance_cache_dir() -> None:
+    """Isolate yfinance sqlite cache files to reduce lock contention."""
+    try:
+        cache_dir = tempfile.mkdtemp(prefix=f"py-yfinance-{os.getpid()}-", dir="/tmp")
+        yf.set_tz_cache_location(cache_dir)
+    except Exception:
+        # Best effort only; yfinance still works without explicit cache path.
+        pass
+
+
+def _prices_from_df(df: pd.DataFrame, ticker: str) -> list[dict]:
+    """Convert a yfinance OHLCV frame into normalized price dicts."""
+    prices: list[dict] = []
+    for idx, row in df.iterrows():
+        try:
+            prices.append({
+                "date": idx.date() if hasattr(idx, "date") else idx,
+                "close": _get_col(row, "Close"),
+                "high": _get_col(row, "High"),
+                "low": _get_col(row, "Low"),
+            })
+        except KeyError as e:
+            logger.warning("Missing column for %s on %s: %s", ticker, idx, e)
+    return prices
+
+
+def _download_single_ticker(ticker: str) -> list[dict]:
+    """Single-ticker fallback path used when batch download is partial or fails."""
+    try:
+        _set_yfinance_cache_dir()
+        df = yf.download(
+            ticker,
+            period="60d",
+            progress=False,
+            auto_adjust=True,
+            threads=False,
+        )
+        if df.empty:
+            return []
+        return _prices_from_df(df, ticker)
+    except Exception as e:
+        logger.warning("Fallback single-ticker download failed for %s: %s", ticker, e)
+        return []
+
+
 def _fetch_prices_batch(tickers: list[str]) -> dict[str, list[dict]]:
     """Fetch price history for multiple tickers using yfinance.
 
@@ -175,10 +222,7 @@ def _fetch_prices_batch(tickers: list[str]) -> dict[str, list[dict]]:
 
     try:
         # Avoid yfinance cache lock contention on ephemeral dyno filesystems.
-        try:
-            yf.set_tz_cache_location("/tmp/py-yfinance")
-        except Exception:
-            pass
+        _set_yfinance_cache_dir()
 
         # Fetch 60 days of data to cover any holding period
         data = yf.download(
@@ -191,31 +235,35 @@ def _fetch_prices_batch(tickers: list[str]) -> dict[str, list[dict]]:
         if data.empty:
             return result
 
+        missing_tickers: list[str] = []
         for ticker in tickers:
             try:
                 df = _extract_ticker_df(data, ticker, single_ticker)
                 if df is None or df.empty:
-                    logger.warning("No data extracted for %s", ticker)
+                    missing_tickers.append(ticker)
                     continue
 
-                prices = []
-                for idx, row in df.iterrows():
-                    try:
-                        prices.append({
-                            "date": idx.date() if hasattr(idx, "date") else idx,
-                            "close": _get_col(row, "Close"),
-                            "high": _get_col(row, "High"),
-                            "low": _get_col(row, "Low"),
-                        })
-                    except KeyError as e:
-                        logger.warning("Missing column for %s on %s: %s", ticker, idx, e)
-                        continue
+                prices = _prices_from_df(df, ticker)
+                if not prices:
+                    missing_tickers.append(ticker)
+                    continue
                 result[ticker] = prices
             except Exception as e:
                 logger.warning("Failed to extract prices for %s: %s", ticker, e)
+                missing_tickers.append(ticker)
+
+        # Recover from partial yfinance failures (common under transient locks).
+        for ticker in missing_tickers:
+            prices = _download_single_ticker(ticker)
+            if prices:
+                result[ticker] = prices
 
     except Exception as e:
         logger.warning("yfinance batch download failed: %s", e)
+        for ticker in tickers:
+            prices = _download_single_ticker(ticker)
+            if prices:
+                result[ticker] = prices
 
     return result
 

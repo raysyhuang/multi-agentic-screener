@@ -7,6 +7,7 @@ market regime. Acts as a verification layer before final synthesis.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 
@@ -101,41 +102,53 @@ class CrossEngineVerifierAgent(BaseAgent):
             regime_context=regime_context,
         )
 
-        try:
-            llm_result = await call_llm(
-                model=self.model,
-                system_prompt=SYSTEM_PROMPT,
-                user_prompt=user_prompt,
-                max_tokens=3000,
-                temperature=0.2,
-            )
-            self._store_meta(llm_result)
-
-            content = llm_result.get("content")
-            if isinstance(content, dict):
-                output = VerifierOutput.model_validate(content)
-            else:
-                logger.warning("Verifier returned non-dict response, using empty output")
-                output = VerifierOutput(
-                    verified_picks=[],
-                    summary="Verifier failed to produce structured output",
+        last_error: Exception | None = None
+        for attempt in range(2):
+            try:
+                llm_result = await call_llm(
+                    model=self.model,
+                    system_prompt=SYSTEM_PROMPT,
+                    user_prompt=user_prompt,
+                    max_tokens=3000,
+                    temperature=0.2,
                 )
+                self._store_meta(llm_result)
 
-            logger.info(
-                "Cross-engine verifier: %d verified picks, %d red flags, cost=$%.4f",
-                len(output.verified_picks),
-                len(output.red_flags),
-                llm_result.get("cost_usd", 0),
-            )
-            return output
+                content = llm_result.get("content")
+                if isinstance(content, dict):
+                    output = VerifierOutput.model_validate(content)
+                else:
+                    logger.warning("Verifier returned non-dict response, using empty output")
+                    output = VerifierOutput(
+                        verified_picks=[],
+                        summary="Verifier failed to produce structured output",
+                    )
 
-        except Exception as e:
-            logger.error("Cross-engine verifier failed: %s", e)
-            # Fail-open: return all picks as-is without verification
-            return VerifierOutput(
-                verified_picks=[],
-                summary=f"Verification skipped due to error: {e}",
-            )
+                logger.info(
+                    "Cross-engine verifier: %d verified picks, %d red flags, cost=$%.4f",
+                    len(output.verified_picks),
+                    len(output.red_flags),
+                    llm_result.get("cost_usd", 0),
+                )
+                return output
+
+            except Exception as e:
+                last_error = e
+                if attempt == 0:
+                    logger.warning(
+                        "Cross-engine verifier attempt %d failed: %s; retrying once",
+                        attempt + 1,
+                        e,
+                    )
+                    await asyncio.sleep(1)
+                    continue
+                logger.exception("Cross-engine verifier failed after retry")
+
+        # Fail-open: return all picks as-is without verification
+        return VerifierOutput(
+            verified_picks=[],
+            summary=f"Verification skipped due to error: {last_error}",
+        )
 
     def _build_user_prompt(
         self,

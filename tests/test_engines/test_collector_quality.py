@@ -70,3 +70,32 @@ def test_quality_flags_missing_target_price():
 def test_missing_target_is_critical_quality_issue():
     warnings = ["1 picks missing target_price: ['AAPL']"]
     assert _is_critical_quality_issue(warnings) is True
+
+
+def test_quality_flags_duplicate_price_tuples_as_critical():
+    p = _payload(
+        candidates_screened=12,
+        picks=[
+            {
+                "ticker": "UAMY",
+                "strategy": "swing",
+                "entry_price": 8.54,
+                "stop_loss": 8.11,
+                "target_price": 9.39,
+                "confidence": 30.0,
+                "holding_period_days": 14,
+            },
+            {
+                "ticker": "AFCG",
+                "strategy": "swing",
+                "entry_price": 8.54,
+                "stop_loss": 8.11,
+                "target_price": 9.39,
+                "confidence": 29.5,
+                "holding_period_days": 14,
+            },
+        ],
+    )
+    warnings = _validate_payload_quality("koocore_d", p)
+    assert any("duplicate price tuples across tickers" in w for w in warnings)
+    assert _is_critical_quality_issue(warnings) is True

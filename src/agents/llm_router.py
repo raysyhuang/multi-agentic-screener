@@ -125,7 +125,15 @@ async def _call_anthropic(
             f"(model={model})"
         ) from e
 
-    content = response.content[0].text
+    # Some Anthropic responses may include non-text blocks; extract text safely.
+    content = "\n".join(
+        b.text.strip()
+        for b in response.content
+        if getattr(b, "type", "") == "text" and getattr(b, "text", "").strip()
+    )
+    if not content:
+        block_types = [getattr(b, "type", type(b).__name__) for b in response.content]
+        raise ValueError(f"Anthropic response contained no text blocks: {block_types}")
     # Try to parse as JSON
     parsed = _try_parse_json(content)
 

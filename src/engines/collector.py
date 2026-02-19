@@ -240,6 +240,35 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
             f"{len(missing_target)} picks missing target_price: {missing_target[:5]}"
         )
 
+    # 8. Duplicate full risk tuples across different tickers (data-mapping smell)
+    tuple_to_tickers: dict[tuple[float, float, float], list[str]] = {}
+    for p in payload.picks:
+        key = (
+            round(float(p.entry_price), 2),
+            round(float(p.stop_loss or 0), 2),
+            round(float(p.target_price or 0), 2),
+        )
+        tuple_to_tickers.setdefault(key, []).append(p.ticker)
+
+    duplicate_tuples = [
+        (k, v) for k, v in tuple_to_tickers.items() if len(set(v)) > 1
+    ]
+    if duplicate_tuples:
+        sample = [
+            f"{tickers}->{prices}"
+            for prices, tickers in [
+                (t[0], t[1][:5]) for t in duplicate_tuples[:3]
+            ]
+        ]
+        warnings.append(f"duplicate price tuples across tickers: {sample}")
+
+    # 9. Optional quality hint: all picks have empty score metadata
+    if payload.picks and all(
+        not ((p.metadata or {}).get("scores"))
+        for p in payload.picks
+    ):
+        warnings.append("all picks have empty metadata.scores")
+
     return warnings
 
 
@@ -253,6 +282,7 @@ def _is_critical_quality_issue(warnings: list[str]) -> bool:
         or w.startswith("zero candidates screened and zero picks")
         or "missing stop_loss" in w
         or "missing target_price" in w
+        or "duplicate price tuples across tickers" in w
         for w in warnings
     )
 
