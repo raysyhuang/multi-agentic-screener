@@ -97,6 +97,7 @@ class DailyPickRecord:
     engine_picks: dict[str, list[NormalizedPick]]  # engine_name -> picks
     synthesis_eq: list[SynthesisPick]  # equal-weight synthesis
     synthesis_cred: list[SynthesisPick]  # credibility-weight synthesis
+    synthesis_regime_gated: list[SynthesisPick] = field(default_factory=list)  # regime-weighted
 
 
 @dataclass
@@ -124,6 +125,7 @@ def run_portfolio_simulation(
         "gemini_stst": TrackResult("gemini_stst", [], [], []),
         "eq_synth": TrackResult("eq_synth", [], [], []),
         "cred_synth": TrackResult("cred_synth", [], [], []),
+        "regime_gated": TrackResult("regime_gated", [], [], []),
         "spy_benchmark": TrackResult("spy_benchmark", [], [], []),
     }
 
@@ -145,6 +147,14 @@ def run_portfolio_simulation(
     _simulate_synthesis_track(
         "cred_synth", daily_records, price_data, config, tracks["cred_synth"],
         use_eq=False,
+    )
+
+    # Regime-gated synthesis track (eq picks + regime strategy weighting)
+    _simulate_synthesis_track(
+        "regime_gated", daily_records, price_data, config,
+        tracks["regime_gated"],
+        use_eq=True,
+        use_regime_gated=True,
     )
 
     # Confidence-sized synthesis track (uses eq picks, scales PnL by confidence)
@@ -249,6 +259,7 @@ def _simulate_synthesis_track(
     track: TrackResult,
     use_eq: bool,
     confidence_sizing: bool = False,
+    use_regime_gated: bool = False,
 ) -> None:
     """Simulate trades from synthesis picks with position management."""
     open_positions: dict[str, _OpenPosition] = {}
@@ -256,7 +267,10 @@ def _simulate_synthesis_track(
     for record in daily_records:
         _expire_positions(open_positions, record.screen_date)
 
-        synth_picks = record.synthesis_eq if use_eq else record.synthesis_cred
+        if use_regime_gated and record.synthesis_regime_gated:
+            synth_picks = record.synthesis_regime_gated
+        else:
+            synth_picks = record.synthesis_eq if use_eq else record.synthesis_cred
         for sp in synth_picks:
             if sp.ticker in open_positions:
                 continue

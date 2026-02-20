@@ -443,18 +443,42 @@
             ? ' <span class="guardian-adjusted-tag">\u21E9 adj</span>'
             : '';
 
+          // Strategy tags & signal count
+          var stratTags = pos.strategy_tags || pos.strategies || [];
+          var effSignals = pos.effective_signal_count || 0;
+          var regimeWt = pos.regime_weight || null;
+
+          var stratHtml = '';
+          if (Array.isArray(stratTags) && stratTags.length > 0) {
+            stratHtml = '<div class="strategy-tags-row">';
+            stratTags.forEach(function (tag) {
+              var cls = tag.indexOf('kc_') === 0 ? 'tag-kc' : (tag.indexOf('gem_') === 0 ? 'tag-gem' : 'tag-other');
+              stratHtml += '<span class="strategy-tag ' + cls + '">' + escapeHtml(tag) + '</span>';
+            });
+            stratHtml += '</div>';
+          }
+
+          var signalInfo = '';
+          if (effSignals > 0) {
+            signalInfo = fmt(effSignals, 1) + ' signals';
+          }
+          var regimeInfo = regimeWt ? ' \u2022 regime ' + fmt(regimeWt, 2) + 'x' : '';
+
           html += '<div class="portfolio-card">' +
             '<div class="portfolio-card-header">' +
               '<span class="portfolio-ticker">' + escapeHtml(ticker) + adjTag + '</span>' +
               '<span class="portfolio-weight">' + fmt(weight, 0) + '%</span>' +
             '</div>' +
+            stratHtml +
             '<div class="portfolio-detail">' +
               '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Entry</div><div class="portfolio-detail-value">$' + fmt(entry) + '</div></div>' +
               '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Target</div><div class="portfolio-detail-value positive">+' + fmt(rewardPct, 1) + '%</div></div>' +
               '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Risk</div><div class="portfolio-detail-value negative">' + fmt(riskPct, 1) + '%</div></div>' +
             '</div>' +
             '<div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-muted)">' +
-              'Stop $' + fmt(stop) + ' \u2022 ' + hold + 'd hold \u2022 ' + escapeHtml(source) +
+              (signalInfo ? signalInfo + ' \u2022 ' : '') +
+              'Stop $' + fmt(stop) + ' \u2022 ' + hold + 'd hold' + regimeInfo +
+              (source ? ' \u2022 ' + escapeHtml(source) : '') +
             '</div>' +
           '</div>';
         });

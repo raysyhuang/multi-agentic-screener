@@ -151,18 +151,18 @@ outputs_30d:
 attention_pool:
   # Minimum relative volume to enter attention pool
   rvol_min: 1.8
-  
+
   # Minimum ATR% to enter attention pool
   atr_pct_min: 3.5
-  
+
   # Minimum absolute day move (%)
   min_abs_day_move_pct: 3.0
-  
+
   # Lookback for attention pool calculation
   lookback_days: 120
-  
-  # Batch size for processing
-  chunk_size: 200
+
+  # Batch size for processing (raised from 200 for ALL_ACTIVE universe)
+  chunk_size: 500
   
   # Intraday mode settings
   enable_intraday: false
@@ -341,7 +341,7 @@ runtime:
   # Polygon.io settings (requires POLYGON_API_KEY env var)
   polygon_primary: true
   polygon_fallback: true
-  polygon_max_workers: 8
+  polygon_max_workers: 16
   polygon_intraday: false
   polygon_intraday_interval: 5
   polygon_intraday_lookback_days: 5

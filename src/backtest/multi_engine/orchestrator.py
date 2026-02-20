@@ -34,8 +34,10 @@ from src.backtest.multi_engine.regime_tracker import classify_regime_for_date
 from src.backtest.multi_engine.synthesizer import (
     RollingCredibilityTracker,
     SynthesisConfig,
+    SynthesisPick,
     synthesize_picks,
 )
+from src.engines.regime_gate import apply_regime_strategy_gate
 from src.backtest.multi_engine.portfolio_sim import (
     DailyPickRecord,
     PortfolioConfig,
@@ -310,12 +312,16 @@ async def run_multi_engine_backtest(
             regime=regime_label,
         )
 
+        # Regime-gated synthesis: apply strategy weighting + bear blocking
+        synth_regime_gated = _apply_regime_gate_to_synthesis(synth_eq, regime_label)
+
         daily_records.append(DailyPickRecord(
             screen_date=day,
             regime=regime_label,
             engine_picks=engine_picks,
             synthesis_eq=synth_eq,
             synthesis_cred=synth_cred,
+            synthesis_regime_gated=synth_regime_gated,
         ))
 
         # Feed resolved outcomes from previous days into credibility tracker.
@@ -375,6 +381,56 @@ async def run_multi_engine_backtest(
     )
 
     return report
+
+
+# ── Regime gating for backtest A/B ────────────────────────────────────
+
+
+def _apply_regime_gate_to_synthesis(
+    synth_picks: list[SynthesisPick],
+    regime: str,
+) -> list[SynthesisPick]:
+    """Apply regime strategy gate to synthesized picks for backtest comparison.
+
+    Converts SynthesisPick → dict, applies the gate, then maps back to
+    SynthesisPick with updated scores.
+    """
+    if not synth_picks:
+        return []
+
+    pick_dicts = []
+    for sp in synth_picks:
+        d = sp.to_dict()
+        d["strategy_tags"] = sp.strategies
+        pick_dicts.append(d)
+
+    gated, _meta = apply_regime_strategy_gate(pick_dicts, regime=regime)
+
+    result: list[SynthesisPick] = []
+    for gd in gated:
+        ticker = gd["ticker"]
+        # Find the original SynthesisPick for non-score fields
+        original = next((sp for sp in synth_picks if sp.ticker == ticker), None)
+        if original is None:
+            continue
+        result.append(SynthesisPick(
+            ticker=ticker,
+            combined_score=gd.get("combined_score", original.combined_score),
+            avg_weighted_confidence=gd.get("avg_weighted_confidence", original.avg_weighted_confidence),
+            convergence_multiplier=original.convergence_multiplier,
+            diversity_multiplier=original.diversity_multiplier,
+            engine_count=original.engine_count,
+            engines=original.engines,
+            strategies=original.strategies,
+            entry_price=original.entry_price,
+            stop_loss=original.stop_loss,
+            target_price=original.target_price,
+            holding_period_days=original.holding_period_days,
+            direction=original.direction,
+            source_picks=original.source_picks,
+        ))
+
+    return result
 
 
 # ── Credibility feedback ──────────────────────────────────────────────────

@@ -141,15 +141,13 @@ def _map_hybrid_to_payload(hybrid: dict, run_date: str, duration: float | None =
             },
         ))
 
-    # Include additional weighted_picks not already in top3
-    top3_tickers = {p.ticker for p in picks}
+    # Include ALL weighted_picks not already in top3 (no score threshold or cap)
+    seen_tickers = {p.ticker for p in picks}
     for item in weighted_picks:
         ticker = item.get("ticker", "")
-        if ticker in top3_tickers:
+        if not ticker or ticker in seen_tickers:
             continue
         composite_score = item.get("hybrid_score", 0)
-        if composite_score < 3:
-            break
         sources = item.get("sources", [])
         risk_pct, reward_pct, strategy = _risk_profile_from_sources(sources)
         entry_price = float(item.get("current_price") or 0)
@@ -175,8 +173,60 @@ def _map_hybrid_to_payload(hybrid: dict, run_date: str, duration: float | None =
                 "strategies": strat_tags,
             },
         ))
-        if len(picks) >= 10:
-            break
+        seen_tickers.add(ticker)
+
+    # Include primary_top5 (weekly/swing LLM-ranked picks) not already captured
+    for item in hybrid.get("primary_top5", []):
+        ticker = item.get("ticker", "")
+        if not ticker or ticker in seen_tickers:
+            continue
+        composite_score = item.get("composite_score", 0)
+        entry_price = float(item.get("current_price") or 0)
+        if entry_price <= 0:
+            continue
+        confidence = min(max(composite_score * 10, 0), 100)
+        picks.append(EnginePick(
+            ticker=ticker,
+            strategy="swing",
+            entry_price=entry_price,
+            stop_loss=round(entry_price * 0.94, 2),
+            target_price=round(entry_price * 1.10, 2),
+            confidence=round(confidence, 1),
+            holding_period_days=10,
+            thesis=item.get("confidence"),
+            risk_factors=[],
+            raw_score=composite_score,
+            metadata={
+                "sources": ["primary"],
+                "rank": item.get("rank"),
+                "scores": _build_scores_metadata(item, composite_score),
+                "strategies": ["kc_weekly"],
+            },
+        ))
+        seen_tickers.add(ticker)
+
+    # Include pro30_tickers not already captured (minimal metadata)
+    for ticker in hybrid.get("pro30_tickers", []):
+        if not ticker or ticker in seen_tickers:
+            continue
+        picks.append(EnginePick(
+            ticker=ticker,
+            strategy="breakout",
+            entry_price=0,
+            stop_loss=None,
+            target_price=None,
+            confidence=40.0,
+            holding_period_days=14,
+            thesis=None,
+            risk_factors=[],
+            raw_score=2.0,
+            metadata={
+                "sources": ["pro30"],
+                "scores": {"pro30_candidate": 1.0},
+                "strategies": ["kc_pro30"],
+            },
+        ))
+        seen_tickers.add(ticker)
 
     summary = hybrid.get("summary", {})
     total_screened = (
