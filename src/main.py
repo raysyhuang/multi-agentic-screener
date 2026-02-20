@@ -1585,6 +1585,7 @@ async def _run_cross_engine_steps(
         compute_credibility_snapshot,
         compute_weighted_picks,
     )
+    from src.engines.regime_gate import apply_regime_strategy_gate
     from src.engines.outcome_resolver import resolve_engine_outcomes
     from src.agents.cross_engine_verifier import CrossEngineVerifierAgent
     from src.agents.cross_engine_synthesizer import CrossEngineSynthesizerAgent
@@ -1932,6 +1933,23 @@ async def _run_cross_engine_steps(
 
         # Compute weighted picks AFTER verifier adjustments are applied
         weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
+        weighted_picks, gate_meta = apply_regime_strategy_gate(
+            weighted_picks=weighted_picks,
+            regime=regime_context.get("regime", "unknown"),
+            settings=settings,
+        )
+        if gate_meta.get("applied"):
+            logger.info(
+                "Step 11.5 regime strategy gate applied: regime=%s, dropped=%d, penalized=%d",
+                gate_meta.get("regime"),
+                gate_meta.get("dropped", 0),
+                gate_meta.get("penalized", 0),
+            )
+            if gate_meta.get("dropped_tickers"):
+                logger.warning(
+                    "Step 11.5 dropped bear-regime-incompatible tickers: %s",
+                    gate_meta["dropped_tickers"][:5],
+                )
         logger.info("Weighted picks computed: %d tickers ranked", len(weighted_picks))
 
         cred_weights_dict = {

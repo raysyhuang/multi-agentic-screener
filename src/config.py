@@ -142,6 +142,12 @@ class Settings(BaseSettings):
     low_overlap_max_positions: int = 3
     low_overlap_max_total_weight_pct: float = 30.0
 
+    # --- Regime Strategy Gate ---
+    regime_strategy_gate_enabled: bool = True
+    regime_gate_bear_blocked_strategies: str = "momentum"
+    regime_gate_bear_penalized_strategies: str = "breakout,swing"
+    regime_gate_bear_penalty_multiplier: float = 0.65
+
     @model_validator(mode="after")
     def _validate_model_names(self) -> "Settings":
         """Warn on unrecognized model names at startup."""
