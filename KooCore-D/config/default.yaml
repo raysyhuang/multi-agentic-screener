@@ -8,8 +8,9 @@
 # Universe Settings
 # -----------------------------------------------------------------------------
 universe:
-  # Mode options: "SP500", "SP500+NASDAQ100", "SP500+NASDAQ100+R2000"
-  mode: "SP500+NASDAQ100+R2000"
+  # Mode options: "SP500", "SP500+NASDAQ100", "SP500+NASDAQ100+R2000", "ALL_ACTIVE"
+  # ALL_ACTIVE fetches every active NYSE/NASDAQ stock from Polygon (~5000-8000 tickers)
+  mode: "ALL_ACTIVE"
   
   # Cache settings for universe tickers
   cache_file: "universe_cache.csv"

@@ -109,6 +109,80 @@ def get_nasdaq100_universe() -> list[str]:
         return []
 
 
+def get_all_active_universe() -> list[str]:
+    """Fetch all active NYSE/NASDAQ common stocks from Polygon reference API.
+
+    Uses alphabetical range pagination (same approach as Gemini STST) to stay
+    under the Starter-plan ~1 000-result cap per query.  Returns ~5 000-8 000
+    tickers — the full tradeable US equity universe.
+
+    Requires POLYGON_API_KEY environment variable.
+    """
+    import requests  # pyright: ignore[reportMissingModuleSource]
+
+    api_key = os.environ.get("POLYGON_API_KEY", "")
+    if not api_key:
+        print("[WARN] ALL_ACTIVE mode requires POLYGON_API_KEY; falling back to index mode.")
+        return []
+
+    # MIC code → exchange short name
+    exchange_map: dict[str, str] = {
+        "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
+        "ARCX": "NYSE", "BATS": "NASDAQ",
+        "XNGS": "NASDAQ", "XNCM": "NASDAQ", "XNMS": "NASDAQ",
+    }
+
+    # Alphabet ranges to stay under ~1000-result cap per query
+    ticker_ranges: list[tuple[str, str | None]] = [
+        ("0", "A"),
+        ("A", "D"), ("D", "G"), ("G", "J"), ("J", "M"),
+        ("M", "P"), ("P", "S"), ("S", "V"), ("V", None),
+    ]
+
+    base_url = "https://api.polygon.io/v3/reference/tickers"
+    all_tickers: list[str] = []
+    seen: set[str] = set()
+
+    for gte, lt in ticker_ranges:
+        url = (
+            f"{base_url}?type=CS&market=stocks&active=true&limit=1000"
+            f"&ticker.gte={gte}&apiKey={api_key}"
+        )
+        if lt:
+            url += f"&ticker.lt={lt}"
+
+        while url:
+            try:
+                resp = requests.get(url, timeout=15)
+                if resp.status_code != 200:
+                    print(f"[WARN] Polygon ticker fetch ({gte}-{lt}) HTTP {resp.status_code}")
+                    break
+                data = resp.json()
+            except Exception as e:
+                print(f"[WARN] Polygon ticker fetch ({gte}-{lt}) failed: {e}")
+                break
+
+            for t in data.get("results", []):
+                exchange = exchange_map.get(t.get("primary_exchange", ""))
+                if exchange not in ("NYSE", "NASDAQ"):
+                    continue
+                sym = normalize_ticker_for_yahoo(t.get("ticker", ""))
+                if sym and sym not in seen:
+                    seen.add(sym)
+                    all_tickers.append(sym)
+
+            next_url = data.get("next_url")
+            url = f"{next_url}&apiKey={api_key}" if next_url else None
+
+    if len(all_tickers) >= 2000:
+        print(f"[INFO] ALL_ACTIVE universe: {len(all_tickers)} NYSE/NASDAQ tickers from Polygon")
+        return sorted(all_tickers)
+
+    # Safety: if we got too few, the API may be having issues
+    print(f"[WARN] ALL_ACTIVE fetched only {len(all_tickers)} tickers (expected >2000); discarding.")
+    return []
+
+
 def get_russell2000_universe() -> list[str]:
     """
     Best-effort Russell 2000 universe via iShares IWM holdings CSV.
@@ -250,34 +324,56 @@ def build_universe(
 ) -> list[str]:
     """
     Build ticker universe based on mode and optional manual includes.
-    
+
     Args:
-        mode: Universe mode ("SP500", "SP500+NASDAQ100", "SP500+NASDAQ100+R2000")
+        mode: Universe mode ("SP500", "SP500+NASDAQ100", "SP500+NASDAQ100+R2000",
+              "ALL_ACTIVE")
         cache_file: Optional cache file path (auto-generated if None based on mode)
         cache_max_age_days: Maximum age for cache to be valid
         manual_include_file: Optional path to manual include tickers file
         r2000_include_file: Optional path to R2000 tickers file
         manual_include_mode: "ALWAYS" or "ONLY_IF_IN_UNIVERSE"
-    
+
     Returns:
         Sorted list of unique ticker symbols
     """
     mode = mode.upper()
-    
+
     # Compute cache filename if not provided
     if cache_file is None:
         cache_file = f"universe_cache_{mode.replace('+', '_')}.csv"
-    
+
     # Try cache first
     cached = load_universe_from_cache(cache_file, cache_max_age_days)
     if cached:
         base_tickers = cached
+    elif mode == "ALL_ACTIVE":
+        # Fetch every active NYSE/NASDAQ common stock from Polygon
+        base_tickers = get_all_active_universe()
+
+        # If Polygon fetch fails, fall back to index-based approach
+        if not base_tickers:
+            print("[INFO] ALL_ACTIVE failed; falling back to SP500+NASDAQ100+R2000.")
+            sp = get_sp500_universe()
+            n100 = get_nasdaq100_universe()
+            r2k = get_russell2000_universe()
+            base_tickers = sorted(set(sp + n100 + r2k))
+
+        # Fallback to stale cache if everything fails
+        if not base_tickers and cache_file and os.path.exists(cache_file):
+            stale = load_universe_from_cache(cache_file, max_age_days=None)
+            if stale:
+                print("[WARN] Universe fetch failed; using stale cache.")
+                base_tickers = stale
+
+        if base_tickers:
+            save_universe_to_cache(base_tickers, cache_file)
     else:
-        # Build from sources
+        # Build from index sources
         sp = get_sp500_universe()
         n100 = get_nasdaq100_universe() if "NASDAQ100" in mode else []
         r2k = get_russell2000_universe() if "R2000" in mode else []
-        
+
         # Warn if R2000 fetch failed when it was requested, and fallback to local file if present
         if not r2k and "R2000" in mode:
             print("[WARN] Russell 2000 fetch failed; proceeding with SP500 + NASDAQ100 only.")
@@ -288,16 +384,16 @@ def build_universe(
                     print(f"[INFO] Loaded Russell 2000 fallback from {r2000_include_file} ({len(r2k)} tickers)")
                 else:
                     print("[WARN] Russell 2000 fallback file empty or missing.")
-        
+
         base_tickers = sorted(set(sp + n100 + r2k))
-        
+
         # Fallback to stale cache if live fetch fails
         if not base_tickers and cache_file and os.path.exists(cache_file):
             stale = load_universe_from_cache(cache_file, max_age_days=None)
             if stale:
                 print("[WARN] Universe fetch failed; using stale cache.")
                 base_tickers = stale
-        
+
         # Save to cache
         if base_tickers:
             save_universe_to_cache(base_tickers, cache_file)
