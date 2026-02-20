@@ -1,0 +1,58 @@
+# Python cache
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# macOS
+.DS_Store
+
+# IDE
+.vscode/
+.idea/
+*.swp
+*.swo
+
+# Outputs (optional - uncomment if you don't want to track outputs)
+# outputs/
+
+# Cache files
+*.cache
+universe_cache.csv
+universe_cache_*.csv
+data/prices.db
+
+# Runtime state (DO NOT COMMIT - environment-specific, constantly changing)
+data/*.db
+data/outcomes.db
+data/price_cache.db
+data/memory/
+data/positions/
+data/signal_history.json
+data/bad_tickers.json
+data/processed/
+
+# Processing artifacts (logs, intermediate files)
+outputs/*.log
+outputs/logs/
+scan_output.log
+
+# Jupyter Notebook checkpoints
+.ipynb_checkpoints/
+
+# Environment
+venv/
+env/
+.venv/
+
+# Secrets - NEVER commit these
+.env
+.env.*
+*.key
+credentials.json
+
+# Archive
+project.zip
+
+# Dashboard (separate repo: KooCore-D-Dashboard)
+dashboard/

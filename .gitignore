@@ -35,3 +35,25 @@ htmlcov/
 
 # Claude Code
 .claude/
+
+# Sub-engine data/outputs (regenerated at runtime)
+KooCore-D/data/
+KooCore-D/outputs/
+KooCore-D/.git/
+Gemini STST/venv/
+
+# Screenshots & temp images
+*.png
+
+# Playwright MCP logs
+.playwright-mcp/
+
+# Backtest result cache
+backtest_results/
+
+# SQLite WAL/SHM
+*.sqlite-wal
+*.sqlite-shm
+
+# Debug outputs
+outputs/

@@ -1,0 +1,167 @@
+name: Daily Screening Run
+
+on:
+  schedule:
+    # Weekdays at 22:45 UTC / 5:45 PM ET (after market close)
+    # Runs after slower engines start; fast trigger (~5 min), done well before 9:30 PM ET collection
+    - cron: "45 22 * * 1-5"
+  workflow_dispatch:
+
+env:
+  PYTHON_VERSION: "3.12"
+
+concurrency:
+  group: daily-run
+  cancel-in-progress: true
+
+jobs:
+  run:
+    name: Trigger daily pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 25
+    steps:
+      - name: Trigger pipeline on Heroku
+        env:
+          GEMINI_HEROKU_URL: ${{ secrets.GEMINI_HEROKU_URL }}
+          ENGINE_API_KEY: ${{ secrets.ENGINE_API_KEY }}
+        run: |
+          if [ -z "${GEMINI_HEROKU_URL}" ]; then
+            echo "Error: GEMINI_HEROKU_URL not set"
+            exit 1
+          fi
+
+          echo "Triggering pipeline run on Heroku..."
+          ATTEMPTS=3
+          SLEEP_S=10
+          SUCCESS=0
+
+          for i in $(seq 1 ${ATTEMPTS}); do
+            RESPONSE=$(curl -s -w "\n%{http_code}" -X POST \
+              "${GEMINI_HEROKU_URL}/api/pipeline/run" \
+              -H "Content-Type: application/json" \
+              -H "X-Engine-Key: ${ENGINE_API_KEY}" \
+              --max-time 300)
+
+            HTTP_CODE=$(echo "$RESPONSE" | tail -1)
+            BODY=$(echo "$RESPONSE" | head -n -1)
+            echo "Attempt ${i}/${ATTEMPTS} response (HTTP ${HTTP_CODE}): ${BODY}"
+
+            if [ "$HTTP_CODE" = "202" ] || [ "$HTTP_CODE" = "200" ]; then
+              SUCCESS=1
+              echo "Pipeline trigger accepted (HTTP ${HTTP_CODE})"
+              break
+            fi
+
+            if [ "$i" -lt "${ATTEMPTS}" ]; then
+              echo "Trigger attempt ${i} failed; retrying in ${SLEEP_S}s..."
+              sleep "${SLEEP_S}"
+            fi
+          done
+
+          if [ "${SUCCESS}" -ne 1 ]; then
+            echo "Pipeline trigger failed after ${ATTEMPTS} attempts"
+            exit 1
+          fi
+
+      - name: Wait for pipeline to settle
+        env:
+          GEMINI_HEROKU_URL: ${{ secrets.GEMINI_HEROKU_URL }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          import time
+          from urllib.request import urlopen
+
+          base = os.environ["GEMINI_HEROKU_URL"].rstrip("/")
+          deadline = time.time() + 20 * 60  # 20 minutes
+
+          while time.time() < deadline:
+              with urlopen(f"{base}/api/pipeline/status", timeout=30) as resp:
+                  status = json.loads(resp.read().decode("utf-8"))
+
+              state = str(status.get("status", "unknown"))
+              run_id = status.get("run_id")
+              print(f"pipeline_status={state} run_id={run_id}")
+
+              if state == "failed":
+                  raise SystemExit(f"Pipeline failed: {status.get('error')}")
+              if state in {"succeeded", "idle"}:
+                  break
+
+              time.sleep(30)
+          else:
+              raise SystemExit("Timed out waiting for pipeline status to settle")
+          PY
+
+      - name: Verify engine results freshness and shape
+        env:
+          GEMINI_HEROKU_URL: ${{ secrets.GEMINI_HEROKU_URL }}
+        run: |
+          python - <<'PY'
+          import json
+          import os
+          from datetime import date, timedelta
+          from urllib.request import urlopen
+
+          base = os.environ["GEMINI_HEROKU_URL"].rstrip("/")
+          with urlopen(f"{base}/api/engine/results", timeout=30) as resp:
+              payload = json.loads(resp.read().decode("utf-8"))
+
+          if payload.get("engine_name") != "gemini_stst":
+              raise SystemExit(f"Unexpected engine_name: {payload.get('engine_name')}")
+
+          if str(payload.get("status", "")).lower() not in {"success", "ok"}:
+              raise SystemExit(f"Non-success status: {payload.get('status')}")
+
+          run_date_raw = payload.get("run_date")
+          try:
+              run_date = date.fromisoformat(str(run_date_raw))
+          except Exception:
+              raise SystemExit(f"Invalid run_date: {run_date_raw}")
+
+          def business_days_between(start: date, end: date) -> int:
+              if start >= end:
+                  return 0
+              count = 0
+              d = start + timedelta(days=1)
+              while d <= end:
+                  if d.weekday() < 5:
+                      count += 1
+                  d += timedelta(days=1)
+              return count
+
+          lag_bd = business_days_between(run_date, date.today())
+          if lag_bd > 2:
+              raise SystemExit(
+                  f"Stale run_date: {run_date.isoformat()} ({lag_bd} business days old)"
+              )
+
+          screened = int(payload.get("candidates_screened", 0) or 0)
+          if screened <= 0:
+              raise SystemExit("Invalid candidates_screened: expected > 0")
+
+          picks = payload.get("picks") or []
+          missing_risk = []
+          missing_scores = []
+          for p in picks:
+              ticker = p.get("ticker", "?")
+              entry = float(p.get("entry_price") or 0)
+              stop = float(p.get("stop_loss") or 0)
+              target = float(p.get("target_price") or 0)
+              if entry <= 0 or stop <= 0 or target <= 0:
+                  missing_risk.append(ticker)
+              scores = ((p.get("metadata") or {}).get("scores") or {})
+              if not scores:
+                  missing_scores.append(ticker)
+
+          if missing_risk:
+              raise SystemExit(f"Picks missing valid risk fields: {missing_risk[:5]}")
+          if missing_scores:
+              raise SystemExit(f"Picks missing metadata.scores: {missing_scores[:5]}")
+
+          print(
+              "Engine results verified: "
+              f"run_date={run_date.isoformat()} candidates={screened} picks={len(picks)}"
+          )
+          PY
