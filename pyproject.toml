@@ -90,6 +90,7 @@ skip_empty = true
 [tool.ruff]
 target-version = "py312"
 line-length = 100
+exclude = ["KooCore-D", "Gemini STST"]
 
 [tool.ruff.lint]
 # E712: SQLAlchemy requires `== False`/`== True` for column comparisons (not `is`)
