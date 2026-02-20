@@ -1,7 +1,19 @@
+from datetime import date, datetime, timezone
+
 import pytest
 
 from src.contracts import EngineResultPayload
 from src.engines import collector
+
+
+def _fresh_run_date() -> str:
+    """Return today's date as ISO string so payloads are never stale."""
+    return date.today().isoformat()
+
+
+def _fresh_run_timestamp() -> str:
+    """Return a recent UTC timestamp string."""
+    return datetime.now(timezone.utc).isoformat()
 
 
 @pytest.mark.asyncio
@@ -16,8 +28,8 @@ async def test_koocore_falls_back_to_generic_endpoint(monkeypatch):
     payload = EngineResultPayload.model_validate({
         "engine_name": "koocore_d",
         "engine_version": "2.0",
-        "run_date": "2026-02-18",
-        "run_timestamp": "2026-02-19T03:00:00Z",
+        "run_date": _fresh_run_date(),
+        "run_timestamp": _fresh_run_timestamp(),
         "regime": None,
         "status": "success",
         "candidates_screened": 12,
@@ -49,11 +61,14 @@ async def test_koocore_falls_back_when_custom_payload_is_degenerate(monkeypatch)
         gemini_api_url = ""
         top3_api_url = ""
 
+    run_date = _fresh_run_date()
+    run_ts = _fresh_run_timestamp()
+
     degenerate = EngineResultPayload.model_validate({
         "engine_name": "koocore_d",
         "engine_version": "2.0",
-        "run_date": "2026-02-18",
-        "run_timestamp": "2026-02-19T03:00:00Z",
+        "run_date": run_date,
+        "run_timestamp": run_ts,
         "regime": None,
         "status": "success",
         "candidates_screened": 0,
@@ -63,8 +78,8 @@ async def test_koocore_falls_back_when_custom_payload_is_degenerate(monkeypatch)
     generic = EngineResultPayload.model_validate({
         "engine_name": "koocore_d",
         "engine_version": "2.0",
-        "run_date": "2026-02-18",
-        "run_timestamp": "2026-02-19T03:01:00Z",
+        "run_date": run_date,
+        "run_timestamp": run_ts,
         "regime": None,
         "status": "success",
         "candidates_screened": 6,

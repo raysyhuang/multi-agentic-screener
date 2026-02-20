@@ -329,6 +329,20 @@ class TestCompositeScore:
         if card is not None and card.hard_invalidation:
             assert card.state == HealthState.EXIT
 
+    @pytest.mark.asyncio
+    async def test_date_column_as_python_date_is_supported(self):
+        """Health card should handle DataFrames whose date column is datetime.date."""
+        df = _make_df(60, "up")
+        df["date"] = pd.to_datetime(df["date"]).dt.date
+        outcome = _make_outcome()
+        signal = _make_signal(regime="bull")
+
+        card = await compute_health_card(
+            outcome, signal, df,
+            current_regime="bull",
+        )
+        assert card is not None
+
 
 # ── Hard Invalidation Tests ────────────────────────────────────────────────
 

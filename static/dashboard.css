@@ -853,3 +853,42 @@ body {
     padding-right: calc(1.5rem + env(safe-area-inset-right));
   }
 }
+
+/* Backtest tab */
+.backtest-select {
+  width: 100%;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid var(--card-border);
+  border-radius: 10px;
+  background: var(--card-bg);
+  color: var(--text);
+  font-size: 0.85rem;
+  font-family: inherit;
+  cursor: pointer;
+  margin-bottom: 1rem;
+}
+
+.backtest-select:focus {
+  outline: 2px solid var(--teal-500);
+  outline-offset: -1px;
+}
+
+.chart-legend {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 1rem;
+  margin-bottom: 0.75rem;
+  font-size: 0.75rem;
+}
+
+.chart-legend-item {
+  display: flex;
+  align-items: center;
+  gap: 0.35rem;
+}
+
+.chart-legend-swatch {
+  width: 16px;
+  height: 3px;
+  border-radius: 2px;
+}

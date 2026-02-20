@@ -139,7 +139,9 @@ async def compute_health_card(
     # Excursion tracking
     if "date" in df.columns:
         entry_ts = pd.Timestamp(outcome.entry_date)
-        since_entry = df[df["date"] >= entry_ts]
+        # Normalize mixed date/Timestamp columns before comparison.
+        date_series = pd.to_datetime(df["date"], errors="coerce")
+        since_entry = df[date_series >= entry_ts]
     else:
         since_entry = df
     max_price = float(since_entry["high"].max()) if not since_entry.empty else current_price
