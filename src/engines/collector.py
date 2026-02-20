@@ -10,7 +10,7 @@ from __future__ import annotations
 import asyncio
 import logging
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 
 import aiohttp
 from pydantic import ValidationError
@@ -21,11 +21,10 @@ from src.engines.koocore_adapter import fetch_koocore
 
 logger = logging.getLogger(__name__)
 
-# Maximum age of engine run_date before it's considered stale.
-# Set to 2 to tolerate weekends and external API lag (engines may not
-# update daily).  Cross-engine synthesis still prefers same-day data but
-# won't discard a payload that's only 1-2 days behind.
-_MAX_STALENESS_DAYS = 2
+# Maximum age of engine run_date in *trading days* before it's considered stale.
+# Using trading days instead of calendar days avoids rejecting Friday data on
+# Monday (which is 3 calendar days but only 1 trading day).
+_MAX_STALENESS_TRADING_DAYS = 2
 
 # Map engine name -> settings attribute for URL
 _ENGINE_CONFIG = {
@@ -162,6 +161,20 @@ async def _fetch_with_generic_then_custom(
     )
 
 
+def _trading_days_between(start: date, end: date) -> int:
+    """Count weekday (Mon-Fri) days between two dates, exclusive of start."""
+    if start >= end:
+        return 0
+    count = 0
+    current = start
+    one_day = timedelta(days=1)
+    while current < end:
+        current += one_day
+        if current.weekday() < 5:  # Mon=0 … Fri=4
+            count += 1
+    return count
+
+
 def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) -> list[str]:
     """Check an engine payload for signs of stale, mock, or degenerate data.
 
@@ -174,12 +187,15 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     if status not in {"success", "ok"}:
         warnings.append(f"non-success status={payload.status}")
 
-    # 1. Stale run_date
+    # 1. Stale run_date (trading-day aware)
     try:
         run_date = datetime.strptime(payload.run_date, "%Y-%m-%d").date()
-        staleness = (date.today() - run_date).days
-        if staleness > _MAX_STALENESS_DAYS:
-            warnings.append(f"stale run_date ({payload.run_date}, {staleness}d old)")
+        trading_days = _trading_days_between(run_date, date.today())
+        if trading_days > _MAX_STALENESS_TRADING_DAYS:
+            calendar_days = (date.today() - run_date).days
+            warnings.append(
+                f"stale run_date ({payload.run_date}, {calendar_days}d / {trading_days} trading days old)"
+            )
     except ValueError:
         warnings.append(f"unparseable run_date: {payload.run_date}")
 
