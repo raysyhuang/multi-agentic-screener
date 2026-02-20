@@ -205,28 +205,10 @@ def _map_hybrid_to_payload(hybrid: dict, run_date: str, duration: float | None =
         ))
         seen_tickers.add(ticker)
 
-    # Include pro30_tickers not already captured (minimal metadata)
-    for ticker in hybrid.get("pro30_tickers", []):
-        if not ticker or ticker in seen_tickers:
-            continue
-        picks.append(EnginePick(
-            ticker=ticker,
-            strategy="breakout",
-            entry_price=0,
-            stop_loss=None,
-            target_price=None,
-            confidence=40.0,
-            holding_period_days=14,
-            thesis=None,
-            risk_factors=[],
-            raw_score=2.0,
-            metadata={
-                "sources": ["pro30"],
-                "scores": {"pro30_candidate": 1.0},
-                "strategies": ["kc_pro30"],
-            },
-        ))
-        seen_tickers.add(ticker)
+    # NOTE: pro30_tickers are excluded from picks because they lack price data
+    # (entry_price=0, no stop/target), which triggers the collector's quality
+    # validation and rejects the entire engine payload.  They are counted in
+    # candidates_screened for informational purposes only.
 
     summary = hybrid.get("summary", {})
     total_screened = (

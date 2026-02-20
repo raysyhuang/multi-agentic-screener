@@ -267,7 +267,8 @@ def _simulate_synthesis_track(
     for record in daily_records:
         _expire_positions(open_positions, record.screen_date)
 
-        if use_regime_gated and record.synthesis_regime_gated:
+        if use_regime_gated:
+            # When regime gate blocks all picks, skip the day (don't fall back)
             synth_picks = record.synthesis_regime_gated
         else:
             synth_picks = record.synthesis_eq if use_eq else record.synthesis_cred

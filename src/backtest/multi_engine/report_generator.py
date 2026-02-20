@@ -73,6 +73,14 @@ def generate_report(
         ),
     }
 
+    # Regime-gated synthesis track
+    if "regime_gated" in track_results:
+        report["synthesis"]["regime_gated"] = _build_track_summary(
+            track_results["regime_gated"],
+            daily_records,
+            "regime_gated",
+        )
+
     # Confidence-sized synthesis track (if present)
     if "sized_synth" in track_results:
         report["synthesis"]["sized_synth"] = _build_track_summary(
@@ -212,7 +220,7 @@ def _build_cross_engine(
     """Build cross-engine comparison section."""
     # Head-to-head table
     head_to_head = []
-    synth_tracks = ["eq_synth", "cred_synth"]
+    synth_tracks = ["eq_synth", "cred_synth", "regime_gated"]
     if "sized_synth" in track_results:
         synth_tracks.append("sized_synth")
     for name in engine_names + synth_tracks:
@@ -321,7 +329,7 @@ def _statistical_tests(
         return [{"note": "scipy not available for statistical tests"}]
 
     results = []
-    all_names = engine_names + ["eq_synth", "cred_synth"]
+    all_names = engine_names + ["eq_synth", "cred_synth", "regime_gated"]
 
     for i, a in enumerate(all_names):
         for j, b in enumerate(all_names):
