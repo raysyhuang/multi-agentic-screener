@@ -22,9 +22,10 @@ from src.engines.koocore_adapter import fetch_koocore
 logger = logging.getLogger(__name__)
 
 # Maximum age of engine run_date before it's considered stale.
-# Kept intentionally strict because cross-engine synthesis should operate on
-# same-day or previous-trading-day data, not lagging multi-day payloads.
-_MAX_STALENESS_DAYS = 1
+# Set to 2 to tolerate weekends and external API lag (engines may not
+# update daily).  Cross-engine synthesis still prefers same-day data but
+# won't discard a payload that's only 1-2 days behind.
+_MAX_STALENESS_DAYS = 2
 
 # Map engine name -> settings attribute for URL
 _ENGINE_CONFIG = {
