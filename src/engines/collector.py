@@ -1,5 +1,9 @@
 """Engine Collector — fetches results from all external engines in parallel.
 
+Supports two modes controlled by ``engine_run_mode`` setting:
+  - ``"local"``: runs KooCore-D and Gemini STST in-process (default)
+  - ``"http"``: fetches from remote Heroku apps (legacy)
+
 Fail-open per engine: one engine being down does not block the others.
 Returns a list of validated EngineResultPayload objects.
 Quality validation rejects stale, degenerate, or mock-looking data.
@@ -26,11 +30,10 @@ logger = logging.getLogger(__name__)
 # Monday (which is 3 calendar days but only 1 trading day).
 _MAX_STALENESS_TRADING_DAYS = 2
 
-# Map engine name -> settings attribute for URL
+# Map engine name -> settings attribute for URL (HTTP mode only)
 _ENGINE_CONFIG = {
     "koocore_d": "koocore_api_url",
     "gemini_stst": "gemini_api_url",
-    "top3_7d": "top3_api_url",
 }
 
 
@@ -304,12 +307,44 @@ def _is_critical_quality_issue(warnings: list[str]) -> bool:
     )
 
 
-async def collect_engine_results() -> list[EngineResultPayload]:
-    """Fetch results from all configured external engines in parallel.
+async def _collect_local() -> list[EngineResultPayload]:
+    """Run engines locally in parallel and return validated payloads."""
+    from src.engines.koocore_runner import run_koocore_locally
+    from src.engines.gemini_runner import run_gemini_locally
 
-    Returns only the engines that responded successfully with valid payloads.
-    Payloads are quality-validated; those with critical issues are rejected.
-    """
+    logger.info("Collecting engine results in LOCAL mode")
+
+    tasks = {
+        "koocore_d": asyncio.create_task(run_koocore_locally()),
+        "gemini_stst": asyncio.create_task(run_gemini_locally()),
+    }
+
+    results = await asyncio.gather(*tasks.values(), return_exceptions=True)
+
+    payloads: list[EngineResultPayload] = []
+    for engine_name, result in zip(tasks.keys(), results):
+        if isinstance(result, Exception):
+            logger.warning("Engine %s local run raised exception: %s", engine_name, result)
+        elif result is not None:
+            quality_warnings = _validate_payload_quality(engine_name, result)
+            if quality_warnings:
+                has_critical = _is_critical_quality_issue(quality_warnings)
+                for w in quality_warnings:
+                    logger.warning("Engine %s quality issue: %s", engine_name, w)
+                if has_critical:
+                    logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
+                    continue
+            payloads.append(result)
+
+    logger.info(
+        "Local engine collection complete: %d/%d engines passed quality checks",
+        len(payloads), len(tasks),
+    )
+    return payloads
+
+
+async def _collect_http() -> list[EngineResultPayload]:
+    """Fetch results from remote engines via HTTP (legacy mode)."""
     settings = get_settings()
     api_key = settings.engine_api_key
     timeout_s = settings.engine_fetch_timeout_s
@@ -387,3 +422,19 @@ async def collect_engine_results() -> list[EngineResultPayload]:
         len(payloads), len(tasks),
     )
     return payloads
+
+
+async def collect_engine_results() -> list[EngineResultPayload]:
+    """Collect results from all engines in parallel.
+
+    Mode is controlled by ``engine_run_mode`` setting:
+      - ``"local"`` (default): runs engines in-process
+      - ``"http"``: fetches from remote Heroku apps
+    """
+    settings = get_settings()
+    mode = (settings.engine_run_mode or "local").strip().lower()
+
+    if mode == "local":
+        return await _collect_local()
+    else:
+        return await _collect_http()

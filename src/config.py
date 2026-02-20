@@ -106,8 +106,12 @@ class Settings(BaseSettings):
     # --- External Engine URLs ---
     koocore_api_url: str = ""
     gemini_api_url: str = ""
-    top3_api_url: str = ""
+    top3_api_url: str = ""  # Deprecated: kept for backward compat
     engine_api_key: str = ""
+
+    # --- Local Engine Runners ---
+    engine_run_mode: str = "local"  # "local" (run in-process) or "http" (legacy remote fetch)
+    koocore_config_path: str = "KooCore-D/config/default.yaml"
 
     # --- Cross-Engine System ---
     cross_engine_enabled: bool = True

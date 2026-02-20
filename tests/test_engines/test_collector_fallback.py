@@ -21,6 +21,7 @@ async def test_koocore_falls_back_to_generic_endpoint(monkeypatch):
     class _Settings:
         engine_api_key = ""
         engine_fetch_timeout_s = 5
+        engine_run_mode = "http"
         koocore_api_url = "https://koocore.example"
         gemini_api_url = ""
         top3_api_url = ""
@@ -57,6 +58,7 @@ async def test_koocore_falls_back_when_custom_payload_is_degenerate(monkeypatch)
     class _Settings:
         engine_api_key = ""
         engine_fetch_timeout_s = 5
+        engine_run_mode = "http"
         koocore_api_url = "https://koocore.example"
         gemini_api_url = ""
         top3_api_url = ""

@@ -219,13 +219,41 @@ def compute_convergence_multiplier(engine_count: int) -> float:
     return settings.convergence_1_engine_multiplier
 
 
+def _collect_strategy_tags(picks: list[dict]) -> list[str]:
+    """Collect all unique strategy tags from picks' metadata.strategies."""
+    tags: list[str] = []
+    for pick in picks:
+        meta = pick.get("metadata") or {}
+        pick_tags = meta.get("strategies", [])
+        if isinstance(pick_tags, list):
+            tags.extend(pick_tags)
+    return tags
+
+
+def _compute_effective_signal_count(
+    cross_engine_count: int,
+    all_strategy_tags: list[str],
+) -> float:
+    """Compute effective signal count giving partial credit for same-engine extras.
+
+    Cross-engine agreement counts as full signals. Additional unique strategy
+    tags from the same engine (e.g. kc_weekly + kc_pro30 both from KooCore-D)
+    count at 0.5 each.
+    """
+    unique_tags = set(all_strategy_tags)
+    independent_count = len(unique_tags)
+    same_engine_extras = max(0, independent_count - cross_engine_count)
+    return cross_engine_count + (same_engine_extras * 0.5)
+
+
 def compute_weighted_picks(
     all_picks: list[dict],
     engine_stats: dict[str, EngineStats],
 ) -> list[dict]:
     """Compute weighted conviction scores for picks across engines.
 
-    Groups picks by ticker, applies engine weights and convergence multipliers.
+    Groups picks by ticker, applies engine weights, convergence multipliers,
+    and strategy-level convergence scoring.
     Returns sorted list of weighted picks (highest conviction first).
     """
     settings = get_settings()
@@ -249,6 +277,13 @@ def compute_weighted_picks(
 
         engine_count = len(deduped_picks)
         convergence_mult = compute_convergence_multiplier(engine_count)
+
+        # Collect strategy tags across all picks for this ticker
+        all_strategy_tags = _collect_strategy_tags(ticker_picks)
+        independent_signal_count = len(set(all_strategy_tags))
+        effective_signal_count = _compute_effective_signal_count(
+            engine_count, all_strategy_tags,
+        )
 
         # Compute weighted confidence
         total_weighted_conf = 0.0
@@ -295,6 +330,9 @@ def compute_weighted_picks(
             "engine_count": engine_count,
             "engines": engines_agreeing,
             "strategies": strategies,
+            "strategy_tags": sorted(set(all_strategy_tags)),
+            "independent_signal_count": independent_signal_count,
+            "effective_signal_count": round(effective_signal_count, 1),
             "entry_price": best_pick.get("entry_price"),
             "stop_loss": best_pick.get("stop_loss"),
             "target_price": best_pick.get("target_price"),

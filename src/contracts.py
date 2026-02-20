@@ -287,7 +287,13 @@ class HealthCardConfig(StrictModel):
 
 
 class EnginePick(StrictModel):
-    """A single pick from an external engine."""
+    """A single pick from an external engine.
+
+    Convention: ``metadata["strategies"]`` is a ``list[str]`` of contributing
+    sub-strategy tags (e.g. ``["kc_weekly", "kc_pro30"]`` or
+    ``["gem_momentum_breakout", "gem_options_bullish"]``).  This is used by
+    the credibility tracker for strategy-level convergence scoring.
+    """
 
     ticker: str
     strategy: str  # "breakout", "mean_reversion", "swing", "momentum", "top3_gate", etc.

@@ -1,4 +1,11 @@
-"""Deterministic regime-aware strategy gate for weighted cross-engine picks."""
+"""Deterministic regime-aware strategy gate for weighted cross-engine picks.
+
+Two layers:
+1. Bear-regime blocking/penalty (existing) — hard-blocks pure momentum, penalizes
+   breakout/swing unless paired with a protective strategy.
+2. Proactive regime-strategy weighting (new) — multiplies combined_score by a
+   regime-dependent weight per strategy category, applied in all regimes.
+"""
 
 from __future__ import annotations
 
@@ -7,6 +14,33 @@ from typing import Any
 from src.config import get_settings
 
 _PROTECTIVE_STRATEGIES = {"mean_reversion", "defensive", "value"}
+
+# ---------------------------------------------------------------------------
+# Proactive regime-strategy weight tables
+# ---------------------------------------------------------------------------
+# Keys are normalized strategy keywords matched against pick strategies.
+# Weights > 1.0 boost, < 1.0 penalize.  Default weight = 1.0 for unlisted.
+
+_REGIME_STRATEGY_WEIGHTS: dict[str, dict[str, float]] = {
+    "bull": {
+        "breakout": 1.20,
+        "momentum": 1.15,
+        "swing": 1.10,
+        "mean_reversion": 0.85,
+    },
+    "bear": {
+        "mean_reversion": 1.25,
+        "defensive": 1.20,
+        "breakout": 0.65,
+        "momentum": 0.60,
+    },
+    "choppy": {
+        "mean_reversion": 1.10,
+        "swing": 0.95,
+        "momentum": 0.90,
+        "breakout": 0.85,
+    },
+}
 
 
 def _norm_strategy(value: str) -> str:
@@ -56,8 +90,17 @@ def apply_regime_strategy_gate(
         return [], gate_meta
     if not getattr(cfg, "regime_strategy_gate_enabled", True):
         return [dict(p) for p in weighted_picks], gate_meta
+
+    # Non-bear regimes skip blocking/penalty but still get proactive weighting
     if regime_label != "bear":
-        return [dict(p) for p in weighted_picks], gate_meta
+        filtered = [dict(p) for p in weighted_picks]
+        weight_table = _REGIME_STRATEGY_WEIGHTS.get(regime_label, {})
+        if weight_table:
+            filtered = _apply_regime_weights(filtered, weight_table)
+            gate_meta["regime_weights_applied"] = True
+        else:
+            gate_meta["regime_weights_applied"] = False
+        return filtered, gate_meta
 
     blocked = _csv_to_set(
         getattr(cfg, "regime_gate_bear_blocked_strategies", "momentum"),
@@ -106,4 +149,41 @@ def apply_regime_strategy_gate(
         filtered.append(dict(pick))
 
     filtered.sort(key=lambda p: float(p.get("combined_score", 0.0)), reverse=True)
+
+    # --- Proactive regime-strategy weighting (all regimes) ---
+    weight_table = _REGIME_STRATEGY_WEIGHTS.get(regime_label, {})
+    if weight_table:
+        filtered = _apply_regime_weights(filtered, weight_table)
+        gate_meta["regime_weights_applied"] = True
+    else:
+        gate_meta["regime_weights_applied"] = False
+
     return filtered, gate_meta
+
+
+def _best_regime_weight(strategies: set[str], weight_table: dict[str, float]) -> float:
+    """Pick the most favorable regime weight from a pick's strategies.
+
+    If a pick has multiple strategies, we use the highest weight so that
+    protective strategies (e.g. mean_reversion paired with swing) benefit
+    from the protective uplift rather than being dragged down.
+    """
+    weights = [weight_table.get(s, 1.0) for s in strategies]
+    return max(weights) if weights else 1.0
+
+
+def _apply_regime_weights(picks: list[dict], weight_table: dict[str, float]) -> list[dict]:
+    """Multiply combined_score by regime-strategy weight and re-sort."""
+    weighted: list[dict] = []
+    for pick in picks:
+        adjusted = dict(pick)
+        strategies = _as_strategy_set(pick.get("strategies", []))
+        mult = _best_regime_weight(strategies, weight_table)
+        if mult != 1.0:
+            adjusted["combined_score"] = round(
+                float(adjusted.get("combined_score", 0.0)) * mult, 2
+            )
+            adjusted["regime_weight"] = round(mult, 2)
+        weighted.append(adjusted)
+    weighted.sort(key=lambda p: float(p.get("combined_score", 0.0)), reverse=True)
+    return weighted
