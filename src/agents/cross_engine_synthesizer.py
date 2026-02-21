@@ -13,7 +13,7 @@ from __future__ import annotations
 import json
 import logging
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from src.agents.base import BaseAgent
 from src.agents.llm_router import call_llm
@@ -111,6 +111,17 @@ class ConvergentPick(BaseModel):
     holding_period_days: int = 7
     thesis: str = ""
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_nulls(cls, values: dict) -> dict:
+        """LLM may emit null for numeric fields — coerce to 0.0."""
+        for key in ("entry_price", "stop_loss", "target_price", "combined_score"):
+            if key in values and values[key] is None:
+                values[key] = 0.0
+        if "holding_period_days" in values and values["holding_period_days"] is None:
+            values["holding_period_days"] = 7
+        return values
+
 
 class UniquePick(BaseModel):
     ticker: str
@@ -129,6 +140,17 @@ class PortfolioPosition(BaseModel):
     target_price: float = 0.0
     holding_period_days: int = 7
 
+    @model_validator(mode="before")
+    @classmethod
+    def _coerce_nulls(cls, values: dict) -> dict:
+        """LLM may emit null for numeric fields — coerce to 0.0."""
+        for key in ("entry_price", "stop_loss", "target_price", "weight_pct"):
+            if key in values and values[key] is None:
+                values[key] = 0.0
+        if "holding_period_days" in values and values["holding_period_days"] is None:
+            values["holding_period_days"] = 7
+        return values
+
 
 class SynthesizerOutput(BaseModel):
     convergent_picks: list[ConvergentPick] = Field(default_factory=list)
@@ -136,6 +158,41 @@ class SynthesizerOutput(BaseModel):
     portfolio: list[PortfolioPosition] = Field(default_factory=list)
     regime_consensus: str = ""
     executive_summary: str = ""
+
+
+def _backfill_prices(
+    output: SynthesizerOutput,
+    weighted_picks: list[dict],
+) -> None:
+    """Fill in missing prices on portfolio/convergent items from engine data.
+
+    The LLM often omits or nulls price fields. We look up the ticker in
+    the original weighted_picks and copy entry/stop/target when the output
+    has them at zero (the coerced default).
+    """
+    lookup: dict[str, dict] = {wp["ticker"]: wp for wp in weighted_picks}
+
+    for pos in output.portfolio:
+        wp = lookup.get(pos.ticker)
+        if wp is None:
+            continue
+        if pos.entry_price == 0.0 and wp.get("entry_price"):
+            pos.entry_price = float(wp["entry_price"])
+        if pos.stop_loss == 0.0 and wp.get("stop_loss"):
+            pos.stop_loss = float(wp["stop_loss"])
+        if pos.target_price == 0.0 and wp.get("target_price"):
+            pos.target_price = float(wp["target_price"])
+
+    for pick in output.convergent_picks:
+        wp = lookup.get(pick.ticker)
+        if wp is None:
+            continue
+        if pick.entry_price == 0.0 and wp.get("entry_price"):
+            pick.entry_price = float(wp["entry_price"])
+        if pick.stop_loss == 0.0 and wp.get("stop_loss"):
+            pick.stop_loss = float(wp["stop_loss"])
+        if pick.target_price == 0.0 and wp.get("target_price"):
+            pick.target_price = float(wp["target_price"])
 
 
 class CrossEngineSynthesizerAgent(BaseAgent):
@@ -178,6 +235,9 @@ class CrossEngineSynthesizerAgent(BaseAgent):
                 output = SynthesizerOutput(
                     executive_summary="Synthesis failed to produce structured output",
                 )
+
+            # Backfill prices from weighted picks when the LLM omitted them
+            _backfill_prices(output, weighted_picks)
 
             logger.info(
                 "Cross-engine synthesis: %d convergent, %d unique, %d portfolio positions, cost=$%.4f",
