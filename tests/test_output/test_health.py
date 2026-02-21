@@ -29,9 +29,14 @@ from src.output.health import (
 # ── Helpers ────────────────────────────────────────────────────────────────
 
 
+def _business_day_end() -> pd.Timestamp:
+    """Return today's date snapped to a business day for stable test lengths."""
+    return pd.Timestamp(date.today()) + pd.offsets.BDay(0)
+
+
 def _make_df(rows: int = 60, trend: str = "up") -> pd.DataFrame:
     """Build a synthetic OHLCV DataFrame."""
-    dates = pd.date_range(end=date.today(), periods=rows, freq="B")
+    dates = pd.date_range(end=_business_day_end(), periods=rows, freq="B")
     base = 100.0
     closes = []
     for i in range(rows):
@@ -102,7 +107,7 @@ class TestTrendComponent:
     def test_above_emas_higher_lows_upslope(self):
         # Use deterministic up-trending data (no random noise)
         rows = 60
-        dates = pd.date_range(end=date.today(), periods=rows, freq="B")
+        dates = pd.date_range(end=_business_day_end(), periods=rows, freq="B")
         closes = np.linspace(100, 130, rows)
         df = pd.DataFrame({
             "date": dates,

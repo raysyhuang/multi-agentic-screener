@@ -26,7 +26,6 @@ MAX_STALE_TRADING_DAYS = 3   # OHLCV freshness threshold
 MIN_SCREENED_BY_ENGINE: dict[str, int] = {
     "koocore_d": 5,
     "gemini_stst": 5,
-    "top3_7d": 10,
 }
 DEFAULT_MIN_SCREENED = 20
 

@@ -9,7 +9,7 @@ from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Request, Response
+from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
@@ -17,8 +17,6 @@ from sqlalchemy import select, text
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
-
-from fastapi import Query
 
 from src.config import get_settings
 from src.db.session import init_db, close_db, get_session
@@ -282,19 +280,19 @@ async def dashboard_signals():
 @app.get("/api/dashboard/performance")
 async def dashboard_performance():
     """Return performance data with an equity curve for charting."""
-    data = await get_performance_summary(days=30)
+    data = await get_performance_summary(days=90)
 
     if data.get("total_signals", 0) == 0:
         return data
 
-    # Build equity curve from closed outcomes
+    # Build equity curve from closed outcomes (exit_date, not entry_date)
     async with get_session() as session:
         from datetime import timedelta
-        cutoff = date.today() - timedelta(days=30)
+        cutoff = date.today() - timedelta(days=90)
         result = await session.execute(
             select(Outcome).where(
                 Outcome.still_open == False,
-                Outcome.entry_date >= cutoff,
+                Outcome.exit_date >= cutoff,
             ).order_by(Outcome.exit_date.asc())
         )
         closed = result.scalars().all()
@@ -567,7 +565,8 @@ async def ticker_outcomes(ticker: str):
 async def cost_summary(days: int = Query(default=30, le=90)):
     """Daily and per-agent cost breakdown over the specified period."""
     async with get_session() as session:
-        cutoff = date.today() - __import__("datetime").timedelta(days=days)
+        from datetime import timedelta
+        cutoff = date.today() - timedelta(days=days)
         result = await session.execute(
             select(AgentLog).where(AgentLog.run_date >= cutoff)
         )
@@ -1201,7 +1200,7 @@ async def cross_engine_history(
 async def backtest_compare():
     """Cross-engine backtest comparison.
 
-    Reads standardized JSON reports from all four engines and produces:
+    Reads standardized JSON reports from all engines and produces:
     - Head-to-head metrics table
     - Regime breakdown
     - Correlation matrix (ticker overlap)

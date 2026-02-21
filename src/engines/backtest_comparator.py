@@ -1,6 +1,6 @@
 """Cross-engine backtest comparator.
 
-Reads standardized JSON output from all four engines and produces:
+Reads standardized JSON output from all engines and produces:
 1. Head-to-head table: Win rate, Sharpe, max DD, profit factor per engine
 2. Regime breakdown: Which engine performs best in Bull/Bear/Mixed
 3. Correlation matrix: Overlap % of picks between engine pairs
@@ -26,25 +26,12 @@ ENGINE_CONFIGS = {
         "pattern": "mas_replay_*.json",
     },
     "koocore-d": {
-        "search_dirs": [
-            Path("../KooCore-D/backtest_results"),
-            Path("/Users/rayhuang/Documents/Python Project/KooCore-D/backtest_results"),
-        ],
+        "search_dirs": [Path("KooCore-D/backtest_results")],
         "pattern": "koocore_backtest_*.json",
     },
     "gemini-stst": {
-        "search_dirs": [
-            Path("../Gemini STST/backtest_results"),
-            Path("/Users/rayhuang/Documents/Python Project/Gemini STST/backtest_results"),
-        ],
+        "search_dirs": [Path("Gemini STST/backtest_results")],
         "pattern": "gemini_backtest_*.json",
-    },
-    "top3-7d": {
-        "search_dirs": [
-            Path("../Top3-7D Engine/backtest_results"),
-            Path("/Users/rayhuang/Documents/Python Project/Top3-7D Engine/backtest_results"),
-        ],
-        "pattern": "top3_backtest_*.json",
     },
 }
 

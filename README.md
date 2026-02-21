@@ -467,6 +467,9 @@ ENGINE_API_KEY             # Shared API key for engine-to-engine auth
 CROSS_ENGINE_ENABLED       # true (default) or false
 ```
 
+Note: API runtime is PostgreSQL-only. The ORM models use `JSONB`, so running
+`api.app` with a SQLite `DATABASE_URL` will fail at startup.
+
 ### Running
 
 ```bash

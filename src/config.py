@@ -106,7 +106,6 @@ class Settings(BaseSettings):
     # --- External Engine URLs ---
     koocore_api_url: str = ""
     gemini_api_url: str = ""
-    top3_api_url: str = ""  # Deprecated: kept for backward compat
     engine_api_key: str = ""
 
     # --- Local Engine Runners ---

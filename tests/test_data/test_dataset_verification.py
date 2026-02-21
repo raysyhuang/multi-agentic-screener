@@ -333,13 +333,6 @@ class TestVerifyCrossEngine:
                 "picks": [{"ticker": "AAPL", "entry_price": 201}],
                 "candidates_screened": 5,
             },
-            {
-                "engine_name": "top3_7d",
-                "run_date": run_date,
-                "regime": "bear",
-                "picks": [],
-                "candidates_screened": 10,
-            },
         ]
         report = verify_cross_engine(engines, {"regime": "bear"})
         breadth = next((c for c in report.checks if c.name == "universe_breadth"), None)

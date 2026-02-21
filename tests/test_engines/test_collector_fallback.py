@@ -24,7 +24,6 @@ async def test_koocore_falls_back_to_generic_endpoint(monkeypatch):
         engine_run_mode = "http"
         koocore_api_url = "https://koocore.example"
         gemini_api_url = ""
-        top3_api_url = ""
 
     payload = EngineResultPayload.model_validate({
         "engine_name": "koocore_d",
@@ -61,7 +60,6 @@ async def test_koocore_falls_back_when_custom_payload_is_degenerate(monkeypatch)
         engine_run_mode = "http"
         koocore_api_url = "https://koocore.example"
         gemini_api_url = ""
-        top3_api_url = ""
 
     run_date = _fresh_run_date()
     run_ts = _fresh_run_timestamp()

@@ -972,7 +972,9 @@
 
     Promise.all([
       fetchJSON('/api/costs?days=30'),
-      fetchJSON('/api/cache-stats'),
+      fetchJSON('/api/cache-stats').catch(function () {
+        return { hit_rate: 0, hits: 0, misses: 0, total_entries: 0, evictions: 0 };
+      }),
     ]).then(function (results) {
       var costs = results[0];
       var cache = results[1];
@@ -1072,20 +1074,20 @@
         loadBacktestDetail(fname);
       });
 
+      // Attach compare-select listener once (outside toggle) to avoid accumulation
+      document.getElementById('backtest-compare-select').addEventListener('change', function () {
+        var mainFile = document.getElementById('backtest-run-select').value;
+        var compareFile = this.value;
+        if (mainFile && compareFile && mainFile !== compareFile) {
+          loadBacktestCompare(mainFile, compareFile);
+        }
+      });
+
       document.getElementById('backtest-compare-toggle').addEventListener('click', function () {
         backtestCompareMode = !backtestCompareMode;
         var ctrl = document.getElementById('backtest-compare-controls');
         ctrl.style.display = backtestCompareMode ? 'block' : 'none';
         this.textContent = backtestCompareMode ? 'Hide Compare' : 'Compare Runs';
-        if (backtestCompareMode) {
-          document.getElementById('backtest-compare-select').addEventListener('change', function () {
-            var mainFile = document.getElementById('backtest-run-select').value;
-            var compareFile = this.value;
-            if (mainFile && compareFile && mainFile !== compareFile) {
-              loadBacktestCompare(mainFile, compareFile);
-            }
-          });
-        }
       });
     }).catch(function () {
       showEmpty('backtest-view', 'Failed to load backtest runs.');

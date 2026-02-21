@@ -16,7 +16,7 @@ import os
 import subprocess
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timedelta
 from pathlib import Path
 
 from src.config import get_settings, PROJECT_ROOT
@@ -265,18 +265,25 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
     today = date.today()
     weekday = today.weekday()
     if weekday == 5:  # Saturday
-        output_date = today.replace(day=today.day - 1)
+        output_date = today - timedelta(days=1)
     elif weekday == 6:  # Sunday
-        output_date = today.replace(day=today.day - 2)
+        output_date = today - timedelta(days=2)
     else:
         output_date = today
     output_date_str = output_date.strftime("%Y-%m-%d")
 
     logger.info("Running KooCore-D pipeline via subprocess for %s", output_date_str)
 
+    # Strip the KooCore-D/ prefix if present — the subprocess runs with
+    # cwd=KooCore-D/ so the path must be relative to that directory.
+    try:
+        resolved_config = str(Path(config_path).relative_to("KooCore-D"))
+    except ValueError:
+        resolved_config = config_path
+
     cmd = [
         sys.executable, "main.py", "all",
-        "--config", config_path,
+        "--config", resolved_config,
         "--date", output_date_str,
         "--no-movers",
     ]

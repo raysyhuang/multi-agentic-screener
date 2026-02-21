@@ -425,11 +425,12 @@ async def get_performance_summary(days: int = 30) -> dict:
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
 
-        # Get closed outcomes
+        # Get closed outcomes (filter by exit_date so we capture all
+        # trades that *closed* in the window, regardless of entry date)
         result = await session.execute(
             select(Outcome).where(
                 Outcome.still_open == False,
-                Outcome.entry_date >= cutoff,
+                Outcome.exit_date >= cutoff,
             )
         )
         closed = result.scalars().all()
@@ -848,7 +849,7 @@ async def get_equity_curve(days: int = 90) -> list[dict]:
         result = await session.execute(
             select(Outcome).where(
                 Outcome.still_open == False,
-                Outcome.entry_date >= cutoff,
+                Outcome.exit_date >= cutoff,
             ).order_by(Outcome.exit_date.asc())
         )
         closed = result.scalars().all()
@@ -891,7 +892,7 @@ async def get_return_distribution(days: int = 90) -> dict:
         result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.entry_date >= cutoff)
+            .where(Outcome.still_open == False, Outcome.exit_date >= cutoff)
         )
         rows = result.all()
 
@@ -920,7 +921,7 @@ async def get_regime_matrix(days: int = 180) -> list[dict]:
         result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.entry_date >= cutoff)
+            .where(Outcome.still_open == False, Outcome.exit_date >= cutoff)
         )
         rows = result.all()
 

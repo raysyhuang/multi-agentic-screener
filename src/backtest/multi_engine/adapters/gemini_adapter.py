@@ -28,7 +28,7 @@ logger = logging.getLogger(__name__)
 GEMINI_ROOT = Path(
     os.environ.get(
         "GEMINI_ROOT",
-        Path(__file__).resolve().parents[4] / ".." / "Gemini STST",
+        Path(__file__).resolve().parents[4] / "Gemini STST",
     )
 ).resolve()
 

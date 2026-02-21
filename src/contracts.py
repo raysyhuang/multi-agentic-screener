@@ -314,7 +314,7 @@ class EngineResultPayload(StrictModel):
     All engines expose GET /api/engine/results returning this schema.
     """
 
-    engine_name: str  # "koocore_d", "gemini_stst", "top3_7d"
+    engine_name: str  # "koocore_d", "gemini_stst"
     engine_version: str
     run_date: str  # YYYY-MM-DD
     run_timestamp: str  # ISO 8601
