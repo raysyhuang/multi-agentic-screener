@@ -320,7 +320,12 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
             output_path, output_date_str = latest
             logger.info("Using latest available KooCore-D output from %s", output_date_str)
         else:
-            logger.warning("KooCore-D produced no hybrid_analysis output")
+            logger.warning(
+                "KooCore-D produced no hybrid_analysis output — "
+                "outputs dir %s is empty or missing. "
+                "Ensure KooCore-D/outputs/ is committed to git for Heroku fallback.",
+                _KOOCORE_ROOT / "outputs",
+            )
             return None
 
     with open(output_path, "r") as f:

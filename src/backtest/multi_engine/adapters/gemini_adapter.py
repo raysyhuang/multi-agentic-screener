@@ -21,6 +21,7 @@ import numpy as np
 import pandas as pd
 
 from src.backtest.multi_engine.adapters.base import EngineAdapter, NormalizedPick
+from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
@@ -120,17 +121,18 @@ class GeminiAdapter(EngineAdapter):
                 close = latest["close"]
                 open_ = latest["open"]
 
-                # Filter chain
+                # Filter chain (thresholds from settings)
+                _s = get_settings()
                 if close < 5.0:
                     continue
                 adv = latest.get("adv_20", 0)
-                if adv < 500_000:
+                if adv < _s.gemini_momentum_adv_min:
                     continue
                 atr_pct = latest.get("atr_pct", 0)
                 if atr_pct < 2.0:
                     continue
                 rvol = latest.get("rvol", 0)
-                if rvol < 1.2:
+                if rvol < _s.gemini_momentum_rvol_min:
                     continue
                 sma_20 = latest.get("sma_20")
                 if not _valid(sma_20) or close <= sma_20:
@@ -205,15 +207,16 @@ class GeminiAdapter(EngineAdapter):
                     continue
 
                 close = latest["close"]
+                _s = get_settings()
                 if close < 5.0:
                     continue
                 adv = latest.get("adv_20", 0)
-                if adv < 1_500_000:
+                if adv < _s.gemini_reversion_adv_min:
                     continue
 
                 # RSI(2)
                 rsi_2 = latest.get("rsi_2")
-                if not _valid(rsi_2) or rsi_2 >= 10:
+                if not _valid(rsi_2) or rsi_2 >= _s.gemini_reversion_rsi2_max:
                     continue
 
                 # 3-day drawdown

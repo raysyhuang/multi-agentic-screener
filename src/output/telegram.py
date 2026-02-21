@@ -24,6 +24,9 @@ def _esc(text: str | None) -> str:
         return ""
     return _html_escape(str(text), quote=False)
 
+# Engine display names — avoids .title() mangling acronyms
+_ENGINE_DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D"}
+
 # Telegram message limit (API max is 4096, leave margin)
 MAX_MESSAGE_LENGTH = 4000
 SEND_RETRIES = 3
@@ -313,10 +316,10 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
             lines.append(f"   {len(engines)} engines: {_esc(', '.join(engines))}")
             lines.append("")
 
-    # Portfolio positions — the final recommendation
+    # New recommended positions from this cycle
     if portfolio:
         lines.append(f"{_section_line()}")
-        lines.append(f"\U0001f4bc <b>Portfolio</b> ({len(portfolio)} positions)")
+        lines.append(f"\U0001f4bc <b>New Positions</b> ({len(portfolio)} recommended)")
         lines.append("")
         for pos in portfolio:
             ticker = pos.get("ticker", "?")
@@ -351,7 +354,7 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
             w = stats.get("weight", 1.0)
             n = stats.get("resolved_picks", 0)
             hr_bar = _bar(hr * 100, 100, 6)
-            short_name = name.replace("_", " ").title()
+            short_name = _ENGINE_DISPLAY.get(name, name.replace("_", " ").title())
             lines.append(
                 f"   {hr_bar} {_esc(short_name)}: <b>{hr:.0%}</b> hit, "
                 f"{w:.2f}x wt ({n})"

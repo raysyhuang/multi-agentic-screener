@@ -1957,8 +1957,34 @@ async def _run_cross_engine_steps(
             for name, s in cred_snapshot.engine_stats.items()
         }
 
+        # --- Step 12.5: Execution Gates (pre-synthesis safety checks) ---
+        gate_blocked = False
+        gate_reason = ""
+        engines_reporting = len(engine_results)
+        if settings.min_engines_for_trade > 0 and engines_reporting < settings.min_engines_for_trade:
+            gate_blocked = True
+            gate_reason = (
+                f"Only {engines_reporting}/{settings.min_engines_for_trade} engines reporting"
+            )
+            logger.warning("Execution gate BLOCKED: %s", gate_reason)
+        elif settings.require_known_regime and regime_context.get("regime") == "unknown":
+            gate_blocked = True
+            gate_reason = "Regime is UNKNOWN and require_known_regime is enabled"
+            logger.warning("Execution gate BLOCKED: %s", gate_reason)
+
         # --- Step 13: Cross-Engine Synthesizer ---
-        if weighted_picks:
+        if gate_blocked:
+            from src.agents.cross_engine_synthesizer import SynthesizerOutput
+
+            logger.warning("Step 13 skipped: execution gate blocked — %s", gate_reason)
+            synthesis = SynthesizerOutput(
+                convergent_picks=[],
+                unique_picks=[],
+                portfolio=[],
+                regime_consensus=regime_context.get("regime", "unknown"),
+                executive_summary=f"NO TRADES THIS CYCLE — {gate_reason}.",
+            )
+        elif weighted_picks:
             logger.info("Step 13: Running cross-engine synthesizer...")
             synthesizer = CrossEngineSynthesizerAgent()
             synthesis = await synthesizer.synthesize(

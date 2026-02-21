@@ -325,6 +325,11 @@ async def _collect_local() -> list[EngineResultPayload]:
     for engine_name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
             logger.warning("Engine %s local run raised exception: %s", engine_name, result)
+        elif result is None:
+            logger.warning(
+                "Engine %s returned None — engine produced no output this cycle",
+                engine_name,
+            )
         elif result is not None:
             quality_warnings = _validate_payload_quality(engine_name, result)
             if quality_warnings:

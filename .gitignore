@@ -36,10 +36,10 @@ htmlcov/
 # Claude Code
 .claude/
 
-# Sub-engine data/outputs (regenerated at runtime)
+# Sub-engine data (regenerated at runtime)
 KooCore-D/data/
-KooCore-D/outputs/
 KooCore-D/.git/
+# NOTE: KooCore-D/outputs/ is tracked so Heroku has fallback data
 Gemini STST/venv/
 
 # Screenshots & temp images

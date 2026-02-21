@@ -145,6 +145,16 @@ class Settings(BaseSettings):
     low_overlap_max_positions: int = 3
     low_overlap_max_total_weight_pct: float = 30.0
 
+    # --- Gemini STST filter thresholds (backtest adapter) ---
+    gemini_momentum_adv_min: float = 300_000
+    gemini_momentum_rvol_min: float = 1.0
+    gemini_reversion_adv_min: float = 750_000
+    gemini_reversion_rsi2_max: float = 15.0
+
+    # --- Execution Gates (pre-synthesis safety checks) ---
+    min_engines_for_trade: int = 2  # Require N engines reporting before allowing synthesis
+    require_known_regime: bool = False  # Block trades when regime is "unknown"
+
     # --- Regime Strategy Gate ---
     regime_strategy_gate_enabled: bool = True
     regime_gate_bear_blocked_strategies: str = "momentum"
