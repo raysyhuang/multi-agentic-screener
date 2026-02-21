@@ -4,6 +4,14 @@
   'use strict';
 
   // -----------------------------------------------------------------------
+  // Engine display names — avoids naive title-casing of acronyms
+  // -----------------------------------------------------------------------
+  var ENGINE_DISPLAY = { gemini_stst: 'Gemini STST', koocore_d: 'KooCore-D' };
+  function engineDisplayName(name) {
+    return ENGINE_DISPLAY[name] || name.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+  }
+
+  // -----------------------------------------------------------------------
   // Theme-aware chart colors
   // -----------------------------------------------------------------------
   function chartColors() {
@@ -382,7 +390,7 @@
           var n = e.resolved_picks || 0;
           var hrPct = Math.round(hr * 100);
           var hrColor = hrPct >= 55 ? 'green' : (hrPct < 45 ? 'red' : 'amber');
-          var displayName = name.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+          var displayName = engineDisplayName(name);
 
           html += '<div class="engine-card">' +
             '<div class="engine-name">' + escapeHtml(displayName) + '</div>' +
@@ -1150,7 +1158,7 @@
           var es = perEngine[name].summary || {};
           var pnlClass = (es.avg_return_pct || 0) > 0 ? 'positive' : ((es.avg_return_pct || 0) < 0 ? 'negative' : '');
           html += '<tr>' +
-            '<td><b>' + escapeHtml(name) + '</b></td>' +
+            '<td><b>' + escapeHtml(engineDisplayName(name)) + '</b></td>' +
             '<td>' + (es.total_trades || 0) + '</td>' +
             '<td>' + fmtPct((es.win_rate || 0) * 100) + '</td>' +
             '<td class="' + pnlClass + '">' + fmtPct(es.avg_return_pct) + '</td>' +
