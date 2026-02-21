@@ -157,6 +157,9 @@ def _json_safe(obj):
     return obj
 
 
+_cross_engine_last_alert: dict[str, datetime] = {}  # date_str → datetime of last alert
+
+
 def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
     """Ticker set used for same-day cross-engine alert dedupe."""
     out: set[str] = set()
@@ -1599,7 +1602,17 @@ async def _run_cross_engine_steps(
     try:
         # --- Step 10: Collect external engine results ---
         logger.info("Step 10: Collecting external engine results...")
-        engine_results = await collect_engine_results()
+        engine_results, failed_engines = await collect_engine_results()
+
+        if failed_engines:
+            total = len(engine_results) + len(failed_engines)
+            drop_msg = (
+                f"Engine Drop Alert\n"
+                f"{'  '.join(failed_engines)} failed to report this cycle.\n"
+                f"{len(engine_results)}/{total} engines reporting."
+            )
+            logger.warning("Engine drop: %s", drop_msg)
+            await send_alert(drop_msg)
 
         if not engine_results:
             logger.info("No external engine results available, recording degraded synthesis state")
@@ -2176,6 +2189,19 @@ async def _run_cross_engine_steps(
                     new_halt,
                     should_send_alert,
                 )
+
+                # Time-based cooldown (defense-in-depth)
+                if should_send_alert and not new_halt:
+                    last_sent = _cross_engine_last_alert.get(str(today))
+                    if last_sent:
+                        hours_since = (datetime.utcnow() - last_sent).total_seconds() / 3600
+                        if hours_since < settings.cross_engine_alert_cooldown_hours:
+                            should_send_alert = False
+                            logger.info(
+                                "Step 14 cooldown: %.1fh since last alert (<%dh), suppressing",
+                                hours_since,
+                                settings.cross_engine_alert_cooldown_hours,
+                            )
                 row.convergent_tickers = synthesis_dict.get("convergent_picks")
                 row.portfolio_recommendation = synthesis_dict.get("portfolio")
                 row.regime_consensus = synthesis.regime_consensus
@@ -2209,6 +2235,7 @@ async def _run_cross_engine_steps(
             if guardian_summary:
                 cross_alert += guardian_summary
             await send_alert(cross_alert)
+            _cross_engine_last_alert[str(today)] = datetime.utcnow()
         else:
             logger.info(
                 "Step 14: synthesis unchanged for %s; suppressing duplicate cross-engine alert",
@@ -2575,8 +2602,8 @@ async def _debug_engines() -> None:
     logger.info("=" * 60)
 
     # Collect
-    engine_results = await collect_engine_results()
-    logger.info("Collected from %d engines", len(engine_results))
+    engine_results, failed_engines = await collect_engine_results()
+    logger.info("Collected from %d engines (%d failed)", len(engine_results), len(failed_engines))
 
     # Credibility
     cred_snapshot = await compute_credibility_snapshot()

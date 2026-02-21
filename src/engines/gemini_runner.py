@@ -24,6 +24,14 @@ from src.contracts import EnginePick, EngineResultPayload
 
 logger = logging.getLogger(__name__)
 
+
+def _is_transient(exc: Exception) -> bool:
+    """Return True for DB/network errors worth retrying."""
+    from sqlalchemy.exc import OperationalError, DisconnectionError
+    transient_types = (OperationalError, DisconnectionError, ConnectionError, OSError, TimeoutError)
+    return isinstance(exc, transient_types)
+
+
 # Gemini STST root relative to MAS project root
 _GEMINI_ROOT = PROJECT_ROOT / "Gemini STST"
 
@@ -106,7 +114,7 @@ def _reversion_strategy_tags(signal) -> list[str]:
 # ---------------------------------------------------------------------------
 
 def _ensure_gemini_db():
-    """Initialize Gemini STST's DB tables on first call."""
+    """Initialize Gemini STST's DB tables on first call (with transient-error retry)."""
     global _db_initialized
     if _db_initialized:
         return
@@ -125,9 +133,23 @@ def _ensure_gemini_db():
             os.environ["DATABASE_URL"] = db_url
 
         from app.database import init_db
-        init_db()
-        _db_initialized = True
-        logger.info("Gemini STST database initialized")
+        max_attempts = 3
+        for attempt in range(1, max_attempts + 1):
+            try:
+                init_db()
+                _db_initialized = True
+                logger.info("Gemini STST database initialized")
+                return
+            except Exception as exc:
+                if attempt < max_attempts and _is_transient(exc):
+                    delay = 2 ** attempt  # 2s, 4s
+                    logger.warning(
+                        "Gemini DB init failed (attempt %d/%d): %s — retrying in %ds",
+                        attempt, max_attempts, exc, delay,
+                    )
+                    time.sleep(delay)
+                else:
+                    raise
     finally:
         if gemini_src in sys.path:
             sys.path.remove(gemini_src)
@@ -158,129 +180,147 @@ def _run_gemini_pipeline() -> EngineResultPayload | None:
         run_reversion_screener()
 
         # Query results from DB (same logic as engine_endpoint.py)
-        db = SessionLocal()
-        try:
-            latest_momentum_date = db.query(func.max(ScreenerSignal.date)).scalar()
-            latest_reversion_date = db.query(func.max(ReversionSignal.date)).scalar()
-            latest_dates = [d for d in (latest_momentum_date, latest_reversion_date) if d is not None]
-            asof_date = max(latest_dates) if latest_dates else date.today()
+        # Retry DB session on transient connection errors (screeners already ran).
+        max_db_attempts = 3
+        db = None
+        for db_attempt in range(1, max_db_attempts + 1):
+            try:
+                db = SessionLocal()
+                latest_momentum_date = db.query(func.max(ScreenerSignal.date)).scalar()
+                latest_reversion_date = db.query(func.max(ReversionSignal.date)).scalar()
+                latest_dates = [d for d in (latest_momentum_date, latest_reversion_date) if d is not None]
+                asof_date = max(latest_dates) if latest_dates else date.today()
 
-            picks: list[EnginePick] = []
+                picks: list[EnginePick] = []
 
-            # Momentum signals
-            momentum_query = (
-                db.query(ScreenerSignal, Ticker)
-                .join(Ticker, ScreenerSignal.ticker_id == Ticker.id)
-                .filter(ScreenerSignal.date == asof_date)
-                .order_by(ScreenerSignal.quality_score.desc().nullslast())
-                .all()
-            )
-
-            for signal, ticker in momentum_query:
-                confidence = signal.quality_score or 50.0
-                stop_loss, target_price = _compute_momentum_risk_params(
-                    signal.trigger_price,
-                    signal.atr_pct_at_trigger,
+                # Momentum signals
+                momentum_query = (
+                    db.query(ScreenerSignal, Ticker)
+                    .join(Ticker, ScreenerSignal.ticker_id == Ticker.id)
+                    .filter(ScreenerSignal.date == asof_date)
+                    .order_by(ScreenerSignal.quality_score.desc().nullslast())
+                    .all()
                 )
-                strat_tags = _momentum_strategy_tags(signal)
 
-                picks.append(EnginePick(
-                    ticker=ticker.symbol,
-                    strategy="momentum",
-                    entry_price=signal.trigger_price or 0,
-                    stop_loss=stop_loss,
-                    target_price=target_price,
-                    confidence=confidence,
-                    holding_period_days=10,
-                    thesis=(
-                        f"RVOL={signal.rvol_at_trigger:.1f}x, ATR%={signal.atr_pct_at_trigger:.1f}%"
-                        if signal.rvol_at_trigger and signal.atr_pct_at_trigger
-                        else None
-                    ),
-                    risk_factors=[],
-                    raw_score=signal.quality_score,
-                    metadata={
-                        "rvol": signal.rvol_at_trigger,
-                        "atr_pct": signal.atr_pct_at_trigger,
-                        "rsi_14": signal.rsi_14,
-                        "options_sentiment": signal.options_sentiment,
-                        "confluence": signal.confluence,
-                        "scores": _build_scores_metadata(
-                            quality_score=signal.quality_score,
-                            confluence=signal.confluence,
-                            strategy="momentum",
+                for signal, ticker in momentum_query:
+                    confidence = signal.quality_score or 50.0
+                    stop_loss, target_price = _compute_momentum_risk_params(
+                        signal.trigger_price,
+                        signal.atr_pct_at_trigger,
+                    )
+                    strat_tags = _momentum_strategy_tags(signal)
+
+                    picks.append(EnginePick(
+                        ticker=ticker.symbol,
+                        strategy="momentum",
+                        entry_price=signal.trigger_price or 0,
+                        stop_loss=stop_loss,
+                        target_price=target_price,
+                        confidence=confidence,
+                        holding_period_days=10,
+                        thesis=(
+                            f"RVOL={signal.rvol_at_trigger:.1f}x, ATR%={signal.atr_pct_at_trigger:.1f}%"
+                            if signal.rvol_at_trigger and signal.atr_pct_at_trigger
+                            else None
                         ),
-                        "stop_method": "chandelier_proxy",
-                        "strategies": strat_tags,
-                    },
-                ))
+                        risk_factors=[],
+                        raw_score=signal.quality_score,
+                        metadata={
+                            "rvol": signal.rvol_at_trigger,
+                            "atr_pct": signal.atr_pct_at_trigger,
+                            "rsi_14": signal.rsi_14,
+                            "options_sentiment": signal.options_sentiment,
+                            "confluence": signal.confluence,
+                            "scores": _build_scores_metadata(
+                                quality_score=signal.quality_score,
+                                confluence=signal.confluence,
+                                strategy="momentum",
+                            ),
+                            "stop_method": "chandelier_proxy",
+                            "strategies": strat_tags,
+                        },
+                    ))
 
-            # Reversion signals
-            reversion_query = (
-                db.query(ReversionSignal, Ticker)
-                .join(Ticker, ReversionSignal.ticker_id == Ticker.id)
-                .filter(ReversionSignal.date == asof_date)
-                .order_by(ReversionSignal.quality_score.desc().nullslast())
-                .all()
-            )
+                # Reversion signals
+                reversion_query = (
+                    db.query(ReversionSignal, Ticker)
+                    .join(Ticker, ReversionSignal.ticker_id == Ticker.id)
+                    .filter(ReversionSignal.date == asof_date)
+                    .order_by(ReversionSignal.quality_score.desc().nullslast())
+                    .all()
+                )
 
-            for signal, ticker in reversion_query:
-                confidence = signal.quality_score or 50.0
-                strat_tags = _reversion_strategy_tags(signal)
+                for signal, ticker in reversion_query:
+                    confidence = signal.quality_score or 50.0
+                    strat_tags = _reversion_strategy_tags(signal)
 
-                picks.append(EnginePick(
-                    ticker=ticker.symbol,
-                    strategy="mean_reversion",
-                    entry_price=signal.trigger_price or 0,
-                    stop_loss=round(signal.trigger_price * 0.95, 2) if signal.trigger_price else None,
-                    target_price=round(signal.trigger_price * 1.10, 2) if signal.trigger_price else None,
-                    confidence=confidence,
-                    holding_period_days=3,
-                    thesis=(
-                        f"RSI2={signal.rsi2_at_trigger:.1f}, DD3d={signal.drawdown_3d_pct:.1f}%"
-                        if signal.rsi2_at_trigger and signal.drawdown_3d_pct
-                        else None
-                    ),
-                    risk_factors=[],
-                    raw_score=signal.quality_score,
-                    metadata={
-                        "rsi2": signal.rsi2_at_trigger,
-                        "drawdown_3d_pct": signal.drawdown_3d_pct,
-                        "sma_distance_pct": signal.sma_distance_pct,
-                        "options_sentiment": signal.options_sentiment,
-                        "confluence": signal.confluence,
-                        "scores": _build_scores_metadata(
-                            quality_score=signal.quality_score,
-                            confluence=signal.confluence,
-                            strategy="mean_reversion",
+                    picks.append(EnginePick(
+                        ticker=ticker.symbol,
+                        strategy="mean_reversion",
+                        entry_price=signal.trigger_price or 0,
+                        stop_loss=round(signal.trigger_price * 0.95, 2) if signal.trigger_price else None,
+                        target_price=round(signal.trigger_price * 1.10, 2) if signal.trigger_price else None,
+                        confidence=confidence,
+                        holding_period_days=3,
+                        thesis=(
+                            f"RSI2={signal.rsi2_at_trigger:.1f}, DD3d={signal.drawdown_3d_pct:.1f}%"
+                            if signal.rsi2_at_trigger and signal.drawdown_3d_pct
+                            else None
                         ),
-                        "strategies": strat_tags,
-                    },
-                ))
+                        risk_factors=[],
+                        raw_score=signal.quality_score,
+                        metadata={
+                            "rsi2": signal.rsi2_at_trigger,
+                            "drawdown_3d_pct": signal.drawdown_3d_pct,
+                            "sma_distance_pct": signal.sma_distance_pct,
+                            "options_sentiment": signal.options_sentiment,
+                            "confluence": signal.confluence,
+                            "scores": _build_scores_metadata(
+                                quality_score=signal.quality_score,
+                                confluence=signal.confluence,
+                                strategy="mean_reversion",
+                            ),
+                            "strategies": strat_tags,
+                        },
+                    ))
 
-            total_screened = len(momentum_query) + len(reversion_query)
-            elapsed = time.monotonic() - start
+                total_screened = len(momentum_query) + len(reversion_query)
+                elapsed = time.monotonic() - start
 
-            payload = EngineResultPayload(
-                engine_name="gemini_stst",
-                engine_version="7.0-local",
-                run_date=str(asof_date),
-                run_timestamp=datetime.utcnow().isoformat(),
-                regime=None,
-                picks=picks,
-                candidates_screened=total_screened,
-                pipeline_duration_s=elapsed,
-                status="success",
-            )
+                payload = EngineResultPayload(
+                    engine_name="gemini_stst",
+                    engine_version="7.0-local",
+                    run_date=str(asof_date),
+                    run_timestamp=datetime.utcnow().isoformat(),
+                    regime=None,
+                    picks=picks,
+                    candidates_screened=total_screened,
+                    pipeline_duration_s=elapsed,
+                    status="success",
+                )
 
-            logger.info(
-                "Gemini STST local run complete: %d picks (%d momentum, %d reversion) in %.1fs",
-                len(picks), len(momentum_query), len(reversion_query), elapsed,
-            )
-            return payload
+                logger.info(
+                    "Gemini STST local run complete: %d picks (%d momentum, %d reversion) in %.1fs",
+                    len(picks), len(momentum_query), len(reversion_query), elapsed,
+                )
+                return payload
 
-        finally:
-            db.close()
+            except Exception as exc:
+                if db:
+                    db.close()
+                    db = None
+                if db_attempt < max_db_attempts and _is_transient(exc):
+                    delay = 2 ** db_attempt
+                    logger.warning(
+                        "Gemini DB query failed (attempt %d/%d): %s — retrying in %ds",
+                        db_attempt, max_db_attempts, exc, delay,
+                    )
+                    time.sleep(delay)
+                    continue
+                raise
+            finally:
+                if db:
+                    db.close()
 
     finally:
         if gemini_src in sys.path:

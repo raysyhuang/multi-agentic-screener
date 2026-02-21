@@ -307,8 +307,8 @@ def _is_critical_quality_issue(warnings: list[str]) -> bool:
     )
 
 
-async def _collect_local() -> list[EngineResultPayload]:
-    """Run engines locally in parallel and return validated payloads."""
+async def _collect_local() -> tuple[list[EngineResultPayload], list[str]]:
+    """Run engines locally in parallel and return validated payloads + failure list."""
     from src.engines.koocore_runner import run_koocore_locally
     from src.engines.gemini_runner import run_gemini_locally
 
@@ -322,15 +322,18 @@ async def _collect_local() -> list[EngineResultPayload]:
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     payloads: list[EngineResultPayload] = []
+    failed_engines: list[str] = []
     for engine_name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
             logger.warning("Engine %s local run raised exception: %s", engine_name, result)
+            failed_engines.append(f"{engine_name} (exception: {type(result).__name__})")
         elif result is None:
             logger.warning(
                 "Engine %s returned None — engine produced no output this cycle",
                 engine_name,
             )
-        elif result is not None:
+            failed_engines.append(f"{engine_name} (no output)")
+        else:
             quality_warnings = _validate_payload_quality(engine_name, result)
             if quality_warnings:
                 has_critical = _is_critical_quality_issue(quality_warnings)
@@ -338,6 +341,7 @@ async def _collect_local() -> list[EngineResultPayload]:
                     logger.warning("Engine %s quality issue: %s", engine_name, w)
                 if has_critical:
                     logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
+                    failed_engines.append(f"{engine_name} (quality rejected)")
                     continue
             payloads.append(result)
 
@@ -345,10 +349,10 @@ async def _collect_local() -> list[EngineResultPayload]:
         "Local engine collection complete: %d/%d engines passed quality checks",
         len(payloads), len(tasks),
     )
-    return payloads
+    return payloads, failed_engines
 
 
-async def _collect_http() -> list[EngineResultPayload]:
+async def _collect_http() -> tuple[list[EngineResultPayload], list[str]]:
     """Fetch results from remote engines via HTTP (legacy mode)."""
     settings = get_settings()
     api_key = settings.engine_api_key
@@ -401,15 +405,19 @@ async def _collect_http() -> list[EngineResultPayload]:
 
         if not tasks:
             logger.info("No external engines configured")
-            return []
+            return [], []
 
         # Wait for all engines in parallel
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     payloads: list[EngineResultPayload] = []
+    failed_engines: list[str] = []
     for engine_name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
             logger.warning("Engine %s raised exception: %s", engine_name, result)
+            failed_engines.append(f"{engine_name} (exception: {type(result).__name__})")
+        elif result is None:
+            failed_engines.append(f"{engine_name} (no response)")
         elif result is not None:
             # Quality validation — reject payloads with critical issues
             quality_warnings = _validate_payload_quality(engine_name, result)
@@ -419,6 +427,7 @@ async def _collect_http() -> list[EngineResultPayload]:
                     logger.warning("Engine %s quality issue: %s", engine_name, w)
                 if has_critical:
                     logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
+                    failed_engines.append(f"{engine_name} (quality rejected)")
                     continue
             payloads.append(result)
 
@@ -426,15 +435,18 @@ async def _collect_http() -> list[EngineResultPayload]:
         "Engine collection complete: %d/%d engines responded and passed quality checks",
         len(payloads), len(tasks),
     )
-    return payloads
+    return payloads, failed_engines
 
 
-async def collect_engine_results() -> list[EngineResultPayload]:
+async def collect_engine_results() -> tuple[list[EngineResultPayload], list[str]]:
     """Collect results from all engines in parallel.
 
     Mode is controlled by ``engine_run_mode`` setting:
       - ``"local"`` (default): runs engines in-process
       - ``"http"``: fetches from remote Heroku apps
+
+    Returns (payloads, failed_engines) where failed_engines is a list of
+    human-readable descriptions of engines that failed to report.
     """
     settings = get_settings()
     mode = (settings.engine_run_mode or "local").strip().lower()

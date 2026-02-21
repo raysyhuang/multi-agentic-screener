@@ -289,6 +289,7 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
     ]
 
     env = os.environ.copy()
+    env["MAS_SUBPROCESS"] = "1"
 
     try:
         result = subprocess.run(
@@ -323,10 +324,10 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
             used_fallback = True
             logger.info("Using latest available KooCore-D output from %s", output_date_str)
         else:
-            logger.warning(
-                "KooCore-D produced no hybrid_analysis output — "
-                "outputs dir %s is empty or missing. "
-                "Ensure KooCore-D/outputs/ is committed to git for Heroku fallback.",
+            logger.error(
+                "KooCore-D FAILED: subprocess produced no output AND no fallback "
+                "output exists in %s. Check subprocess stderr above and ensure "
+                "KooCore-D/outputs/ is committed to git for Heroku fallback.",
                 _KOOCORE_ROOT / "outputs",
             )
             return None
@@ -359,6 +360,17 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
                         fb_date, len(fb_payload.picks),
                     )
                     payload = fb_payload
+                else:
+                    logger.warning(
+                        "KooCore-D DEGRADED: live run produced 0 picks and "
+                        "fallback from %s also has 0 picks",
+                        fb_date,
+                    )
+        else:
+            logger.warning(
+                "KooCore-D EMPTY: live run produced 0 picks and no fallback "
+                "output available (likely regime suppression)",
+            )
 
     logger.info(
         "KooCore-D local run complete: %d picks in %.1fs",
