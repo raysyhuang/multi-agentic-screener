@@ -285,29 +285,9 @@ async def dashboard_performance():
     if data.get("total_signals", 0) == 0:
         return data
 
-    # Build equity curve from closed outcomes (exit_date, not entry_date)
-    async with get_session() as session:
-        from datetime import timedelta
-        cutoff = date.today() - timedelta(days=90)
-        result = await session.execute(
-            select(Outcome).where(
-                Outcome.still_open == False,
-                Outcome.exit_date >= cutoff,
-            ).order_by(Outcome.exit_date.asc())
-        )
-        closed = result.scalars().all()
-
-    equity_curve = []
-    cumulative = 0.0
-    for o in closed:
-        pnl = o.pnl_pct or 0.0
-        cumulative += pnl
-        equity_curve.append({
-            "time": str(o.exit_date) if o.exit_date else str(o.entry_date),
-            "value": round(cumulative, 4),
-        })
-
-    data["equity_curve"] = equity_curve
+    # Reuse the daily-aggregated equity curve (avoids duplicate timestamps)
+    from src.output.performance import get_equity_curve
+    data["equity_curve"] = await get_equity_curve(days=90)
     return data
 
 
