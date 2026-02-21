@@ -1049,7 +1049,7 @@ async def cross_engine_collect(request: Request, background_tasks: BackgroundTas
     """Trigger evening cross-engine collection (Steps 10-14).
 
     Called by the evening GitHub Actions workflow or Heroku scheduler
-    after all three external engines have finished running.
+    after all external engines have finished running.
     Runs in the background so the HTTP response returns immediately.
     """
     from src.main import run_evening_collection

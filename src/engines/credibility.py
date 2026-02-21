@@ -4,10 +4,9 @@ Each engine earns its weight through proven track record:
   engine_weight = base_weight * hit_rate_multiplier * calibration_bonus * recency_decay
 
 Convergence multipliers boost conviction when multiple engines agree:
-  1 engine: base weight
-  2 engines: 1.5x combined weight
-  3 engines: 2.0x combined weight
-  4 engines: 3.0x combined weight
+  1 engine: 0.9x (single-source penalty)
+  2 engines: 1.3x combined weight
+  3+ engines: configurable (default 1.0x)
 """
 
 from __future__ import annotations

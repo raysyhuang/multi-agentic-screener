@@ -106,7 +106,7 @@ async def start_worker() -> None:
     )
 
     # Evening cross-engine collection (9:30 PM ET Mon-Fri)
-    # Runs AFTER all 3 external engines finish (latest by ~8:15 PM ET)
+    # Runs AFTER all external engines finish (latest by ~8:15 PM ET)
     scheduler.add_job(
         run_evening_collection,
         CronTrigger(

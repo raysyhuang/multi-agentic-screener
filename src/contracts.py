@@ -296,7 +296,7 @@ class EnginePick(StrictModel):
     """
 
     ticker: str
-    strategy: str  # "breakout", "mean_reversion", "swing", "momentum", "top3_gate", etc.
+    strategy: str  # "breakout", "mean_reversion", "swing", "momentum", etc.
     entry_price: float
     stop_loss: float | None = None
     target_price: float | None = None

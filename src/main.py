@@ -2310,7 +2310,7 @@ async def run_evening_collection() -> None:
     Standalone trigger for Steps 10-14 (cross-engine integration) that
     doesn't require the full morning pipeline to re-run.  Fetches today's
     screener picks from the DB so the synthesizer sees them alongside the
-    three external engines.
+    external engines.
     """
     import uuid
 
@@ -2482,7 +2482,7 @@ def start_scheduler() -> None:
     )
 
     # Evening cross-engine collection (9:30 PM ET Mon-Fri)
-    # Runs AFTER all 3 external engines finish (latest by ~8:15 PM ET)
+    # Runs AFTER all external engines finish (latest by ~8:15 PM ET)
     scheduler.add_job(
         run_evening_collection,
         CronTrigger(

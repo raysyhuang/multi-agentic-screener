@@ -289,13 +289,13 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     portfolio = synthesis.get("portfolio", [])
 
     regime_dot = _regime_emoji(regime)
-    engine_bar = _bar(engines_count, 4, 4)
+    engine_bar = _bar(engines_count, 2, 2)
 
     lines = [
         "<b>\U0001f517 Cross-Engine Synthesis</b>",
         "",
         f"{regime_dot} Regime: <b>{regime.upper()}</b>",
-        f"   Engines: {engine_bar} <b>{engines_count}/4</b> reporting",
+        f"   Engines: {engine_bar} <b>{engines_count}/2</b> reporting",
         "",
     ]
 

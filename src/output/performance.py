@@ -391,7 +391,7 @@ async def build_validation_card_from_history(days: int = 90):
         result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.entry_date >= cutoff)
+            .where(Outcome.still_open == False, Outcome.exit_date >= cutoff)
         )
         rows = result.all()
 
