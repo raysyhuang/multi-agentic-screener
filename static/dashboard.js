@@ -861,16 +861,18 @@
 
       var html = '<div class="card">' +
         '<div class="card-title" style="margin-bottom:0.5rem">LLM Uplift: Mode Comparison</div>' +
-        '<p class="card-subtitle" style="margin-bottom:1rem">Compare quant_only vs hybrid vs agentic_full performance</p>';
+        '<p class="card-subtitle" style="margin-bottom:1rem">Compare Quant Only vs Hybrid vs Agentic Full performance</p>';
 
       var modeColors = { agentic_full: 'var(--teal-500)', hybrid: '#a855f7', quant_only: 'var(--green)' };
+      var modeDisplay = { agentic_full: 'Agentic Full', hybrid: 'Hybrid', quant_only: 'Quant Only' };
+      function modeName(m) { return modeDisplay[m] || m.replace(/_/g, ' '); }
 
       html += '<div class="metrics-grid">';
       data.comparison.forEach(function (m) {
         var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
         var borderColor = modeColors[m.mode] || 'var(--teal-500)';
         html += '<div class="metric-card" style="border-top:3px solid ' + borderColor + '">' +
-          '<div class="metric-value">' + (m.mode || 'unknown').toUpperCase() + '</div>' +
+          '<div class="metric-value">' + escapeHtml(modeName(m.mode || 'unknown')) + '</div>' +
           '<div class="metric-label">' + m.trades + ' trades</div>' +
           '<div class="metric-label ' + pnlClass + '">WR: ' + fmtPct(m.win_rate * 100) +
           ' | Avg: ' + fmtPct(m.avg_pnl) +
@@ -882,7 +884,7 @@
       var rows = data.comparison.map(function (m) {
         var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
         return '<tr>' +
-          '<td><b>' + (m.mode || '?').toUpperCase() + '</b></td>' +
+          '<td><b>' + escapeHtml(modeName(m.mode || '?')) + '</b></td>' +
           '<td>' + m.trades + '</td>' +
           '<td>' + fmtPct(m.win_rate * 100) + '</td>' +
           '<td class="' + pnlClass + '">' + fmtPct(m.avg_pnl) + '</td>' +
