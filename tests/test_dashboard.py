@@ -154,28 +154,10 @@ async def test_dashboard_performance_empty(app_client):
 @pytest.mark.asyncio
 async def test_dashboard_performance_with_equity_curve():
     """Performance endpoint returns equity_curve with cumulative P&L."""
-    from contextlib import asynccontextmanager
-
-    mock_outcome1 = MagicMock()
-    mock_outcome1.pnl_pct = 2.5
-    mock_outcome1.exit_date = date(2025, 1, 10)
-    mock_outcome1.entry_date = date(2025, 1, 5)
-    mock_outcome1.still_open = False
-
-    mock_outcome2 = MagicMock()
-    mock_outcome2.pnl_pct = -1.0
-    mock_outcome2.exit_date = date(2025, 1, 12)
-    mock_outcome2.entry_date = date(2025, 1, 7)
-    mock_outcome2.still_open = False
-
-    mock_session = AsyncMock()
-    mock_result = MagicMock()
-    mock_result.scalars.return_value.all.return_value = [mock_outcome1, mock_outcome2]
-    mock_session.execute = AsyncMock(return_value=mock_result)
-
-    @asynccontextmanager
-    async def mock_get_session():
-        yield mock_session
+    mock_equity = [
+        {"time": "2025-01-10", "value": 2.5, "pnl": 2.5},
+        {"time": "2025-01-12", "value": 1.5, "pnl": -1.0},
+    ]
 
     perf_data = {
         "total_signals": 2,
@@ -191,8 +173,8 @@ async def test_dashboard_performance_with_equity_curve():
     with (
         patch("api.app.init_db", new_callable=AsyncMock),
         patch("api.app.close_db", new_callable=AsyncMock),
-        patch("api.app.get_session", mock_get_session),
         patch("api.app.get_performance_summary", new_callable=AsyncMock, return_value=perf_data),
+        patch("src.output.performance.get_equity_curve", new_callable=AsyncMock, return_value=mock_equity),
     ):
         from api.app import app
         transport = ASGITransport(app=app)
