@@ -313,11 +313,14 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
 
     # Read the hybrid_analysis output (from this run or a previous one)
     output_path = _KOOCORE_ROOT / "outputs" / output_date_str / f"hybrid_analysis_{output_date_str}.json"
+    used_fallback = False
+
     if not output_path.exists():
         # Try the latest available output as fallback
         latest = _find_latest_hybrid_output()
         if latest:
             output_path, output_date_str = latest
+            used_fallback = True
             logger.info("Using latest available KooCore-D output from %s", output_date_str)
         else:
             logger.warning(
@@ -333,6 +336,30 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
 
     elapsed = time.monotonic() - start
     payload = _map_hybrid_to_payload(hybrid, output_date_str, duration=elapsed)
+
+    # If the live subprocess produced 0 picks, try the committed fallback output
+    # instead.  This handles the case where the subprocess runs in a BEARISH
+    # regime and creates an empty output file that shadows a good committed one.
+    if len(payload.picks) == 0 and not used_fallback:
+        logger.warning(
+            "KooCore-D live run produced 0 picks for %s — trying committed fallback",
+            output_date_str,
+        )
+        latest = _find_latest_hybrid_output()
+        if latest:
+            fb_path, fb_date = latest
+            # Only use fallback if it's a DIFFERENT file with actual content
+            if fb_path != output_path:
+                with open(fb_path, "r") as f:
+                    fb_hybrid = json.load(f)
+                fb_payload = _map_hybrid_to_payload(fb_hybrid, fb_date, duration=elapsed)
+                if len(fb_payload.picks) > 0:
+                    logger.info(
+                        "KooCore-D fallback from %s has %d picks — using it instead",
+                        fb_date, len(fb_payload.picks),
+                    )
+                    payload = fb_payload
+
     logger.info(
         "KooCore-D local run complete: %d picks in %.1fs",
         len(payload.picks), elapsed,
