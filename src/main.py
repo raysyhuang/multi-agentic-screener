@@ -2033,6 +2033,16 @@ async def _run_cross_engine_steps(
                 )
                 synthesis.portfolio = valid_portfolio
 
+        # Backfill regime_consensus from the actual regime detection when the
+        # LLM left it empty or returned a non-standard label.
+        _KNOWN_REGIMES = {"bull", "bear", "choppy", "unknown"}
+        if (
+            not synthesis.regime_consensus
+            or synthesis.regime_consensus.lower() not in _KNOWN_REGIMES
+        ):
+            detected = regime_context.get("regime", "unknown")
+            synthesis.regime_consensus = detected
+
         # Low-overlap guardrail: when there are no convergent picks, force a
         # smaller, lighter portfolio rather than allowing broad unique-only risk.
         if not synthesis.convergent_picks and synthesis.portfolio:
