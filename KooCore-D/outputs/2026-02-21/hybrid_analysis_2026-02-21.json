@@ -1,0 +1,430 @@
+{
+  "date": "2026-02-21",
+  "asof_trading_date": "2026-02-20",
+  "summary": {
+    "primary_top5_count": 2,
+    "weekly_top5_count": 2,
+    "pro30_candidates_count": 2,
+    "movers_count": 0,
+    "hybrid_top3_count": 3
+  },
+  "overlaps": {
+    "all_three": [],
+    "primary_pro30": [],
+    "primary_movers": [],
+    "pro30_movers": [],
+    "weekly_pro30": [],
+    "weekly_movers": []
+  },
+  "hybrid_top3": [
+    {
+      "ticker": "COHR",
+      "hybrid_score": 3.0,
+      "sources": [
+        "Pro30(r1)"
+      ],
+      "rank": 1,
+      "name": "",
+      "sector": "",
+      "current_price": 195.96,
+      "composite_score": 3.0,
+      "confidence": "SPECULATIVE"
+    },
+    {
+      "ticker": "SEI",
+      "hybrid_score": 2.95,
+      "sources": [
+        "Pro30(r2)"
+      ],
+      "rank": 2,
+      "name": "",
+      "sector": "",
+      "current_price": 55.4,
+      "composite_score": 2.95,
+      "confidence": "SPECULATIVE"
+    },
+    {
+      "ticker": "HAS",
+      "hybrid_score": 1.6,
+      "sources": [
+        "Weekly(1)"
+      ],
+      "rank": 3,
+      "name": "Hasbro, Inc.",
+      "sector": "Consumer Cyclical",
+      "current_price": 86.89,
+      "composite_score": 4.44,
+      "confidence": "SPECULATIVE",
+      "primary_catalyst": {
+        "title": "No verified dated catalyst within next 7 trading days in packet headlines",
+        "key_date_local": null,
+        "timing": null,
+        "why_it_matters": "Setup is primarily technical + options-driven; without a dated event, probability of a sharp move relies on flow/positioning rather than scheduled news.",
+        "sources": [
+          {
+            "title": "The World's Most Influential Brand Gathering Returns to Vegas this May",
+            "publisher": "GlobeNewswire Inc.",
+            "url": "https://www.globenewswire.com/news-release/2026/02/19/3241329/0/en/The-World-s-Most-Influential-Brand-Gathering-Returns-to-Vegas-this-May.html",
+            "published_at": "2026-02-19"
+          }
+        ]
+      },
+      "scores": {
+        "technical": 8.25,
+        "catalyst": 2.0,
+        "options": 10.0,
+        "sentiment": 1.5
+      },
+      "evidence": {
+        "technical": {
+          "within_5pct_52w_high": true,
+          "resistance_level": 89.2,
+          "volume_ratio_3d_to_20d": 1.13,
+          "rsi14": 67.23,
+          "above_ma10_ma20_ma50": true,
+          "realized_vol_5d_ann_pct": 27.45
+        },
+        "options": {
+          "call_put_ratio": 16.166180758017493,
+          "unusual_volume_multiple": 0.53,
+          "largest_bullish_premium_usd": null,
+          "iv_rank": null,
+          "notable_contracts": [
+            {
+              "ticker": "O:HAS260320C00085000",
+              "type": "call",
+              "strike": 85,
+              "expiration": "2026-03-20",
+              "volume": 1300,
+              "open_interest": 711,
+              "iv": null
+            },
+            {
+              "ticker": "O:HAS260417C00110000",
+              "type": "call",
+              "strike": 110,
+              "expiration": "2026-04-17",
+              "volume": 1200,
+              "open_interest": 28,
+              "iv": 0.2605792530783449
+            }
+          ]
+        },
+        "sentiment": {
+          "twitter": {
+            "mention_velocity_vs_7d": null,
+            "quality_accounts_est": null,
+            "bullish_pct_est": null
+          },
+          "reddit": {
+            "mention_velocity": 30,
+            "upvote_ratio_est": 200.43333333333334
+          },
+          "stocktwits": {
+            "bull_bear_ratio_est": null
+          },
+          "news_tone": "neutral"
+        }
+      },
+      "target": {
+        "horizon_trading_days": 7,
+        "upside_threshold_pct": 10,
+        "target_price_for_10pct": 95.58,
+        "base_case_upside_pct_range": [
+          10,
+          16
+        ],
+        "bear_case_note": "Momentum stalls below recent highs; options-driven move fails to translate to spot buying and price loses MA20/MA50 support."
+      },
+      "risk_factors": [
+        "Options activity may reflect hedging/structure rather than directional conviction; unusual volume multiple not elevated.",
+        "Consumer discretionary names can be sensitive to macro/rates; gap risk on any surprise company news."
+      ],
+      "data_gaps": [
+        "No packet-verified dated catalyst within next 7 trading days; catalyst score capped at 4.0 and set conservatively.",
+        "Twitter/StockTwits metrics missing (null) in sentiment evidence; sentiment score relies on limited sources."
+      ]
+    }
+  ],
+  "weighted_picks": [
+    {
+      "ticker": "COHR",
+      "hybrid_score": 3.0,
+      "sources": [
+        "Pro30(r1)"
+      ],
+      "current_price": 195.96,
+      "in_all_three": false,
+      "in_primary_pro30": false
+    },
+    {
+      "ticker": "SEI",
+      "hybrid_score": 2.95,
+      "sources": [
+        "Pro30(r2)"
+      ],
+      "current_price": 55.4,
+      "in_all_three": false,
+      "in_primary_pro30": false
+    },
+    {
+      "ticker": "HAS",
+      "hybrid_score": 1.6,
+      "sources": [
+        "Weekly(1)"
+      ],
+      "current_price": 86.89,
+      "in_all_three": false,
+      "in_primary_pro30": false
+    },
+    {
+      "ticker": "RKLB",
+      "hybrid_score": 1.1,
+      "sources": [
+        "Weekly(2)"
+      ],
+      "current_price": 90.76,
+      "in_all_three": false,
+      "in_primary_pro30": false
+    }
+  ],
+  "weighting_note": "Primary=Weekly, Pro30, Movers, overlaps (configurable)",
+  "primary_label": "Weekly",
+  "primary_top5": [
+    {
+      "rank": 1,
+      "ticker": "HAS",
+      "name": "Hasbro, Inc.",
+      "exchange": "NASDAQ",
+      "sector": "Consumer Cyclical",
+      "current_price": 86.89,
+      "market_cap_usd": 14238594048,
+      "avg_dollar_volume_20d": 128828284.9845,
+      "asof_price_utc": "2026-01-15T00:00:00Z",
+      "target": {
+        "horizon_trading_days": 7,
+        "upside_threshold_pct": 10,
+        "target_price_for_10pct": 95.58,
+        "base_case_upside_pct_range": [
+          10,
+          16
+        ],
+        "bear_case_note": "Momentum stalls below recent highs; options-driven move fails to translate to spot buying and price loses MA20/MA50 support."
+      },
+      "primary_catalyst": {
+        "title": "No verified dated catalyst within next 7 trading days in packet headlines",
+        "key_date_local": null,
+        "timing": null,
+        "why_it_matters": "Setup is primarily technical + options-driven; without a dated event, probability of a sharp move relies on flow/positioning rather than scheduled news.",
+        "sources": [
+          {
+            "title": "The World's Most Influential Brand Gathering Returns to Vegas this May",
+            "publisher": "GlobeNewswire Inc.",
+            "url": "https://www.globenewswire.com/news-release/2026/02/19/3241329/0/en/The-World-s-Most-Influential-Brand-Gathering-Returns-to-Vegas-this-May.html",
+            "published_at": "2026-02-19"
+          }
+        ]
+      },
+      "scores": {
+        "technical": 8.25,
+        "catalyst": 2.0,
+        "options": 10.0,
+        "sentiment": 1.5
+      },
+      "composite_score": 4.44,
+      "evidence": {
+        "technical": {
+          "within_5pct_52w_high": true,
+          "resistance_level": 89.2,
+          "volume_ratio_3d_to_20d": 1.13,
+          "rsi14": 67.23,
+          "above_ma10_ma20_ma50": true,
+          "realized_vol_5d_ann_pct": 27.45
+        },
+        "options": {
+          "call_put_ratio": 16.166180758017493,
+          "unusual_volume_multiple": 0.53,
+          "largest_bullish_premium_usd": null,
+          "iv_rank": null,
+          "notable_contracts": [
+            {
+              "ticker": "O:HAS260320C00085000",
+              "type": "call",
+              "strike": 85,
+              "expiration": "2026-03-20",
+              "volume": 1300,
+              "open_interest": 711,
+              "iv": null
+            },
+            {
+              "ticker": "O:HAS260417C00110000",
+              "type": "call",
+              "strike": 110,
+              "expiration": "2026-04-17",
+              "volume": 1200,
+              "open_interest": 28,
+              "iv": 0.2605792530783449
+            }
+          ]
+        },
+        "sentiment": {
+          "twitter": {
+            "mention_velocity_vs_7d": null,
+            "quality_accounts_est": null,
+            "bullish_pct_est": null
+          },
+          "reddit": {
+            "mention_velocity": 30,
+            "upvote_ratio_est": 200.43333333333334
+          },
+          "stocktwits": {
+            "bull_bear_ratio_est": null
+          },
+          "news_tone": "neutral"
+        }
+      },
+      "risk_factors": [
+        "Options activity may reflect hedging/structure rather than directional conviction; unusual volume multiple not elevated.",
+        "Consumer discretionary names can be sensitive to macro/rates; gap risk on any surprise company news."
+      ],
+      "confidence": "SPECULATIVE",
+      "data_gaps": [
+        "No packet-verified dated catalyst within next 7 trading days; catalyst score capped at 4.0 and set conservatively.",
+        "Twitter/StockTwits metrics missing (null) in sentiment evidence; sentiment score relies on limited sources."
+      ],
+      "original_score": 5.44,
+      "debate_verdict": "HOLD",
+      "debate_reasoning": "The bull case has solid evidence on trend strength (price above key MAs and near highs) and supportive options skew, but it relies on a breakout/catalyst that is not yet confirmed. The bear case more directly challenges the 7-day +10% hurdle with lack of breakout confirmation, elevated RSI, and high implied volatility suggesting much of the move may already be priced, making near-term risk/reward more balanced than the original score implies.",
+      "debate_bull_score": 7.2,
+      "debate_bear_score": 6.6,
+      "key_risks_from_debate": [
+        "Failed breakout/mean reversion from near-52W-high levels (RSI elevated; no confirmed Donchian breakout)",
+        "Options skew may reflect positioning without fresh flow (low unusual volume multiple) and high IV can compress, hurting upside expectancy"
+      ],
+      "key_catalysts_from_debate": [
+        "Clean technical breakout above nearby resistance/52-week high triggering momentum/CTA flows",
+        "Incremental company-specific news (earnings date clarity, guidance, or brand/licensing monetization updates tied to major IP/events)"
+      ]
+    },
+    {
+      "rank": 2,
+      "ticker": "RKLB",
+      "name": "Rocket Lab Corporation",
+      "exchange": "NCM",
+      "sector": "Industrials",
+      "current_price": 90.76,
+      "market_cap_usd": 37850316800,
+      "avg_dollar_volume_20d": 2252548061.9155,
+      "asof_price_utc": "2026-01-15T00:00:00Z",
+      "target": {
+        "horizon_trading_days": 7,
+        "upside_threshold_pct": 10,
+        "target_price_for_10pct": 99.84,
+        "base_case_upside_pct_range": [
+          10,
+          18
+        ],
+        "bear_case_note": "Earnings update disappoints on Neutron timeline or guidance; loss of momentum/failed hold above short-term moving averages with elevated vol."
+      },
+      "primary_catalyst": {
+        "title": "Q4 2025 earnings (scheduled) — focus on Neutron timeline update",
+        "key_date_local": "2026-02-26",
+        "timing": null,
+        "why_it_matters": "Scheduled earnings within the next week can re-rate the stock if management provides a credible Neutron development timeline update after reported January testing issues; high realized volatility supports potential for a ≥10% move.",
+        "sources": [
+          {
+            "title": "Rocket Lab Earnings Loom as Neutron Timeline Takes Center Stage",
+            "publisher": "Investing.com",
+            "url": "https://www.investing.com/analysis/rocket-lab-earnings-loom-as-neutron-timeline-takes-center-stage-200675346",
+            "published_at": "2026-02-19"
+          }
+        ]
+      },
+      "scores": {
+        "technical": 8.25,
+        "catalyst": 4.0,
+        "options": 4.0,
+        "sentiment": 4.0
+      },
+      "composite_score": 4.06,
+      "evidence": {
+        "technical": {
+          "within_5pct_52w_high": true,
+          "resistance_level": 92.19,
+          "volume_ratio_3d_to_20d": 0.86,
+          "rsi14": 67.1,
+          "above_ma10_ma20_ma50": true,
+          "realized_vol_5d_ann_pct": 50.65
+        },
+        "options": {
+          "call_put_ratio": 1.0053213262382317,
+          "unusual_volume_multiple": 0.56,
+          "largest_bullish_premium_usd": null,
+          "iv_rank": null,
+          "notable_contracts": [
+            {
+              "ticker": "O:RKLB260227C00075000",
+              "type": "call",
+              "strike": 75,
+              "expiration": "2026-02-27",
+              "volume": 1855,
+              "open_interest": 1824,
+              "iv": 1.19341396041284
+            },
+            {
+              "ticker": "O:RKLB260227C00080000",
+              "type": "call",
+              "strike": 80,
+              "expiration": "2026-02-27",
+              "volume": 1746,
+              "open_interest": 2318,
+              "iv": 1.1729932367648357
+            }
+          ]
+        },
+        "sentiment": {
+          "twitter": {
+            "mention_velocity_vs_7d": null,
+            "quality_accounts_est": null,
+            "bullish_pct_est": null
+          },
+          "reddit": {
+            "mention_velocity": null,
+            "upvote_ratio_est": null
+          },
+          "stocktwits": {
+            "bull_bear_ratio_est": null
+          },
+          "news_tone": null
+        }
+      },
+      "risk_factors": [
+        "Binary earnings risk (gap move both directions); implied/realized vol elevated.",
+        "Space/defense sentiment can be headline-driven; sector correlation risk."
+      ],
+      "confidence": "SPECULATIVE",
+      "data_gaps": [
+        "Sentiment data unavailable in packet (sentiment_score null); sentiment factor capped at 4.0 per rules.",
+        "Catalyst cross-check limited to packet headlines; only one source in packet provides the earnings date/time."
+      ],
+      "original_score": 5.06,
+      "debate_verdict": "HOLD",
+      "debate_reasoning": "The bull case is supported by strong trend/relative strength and sufficient volatility to allow a +10% week, but it relies heavily on catalyst-driven momentum without a confirmed technical breakout. The bear case presents stronger evidence of near-term asymmetry: extended positioning near highs, weakening participation, and earnings/timeline uncertainty that could trigger a sharp pullback, making the probability-weighted edge over the next 7 sessions unclear.",
+      "debate_bull_score": 7.2,
+      "debate_bear_score": 7.0,
+      "key_risks_from_debate": [
+        "No confirmed breakout above prior Donchian levels (92.19) with subpar recent volume (3d/20d volume ratio 0.86), increasing odds of a near-high fade",
+        "Earnings/Neutron timeline headline risk (including prior Stage 1 tank rupture context) could disappoint expectations and drive a volatility-driven selloff"
+      ],
+      "key_catalysts_from_debate": [
+        "Potential earnings-related positioning and Neutron timeline update flow into late-Feb window",
+        "Continuation breakout if price clears ~92.19 with expanding volume, enabling momentum extension toward new highs"
+      ]
+    }
+  ],
+  "pro30_tickers": [
+    "COHR",
+    "SEI"
+  ],
+  "movers_tickers": []
+}
