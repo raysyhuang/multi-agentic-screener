@@ -243,7 +243,17 @@ class TestDetectSplitArtifacts:
 
 class TestValidateFeatures:
     def test_healthy_features(self):
-        features = {f"T{i}": {"rsi_14": 55, "atr_14": 3.5, "close": 100, "volume": 1e6, "sma_20": 98} for i in range(80)}
+        features = {
+            f"T{i}": {
+                "rsi_14": 55,
+                "atr_14": 3.5,
+                "close": 100,
+                "volume": 1e6,
+                "sma_20": 98,
+                "fundamental": {"profile": {"symbol": f"T{i}"}, "earnings_surprises": [], "insider_transactions": []},
+            }
+            for i in range(80)
+        }
         sv = validate_features(features, 100)
         assert sv.passed is True
 
@@ -258,6 +268,25 @@ class TestValidateFeatures:
         sv = validate_features(features, 1)
         inf_check = next(c for c in sv.checks if c.name == "feature_inf_check")
         assert inf_check.passed is False
+
+    def test_fmp_coverage_warns_when_profiles_missing(self):
+        features = {
+            f"T{i}": {
+                "rsi_14": 55,
+                "atr_14": 3.5,
+                "close": 100,
+                "volume": 1e6,
+                "sma_20": 98,
+                "fundamental": {"profile": {}, "earnings_surprises": [], "insider_transactions": []},
+            }
+            for i in range(10)
+        }
+        # keep one valid profile so coverage is 10%
+        features["T0"]["fundamental"]["profile"] = {"symbol": "T0"}
+
+        sv = validate_features(features, 10)
+        fmp_check = next(c for c in sv.checks if c.name == "fmp_fundamentals_coverage")
+        assert fmp_check.passed is False
 
 
 class TestValidateSignals:

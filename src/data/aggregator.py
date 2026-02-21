@@ -303,6 +303,7 @@ class DataAggregator:
             earnings_task, insider_task, profile_task,
             return_exceptions=True,
         )
+        had_failures = any(isinstance(result, Exception) for result in results)
 
         earnings = results[0] if not isinstance(results[0], Exception) else []
         insiders = results[1] if not isinstance(results[1], Exception) else []
@@ -314,8 +315,13 @@ class DataAggregator:
             "profile": profile,
         }
 
-        if self._cache_enabled:
+        all_empty = not earnings and not insiders and not profile
+        should_cache = not (had_failures and all_empty)
+
+        if self._cache_enabled and should_cache:
             self._cache.put(key, json.dumps(data), TTL_FUNDAMENTALS, source="fmp", ticker=ticker, endpoint="fundamentals")
+        elif had_failures and all_empty:
+            logger.info("Skipping empty fundamentals cache for %s after FMP failures", ticker)
 
         return data
 

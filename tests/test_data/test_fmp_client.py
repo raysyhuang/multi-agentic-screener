@@ -7,7 +7,7 @@ from unittest.mock import AsyncMock, patch, MagicMock
 
 import pytest
 
-from src.data.fmp_client import FMPClient
+from src.data.fmp_client import FMPClient, FMPDisabledError, FMPFatalError
 
 
 @pytest.fixture
@@ -103,3 +103,27 @@ async def test_get_daily_prices(client):
     assert not df.empty
     assert len(df) == 2
     assert "close" in df.columns
+
+
+@pytest.mark.asyncio
+async def test_fmp_disables_after_non_retryable_error(client):
+    """402/401 class errors should disable FMP for the process."""
+    blocked = MagicMock()
+    blocked.status_code = 402
+    blocked.headers = {}
+    blocked.json.return_value = {"Error Message": "Payment Required"}
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = blocked
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        with pytest.raises(FMPFatalError):
+            await client.get_stock_screener()
+
+        with pytest.raises(FMPDisabledError):
+            await client.get_stock_screener()
+
+    assert mock_client.get.call_count == 1

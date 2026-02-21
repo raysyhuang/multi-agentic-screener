@@ -176,3 +176,21 @@ async def test_universe_cache_hit(aggregator):
 
     assert len(result) == 2
     aggregator.fmp.get_stock_screener.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fundamentals_all_fail_does_not_cache_empty_payload(aggregator):
+    """Avoid caching pure fallback empties from failed FMP calls."""
+    aggregator._cache.get.return_value = None
+    aggregator.fmp.get_earnings_surprise = AsyncMock(side_effect=Exception("fmp blocked"))
+    aggregator.fmp.get_insider_trading = AsyncMock(side_effect=Exception("fmp blocked"))
+    aggregator.fmp.get_company_profile = AsyncMock(side_effect=Exception("fmp blocked"))
+
+    result = await aggregator.get_ticker_fundamentals("AAPL")
+
+    assert result == {
+        "earnings_surprises": [],
+        "insider_transactions": [],
+        "profile": {},
+    }
+    aggregator._cache.put.assert_not_called()

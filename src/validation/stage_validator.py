@@ -439,6 +439,37 @@ def validate_features(
         value=round(degraded_rate, 3),
     ))
 
+    # FMP fundamentals coverage: profile/earnings/insider present for most tickers
+    def _has_fmp_payload(feat: dict) -> bool:
+        fund = feat.get("fundamental")
+        if not isinstance(fund, dict):
+            return False
+        profile = fund.get("profile")
+        if isinstance(profile, dict) and (profile.get("symbol") or profile.get("companyName")):
+            return True
+        earnings = fund.get("earnings_surprises")
+        insiders = fund.get("insider_transactions")
+        if isinstance(earnings, list) and len(earnings) > 0:
+            return True
+        if isinstance(insiders, list) and len(insiders) > 0:
+            return True
+        return False
+
+    fmp_ok_count = sum(1 for feat in features_by_ticker.values() if _has_fmp_payload(feat))
+    fmp_coverage = fmp_ok_count / feat_count if feat_count > 0 else 0.0
+    fmp_cov_ok = fmp_coverage >= 0.70
+    sv.checks.append(StageCheck(
+        name="fmp_fundamentals_coverage",
+        passed=fmp_cov_ok,
+        severity=Severity.WARN,
+        message=(
+            f"FMP fundamentals coverage low: {fmp_coverage:.0%} ({fmp_ok_count}/{feat_count})"
+            if not fmp_cov_ok else
+            f"FMP fundamentals coverage: {fmp_coverage:.0%} ({fmp_ok_count}/{feat_count})"
+        ),
+        value=round(fmp_coverage, 3),
+    ))
+
     return sv
 
 
