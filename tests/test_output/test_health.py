@@ -31,7 +31,7 @@ from src.output.health import (
 
 def _business_day_end() -> pd.Timestamp:
     """Return today's date snapped to a business day for stable test lengths."""
-    return pd.Timestamp(date.today()) + pd.offsets.BDay(0)
+    return pd.offsets.BDay().rollback(pd.Timestamp(date.today()))
 
 
 def _make_df(rows: int = 60, trend: str = "up") -> pd.DataFrame:

@@ -843,7 +843,7 @@ async def get_divergence_stats(days: int = 30) -> dict | None:
 
 
 async def get_equity_curve(days: int = 90) -> list[dict]:
-    """Build equity curve from closed outcomes (cumulative returns)."""
+    """Build equity curve from closed outcomes (daily cumulative returns)."""
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
         result = await session.execute(
@@ -854,13 +854,21 @@ async def get_equity_curve(days: int = 90) -> list[dict]:
         )
         closed = result.scalars().all()
 
-    curve = []
-    cumulative = 0.0
+    # Aggregate by day so chart points have unique timestamps.
+    # Multiple closes on the same day should roll into one daily P&L.
+    daily_pnl: dict[str, float] = {}
     for o in closed:
         pnl = o.pnl_pct or 0.0
+        time_key = str(o.exit_date) if o.exit_date else str(o.entry_date)
+        daily_pnl[time_key] = daily_pnl.get(time_key, 0.0) + pnl
+
+    curve = []
+    cumulative = 0.0
+    for time_key in sorted(daily_pnl.keys()):
+        pnl = daily_pnl[time_key]
         cumulative += pnl
         curve.append({
-            "time": str(o.exit_date) if o.exit_date else str(o.entry_date),
+            "time": time_key,
             "value": round(cumulative, 4),
             "pnl": round(pnl, 4),
         })

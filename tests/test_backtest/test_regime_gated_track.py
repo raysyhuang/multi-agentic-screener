@@ -3,11 +3,9 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import patch
 
 import pandas as pd
 
-from src.backtest.multi_engine.adapters.base import NormalizedPick
 from src.backtest.multi_engine.portfolio_sim import (
     DailyPickRecord,
     PortfolioConfig,
