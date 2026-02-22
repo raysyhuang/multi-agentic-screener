@@ -216,10 +216,120 @@ def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
     """Ticker set used for same-day cross-engine alert dedupe."""
     out: set[str] = set()
     for p in portfolio or []:
+        if not isinstance(p, dict):
+            continue
         t = str(p.get("ticker") or "").upper().strip()
         if t:
             out.add(t)
     return out
+
+
+def _convergent_ticker_set(convergent: list | None) -> set[str]:
+    """Ticker set from convergent picks payload (dict rows or plain strings)."""
+    out: set[str] = set()
+    for row in convergent or []:
+        if isinstance(row, str):
+            t = row.upper().strip()
+        elif isinstance(row, dict):
+            t = str(row.get("ticker") or "").upper().strip()
+        else:
+            t = ""
+        if t:
+            out.add(t)
+    return out
+
+
+def _normalize_portfolio_for_alert(portfolio: list[dict] | None) -> list[dict]:
+    """Normalized, sorted portfolio snapshot for stable alert hashing/diffing."""
+    normalized: list[dict] = []
+    for row in portfolio or []:
+        if not isinstance(row, dict):
+            continue
+        ticker = str(row.get("ticker") or "").upper().strip()
+        if not ticker:
+            continue
+        normalized.append({
+            "ticker": ticker,
+            "weight_pct": round(_safe_float(row.get("weight_pct")) or 0.0, 2),
+            "entry_price": round(_safe_float(row.get("entry_price")) or 0.0, 4),
+            "stop_loss": round(_safe_float(row.get("stop_loss")) or 0.0, 4),
+            "target_price": round(_safe_float(row.get("target_price")) or 0.0, 4),
+            "holding_period_days": int(row.get("holding_period_days") or 0),
+            "source": str(row.get("source") or "").lower().strip(),
+        })
+    normalized.sort(key=lambda r: r["ticker"])
+    return normalized
+
+
+def _cross_engine_alert_fingerprint_payload(
+    *,
+    run_date: date,
+    regime_consensus: str | None,
+    engines_reporting: int,
+    convergent_picks: list | None,
+    portfolio: list[dict] | None,
+    executive_summary: str | None,
+) -> dict:
+    """Actionable cross-engine payload used for stable alert dedupe/update checks."""
+    halted = "HALT" in str(executive_summary or "").upper()
+    return {
+        "run_date": str(run_date),
+        "regime_consensus": str(regime_consensus or "").strip().upper(),
+        "engines_reporting": int(engines_reporting),
+        "halted": halted,
+        "convergent_tickers": sorted(_convergent_ticker_set(convergent_picks)),
+        "portfolio": _normalize_portfolio_for_alert(portfolio),
+    }
+
+
+def _read_cross_engine_alert_state(cross_health: dict | None) -> dict:
+    """Best-effort extraction of persisted alert_state metadata."""
+    if not isinstance(cross_health, dict):
+        return {}
+    state = cross_health.get("alert_state")
+    return state if isinstance(state, dict) else {}
+
+
+def _cross_engine_change_reasons(
+    *,
+    existing_synthesis,
+    new_synthesis: dict,
+    new_engines_reporting: int,
+) -> list[str]:
+    """Human-readable reasons for cross-engine alert updates."""
+    reasons: list[str] = []
+
+    if existing_synthesis.engines_reporting != new_engines_reporting:
+        reasons.append(
+            f"engines reporting {existing_synthesis.engines_reporting}\u2192{new_engines_reporting}"
+        )
+
+    old_halt = "HALT" in str(existing_synthesis.executive_summary or "").upper()
+    new_halt = "HALT" in str(new_synthesis.get("executive_summary") or "").upper()
+    if old_halt != new_halt:
+        reasons.append("validation gate status changed")
+
+    old_tickers = _portfolio_ticker_set(existing_synthesis.portfolio_recommendation)
+    new_tickers = _portfolio_ticker_set(new_synthesis.get("portfolio"))
+    if old_tickers != new_tickers:
+        reasons.append("portfolio tickers changed")
+    elif old_tickers:
+        old_portfolio = _normalize_portfolio_for_alert(existing_synthesis.portfolio_recommendation)
+        new_portfolio = _normalize_portfolio_for_alert(new_synthesis.get("portfolio"))
+        if old_portfolio != new_portfolio:
+            reasons.append("position sizing/risk levels changed")
+
+    old_regime = str(existing_synthesis.regime_consensus or "").strip().upper()
+    new_regime = str(new_synthesis.get("regime_consensus") or "").strip().upper()
+    if old_regime != new_regime:
+        reasons.append("regime consensus changed")
+
+    old_conv = _convergent_ticker_set(existing_synthesis.convergent_tickers)
+    new_conv = _convergent_ticker_set(new_synthesis.get("convergent_picks"))
+    if old_conv != new_conv:
+        reasons.append("convergent tickers changed")
+
+    return reasons
 
 
 def _stable_payload_hash(payload: dict) -> str:
@@ -1741,7 +1851,7 @@ async def _run_cross_engine_steps(
     try:
         # --- Step 10: Collect external engine results ---
         logger.info("Step 10: Collecting external engine results...")
-        engine_results, failed_engines = await collect_engine_results()
+        engine_results, failed_engines = await collect_engine_results(target_date=today)
 
         sent_drop_alert = await maybe_send_engine_drop_alert(
             failed_engines=failed_engines,
@@ -2304,6 +2414,25 @@ async def _run_cross_engine_steps(
         logger.info("Step 14: Saving synthesis and sending alert...")
         synthesis_dict = _json_safe(synthesis.model_dump())
         should_send_alert = True
+        alert_sent = False
+        alert_meta = {
+            "is_update": False,
+            "revision": 1,
+            "run_date": str(today),
+            "change_reasons": ["initial synthesis for date"],
+        }
+        alert_hash = _stable_payload_hash(
+            _cross_engine_alert_fingerprint_payload(
+                run_date=today,
+                regime_consensus=synthesis.regime_consensus,
+                engines_reporting=len(engine_results),
+                convergent_picks=synthesis_dict.get("convergent_picks"),
+                portfolio=synthesis_dict.get("portfolio"),
+                executive_summary=synthesis.executive_summary,
+            )
+        )
+        prior_alert_hash: str | None = None
+        prior_alert_revision = 0
         async with get_session() as session:
             # Check for existing synthesis (re-run safety)
             existing_synth = await session.execute(
@@ -2315,42 +2444,66 @@ async def _run_cross_engine_steps(
             cross_health_dict["engines_reporting"] = len(engine_results)
             cross_health_dict["engines_failed"] = failure_stats.get("total_failed", 0)
             if row:
-                existing_tickers = _portfolio_ticker_set(row.portfolio_recommendation)
-                new_tickers = _portfolio_ticker_set(synthesis_dict.get("portfolio"))
-                existing_halt = "HALT" in (row.executive_summary or "").upper()
-                new_halt = "HALT" in (synthesis.executive_summary or "").upper()
-                engines_increased = row.engines_reporting < len(engine_results)
+                existing_state = _read_cross_engine_alert_state(row.cross_engine_health)
+                prev_hash_raw = existing_state.get("last_alert_hash")
+                if isinstance(prev_hash_raw, str) and prev_hash_raw:
+                    prior_alert_hash = prev_hash_raw
+                else:
+                    # Backward compatibility for historical rows before alert_state metadata.
+                    prior_alert_hash = _stable_payload_hash(
+                        _cross_engine_alert_fingerprint_payload(
+                            run_date=today,
+                            regime_consensus=row.regime_consensus,
+                            engines_reporting=row.engines_reporting,
+                            convergent_picks=row.convergent_tickers,
+                            portfolio=row.portfolio_recommendation,
+                            executive_summary=row.executive_summary,
+                        )
+                    )
+                try:
+                    prior_alert_revision = int(existing_state.get("last_alert_revision") or 0)
+                except (TypeError, ValueError):
+                    prior_alert_revision = 0
 
-                # Re-alert only when actionable state changes.
-                should_send_alert = (
-                    engines_increased
-                    or existing_tickers != new_tickers
-                    or existing_halt != new_halt
+                try:
+                    previous_synthesis_revision = int(existing_state.get("synthesis_revision") or 0)
+                except (TypeError, ValueError):
+                    previous_synthesis_revision = 0
+                synthesis_revision = max(1, previous_synthesis_revision + 1)
+
+                change_reasons = _cross_engine_change_reasons(
+                    existing_synthesis=row,
+                    new_synthesis=synthesis_dict,
+                    new_engines_reporting=len(engine_results),
                 )
+                should_send_alert = alert_hash != prior_alert_hash
+                if should_send_alert and not change_reasons:
+                    change_reasons = ["synthesis details updated"]
 
                 logger.info(
-                    "Step 14 dedupe: engines %d→%d, tickers %s→%s, halt %s→%s, send=%s",
-                    row.engines_reporting,
-                    len(engine_results),
-                    sorted(existing_tickers),
-                    sorted(new_tickers),
-                    existing_halt,
-                    new_halt,
+                    "Step 14 dedupe: hash %s→%s rev=%d send=%s reasons=%s",
+                    (prior_alert_hash or "")[:12],
+                    alert_hash[:12],
+                    synthesis_revision,
                     should_send_alert,
+                    change_reasons,
                 )
-
-                # Time-based cooldown (defense-in-depth)
-                if should_send_alert and not new_halt:
-                    last_sent = _cross_engine_last_alert.get(str(today))
-                    if last_sent:
-                        hours_since = (datetime.utcnow() - last_sent).total_seconds() / 3600
-                        if hours_since < settings.cross_engine_alert_cooldown_hours:
-                            should_send_alert = False
-                            logger.info(
-                                "Step 14 cooldown: %.1fh since last alert (<%dh), suppressing",
-                                hours_since,
-                                settings.cross_engine_alert_cooldown_hours,
-                            )
+                alert_meta = {
+                    "is_update": should_send_alert and prior_alert_hash is not None,
+                    "revision": synthesis_revision,
+                    "run_date": str(today),
+                    "supersedes_revision": (
+                        prior_alert_revision if prior_alert_revision > 0 else None
+                    ),
+                    "change_reasons": change_reasons[:3],
+                }
+                cross_health_dict["alert_state"] = {
+                    "synthesis_revision": synthesis_revision,
+                    "current_payload_hash": alert_hash,
+                    "last_alert_hash": prior_alert_hash,
+                    "last_alert_revision": prior_alert_revision,
+                    "last_alert_sent_at": existing_state.get("last_alert_sent_at"),
+                }
                 row.convergent_tickers = synthesis_dict.get("convergent_picks")
                 row.portfolio_recommendation = synthesis_dict.get("portfolio")
                 row.regime_consensus = synthesis.regime_consensus
@@ -2360,6 +2513,13 @@ async def _run_cross_engine_steps(
                 row.credibility_weights = cred_weights_dict
                 row.cross_engine_health = cross_health_dict
             else:
+                cross_health_dict["alert_state"] = {
+                    "synthesis_revision": 1,
+                    "current_payload_hash": alert_hash,
+                    "last_alert_hash": None,
+                    "last_alert_revision": 0,
+                    "last_alert_sent_at": None,
+                }
                 session.add(CrossEngineSynthesis(
                     run_date=today,
                     convergent_tickers=synthesis_dict.get("convergent_picks"),
@@ -2378,13 +2538,36 @@ async def _run_cross_engine_steps(
                 synthesis={
                     **synthesis_dict,
                     "engines_reporting": len(engine_results),
+                    "alert_meta": alert_meta,
                 },
                 credibility=cred_weights_dict,
             )
             if guardian_summary:
                 cross_alert += guardian_summary
-            await send_alert(cross_alert)
-            _cross_engine_last_alert[str(today)] = datetime.utcnow()
+            alert_sent = await send_alert(cross_alert)
+            if alert_sent:
+                sent_at = datetime.now(timezone.utc)
+                _cross_engine_last_alert[str(today)] = sent_at
+                async with get_session() as session:
+                    existing_synth = await session.execute(
+                        select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
+                    )
+                    row = existing_synth.scalar_one_or_none()
+                    if row:
+                        persisted_health = _json_safe(row.cross_engine_health or {})
+                        persisted_state = _read_cross_engine_alert_state(persisted_health)
+                        persisted_state["current_payload_hash"] = alert_hash
+                        persisted_state["last_alert_hash"] = alert_hash
+                        persisted_state["last_alert_revision"] = int(alert_meta.get("revision") or 1)
+                        persisted_state["last_alert_sent_at"] = sent_at.isoformat()
+                        persisted_state["last_alert_change_reasons"] = alert_meta.get("change_reasons") or []
+                        persisted_health["alert_state"] = persisted_state
+                        row.cross_engine_health = persisted_health
+            else:
+                logger.warning(
+                    "Step 14: cross-engine alert send failed for %s; state remains unsent",
+                    today,
+                )
         else:
             logger.info(
                 "Step 14: synthesis unchanged for %s; suppressing duplicate cross-engine alert",
@@ -2393,7 +2576,7 @@ async def _run_cross_engine_steps(
 
         logger.info(
             "Steps 10-14 complete: cross-engine synthesis saved; alert_sent=%s",
-            should_send_alert,
+            alert_sent,
         )
 
     except Exception as e:
@@ -2751,7 +2934,7 @@ async def _debug_engines() -> None:
     logger.info("=" * 60)
 
     # Collect
-    engine_results, failed_engines = await collect_engine_results()
+    engine_results, failed_engines = await collect_engine_results(target_date=today)
     logger.info("Collected from %d engines (%d failed)", len(engine_results), len(failed_engines))
 
     # Credibility

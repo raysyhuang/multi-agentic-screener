@@ -185,3 +185,25 @@ class TestCrossEngineRegimeExtraction:
         }
         msg = format_cross_engine_alert(synthesis=synthesis, credibility={})
         assert "Regime: <b>UNKNOWN</b>" in msg
+
+    def test_format_cross_engine_alert_marks_updates(self):
+        synthesis = {
+            "regime_consensus": "bull",
+            "engines_reporting": 2,
+            "executive_summary": "Allocation updated after new engine payload.",
+            "convergent_picks": [],
+            "portfolio": [],
+            "alert_meta": {
+                "is_update": True,
+                "revision": 3,
+                "supersedes_revision": 2,
+                "run_date": "2026-02-21",
+                "change_reasons": ["portfolio tickers changed", "engines reporting 1→2"],
+            },
+        }
+        msg = format_cross_engine_alert(synthesis=synthesis, credibility={})
+        assert "Cross-Engine Synthesis Update" in msg
+        assert "Revision <b>#3</b>" in msg
+        assert "supersedes <b>#2</b>" in msg
+        assert "2026-02-21" in msg
+        assert "portfolio tickers changed" in msg

@@ -5,6 +5,7 @@ from __future__ import annotations
 import logging
 import glob
 import re
+from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
@@ -246,7 +247,16 @@ async def dashboard_signals():
         )
         run = run_result.scalar_one_or_none()
         if not run:
-            return {"run_date": None, "regime": None, "signals": []}
+            return {
+                "run_date": None,
+                "regime": None,
+                "signals": [],
+                "meta": {
+                    "total_signals": 0,
+                    "approved_signals": 0,
+                },
+                "empty_reason": "No completed pipeline runs yet.",
+            }
 
         sig_result = await session.execute(
             select(Signal).where(Signal.run_date == run.run_date)
@@ -270,10 +280,34 @@ async def dashboard_signals():
         if s.risk_gate_decision in ("APPROVE", "ADJUST")
     ]
 
+    total_signals = len(signals)
+    approved_signals = len(approved)
+    decisions = Counter((s.risk_gate_decision or "UNKNOWN") for s in signals)
+    decision_breakdown = {k: int(v) for k, v in sorted(decisions.items())}
+
+    empty_reason = None
+    if total_signals == 0:
+        empty_reason = (
+            "No signal records were saved for the latest run yet. "
+            "If a run is in progress, refresh after completion."
+        )
+    elif approved_signals == 0:
+        breakdown = ", ".join(f"{k}:{v}" for k, v in decision_breakdown.items()) or "none"
+        empty_reason = (
+            f"{total_signals} signals were generated, but none passed the risk gate "
+            f"(decisions: {breakdown})."
+        )
+
     return {
         "run_date": str(run.run_date),
         "regime": run.regime,
         "signals": approved,
+        "meta": {
+            "total_signals": total_signals,
+            "approved_signals": approved_signals,
+            "decision_breakdown": decision_breakdown,
+        },
+        "empty_reason": empty_reason,
     }
 
 

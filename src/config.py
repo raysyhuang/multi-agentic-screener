@@ -73,6 +73,9 @@ class Settings(BaseSettings):
     fmp_budget_warn_threshold_pct: float = 0.80
     fmp_enforce_daily_budget: bool = False
     fmp_fundamentals_max_tickers_per_run: int = 150
+    # Comma-separated endpoints considered required for health checks.
+    # Keep this aligned with plan-supported endpoints to avoid persistent WARNs.
+    fmp_health_check_endpoints: str = "profile,earnings,insider_trading,screener,ratios,analyst_estimates"
 
     # --- Execution mode ---
     execution_mode: str = "agentic_full"  # quant_only | hybrid | agentic_full

@@ -306,7 +306,7 @@ class TestValidateFeatures:
         fmp_check = next(c for c in sv.checks if c.name == "fmp_fundamentals_coverage")
         assert fmp_check.passed is True
 
-    def test_fmp_endpoint_availability_warns_when_plan_gated(self):
+    def test_fmp_endpoint_availability_warns_when_checked_endpoint_degraded(self):
         features = {
             "T0": {
                 "rsi_14": 55,
@@ -329,6 +329,14 @@ class TestValidateFeatures:
                 "stock_news_bulk_v3": "plan_gated",
                 "stock_news_bulk_stable": "unsupported",
             },
+            "health_checked_endpoints": [
+                "profile",
+                "earnings",
+                "insider_trading",
+                "screener",
+                "ratios",
+                "analyst_estimates",
+            ],
             "calls_used": 11,
             "daily_budget": 750,
         }
@@ -337,6 +345,45 @@ class TestValidateFeatures:
         check = next(c for c in sv.checks if c.name == "fmp_endpoint_availability")
         assert check.passed is False
         assert "plan_gated" in check.message
+
+    def test_fmp_endpoint_availability_ignores_unchecked_endpoints(self):
+        features = {
+            "T0": {
+                "rsi_14": 55,
+                "atr_14": 3.5,
+                "close": 100,
+                "volume": 1e6,
+                "sma_20": 98,
+                "fundamental": {"profile": {"symbol": "T0"}, "earnings_surprises": [], "insider_transactions": []},
+                "_fundamentals_requested": True,
+            }
+        }
+        status = {
+            "endpoints": {
+                "profile": "supported",
+                "earnings": "supported",
+                "insider_trading": "supported",
+                "screener": "supported",
+                "ratios": "supported",
+                "analyst_estimates": "supported",
+                "stock_news_bulk_v3": "plan_gated",
+                "stock_news_bulk_stable": "unsupported",
+            },
+            "health_checked_endpoints": [
+                "profile",
+                "earnings",
+                "insider_trading",
+                "screener",
+                "ratios",
+                "analyst_estimates",
+            ],
+            "calls_used": 11,
+            "daily_budget": 750,
+        }
+
+        sv = validate_features(features, 1, fmp_endpoint_status=status)
+        check = next(c for c in sv.checks if c.name == "fmp_endpoint_availability")
+        assert check.passed is True
 
 
 class TestValidateSignals:

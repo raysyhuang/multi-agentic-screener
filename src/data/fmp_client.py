@@ -163,21 +163,38 @@ class FMPClient:
     def get_endpoint_status(self) -> dict:
         """Expose endpoint availability state for dashboard diagnostics."""
         base_status = "supported" if self._disabled_reason is None else "disabled"
+        endpoints = {
+            "profile": base_status,
+            "earnings": base_status,
+            "insider_trading": base_status,
+            "screener": base_status,
+            "ratios": base_status,
+            "analyst_estimates": self._analyst_estimates_status,
+            "stock_news_bulk_v3": self._stock_news_v3_status,
+            "stock_news_bulk_stable": self._stock_news_stable_status,
+        }
+        configured = [
+            ep.strip()
+            for ep in str(getattr(self._settings, "fmp_health_check_endpoints", "")).split(",")
+            if ep and ep.strip()
+        ]
+        health_checked_endpoints = [ep for ep in configured if ep in endpoints]
+        if not health_checked_endpoints:
+            health_checked_endpoints = [
+                "profile",
+                "earnings",
+                "insider_trading",
+                "screener",
+                "ratios",
+                "analyst_estimates",
+            ]
         return {
             "client_enabled": self._disabled_reason is None,
             "disabled_reason": self._disabled_reason,
             "calls_used": self._call_count,
             "daily_budget": max(0, int(self._settings.fmp_daily_call_budget)),
-            "endpoints": {
-                "profile": base_status,
-                "earnings": base_status,
-                "insider_trading": base_status,
-                "screener": base_status,
-                "ratios": base_status,
-                "analyst_estimates": self._analyst_estimates_status,
-                "stock_news_bulk_v3": self._stock_news_v3_status,
-                "stock_news_bulk_stable": self._stock_news_stable_status,
-            },
+            "health_checked_endpoints": health_checked_endpoints,
+            "endpoints": endpoints,
         }
 
     async def _request(self, url: str, params: dict) -> httpx.Response:

@@ -17,7 +17,7 @@ import math
 import os
 import sys
 import time
-from datetime import date, datetime
+from datetime import date, datetime, timezone
 
 from src.config import get_settings, PROJECT_ROOT
 from src.contracts import EnginePick, EngineResultPayload
@@ -88,10 +88,10 @@ def _build_scores_metadata(
 def _momentum_strategy_tags(signal) -> list[str]:
     """Build strategy tags for a momentum pick."""
     tags = ["gem_momentum_breakout"]
-    opts = getattr(signal, "options_sentiment", None) or ""
+    opts = signal.get("options_sentiment", "") if isinstance(signal, dict) else (getattr(signal, "options_sentiment", None) or "")
     if opts.strip().lower() == "bullish":
         tags.append("gem_options_bullish")
-    confluence = getattr(signal, "confluence", None)
+    confluence = signal.get("confluence") if isinstance(signal, dict) else getattr(signal, "confluence", None)
     if confluence:
         tags.append("gem_confluence")
     return tags
@@ -100,10 +100,10 @@ def _momentum_strategy_tags(signal) -> list[str]:
 def _reversion_strategy_tags(signal) -> list[str]:
     """Build strategy tags for a mean-reversion pick."""
     tags = ["gem_mean_reversion"]
-    opts = getattr(signal, "options_sentiment", None) or ""
+    opts = signal.get("options_sentiment", "") if isinstance(signal, dict) else (getattr(signal, "options_sentiment", None) or "")
     if opts.strip().lower() == "bullish":
         tags.append("gem_options_bullish")
-    confluence = getattr(signal, "confluence", None)
+    confluence = signal.get("confluence") if isinstance(signal, dict) else getattr(signal, "confluence", None)
     if confluence:
         tags.append("gem_confluence")
     return tags
@@ -155,10 +155,11 @@ def _ensure_gemini_db():
             sys.path.remove(gemini_src)
 
 
-def _run_gemini_pipeline() -> EngineResultPayload | None:
+def _run_gemini_pipeline(target_date: date | None = None) -> EngineResultPayload | None:
     """Execute Gemini STST screeners synchronously and return mapped payload."""
     start = time.monotonic()
     gemini_src = str(_GEMINI_ROOT)
+    screen_date = target_date or date.today()
 
     # Initialize DB if needed
     _ensure_gemini_db()
@@ -168,173 +169,129 @@ def _run_gemini_pipeline() -> EngineResultPayload | None:
     try:
         from app.screener import run_screener
         from app.mean_reversion import run_reversion_screener
-        from app.database import SessionLocal
-        from app.models import Ticker, ScreenerSignal, ReversionSignal
-        from sqlalchemy import func
 
         # Run both screeners
         logger.info("Running Gemini STST momentum screener locally")
-        run_screener()
+        momentum_result = run_screener(screen_date=screen_date)
 
         logger.info("Running Gemini STST mean-reversion screener locally")
-        run_reversion_screener()
+        reversion_result = run_reversion_screener(screen_date=screen_date)
 
-        # Query results from DB (same logic as engine_endpoint.py)
-        # Retry DB session on transient connection errors (screeners already ran).
-        max_db_attempts = 3
-        db = None
-        for db_attempt in range(1, max_db_attempts + 1):
-            try:
-                db = SessionLocal()
-                latest_momentum_date = db.query(func.max(ScreenerSignal.date)).scalar()
-                latest_reversion_date = db.query(func.max(ReversionSignal.date)).scalar()
-                latest_dates = [d for d in (latest_momentum_date, latest_reversion_date) if d is not None]
-                asof_date = max(latest_dates) if latest_dates else date.today()
+        momentum_signals = momentum_result.get("signals", []) if isinstance(momentum_result, dict) else []
+        reversion_signals = reversion_result.get("signals", []) if isinstance(reversion_result, dict) else []
+        momentum_funnel = momentum_result.get("funnel", {}) if isinstance(momentum_result, dict) else {}
+        reversion_funnel = reversion_result.get("funnel", {}) if isinstance(reversion_result, dict) else {}
 
-                picks: list[EnginePick] = []
+        picks: list[EnginePick] = []
 
-                # Momentum signals
-                momentum_query = (
-                    db.query(ScreenerSignal, Ticker)
-                    .join(Ticker, ScreenerSignal.ticker_id == Ticker.id)
-                    .filter(ScreenerSignal.date == asof_date)
-                    .order_by(ScreenerSignal.quality_score.desc().nullslast())
-                    .all()
-                )
+        for signal in momentum_signals:
+            confidence = signal.get("quality_score") or 50.0
+            trigger_price = signal.get("trigger_price")
+            atr_pct = signal.get("atr_pct_at_trigger")
+            stop_loss, target_price = _compute_momentum_risk_params(trigger_price, atr_pct)
+            strat_tags = _momentum_strategy_tags(signal)
+            thesis = None
+            if signal.get("rvol_at_trigger") and atr_pct:
+                thesis = f"RVOL={signal['rvol_at_trigger']:.1f}x, ATR%={atr_pct:.1f}%"
 
-                for signal, ticker in momentum_query:
-                    confidence = signal.quality_score or 50.0
-                    stop_loss, target_price = _compute_momentum_risk_params(
-                        signal.trigger_price,
-                        signal.atr_pct_at_trigger,
-                    )
-                    strat_tags = _momentum_strategy_tags(signal)
-
-                    picks.append(EnginePick(
-                        ticker=ticker.symbol,
+            picks.append(EnginePick(
+                ticker=signal.get("symbol", ""),
+                strategy="momentum",
+                entry_price=trigger_price or 0,
+                stop_loss=stop_loss,
+                target_price=target_price,
+                confidence=confidence,
+                holding_period_days=10,
+                thesis=thesis,
+                risk_factors=[],
+                raw_score=signal.get("quality_score"),
+                metadata={
+                    "rvol": signal.get("rvol_at_trigger"),
+                    "atr_pct": atr_pct,
+                    "rsi_14": signal.get("rsi_14"),
+                    "options_sentiment": signal.get("options_sentiment"),
+                    "confluence": signal.get("confluence"),
+                    "scores": _build_scores_metadata(
+                        quality_score=signal.get("quality_score"),
+                        confluence=signal.get("confluence"),
                         strategy="momentum",
-                        entry_price=signal.trigger_price or 0,
-                        stop_loss=stop_loss,
-                        target_price=target_price,
-                        confidence=confidence,
-                        holding_period_days=10,
-                        thesis=(
-                            f"RVOL={signal.rvol_at_trigger:.1f}x, ATR%={signal.atr_pct_at_trigger:.1f}%"
-                            if signal.rvol_at_trigger and signal.atr_pct_at_trigger
-                            else None
-                        ),
-                        risk_factors=[],
-                        raw_score=signal.quality_score,
-                        metadata={
-                            "rvol": signal.rvol_at_trigger,
-                            "atr_pct": signal.atr_pct_at_trigger,
-                            "rsi_14": signal.rsi_14,
-                            "options_sentiment": signal.options_sentiment,
-                            "confluence": signal.confluence,
-                            "scores": _build_scores_metadata(
-                                quality_score=signal.quality_score,
-                                confluence=signal.confluence,
-                                strategy="momentum",
-                            ),
-                            "stop_method": "chandelier_proxy",
-                            "strategies": strat_tags,
-                        },
-                    ))
+                    ),
+                    "stop_method": "chandelier_proxy",
+                    "strategies": strat_tags,
+                },
+            ))
 
-                # Reversion signals
-                reversion_query = (
-                    db.query(ReversionSignal, Ticker)
-                    .join(Ticker, ReversionSignal.ticker_id == Ticker.id)
-                    .filter(ReversionSignal.date == asof_date)
-                    .order_by(ReversionSignal.quality_score.desc().nullslast())
-                    .all()
-                )
+        for signal in reversion_signals:
+            confidence = signal.get("quality_score") or 50.0
+            trigger_price = signal.get("trigger_price")
+            strat_tags = _reversion_strategy_tags(signal)
+            thesis = None
+            if signal.get("rsi2") and signal.get("drawdown_3d_pct"):
+                thesis = f"RSI2={signal['rsi2']:.1f}, DD3d={signal['drawdown_3d_pct']:.1f}%"
 
-                for signal, ticker in reversion_query:
-                    confidence = signal.quality_score or 50.0
-                    strat_tags = _reversion_strategy_tags(signal)
-
-                    picks.append(EnginePick(
-                        ticker=ticker.symbol,
+            picks.append(EnginePick(
+                ticker=signal.get("symbol", ""),
+                strategy="mean_reversion",
+                entry_price=trigger_price or 0,
+                stop_loss=round(trigger_price * 0.95, 2) if trigger_price else None,
+                target_price=round(trigger_price * 1.10, 2) if trigger_price else None,
+                confidence=confidence,
+                holding_period_days=3,
+                thesis=thesis,
+                risk_factors=[],
+                raw_score=signal.get("quality_score"),
+                metadata={
+                    "rsi2": signal.get("rsi2"),
+                    "drawdown_3d_pct": signal.get("drawdown_3d_pct"),
+                    "sma_distance_pct": signal.get("sma_distance_pct"),
+                    "options_sentiment": signal.get("options_sentiment"),
+                    "confluence": signal.get("confluence"),
+                    "scores": _build_scores_metadata(
+                        quality_score=signal.get("quality_score"),
+                        confluence=signal.get("confluence"),
                         strategy="mean_reversion",
-                        entry_price=signal.trigger_price or 0,
-                        stop_loss=round(signal.trigger_price * 0.95, 2) if signal.trigger_price else None,
-                        target_price=round(signal.trigger_price * 1.10, 2) if signal.trigger_price else None,
-                        confidence=confidence,
-                        holding_period_days=3,
-                        thesis=(
-                            f"RSI2={signal.rsi2_at_trigger:.1f}, DD3d={signal.drawdown_3d_pct:.1f}%"
-                            if signal.rsi2_at_trigger and signal.drawdown_3d_pct
-                            else None
-                        ),
-                        risk_factors=[],
-                        raw_score=signal.quality_score,
-                        metadata={
-                            "rsi2": signal.rsi2_at_trigger,
-                            "drawdown_3d_pct": signal.drawdown_3d_pct,
-                            "sma_distance_pct": signal.sma_distance_pct,
-                            "options_sentiment": signal.options_sentiment,
-                            "confluence": signal.confluence,
-                            "scores": _build_scores_metadata(
-                                quality_score=signal.quality_score,
-                                confluence=signal.confluence,
-                                strategy="mean_reversion",
-                            ),
-                            "strategies": strat_tags,
-                        },
-                    ))
+                    ),
+                    "strategies": strat_tags,
+                },
+            ))
 
-                total_screened = len(momentum_query) + len(reversion_query)
-                elapsed = time.monotonic() - start
+        total_screened = max(
+            int(momentum_funnel.get("total_tickers", 0) or 0),
+            int(reversion_funnel.get("total_tickers", 0) or 0),
+        )
+        elapsed = time.monotonic() - start
 
-                payload = EngineResultPayload(
-                    engine_name="gemini_stst",
-                    engine_version="7.0-local",
-                    run_date=str(asof_date),
-                    run_timestamp=datetime.utcnow().isoformat(),
-                    regime=None,
-                    picks=picks,
-                    candidates_screened=total_screened,
-                    pipeline_duration_s=elapsed,
-                    status="success",
-                )
+        payload = EngineResultPayload(
+            engine_name="gemini_stst",
+            engine_version="7.0-local",
+            run_date=str(screen_date),
+            run_timestamp=datetime.now(timezone.utc).isoformat(),
+            regime=None,
+            picks=picks,
+            candidates_screened=total_screened,
+            pipeline_duration_s=elapsed,
+            status="success",
+        )
 
-                logger.info(
-                    "Gemini STST local run complete: %d picks (%d momentum, %d reversion) in %.1fs",
-                    len(picks), len(momentum_query), len(reversion_query), elapsed,
-                )
-                return payload
-
-            except Exception as exc:
-                if db:
-                    db.close()
-                    db = None
-                if db_attempt < max_db_attempts and _is_transient(exc):
-                    delay = 2 ** db_attempt
-                    logger.warning(
-                        "Gemini DB query failed (attempt %d/%d): %s — retrying in %ds",
-                        db_attempt, max_db_attempts, exc, delay,
-                    )
-                    time.sleep(delay)
-                    continue
-                raise
-            finally:
-                if db:
-                    db.close()
+        logger.info(
+            "Gemini STST local run complete: %d picks (%d momentum, %d reversion) in %.1fs",
+            len(picks), len(momentum_signals), len(reversion_signals), elapsed,
+        )
+        return payload
 
     finally:
         if gemini_src in sys.path:
             sys.path.remove(gemini_src)
 
 
-async def run_gemini_locally() -> EngineResultPayload | None:
+async def run_gemini_locally(target_date: date | None = None) -> EngineResultPayload | None:
     """Run Gemini STST pipeline locally and return EngineResultPayload.
 
     Wraps the synchronous pipeline in asyncio.to_thread for non-blocking execution.
     Fail-open: catches all exceptions, logs, and returns None.
     """
     try:
-        return await asyncio.to_thread(_run_gemini_pipeline)
+        return await asyncio.to_thread(_run_gemini_pipeline, target_date)
     except Exception as e:
         logger.error("Gemini STST local runner failed: %s: %s", type(e).__name__, e, exc_info=True)
         return None

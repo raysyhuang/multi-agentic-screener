@@ -167,10 +167,6 @@
       var healthData = results[1];
       var pipelineData = results[2];
       var view = document.getElementById('signals-view');
-      if (!data.signals || data.signals.length === 0) {
-        showEmpty('signals-view', 'No signals from the latest pipeline run.');
-        return;
-      }
 
       var pipelineBanner = '';
       if (pipelineData && pipelineData.pipeline_health) {
@@ -201,6 +197,18 @@
         '<div class="card-subtitle">' + (data.run_date || '') + '</div></div>' +
         regimeBadge(data.regime || '') +
         '</div></div>';
+
+      if (!data.signals || data.signals.length === 0) {
+        var reason = data.empty_reason || 'No signals from the latest pipeline run.';
+        var metaText = '';
+        if (data.meta && typeof data.meta.total_signals === 'number') {
+          metaText = '<p>Total: ' + data.meta.total_signals +
+            ' | Approved: ' + (data.meta.approved_signals || 0) + '</p>';
+        }
+        view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner + header +
+          '<div class="empty-state"><h3>No Signals</h3><p>' + escapeHtml(reason) + '</p>' + metaText + '</div>';
+        return;
+      }
 
       var cards = data.signals.map(renderSignalCard).join('');
       view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner + header + '<div class="signals-grid">' + cards + '</div>';

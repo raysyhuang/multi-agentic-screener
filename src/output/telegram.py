@@ -290,17 +290,43 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     summary = synthesis.get("executive_summary", "")
     convergent = synthesis.get("convergent_picks", [])
     portfolio = synthesis.get("portfolio", [])
+    meta = synthesis.get("alert_meta") if isinstance(synthesis.get("alert_meta"), dict) else {}
+    is_update = bool(meta.get("is_update"))
+    revision = meta.get("revision")
+    supersedes_revision = meta.get("supersedes_revision")
+    run_date = meta.get("run_date")
+    change_reasons = [str(r) for r in (meta.get("change_reasons") or []) if str(r).strip()]
 
     regime_dot = _regime_emoji(regime)
     engine_bar = _bar(engines_count, 2, 2)
 
+    header = "<b>\U0001f501 Cross-Engine Synthesis Update</b>" if is_update else "<b>\U0001f517 Cross-Engine Synthesis</b>"
     lines = [
-        "<b>\U0001f517 Cross-Engine Synthesis</b>",
-        "",
-        f"{regime_dot} Regime: <b>{regime.upper()}</b>",
-        f"   Engines: {engine_bar} <b>{engines_count}/2</b> reporting",
+        header,
         "",
     ]
+
+    if is_update:
+        update_parts: list[str] = []
+        if revision:
+            update_parts.append(f"Revision <b>#{int(revision)}</b>")
+        if supersedes_revision:
+            update_parts.append(f"supersedes <b>#{int(supersedes_revision)}</b>")
+        if run_date:
+            update_parts.append(f"for <b>{_esc(str(run_date))}</b>")
+        if update_parts:
+            lines.append("   " + " ".join(update_parts))
+        if change_reasons:
+            lines.append(f"   Changes: {_esc(', '.join(change_reasons[:3]))}")
+        lines.append("")
+
+    lines.extend(
+        [
+            f"{regime_dot} Regime: <b>{regime.upper()}</b>",
+            f"   Engines: {engine_bar} <b>{engines_count}/2</b> reporting",
+            "",
+        ]
+    )
 
     # Convergent picks — the high-conviction signals
     if convergent:

@@ -327,7 +327,7 @@ def _is_critical_quality_issue(warnings: list[str]) -> bool:
     )
 
 
-async def _collect_local() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
+async def _collect_local(target_date: date | None = None) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Run engines locally in parallel and return validated payloads + failure list."""
     from src.engines.koocore_runner import run_koocore_locally
     from src.engines.gemini_runner import run_gemini_locally
@@ -336,7 +336,7 @@ async def _collect_local() -> tuple[list[EngineResultPayload], list[EngineFailur
 
     tasks = {
         "koocore_d": asyncio.create_task(run_koocore_locally()),
-        "gemini_stst": asyncio.create_task(run_gemini_locally()),
+        "gemini_stst": asyncio.create_task(run_gemini_locally(target_date=target_date)),
     }
 
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
@@ -483,7 +483,9 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure
     return payloads, failed_engines
 
 
-async def collect_engine_results() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
+async def collect_engine_results(
+    target_date: date | None = None,
+) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Collect results from all engines in parallel.
 
     Mode is controlled by ``engine_run_mode`` setting:
@@ -497,6 +499,6 @@ async def collect_engine_results() -> tuple[list[EngineResultPayload], list[Engi
     mode = (settings.engine_run_mode or "local").strip().lower()
 
     if mode == "local":
-        return await _collect_local()
+        return await _collect_local(target_date=target_date)
     else:
         return await _collect_http()

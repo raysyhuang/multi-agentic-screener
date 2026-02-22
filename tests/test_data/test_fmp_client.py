@@ -19,6 +19,7 @@ def client():
             fmp_daily_call_budget=750,
             fmp_budget_warn_threshold_pct=0.8,
             fmp_enforce_daily_budget=False,
+            fmp_health_check_endpoints="profile,earnings,insider_trading,screener,ratios,analyst_estimates",
         )
         return FMPClient()
 
@@ -180,6 +181,14 @@ async def test_get_stock_news_bulk(client):
 def test_get_endpoint_status_defaults(client):
     status = client.get_endpoint_status()
     assert status["client_enabled"] is True
+    assert status["health_checked_endpoints"] == [
+        "profile",
+        "earnings",
+        "insider_trading",
+        "screener",
+        "ratios",
+        "analyst_estimates",
+    ]
     assert status["endpoints"]["analyst_estimates"] == "supported"
     assert status["endpoints"]["stock_news_bulk_v3"] == "supported"
     assert status["endpoints"]["stock_news_bulk_stable"] == "supported"

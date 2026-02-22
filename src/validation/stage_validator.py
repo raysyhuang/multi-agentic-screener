@@ -478,7 +478,18 @@ def validate_features(
     if isinstance(fmp_endpoint_status, dict):
         endpoints = fmp_endpoint_status.get("endpoints", {})
         if isinstance(endpoints, dict) and endpoints:
-            degraded = {k: v for k, v in endpoints.items() if v != "supported"}
+            checked = fmp_endpoint_status.get("health_checked_endpoints")
+            if isinstance(checked, list) and checked:
+                checked_set = {
+                    str(name).strip() for name in checked
+                    if str(name).strip() in endpoints
+                }
+            else:
+                checked_set = set(endpoints.keys())
+            degraded = {
+                k: v for k, v in endpoints.items()
+                if k in checked_set and v != "supported"
+            }
             degraded_items = ", ".join(f"{k}={v}" for k, v in degraded.items())
             ep_ok = len(degraded) == 0
             sv.checks.append(StageCheck(
@@ -488,7 +499,7 @@ def validate_features(
                 message=(
                     "FMP endpoint availability degraded: " + degraded_items
                     if not ep_ok else
-                    "FMP endpoint availability: all required endpoints supported"
+                    "FMP endpoint availability: all checked endpoints supported"
                 ),
                 value=fmp_endpoint_status,
             ))

@@ -71,6 +71,8 @@ async def test_dashboard_signals_empty(app_client):
     data = resp.json()
     assert data["signals"] == []
     assert data["run_date"] is None
+    assert data["empty_reason"] == "No completed pipeline runs yet."
+    assert data["meta"]["total_signals"] == 0
 
 
 @pytest.mark.asyncio
@@ -132,6 +134,8 @@ async def test_dashboard_signals_with_data():
     assert len(data["signals"]) == 1
     assert data["signals"][0]["ticker"] == "AAPL"
     assert data["signals"][0]["confidence"] == 75.0
+    assert data["meta"]["total_signals"] == 1
+    assert data["meta"]["approved_signals"] == 1
 
 
 @pytest.mark.asyncio
