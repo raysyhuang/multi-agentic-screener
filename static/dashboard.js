@@ -362,6 +362,7 @@
 
     function badge(status) {
       if (status === 'supported') return { color: 'var(--green)', label: 'supported' };
+      if (status === 'per_ticker_only') return { color: 'var(--amber, #f59e0b)', label: 'per-ticker-only' };
       if (status === 'plan_gated') return { color: 'var(--amber, #f59e0b)', label: 'plan-gated' };
       if (status === 'unsupported') return { color: 'var(--amber, #f59e0b)', label: 'unsupported' };
       if (status === 'disabled') return { color: 'var(--red, #ef4444)', label: 'disabled' };

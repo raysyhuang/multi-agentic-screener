@@ -218,6 +218,43 @@ async def test_stock_news_bulk_legacy_403_does_not_disable_client(client):
 
 
 @pytest.mark.asyncio
+async def test_stock_news_bulk_stable_unsupported_falls_back_per_ticker(client):
+    client._stock_news_v3_enabled = False
+    not_found = httpx.Response(
+        404,
+        request=httpx.Request("GET", "https://financialmodelingprep.com/stable/stock-news"),
+    )
+    bulk_exc = httpx.HTTPStatusError("not found", request=not_found.request, response=not_found)
+
+    with patch.object(client, "_request", AsyncMock(side_effect=bulk_exc)) as mock_req, \
+            patch.object(client, "_get_stock_news_per_ticker_fallback", AsyncMock(return_value=[{"symbol": "AAPL"}])) as mock_fb:
+        result = await client.get_stock_news_bulk(["AAPL", "MSFT"], limit=20)
+
+    assert result == [{"symbol": "AAPL"}]
+    assert mock_req.call_count == 1  # bulk stable attempt
+    mock_fb.assert_awaited_once()
+    assert client._stock_news_stable_enabled is False
+
+
+@pytest.mark.asyncio
+async def test_stock_news_per_ticker_fallback_respects_budget(client):
+    client._call_count = 749  # remaining budget = 1
+    resp = MagicMock()
+    resp.json.return_value = [{"title": "headline"}]  # no symbol field; helper should inject
+
+    client._request = AsyncMock(return_value=resp)
+    result = await client._get_stock_news_per_ticker_fallback(["AAPL", "MSFT", "NVDA"], limit=30)
+
+    assert client._request.await_count == 1
+    args, _kwargs = client._request.await_args
+    assert args[1]["symbol"] == "AAPL"
+    assert args[1]["limit"] == 10
+    assert len(result) == 1
+    assert result[0]["symbol"] == "AAPL"
+    assert client.get_endpoint_status()["endpoints"]["stock_news_bulk_stable"] == "per_ticker_only"
+
+
+@pytest.mark.asyncio
 async def test_analyst_estimates_400_disables_only_endpoint(client):
     bad_response = MagicMock()
     bad_response.status_code = 400

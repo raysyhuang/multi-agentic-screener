@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import asyncio
 import logging
+import math
 from datetime import date
 
 import httpx
@@ -111,8 +112,9 @@ class FMPClient:
         self._analyst_estimates_status = "supported"
         self._stock_news_v3_enabled = True
         self._stock_news_v3_status = "supported"
-        self._stock_news_stable_enabled = True
+        self._stock_news_stable_enabled = True  # stable bulk-shape support
         self._stock_news_stable_status = "supported"
+        self._stock_news_per_ticker_enabled = True  # stable endpoint per-symbol fallback
 
     def _params(self, **kwargs) -> dict:
         return {"apikey": self._api_key, **kwargs}
@@ -196,6 +198,12 @@ class FMPClient:
             "health_checked_endpoints": health_checked_endpoints,
             "endpoints": endpoints,
         }
+
+    def _remaining_call_budget(self) -> int | None:
+        budget = max(0, int(self._settings.fmp_daily_call_budget))
+        if budget <= 0:
+            return None
+        return max(0, budget - self._call_count)
 
     async def _request(self, url: str, params: dict) -> httpx.Response:
         self._ensure_enabled()
@@ -368,7 +376,8 @@ class FMPClient:
 
         # Fallback to stable endpoint shape.
         if not self._stock_news_stable_enabled:
-            return []
+            # Stable bulk shape already known unsupported. Try per-ticker fallback.
+            return await self._get_stock_news_per_ticker_fallback(clean, limit=limit)
         stable_url = f"{BASE_URL}/stock-news"
         stable_params = self._params(symbol=joined, limit=limit)
         try:
@@ -379,11 +388,80 @@ class FMPClient:
                 self._stock_news_stable_enabled = False
                 self._stock_news_stable_status = "unsupported"
                 logger.info(
-                    "FMP stable stock-news unavailable (%d); disabling endpoint for this run.",
+                    "FMP stable stock-news bulk shape unavailable (%d); trying per-ticker fallback.",
                     exc.response.status_code,
                 )
-                return []
+                return await self._get_stock_news_per_ticker_fallback(clean, limit=limit)
             raise
+
+    async def _get_stock_news_per_ticker_fallback(self, tickers: list[str], limit: int = 200) -> list[dict]:
+        """Fallback: fetch stable stock-news per ticker with budget-aware batching."""
+        if not tickers or not self._stock_news_per_ticker_enabled:
+            return []
+
+        deduped = list(dict.fromkeys(tickers))
+        remaining_calls = self._remaining_call_budget()
+        allowed_count = len(deduped) if remaining_calls is None else min(len(deduped), remaining_calls)
+
+        if allowed_count <= 0:
+            logger.info(
+                "Skipping per-ticker FMP stock-news fallback: no remaining call budget (%d/%d).",
+                self._call_count,
+                max(0, int(self._settings.fmp_daily_call_budget)),
+            )
+            return []
+
+        selected = deduped[:allowed_count]
+        if allowed_count < len(deduped):
+            logger.info(
+                "Budget-limited FMP stock-news fallback: fetching %d/%d tickers (remaining calls=%d).",
+                allowed_count, len(deduped), allowed_count,
+            )
+
+        # Approximate per-ticker limit from the requested aggregate limit.
+        per_ticker_limit = max(1, min(100, int(math.ceil(max(1, limit) / max(1, len(deduped))))))
+
+        stable_url = f"{BASE_URL}/stock-news"
+        combined: list[dict] = []
+        successes = 0
+        for ticker in selected:
+            try:
+                resp = await self._request(stable_url, self._params(symbol=ticker, limit=per_ticker_limit))
+                rows = _ensure_list(resp.json(), f"stock_news_per_ticker/{ticker}")
+                for row in rows:
+                    if isinstance(row, dict) and not row.get("symbol") and not row.get("ticker"):
+                        row = {**row, "symbol": ticker}
+                    combined.append(row)
+                successes += 1
+            except FMPFatalError as exc:
+                if exc.status_code in {402, 403}:
+                    self._stock_news_per_ticker_enabled = False
+                    self._stock_news_stable_status = "plan_gated"
+                    logger.info(
+                        "FMP stable stock-news per-ticker plan-gated (%d); disabling fallback.",
+                        exc.status_code,
+                    )
+                    break
+                if exc.status_code == 401:
+                    self._stock_news_stable_status = "auth_error"
+                    raise
+                break
+            except httpx.HTTPStatusError as exc:
+                if exc.response is not None and exc.response.status_code in {400, 404}:
+                    self._stock_news_per_ticker_enabled = False
+                    self._stock_news_stable_status = "unsupported"
+                    logger.info(
+                        "FMP stable stock-news per-ticker unsupported (%d); disabling fallback.",
+                        exc.response.status_code,
+                    )
+                    break
+                logger.warning("FMP stable per-ticker stock-news failed for %s: %s", ticker, exc)
+            except Exception as exc:
+                logger.warning("FMP stable per-ticker stock-news failed for %s: %s", ticker, exc)
+
+        if successes > 0:
+            self._stock_news_stable_status = "per_ticker_only"
+        return combined
 
     async def get_daily_prices(
         self, ticker: str, from_date: date, to_date: date
