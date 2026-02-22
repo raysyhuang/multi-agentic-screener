@@ -373,8 +373,8 @@
 
     function normalizeStatus(passed, severity) {
       var sev = (severity || '').toLowerCase();
-      if (sev === 'fail') return 'fail';
       if (passed) return 'pass';
+      if (sev === 'fail') return 'fail';
       return 'warn';
     }
 
