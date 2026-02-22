@@ -15,14 +15,14 @@ L4  Autonomous Runtime Planner → [Interpret → Skills → Debate → Risk Gat
 L5  Validation         7-check NoSilentPass gate + Deflated Sharpe Ratio
 L6  Output             PostgreSQL, Telegram alerts, HTML reports, FastAPI
 L7  Governance         Audit trail, decay detection, retrain policy, portfolio construction
-L8  Cross-Engine       Collect → Verify → Synthesize across 4 independent engines
+L8  Cross-Engine       Collect → Verify → Synthesize across integrated engines (local default, HTTP legacy)
 ```
 
-Layers 1-3 and 5 produce useful candidates with zero LLM cost. Layer 4 adds autonomous reasoning with memory, tool-use, and self-correction. Layer 7 provides model lifecycle management and position sizing. Layer 8 aggregates signals from three external engines alongside L4's own picks.
+Layers 1-3 and 5 produce useful candidates with zero LLM cost. Layer 4 adds autonomous reasoning with memory, tool-use, and self-correction. Layer 7 provides model lifecycle management and position sizing. Layer 8 aggregates signals from the currently configured external engines (default: KooCore-D + Gemini STST) alongside L4's own picks.
 
 ## Cross-Engine Synthesis (Layer 8)
 
-The system acts as the **hub** in a four-engine architecture, collecting and synthesizing results from three independent external engines alongside its own pipeline output. Each engine approaches the market with a different methodology — the combined system produces higher-conviction picks through convergence detection and dynamic credibility weighting.
+The system acts as the **hub** in a multi-engine architecture, collecting and synthesizing results from independent engines alongside its own pipeline output. Each engine approaches the market with a different methodology — the combined system produces higher-conviction picks through convergence detection and dynamic credibility weighting.
 
 ```
                        +------------------------------------------+
@@ -54,22 +54,22 @@ The system acts as the **hub** in a four-engine architecture, collecting and syn
                        +------------------------------------------+
 ```
 
-### The Four Engines
+### Current Integrated Engines (plus optional expansion)
 
 | Engine | Strategy | Holds | Location |
 |---|---|---|---|
-| **Multi-Agentic Screener** | Breakout + Mean Reversion + Catalyst, 4 LLM agents | 5-15d | Heroku |
-| **KooCore-D** | Weekly/Pro30/Swing momentum, self-learning, regime-gated | 7-30d | Heroku |
-| **Gemini STST** | Momentum (RVOL>2, ATR>8%) + Reversion (RSI2<10) | 5-7d | Heroku |
-| **Top3-7D** | Energy/Release/Amplification 3-gate, top 3 picks | 7d | Heroku |
+| **Multi-Agentic Screener** | Breakout + Mean Reversion + Catalyst, 4 LLM agents | 5-15d | Heroku (main app) |
+| **KooCore-D** | Weekly/Pro30/Swing momentum, self-learning, regime-gated | 7-30d | Local folder integration by default (`engine_run_mode=local`) |
+| **Gemini STST** | Momentum (RVOL>2, ATR>8%) + Reversion (RSI2<10) | 5-7d | Local folder integration by default (`engine_run_mode=local`) |
+| **Top3-7D** | Energy/Release/Amplification 3-gate, top 3 picks | 7d | Optional/planned (not collected in current default mode) |
 
-All engines expose a standardized REST API (`GET /api/engine/results`) returning an `EngineResultPayload` with normalized picks, confidence scores (0-100), and metadata.
+Engines are normalized to a standardized `EngineResultPayload` contract. In legacy HTTP mode they expose `GET /api/engine/results`; in current default local mode MAS runs adapters/runners in-process/subprocess and maps results to the same contract.
 
 ### Pipeline Steps (10-14)
 
 After the core pipeline (Steps 1-9) completes, five cross-engine steps run:
 
-1. **Step 10 — Collect**: Async HTTP calls to all three external engines in parallel via `aiohttp`. Fail-open per engine (one engine down doesn't block others). Results are stored in the `external_engine_results` table.
+1. **Step 10 — Collect**: Default mode runs local engine adapters/runners in parallel (`engine_run_mode=local`). Legacy mode can fetch remote engine endpoints in parallel via `aiohttp` (`engine_run_mode=http`). Fail-open per engine (one engine down doesn't block others). Results are stored in the `external_engine_results` table.
 
 2. **Step 11 — Resolve Outcomes**: Resolves previous-day engine pick outcomes against actual market prices via yfinance. Updates the `engine_pick_outcomes` table and recomputes credibility weights.
 
@@ -117,7 +117,7 @@ The outcome resolver runs daily and tracks per-pick results for every engine:
 python -m src.main --run-now --debug-engines
 ```
 
-Runs all four engines, prints side-by-side comparison of picks, confidence alignment, regime agreement, and saves comprehensive JSON to `outputs/debug/`.
+Runs the currently configured engine set (default: MAS + KooCore-D + Gemini STST), prints side-by-side comparison of picks, confidence alignment, regime agreement, and saves comprehensive JSON to `outputs/debug/`.
 
 ## Autonomous Runtime (Layer 4)
 
@@ -392,15 +392,15 @@ All payloads inherit from `StrictModel` (Pydantic `extra="forbid"`) — unknown 
 ## Daily Orchestration
 
 ```
-Previous evening:
+Previous evening (legacy HTTP-mode example):
   5:30 PM ET   Top3-7D runs (GitHub Actions) -> pushes results to Heroku API
   6:15 PM ET   KooCore-D runs (GitHub Actions) -> pushes results to Heroku API
   6:00 PM ET   Gemini STST runs (GitHub Actions triggers Heroku pipeline)
 
-Next morning:
+Next morning (current default local-mode collection still applies to Steps 10-14):
   6:00 AM ET   Multi-Agentic Screener morning pipeline:
     Steps 1-9    Normal pipeline (data -> features -> signals -> agents -> validation -> DB)
-    Step 10      Collect external engine results (3 parallel HTTP calls)
+    Step 10      Collect engine results (default local runners in parallel; HTTP legacy optional)
     Step 11      Resolve previous-day engine pick outcomes -> update credibility weights
     Step 12      Cross-Engine Verifier Agent (audit credibility, detect anomalies)
     Step 13      Cross-Engine Synthesizer Agent (final portfolio, executive summary)

@@ -20,6 +20,10 @@ from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
 
 from src.config import get_settings
+from src.backtest.multi_engine.persistence import (
+    list_persisted_multi_engine_backtest_runs,
+    load_persisted_multi_engine_backtest_report,
+)
 from src.db.session import init_db, close_db, get_session
 from src.db.models import DailyRun, Signal, Outcome, AgentLog
 from src.output.report import generate_daily_report, generate_performance_report
@@ -1252,10 +1256,60 @@ BACKTEST_DIR = Path(__file__).resolve().parent.parent / "backtest_results" / "mu
 _BACKTEST_FILENAME_RE = re.compile(r"^multi_engine_[\d-]+_[\d-]+\.json$")
 
 
+def _backtest_metric_semantics() -> dict:
+    return {
+        "total_return_pct": "Cumulative trade PnL points (sum of per-trade % returns), not capital-equity return %",
+        "max_drawdown_pct": "Drawdown in cumulative trade PnL points, not capital-equity drawdown %",
+    }
+
+
+def _backtest_annotate_summary_metrics(summary: dict | None) -> dict:
+    """Add explicit aliases for backtest metric semantics while preserving legacy keys."""
+    out = dict(summary or {})
+    if "total_return_pct" in out and "cumulative_trade_pnl_points" not in out:
+        out["cumulative_trade_pnl_points"] = out.get("total_return_pct")
+    if "max_drawdown_pct" in out and "trade_pnl_drawdown_points" not in out:
+        out["trade_pnl_drawdown_points"] = out.get("max_drawdown_pct")
+    if "sharpe" in out and "sharpe_ratio" not in out:
+        out["sharpe_ratio"] = out.get("sharpe")
+    return out
+
+
+def _backtest_lightweight_run_entry(data: dict, filename: str, storage: str = "filesystem") -> dict:
+    return {
+        "filename": filename,
+        "run_date": data.get("run_date"),
+        "date_range": data.get("date_range"),
+        "trading_days": data.get("trading_days"),
+        "engines": data.get("engines"),
+        "total_trades_all_tracks": data.get("total_trades_all_tracks"),
+        "elapsed_s": data.get("elapsed_s"),
+        "storage": storage,
+    }
+
+
+async def _load_backtest_report_any(filename: str) -> tuple[dict | None, str | None]:
+    """Load a backtest report from DB first, then filesystem fallback."""
+    db_data = await load_persisted_multi_engine_backtest_report(filename)
+    if isinstance(db_data, dict):
+        return db_data, "database"
+
+    import json as _json
+    fpath = BACKTEST_DIR / filename
+    if not fpath.is_file():
+        return None, None
+    with open(fpath) as f:
+        return _json.load(f), "filesystem"
+
+
 @app.get("/api/dashboard/backtest/runs")
 async def dashboard_backtest_runs():
     """List available multi-engine backtest result files (lightweight metadata only)."""
     import json as _json
+
+    db_runs = await list_persisted_multi_engine_backtest_runs()
+    if db_runs:
+        return {"runs": db_runs, "metric_semantics": _backtest_metric_semantics()}
 
     pattern = str(BACKTEST_DIR / "multi_engine_*.json")
     files = sorted(glob.glob(pattern), reverse=True)
@@ -1264,36 +1318,24 @@ async def dashboard_backtest_runs():
         try:
             with open(fpath) as f:
                 data = _json.load(f)
-            runs.append({
-                "filename": Path(fpath).name,
-                "run_date": data.get("run_date"),
-                "date_range": data.get("date_range"),
-                "trading_days": data.get("trading_days"),
-                "engines": data.get("engines"),
-                "total_trades_all_tracks": data.get("total_trades_all_tracks"),
-                "elapsed_s": data.get("elapsed_s"),
-            })
+            runs.append(_backtest_lightweight_run_entry(data, Path(fpath).name, storage="filesystem"))
         except Exception:
             continue
-    return {"runs": runs}
+    return {"runs": runs, "metric_semantics": _backtest_metric_semantics()}
 
 
 @app.get("/api/dashboard/backtest/compare")
 async def dashboard_backtest_compare(files: str = Query(..., description="Comma-separated filenames, max 4")):
     """Side-by-side comparison of multiple backtest runs."""
-    import json as _json
-
     filenames = [f.strip() for f in files.split(",") if f.strip()][:4]
     results = []
     for fname in filenames:
         if not _BACKTEST_FILENAME_RE.match(fname):
             continue
-        fpath = BACKTEST_DIR / fname
-        if not fpath.is_file():
+        data, storage = await _load_backtest_report_any(fname)
+        if data is None:
             continue
         try:
-            with open(fpath) as f:
-                data = _json.load(f)
             entry = {
                 "filename": fname,
                 "run_date": data.get("run_date"),
@@ -1301,32 +1343,28 @@ async def dashboard_backtest_compare(files: str = Query(..., description="Comma-
                 "trading_days": data.get("trading_days"),
                 "engines": data.get("engines"),
                 "total_trades_all_tracks": data.get("total_trades_all_tracks"),
+                "storage": storage,
                 "per_engine": {},
                 "synthesis": {},
             }
             for eng_name, eng_data in data.get("per_engine", {}).items():
-                entry["per_engine"][eng_name] = eng_data.get("summary", {})
+                entry["per_engine"][eng_name] = _backtest_annotate_summary_metrics(eng_data.get("summary", {}))
             for track_name, track_data in data.get("synthesis", {}).items():
-                entry["synthesis"][track_name] = track_data.get("summary", {})
+                entry["synthesis"][track_name] = _backtest_annotate_summary_metrics(track_data.get("summary", {}))
             results.append(entry)
         except Exception:
             continue
-    return {"comparison": results}
+    return {"comparison": results, "metric_semantics": _backtest_metric_semantics()}
 
 
 @app.get("/api/dashboard/backtest/{filename}/equity")
 async def dashboard_backtest_equity(filename: str):
     """Return equity curves from a backtest result file."""
-    import json as _json
-
     if not _BACKTEST_FILENAME_RE.match(filename):
         raise HTTPException(400, "Invalid filename")
-    fpath = BACKTEST_DIR / filename
-    if not fpath.is_file():
+    data, storage = await _load_backtest_report_any(filename)
+    if data is None:
         raise HTTPException(404, "File not found")
-
-    with open(fpath) as f:
-        data = _json.load(f)
 
     curves: dict[str, list] = {}
 
@@ -1346,30 +1384,31 @@ async def dashboard_backtest_equity(filename: str):
             seen[pt["date"]] = pt
         curves[track_name] = [{"date": d, "cumulative_pnl_pct": v["cumulative_pnl_pct"]} for d, v in sorted(seen.items())]
 
-    return {"curves": curves}
+    return {"curves": curves, "storage": storage}
 
 
 @app.get("/api/dashboard/backtest/{filename}")
 async def dashboard_backtest_detail(filename: str):
     """Return full backtest detail (minus trades and equity curves)."""
-    import json as _json
-
     if not _BACKTEST_FILENAME_RE.match(filename):
         raise HTTPException(400, "Invalid filename")
-    fpath = BACKTEST_DIR / filename
-    if not fpath.is_file():
+    data, storage = await _load_backtest_report_any(filename)
+    if data is None:
         raise HTTPException(404, "File not found")
-
-    with open(fpath) as f:
-        data = _json.load(f)
+    data = dict(data)
 
     # Strip heavy arrays
     data.pop("trades", None)
     for eng_data in data.get("per_engine", {}).values():
         eng_data.pop("equity_curve", None)
+        if isinstance(eng_data.get("summary"), dict):
+            eng_data["summary"] = _backtest_annotate_summary_metrics(eng_data["summary"])
     for track_data in data.get("synthesis", {}).values():
         track_data.pop("equity_curve", None)
-
+        if isinstance(track_data.get("summary"), dict):
+            track_data["summary"] = _backtest_annotate_summary_metrics(track_data["summary"])
+    data["storage"] = storage
+    data["metric_semantics"] = _backtest_metric_semantics()
     return data
 
 

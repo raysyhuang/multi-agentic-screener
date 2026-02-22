@@ -341,6 +341,40 @@ def verify_cross_engine(
                 + "; ".join(lagging[:3])
             )
 
+    # 0c. Engine execution quality (timeouts/fallbacks)
+    degraded_engines: list[str] = []
+    for er in engine_results:
+        name = str(er.get("engine_name", "unknown"))
+        diagnostics = er.get("diagnostics") or {}
+        if not isinstance(diagnostics, dict):
+            continue
+        flags: list[str] = []
+        if diagnostics.get("subprocess_timed_out"):
+            flags.append("timeout")
+        if diagnostics.get("used_fallback_output"):
+            reason = diagnostics.get("fallback_reason")
+            flags.append(f"fallback:{reason}" if reason else "fallback")
+        if diagnostics.get("subprocess_exception"):
+            flags.append("subprocess_exception")
+        if diagnostics.get("degraded_execution") and not flags:
+            flags.append("degraded_execution")
+        if flags:
+            degraded_engines.append(f"{name} ({', '.join(flags)})")
+
+    execution_ok = len(degraded_engines) == 0
+    checks.append(CheckResult(
+        name="engine_execution_quality",
+        passed=execution_ok,
+        detail=(
+            "All reporting engines completed without timeout/fallback"
+            if execution_ok else
+            f"{len(degraded_engines)} engines ran in degraded mode"
+        ),
+        value=len(degraded_engines),
+    ))
+    if not execution_ok:
+        warnings.append("Degraded engine execution: " + "; ".join(degraded_engines[:3]))
+
     # 1. Regime consensus
     our_regime = _canonical_regime(regime_context.get("regime", "unknown"))
     engine_regimes = {}

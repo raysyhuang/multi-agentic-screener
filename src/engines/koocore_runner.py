@@ -95,7 +95,12 @@ def _build_scores_metadata(item: dict, fallback_score: float) -> dict:
     return scores
 
 
-def _map_hybrid_to_payload(hybrid: dict, run_date: str, duration: float | None = None) -> EngineResultPayload:
+def _map_hybrid_to_payload(
+    hybrid: dict,
+    run_date: str,
+    duration: float | None = None,
+    diagnostics: dict | None = None,
+) -> EngineResultPayload:
     """Convert KooCore-D hybrid_analysis JSON to EngineResultPayload."""
     picks: list[EnginePick] = []
 
@@ -227,6 +232,7 @@ def _map_hybrid_to_payload(hybrid: dict, run_date: str, duration: float | None =
         candidates_screened=total_screened,
         pipeline_duration_s=duration,
         status="success",
+        diagnostics=diagnostics or {},
     )
 
 
@@ -290,6 +296,11 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
 
     env = os.environ.copy()
     env["MAS_SUBPROCESS"] = "1"
+    subprocess_returncode: int | None = None
+    subprocess_timed_out = False
+    subprocess_exception: str | None = None
+    fallback_reason: str | None = None
+    zero_pick_fallback_used = False
 
     try:
         result = subprocess.run(
@@ -300,6 +311,7 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
             timeout=600,  # 10 minute max
             env=env,
         )
+        subprocess_returncode = result.returncode
         if result.returncode != 0:
             logger.warning(
                 "KooCore-D subprocess exited with code %d\nstderr: %s",
@@ -308,8 +320,10 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
             )
             # Fall through to try reading existing output
     except subprocess.TimeoutExpired:
+        subprocess_timed_out = True
         logger.warning("KooCore-D subprocess timed out after 600s")
     except Exception as e:
+        subprocess_exception = f"{type(e).__name__}: {e}"
         logger.warning("KooCore-D subprocess failed: %s: %s", type(e).__name__, e)
 
     # Read the hybrid_analysis output (from this run or a previous one)
@@ -322,6 +336,7 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
         if latest:
             output_path, output_date_str = latest
             used_fallback = True
+            fallback_reason = "missing_output_for_target_date"
             logger.info("Using latest available KooCore-D output from %s", output_date_str)
         else:
             logger.error(
@@ -336,7 +351,18 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
         hybrid = json.load(f)
 
     elapsed = time.monotonic() - start
-    payload = _map_hybrid_to_payload(hybrid, output_date_str, duration=elapsed)
+    diagnostics = {
+        "runner_mode": "local_subprocess",
+        "requested_run_date": output_date.strftime("%Y-%m-%d"),
+        "output_run_date": output_date_str,
+        "subprocess_timed_out": subprocess_timed_out,
+        "subprocess_returncode": subprocess_returncode,
+        "subprocess_exception": subprocess_exception,
+        "used_fallback_output": used_fallback,
+        "fallback_reason": fallback_reason,
+        "degraded_execution": bool(subprocess_timed_out or used_fallback or subprocess_exception),
+    }
+    payload = _map_hybrid_to_payload(hybrid, output_date_str, duration=elapsed, diagnostics=diagnostics)
 
     # If the live subprocess produced 0 picks, try the committed fallback output
     # instead.  This handles the case where the subprocess runs in a BEARISH
@@ -359,6 +385,7 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
                         "KooCore-D fallback from %s has %d picks — using it instead",
                         fb_date, len(fb_payload.picks),
                     )
+                    zero_pick_fallback_used = True
                     payload = fb_payload
                 else:
                     logger.warning(
@@ -371,6 +398,14 @@ def _run_koocore_pipeline() -> EngineResultPayload | None:
                 "KooCore-D EMPTY: live run produced 0 picks and no fallback "
                 "output available (likely regime suppression)",
             )
+
+    if zero_pick_fallback_used:
+        payload.diagnostics.update({
+            "used_fallback_output": True,
+            "fallback_reason": "zero_pick_live_output",
+            "degraded_execution": True,
+        })
+    payload.diagnostics.setdefault("zero_pick_fallback_used", zero_pick_fallback_used)
 
     logger.info(
         "KooCore-D local run complete: %d picks in %.1fs",

@@ -44,6 +44,7 @@ from src.backtest.multi_engine.portfolio_sim import (
     run_portfolio_simulation,
 )
 from src.backtest.multi_engine.report_generator import generate_report
+from src.backtest.multi_engine.persistence import persist_multi_engine_backtest_report
 from src.data.aggregator import DataAggregator
 from src.data.universe_selection import select_ohlcv_tickers
 
@@ -374,6 +375,9 @@ async def run_multi_engine_backtest(
     report_file = out_path / f"multi_engine_{start_date}_{end_date}.json"
     report_file.write_text(json.dumps(report, indent=2, default=str))
     logger.info("Report saved to %s", report_file)
+    persisted = await persist_multi_engine_backtest_report(report, report_file.name)
+    if persisted:
+        logger.info("Persisted backtest report to database: %s", report_file.name)
 
     logger.info(
         "Multi-engine backtest complete in %.1f min (%d trading days)",

@@ -338,6 +338,36 @@ class TestVerifyCrossEngine:
         breadth = next((c for c in report.checks if c.name == "universe_breadth"), None)
         assert breadth is not None
         assert breadth.passed is True
+
+    def test_degraded_engine_execution_warns_on_timeout_fallback(self):
+        """Engine diagnostics should surface timeout/fallback degradation in health."""
+        engines = [
+            {
+                "engine_name": "koocore_d",
+                "regime": "bull",
+                "run_date": date.today().isoformat(),
+                "picks": [{"ticker": "AAPL", "entry_price": 200}],
+                "candidates_screened": 6,
+                "diagnostics": {
+                    "subprocess_timed_out": True,
+                    "used_fallback_output": True,
+                    "fallback_reason": "missing_output_for_target_date",
+                    "degraded_execution": True,
+                },
+            },
+            {
+                "engine_name": "gemini_stst",
+                "regime": "bull",
+                "run_date": date.today().isoformat(),
+                "picks": [{"ticker": "AAPL", "entry_price": 201}],
+                "candidates_screened": 120,
+            },
+        ]
+        report = verify_cross_engine(engines, {"regime": "bull"})
+        q = next((c for c in report.checks if c.name == "engine_execution_quality"), None)
+        assert q is not None
+        assert q.passed is False
+        assert any("Degraded engine execution" in w for w in report.warnings)
         assert all("Universe breadth issues:" not in w for w in report.warnings)
 
 

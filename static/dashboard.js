@@ -1342,13 +1342,16 @@
         html += '<div class="section-header">' +
           '<div class="section-icon">\uD83D\uDCC8</div>' +
           '<span class="section-title">Synthesis Metrics (' + synthName.replace(/_/g, ' ') + ')</span></div>';
+        html += '<div class="card" style="margin-bottom:1rem;background:rgba(245,158,11,0.06);border-left:3px solid rgba(245,158,11,0.5)">' +
+          '<div style="font-size:0.82rem;color:var(--text-secondary)">Backtest totals/drawdowns are shown as cumulative trade PnL points (sum of trade % returns), not capital-equity % returns.</div>' +
+          '</div>';
         html += '<div class="metrics-grid">' +
           metricCard(s.total_trades || 0, 'Total Trades', null) +
           metricCard(fmtPct((s.win_rate || 0) * 100), 'Win Rate', s.win_rate >= 0.5) +
           metricCard(fmtPct(s.avg_return_pct), 'Avg Return', s.avg_return_pct > 0) +
           metricCard(fmt(s.sharpe_ratio), 'Sharpe', s.sharpe_ratio > 0) +
           metricCard(fmt(s.sortino_ratio), 'Sortino', s.sortino_ratio > 0) +
-          metricCard(fmtPct(s.max_drawdown_pct), 'Max Drawdown', false) +
+          metricCard(fmtPct(s.max_drawdown_pct), 'Trade DD (Pts)', false) +
           metricCard(fmt(s.profit_factor), 'Profit Factor', s.profit_factor > 1) +
           metricCard(fmt(s.expectancy), 'Expectancy', s.expectancy > 0) +
         '</div>';
@@ -1362,7 +1365,7 @@
           '<div class="card-title" style="margin-bottom:0.75rem">Per-Engine Summary</div>' +
           '<div style="overflow-x:auto"><table class="data-table">' +
           '<thead><tr><th>Engine</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th>' +
-          '<th>Sharpe</th><th>Profit Factor</th><th>Expectancy</th><th>Max DD</th></tr></thead><tbody>';
+          '<th>Sharpe</th><th>Profit Factor</th><th>Expectancy</th><th>Trade DD (Pts)</th></tr></thead><tbody>';
         engineNames.forEach(function (name) {
           var es = perEngine[name].summary || {};
           var pnlClass = (es.avg_return_pct || 0) > 0 ? 'positive' : ((es.avg_return_pct || 0) < 0 ? 'negative' : '');
@@ -1388,7 +1391,7 @@
           '<div class="card-title" style="margin-bottom:0.75rem">Synthesis Tracks</div>' +
           '<div style="overflow-x:auto"><table class="data-table">' +
           '<thead><tr><th>Track</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th>' +
-          '<th>Sharpe</th><th>Profit Factor</th><th>Expectancy</th><th>Max DD</th></tr></thead><tbody>';
+          '<th>Sharpe</th><th>Profit Factor</th><th>Expectancy</th><th>Trade DD (Pts)</th></tr></thead><tbody>';
         trackNames.forEach(function (name) {
           var ts = synthTracks[name].summary || {};
           var pnlClass = (ts.avg_return_pct || 0) > 0 ? 'positive' : ((ts.avg_return_pct || 0) < 0 ? 'negative' : '');
@@ -1554,6 +1557,7 @@
 
       var r1 = cmp[0], r2 = cmp[1];
       var html = '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Run Comparison</div>' +
+        '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.75rem">Totals/drawdowns below are cumulative trade PnL points (not capital-equity %).</div>' +
         '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
         '<th>Metric</th>' +
         '<th>' + escapeHtml((r1.date_range || {}).start || '') + ' to ' + escapeHtml((r1.date_range || {}).end || '') + '</th>' +
@@ -1570,7 +1574,7 @@
         { key: 'avg_return_pct', label: 'Avg Return', fmt: function (v) { return fmtPct(v); }, pct: true },
         { key: 'sharpe_ratio', label: 'Sharpe', fmt: function (v) { return fmt(v); }, pct: false },
         { key: 'sortino_ratio', label: 'Sortino', fmt: function (v) { return fmt(v); }, pct: false },
-        { key: 'max_drawdown_pct', label: 'Max Drawdown', fmt: function (v) { return fmtPct(v); }, pct: true },
+        { key: 'max_drawdown_pct', label: 'Trade DD (Pts)', fmt: function (v) { return fmtPct(v); }, pct: true },
         { key: 'profit_factor', label: 'Profit Factor', fmt: function (v) { return fmt(v); }, pct: false },
         { key: 'expectancy', label: 'Expectancy', fmt: function (v) { return fmt(v); }, pct: false },
       ];

@@ -323,3 +323,4 @@ class EngineResultPayload(StrictModel):
     candidates_screened: int
     pipeline_duration_s: float | None = None
     status: str = "success"
+    diagnostics: dict = Field(default_factory=dict)

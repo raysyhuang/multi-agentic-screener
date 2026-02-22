@@ -438,6 +438,28 @@ class CrossEngineSynthesis(Base):
     )
 
 
+class MultiEngineBacktestRun(Base):
+    """Persisted multi-engine backtest report for dashboard access on ephemeral hosts."""
+
+    __tablename__ = "multi_engine_backtest_runs"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    filename: Mapped[str] = mapped_column(String(120), nullable=False, unique=True, index=True)
+    run_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    start_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    end_date: Mapped[date | None] = mapped_column(Date, nullable=True, index=True)
+    trading_days: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    total_trades_all_tracks: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    engines: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    report: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class DivergenceOutcome(Base):
     """Attached after trade closes — scores the LLM divergence against realized outcomes."""
 

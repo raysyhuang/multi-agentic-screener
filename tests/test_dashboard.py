@@ -376,6 +376,32 @@ async def test_backtest_runs_lists_files(app_client, backtest_dir):
 
 
 @pytest.mark.asyncio
+async def test_backtest_runs_prefers_db_persisted_records(app_client):
+    """DB-backed backtest runs should be returned when available (Heroku-safe path)."""
+    app, _ = app_client
+    db_runs = [{
+        "filename": "multi_engine_2025-02-20_2026-02-20.json",
+        "run_date": "2026-02-20",
+        "date_range": {"start": "2025-02-20", "end": "2026-02-20"},
+        "trading_days": 251,
+        "engines": ["mas", "koocore_d", "gemini_stst"],
+        "total_trades_all_tracks": 1005,
+        "elapsed_s": 42.0,
+        "storage": "database",
+    }]
+    with patch("api.app.list_persisted_multi_engine_backtest_runs", new_callable=AsyncMock) as mock_list:
+        mock_list.return_value = db_runs
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dashboard/backtest/runs")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["runs"] == db_runs
+    assert "metric_semantics" in data
+
+
+@pytest.mark.asyncio
 async def test_backtest_detail_strips_trades(app_client, backtest_dir):
     """GET /api/dashboard/backtest/{filename} strips trades and equity curves."""
     app, _ = app_client
