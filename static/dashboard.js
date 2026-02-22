@@ -457,6 +457,9 @@
       '<span style="font-size:0.72rem;color:var(--amber, #f59e0b);border:1px solid var(--amber, #f59e0b);border-radius:999px;padding:0.12rem 0.45rem">WARN: ' + warnCount + '</span>' +
       '<span style="font-size:0.72rem;color:var(--red, #ef4444);border:1px solid var(--red, #ef4444);border-radius:999px;padding:0.12rem 0.45rem">FAIL: ' + failCount + '</span>' +
       '</div>' +
+      '<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.6rem">' +
+      'Row status reflects pass/fail outcome. Check severity indicates how serious the issue would be if that check failed.' +
+      '</div>' +
       '<details open><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Pipeline Stages (' + stageItems.length + ')</summary>' +
       renderRows(stageItems) +
       '</details>' +
