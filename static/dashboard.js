@@ -237,12 +237,30 @@
       '<div style="display:none;width:100%;margin-top:0.5rem">';
 
     var checks = health.checks || [];
-    checks.forEach(function (c) {
-      var icon = c.passed ? '\u2705' : '\u26A0\uFE0F';
-      html += '<div style="font-size:0.8rem;margin:0.25rem 0;color:var(--text-secondary)">' +
-        icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
-        escapeHtml(c.detail) + '</div>';
-    });
+    var problemChecks = checks.filter(function (c) { return !c.passed; });
+    var passChecks = checks.filter(function (c) { return c.passed; });
+    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem">' +
+      'Showing issues first. Passing checks are collapsed.' +
+      '</div>';
+    if (problemChecks.length === 0) {
+      html += '<div style="font-size:0.8rem;color:var(--text-secondary)">✅ All ' + passChecks.length + ' dataset checks passed.</div>';
+    } else {
+      problemChecks.forEach(function (c) {
+        var icon = c.passed ? '\u2705' : '\u26A0\uFE0F';
+        html += '<div style="font-size:0.8rem;margin:0.25rem 0;color:var(--text-secondary)">' +
+          icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
+          escapeHtml(c.detail) + '</div>';
+      });
+    }
+    if (passChecks.length > 0) {
+      html += '<details style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.75rem;color:var(--text-secondary)">Show passing checks (' + passChecks.length + ')</summary>';
+      passChecks.forEach(function (c) {
+        html += '<div style="font-size:0.75rem;margin:0.22rem 0;color:var(--text-muted)">' +
+          '\u2705 <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
+          escapeHtml(c.detail) + '</div>';
+      });
+      html += '</details>';
+    }
 
     html += '</div></div></div>';
     return html;
@@ -274,15 +292,31 @@
       'style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);font-size:0.75rem">Details</button>' +
       '<div style="display:none;width:100%;margin-top:0.5rem">';
 
+    var totalStageChecks = 0;
+    var totalStageProblems = 0;
+    stages.forEach(function (stage) { totalStageChecks += (stage.checks || []).length; });
+    stages.forEach(function (stage) {
+      (stage.checks || []).forEach(function (c) { if (!c.passed) totalStageProblems++; });
+    });
+    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem">' +
+      'Showing stage summaries and only checks that need attention.' +
+      '</div>';
+    if (totalStageProblems === 0) {
+      html += '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.35rem">✅ All ' + totalStageChecks + ' pipeline checks passed.</div>';
+    }
+
     stages.forEach(function (stage) {
       var stageColor = stage.severity === 'pass' ? 'var(--green)' :
                        stage.severity === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--red, #ef4444)';
       var icon = stage.passed ? '\u2705' : (stage.severity === 'fail' ? '\u274C' : '\u26A0\uFE0F');
-      html += '<div style="font-size:0.8rem;margin:0.4rem 0;padding:0.3rem 0.5rem;border-left:2px solid ' + stageColor + '">' +
-        icon + ' <strong>' + escapeHtml((stage.stage || '').replace(/_/g, ' ')) + '</strong>';
-
       var checks = stage.checks || [];
-      checks.forEach(function (c) {
+      var stageProblems = checks.filter(function (c) { return !c.passed; });
+      var stagePasses = checks.length - stageProblems.length;
+      html += '<div style="font-size:0.8rem;margin:0.35rem 0;padding:0.25rem 0.45rem;border-left:2px solid ' + stageColor + '">' +
+        icon + ' <strong>' + escapeHtml((stage.stage || '').replace(/_/g, ' ')) + '</strong>' +
+        '<span style="color:var(--text-muted);font-size:0.74rem"> (' + stagePasses + '/' + checks.length + ' checks passed)</span>';
+
+      stageProblems.forEach(function (c) {
         var cSeverity = (c.severity || 'pass').toLowerCase();
         var cColor = cSeverity === 'fail' ? 'var(--red, #ef4444)' :
                      cSeverity === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--green)';
@@ -405,6 +439,40 @@
       return section;
     }
 
+    function renderSection(title, items, opts) {
+      opts = opts || {};
+      var problemItems = items.filter(function (i) { return i.status !== 'pass'; });
+      var passItems = items.filter(function (i) { return i.status === 'pass'; });
+      var open = problemItems.length > 0 || !!opts.forceOpen;
+      var summarySuffix = '';
+      if (problemItems.length === 0 && items.length > 0) {
+        summarySuffix = ' \u00B7 all pass';
+      } else if (problemItems.length > 0) {
+        summarySuffix = ' \u00B7 ' + problemItems.length + ' issues';
+      }
+      var html = '<details' + (open ? ' open' : '') + (opts.marginTop ? ' style="margin-top:' + opts.marginTop + '"' : '') + '>' +
+        '<summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">' +
+        title + ' (' + items.length + ')' + summarySuffix +
+        '</summary>';
+
+      if (items.length === 0) {
+        html += '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.3rem 0">No checks in this section.</div>';
+      } else if (problemItems.length === 0) {
+        html += '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.35rem 0">All ' + passItems.length + ' checks passed.</div>';
+      } else {
+        html += renderRows(problemItems);
+      }
+
+      if (passItems.length > 0) {
+        html += '<details style="margin-top:0.35rem"><summary style="cursor:pointer;font-size:0.75rem;color:var(--text-secondary)">Show passing rows (' + passItems.length + ')</summary>' +
+          renderRows(passItems) +
+          '</details>';
+      }
+
+      html += '</details>';
+      return html;
+    }
+
     if (pipelineHealth && pipelineHealth.stages) {
       (pipelineHealth.stages || []).forEach(function (stage) {
         var stageLabel = (stage.stage || '').replace(/_/g, ' ');
@@ -460,18 +528,10 @@
       '<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.6rem">' +
       'Row status reflects pass/fail outcome. Check severity indicates how serious the issue would be if that check failed.' +
       '</div>' +
-      '<details open><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Pipeline Stages (' + stageItems.length + ')</summary>' +
-      renderRows(stageItems) +
-      '</details>' +
-      '<details open style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Pipeline Checks (' + checkItems.length + ')</summary>' +
-      renderRows(checkItems) +
-      '</details>' +
-      '<details open style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Dataset Checks (' + datasetItems.length + ')</summary>' +
-      renderRows(datasetItems) +
-      '</details>' +
-      '<details style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Warnings (' + warningItems.length + ')</summary>' +
-      renderRows(warningItems) +
-      '</details>' +
+      renderSection('Pipeline Stages', stageItems, { forceOpen: true }) +
+      renderSection('Pipeline Checks', checkItems, { marginTop: '0.45rem' }) +
+      renderSection('Dataset Checks', datasetItems, { marginTop: '0.45rem' }) +
+      renderSection('Warnings', warningItems, { marginTop: '0.45rem' }) +
       '</div>';
 
     return html;
