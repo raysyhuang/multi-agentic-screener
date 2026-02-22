@@ -13,10 +13,10 @@ PROJECT_ROOT = Path(__file__).resolve().parent.parent
 if str(PROJECT_ROOT) not in sys.path:
     sys.path.insert(0, str(PROJECT_ROOT))
 
-from src.backtest.multi_engine.persistence import persist_multi_engine_backtest_report
-
 
 async def _run(backtest_dir: Path) -> int:
+    from src.backtest.multi_engine.persistence import persist_multi_engine_backtest_report
+
     files = sorted(backtest_dir.glob("multi_engine_*.json"))
     if not files:
         print(f"No backtest files found in {backtest_dir}")
