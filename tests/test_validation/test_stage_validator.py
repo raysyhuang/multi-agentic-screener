@@ -288,6 +288,56 @@ class TestValidateFeatures:
         fmp_check = next(c for c in sv.checks if c.name == "fmp_fundamentals_coverage")
         assert fmp_check.passed is False
 
+    def test_fmp_coverage_scopes_to_requested_subset(self):
+        features = {}
+        for i in range(10):
+            features[f"T{i}"] = {
+                "rsi_14": 55,
+                "atr_14": 3.5,
+                "close": 100,
+                "volume": 1e6,
+                "fundamental": {"profile": {}, "earnings_surprises": [], "insider_transactions": []},
+                "_fundamentals_requested": i < 2,
+            }
+        features["T0"]["fundamental"]["profile"] = {"symbol": "T0"}
+        features["T1"]["fundamental"]["profile"] = {"symbol": "T1"}
+
+        sv = validate_features(features, 10)
+        fmp_check = next(c for c in sv.checks if c.name == "fmp_fundamentals_coverage")
+        assert fmp_check.passed is True
+
+    def test_fmp_endpoint_availability_warns_when_plan_gated(self):
+        features = {
+            "T0": {
+                "rsi_14": 55,
+                "atr_14": 3.5,
+                "close": 100,
+                "volume": 1e6,
+                "sma_20": 98,
+                "fundamental": {"profile": {"symbol": "T0"}, "earnings_surprises": [], "insider_transactions": []},
+                "_fundamentals_requested": True,
+            }
+        }
+        status = {
+            "endpoints": {
+                "profile": "supported",
+                "earnings": "supported",
+                "insider_trading": "supported",
+                "screener": "supported",
+                "ratios": "supported",
+                "analyst_estimates": "plan_gated",
+                "stock_news_bulk_v3": "plan_gated",
+                "stock_news_bulk_stable": "unsupported",
+            },
+            "calls_used": 11,
+            "daily_budget": 750,
+        }
+
+        sv = validate_features(features, 1, fmp_endpoint_status=status)
+        check = next(c for c in sv.checks if c.name == "fmp_endpoint_availability")
+        assert check.passed is False
+        assert "plan_gated" in check.message
+
 
 class TestValidateSignals:
     def test_healthy_signals(self):

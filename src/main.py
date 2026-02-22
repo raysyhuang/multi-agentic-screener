@@ -39,7 +39,13 @@ from sqlalchemy import delete, select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
-from src.features.fundamental import score_earnings_surprise, score_insider_activity, days_to_next_earnings
+from src.features.fundamental import (
+    score_earnings_surprise,
+    score_insider_activity,
+    score_analyst_estimates,
+    score_financial_ratios,
+    days_to_next_earnings,
+)
 from src.features.sentiment import score_news_batch
 from src.features.regime import classify_regime, get_regime_allowed_models, compute_breadth_score
 from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
@@ -71,6 +77,7 @@ from src.agents.orchestrator import run_agent_pipeline, PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert, format_cross_engine_alert
 from src.output.performance import check_open_positions
+from src.engines.engine_drop_alerts import maybe_send_engine_drop_alert
 from src.governance.artifacts import GovernanceContext
 from src.governance.performance_monitor import (
     compute_rolling_metrics,
@@ -81,6 +88,7 @@ from src.governance.divergence_ledger import (
     freeze_quant_baseline,
     compute_divergences,
 )
+from src.engines.collector import EngineFailure
 
 def _setup_logging() -> None:
     """Configure logging — text or JSON format based on LOG_FORMAT env var."""
@@ -160,6 +168,50 @@ def _json_safe(obj):
 _cross_engine_last_alert: dict[str, datetime] = {}  # date_str → datetime of last alert
 
 
+def _safe_float(value: object) -> float | None:
+    try:
+        if value is None:
+            return None
+        return float(value)
+    except (TypeError, ValueError):
+        return None
+
+
+def _technical_priority_score(feat: dict) -> float:
+    """Priority score used for selecting which tickers get costly fundamentals calls."""
+    rsi2 = _safe_float(feat.get("rsi_2")) or 100.0
+    rsi14 = _safe_float(feat.get("rsi_14")) or 50.0
+    rvol = _safe_float(feat.get("rvol")) or 0.0
+    roc5 = _safe_float(feat.get("roc_5")) or 0.0
+    roc10 = _safe_float(feat.get("roc_10")) or 0.0
+    days_to_earnings = feat.get("days_to_earnings")
+
+    breakout_like = max(0.0, rsi14 - 50.0) + max(0.0, roc5 * 2.0) + max(0.0, roc10)
+    mean_rev_like = max(0.0, 25.0 - rsi2) * 2.0
+    earnings_proximity = 25.0 if isinstance(days_to_earnings, int) and 2 <= days_to_earnings <= 30 else 0.0
+
+    return breakout_like + mean_rev_like + (rvol * 5.0) + earnings_proximity
+
+
+def _is_fundamental_candidate(feat: dict) -> bool:
+    """Technical prefilter before spending FMP fundamentals calls."""
+    rsi2 = _safe_float(feat.get("rsi_2"))
+    rsi14 = _safe_float(feat.get("rsi_14"))
+    rvol = _safe_float(feat.get("rvol"))
+    roc5 = _safe_float(feat.get("roc_5"))
+    roc10 = _safe_float(feat.get("roc_10"))
+    days_to_earnings = feat.get("days_to_earnings")
+
+    oversold_setup = rsi2 is not None and rsi2 <= 22
+    breakout_setup = (
+        rsi14 is not None and rsi14 >= 52
+        and ((roc5 is not None and roc5 > 0) or (roc10 is not None and roc10 > 0))
+        and (rvol is not None and rvol >= 0.9)
+    )
+    catalyst_window = isinstance(days_to_earnings, int) and 2 <= days_to_earnings <= 30
+    return oversold_setup or breakout_setup or catalyst_window
+
+
 def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
     """Ticker set used for same-day cross-engine alert dedupe."""
     out: set[str] = set()
@@ -174,6 +226,29 @@ def _stable_payload_hash(payload: dict) -> str:
     """Deterministic SHA-256 hash for payload revision tracking."""
     canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
     return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
+
+
+def _summarize_engine_failures(failed_engines: list[EngineFailure]) -> dict:
+    """Build cycle-level engine failure stats for dashboard visibility."""
+    by_kind: dict[str, int] = defaultdict(int)
+    engines_by_kind: dict[str, list[str]] = defaultdict(list)
+    failures: list[dict[str, str]] = []
+
+    for failure in failed_engines:
+        by_kind[failure.kind] += 1
+        engines_by_kind[failure.kind].append(failure.engine_name)
+        failures.append({
+            "engine_name": failure.engine_name,
+            "kind": failure.kind,
+            "detail": failure.detail,
+        })
+
+    return {
+        "total_failed": len(failed_engines),
+        "by_kind": dict(by_kind),
+        "engines_by_kind": {k: sorted(v) for k, v in engines_by_kind.items()},
+        "failures": failures,
+    }
 
 
 def _parse_engine_run_timestamp(run_timestamp: str | None) -> datetime | None:
@@ -746,6 +821,7 @@ async def _run_pipeline_core(
     features_by_ticker = {}
     earnings_calendar = await aggregator.get_upcoming_earnings()
 
+    # Phase 1: compute technical features for all qualified tickers.
     for ticker in qualified_tickers:
         df = price_data[ticker]
         if df.empty:
@@ -756,25 +832,77 @@ async def _run_pipeline_core(
         df = compute_rsi2_features(df)
         feat = latest_features(df)
         feat["ticker"] = ticker
+        feat["days_to_earnings"] = days_to_next_earnings(earnings_calendar, ticker)
+        feat["fundamental"] = {}
+        feat["sentiment"] = {}
+        feat["_fundamentals_requested"] = False
 
-        # Fundamental + sentiment (parallel per ticker would be ideal, but rate-limited)
+        features_by_ticker[ticker] = feat
+
+        # Store price data for signal models
+        price_data[ticker] = df
+
+    # Phase 2: select which tickers get fundamentals under daily FMP budget.
+    prefiltered = [t for t, f in features_by_ticker.items() if _is_fundamental_candidate(f)]
+    prefiltered.sort(key=lambda t: _technical_priority_score(features_by_ticker[t]), reverse=True)
+    budget = aggregator.get_fmp_budget_status()
+    calls_remaining = budget.get("calls_remaining")
+    # profile + earnings + insider + analyst_estimates + ratios
+    calls_per_fundamentals_ticker = 5
+    max_by_budget = len(prefiltered)
+    if isinstance(calls_remaining, int):
+        max_by_budget = max(0, calls_remaining // calls_per_fundamentals_ticker)
+    max_by_config = max(0, int(settings.fmp_fundamentals_max_tickers_per_run))
+    fundamentals_cap = min(len(prefiltered), max_by_budget, max_by_config)
+    fundamentals_tickers = prefiltered[:fundamentals_cap]
+    fundamentals_set = set(fundamentals_tickers)
+    for ticker in fundamentals_tickers:
+        features_by_ticker[ticker]["_fundamentals_requested"] = True
+
+    logger.info(
+        "FMP fundamentals scope: %d/%d tickers selected (prefilter=%d, cap=%d, budget_remaining=%s)",
+        len(fundamentals_tickers),
+        len(features_by_ticker),
+        len(prefiltered),
+        max_by_config,
+        str(calls_remaining),
+    )
+
+    # Phase 3: news sentiment for full pipeline candidate set using bulk endpoint.
+    news_by_ticker: dict[str, list[dict]] = {}
+    try:
+        news_by_ticker = await aggregator.get_bulk_news(list(features_by_ticker.keys()), per_ticker_limit=20)
+    except Exception as e:
+        logger.warning("Bulk news fetch failed (non-fatal): %s", e)
+        news_by_ticker = {}
+
+    # Phase 4: fundamentals + sentiment enrichment.
+    for ticker, feat in features_by_ticker.items():
         degraded_components: list[str] = []
-        try:
-            fund_data = await aggregator.get_ticker_fundamentals(ticker)
-            fund_data["earnings_surprises"] = score_earnings_surprise(
-                fund_data.get("earnings_surprises", [])
-            )
-            fund_data["insider_activity"] = score_insider_activity(
-                fund_data.get("insider_transactions", [])
-            )
-            feat["fundamental"] = fund_data
-        except Exception as e:
-            logger.debug("Fundamental fetch failed for %s: %s", ticker, e)
-            feat["fundamental"] = {}
-            degraded_components.append("fundamentals")
+
+        if ticker in fundamentals_set:
+            try:
+                fund_data = await aggregator.get_ticker_fundamentals(ticker)
+                fund_data["earnings_surprises"] = score_earnings_surprise(
+                    fund_data.get("earnings_surprises", [])
+                )
+                fund_data["insider_activity"] = score_insider_activity(
+                    fund_data.get("insider_transactions", [])
+                )
+                fund_data["analyst_view"] = score_analyst_estimates(
+                    fund_data.get("analyst_estimates", [])
+                )
+                fund_data["ratio_profile"] = score_financial_ratios(
+                    fund_data.get("ratios", {})
+                )
+                feat["fundamental"] = fund_data
+            except Exception as e:
+                logger.debug("Fundamental fetch failed for %s: %s", ticker, e)
+                feat["fundamental"] = {}
+                degraded_components.append("fundamentals")
 
         try:
-            news = await aggregator.get_ticker_news(ticker)
+            news = news_by_ticker.get(ticker, [])
             feat["sentiment"] = score_news_batch(news)
         except Exception:
             feat["sentiment"] = {}
@@ -788,11 +916,18 @@ async def _run_pipeline_core(
                 ticker, ", ".join(degraded_components),
             )
 
-        feat["days_to_earnings"] = days_to_next_earnings(earnings_calendar, ticker)
-        features_by_ticker[ticker] = feat
-
-        # Store price data for signal models
-        price_data[ticker] = df
+    post_budget = aggregator.get_fmp_budget_status()
+    fmp_endpoint_status = aggregator.get_fmp_endpoint_status()
+    logger.info(
+        "FMP budget usage after Step 4: %d/%d calls (remaining=%s)",
+        post_budget.get("calls_used"),
+        post_budget.get("daily_budget"),
+        str(post_budget.get("calls_remaining")),
+    )
+    logger.info(
+        "FMP endpoint status: %s",
+        fmp_endpoint_status.get("endpoints", {}),
+    )
 
     # Feature envelope
     feature_envelope = StageEnvelope(
@@ -821,6 +956,7 @@ async def _run_pipeline_core(
     pipeline_health.add_stage(validate_features(
         features_by_ticker=features_by_ticker,
         qualified_count=len(qualified_tickers),
+        fmp_endpoint_status=fmp_endpoint_status,
     ))
 
     # --- Step 5: Signal generation ---
@@ -839,7 +975,10 @@ async def _run_pipeline_core(
             all_signals.append(breakout)
 
         # Mean reversion model
-        mean_rev = score_mean_reversion(ticker, df, feat)
+        mean_rev = score_mean_reversion(
+            ticker, df, feat,
+            fundamental_data=feat.get("fundamental", {}),
+        )
         if mean_rev:
             all_signals.append(mean_rev)
 
@@ -1604,20 +1743,27 @@ async def _run_cross_engine_steps(
         logger.info("Step 10: Collecting external engine results...")
         engine_results, failed_engines = await collect_engine_results()
 
-        if failed_engines:
-            total = len(engine_results) + len(failed_engines)
-            drop_msg = (
-                f"Engine Drop Alert\n"
-                f"{'  '.join(failed_engines)} failed to report this cycle.\n"
-                f"{len(engine_results)}/{total} engines reporting."
+        sent_drop_alert = await maybe_send_engine_drop_alert(
+            failed_engines=failed_engines,
+            engines_reporting=len(engine_results),
+            settings=settings,
+            send_alert_fn=send_alert,
+        )
+        failure_stats = _summarize_engine_failures(failed_engines)
+        if sent_drop_alert:
+            logger.warning(
+                "Step 10 engine-drop alert sent: %d engine(s) failed",
+                len(failed_engines),
             )
-            logger.warning("Engine drop: %s", drop_msg)
-            await send_alert(drop_msg)
 
         if not engine_results:
             logger.info("No external engine results available, recording degraded synthesis state")
             from src.data.dataset_verification import verify_cross_engine
             cross_health = verify_cross_engine(engine_results=[], regime_context=regime_context)
+            cross_health_dict = _json_safe(cross_health.to_dict())
+            cross_health_dict["engine_failure_stats"] = failure_stats
+            cross_health_dict["engines_reporting"] = 0
+            cross_health_dict["engines_failed"] = failure_stats.get("total_failed", 0)
 
             async with get_session() as session:
                 existing_synth = await session.execute(
@@ -1636,7 +1782,7 @@ async def _run_cross_engine_steps(
                     row.executive_summary = summary
                     row.verifier_notes = {"skipped": "no_engine_results"}
                     row.credibility_weights = {}
-                    row.cross_engine_health = _json_safe(cross_health.to_dict())
+                    row.cross_engine_health = cross_health_dict
                 else:
                     session.add(CrossEngineSynthesis(
                         run_date=today,
@@ -1647,7 +1793,7 @@ async def _run_cross_engine_steps(
                         executive_summary=summary,
                         verifier_notes={"skipped": "no_engine_results"},
                         credibility_weights={},
-                        cross_engine_health=_json_safe(cross_health.to_dict()),
+                        cross_engine_health=cross_health_dict,
                     ))
             return
 
@@ -2165,6 +2311,9 @@ async def _run_cross_engine_steps(
             )
             row = existing_synth.scalar_one_or_none()
             cross_health_dict = _json_safe(cross_health.to_dict())
+            cross_health_dict["engine_failure_stats"] = failure_stats
+            cross_health_dict["engines_reporting"] = len(engine_results)
+            cross_health_dict["engines_failed"] = failure_stats.get("total_failed", 0)
             if row:
                 existing_tickers = _portfolio_ticker_set(row.portfolio_recommendation)
                 new_tickers = _portfolio_ticker_set(synthesis_dict.get("portfolio"))

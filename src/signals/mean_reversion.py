@@ -38,7 +38,10 @@ class MeanReversionSignal:
 
 
 def score_mean_reversion(
-    ticker: str, df: pd.DataFrame, features: dict
+    ticker: str,
+    df: pd.DataFrame,
+    features: dict,
+    fundamental_data: dict | None = None,
 ) -> MeanReversionSignal | None:
     """Score a ticker for RSI(2) mean-reversion potential.
 
@@ -122,13 +125,26 @@ def score_mean_reversion(
             vol_score = 20  # dried up, dangerous
     scores["liquidity"] = vol_score
 
+    # --- 6. Fundamental quality/value filter (10%) ---
+    ratio_profile = {}
+    if isinstance(fundamental_data, dict):
+        ratio_profile = fundamental_data.get("ratio_profile", {}) or {}
+    ratio_score = 50.0
+    if isinstance(ratio_profile, dict):
+        value_score = ratio_profile.get("value_score")
+        quality_score = ratio_profile.get("quality_score")
+        if _valid(value_score) and _valid(quality_score):
+            ratio_score = max(0.0, min(100.0, (float(value_score) + float(quality_score)) / 2.0))
+    scores["fundamental"] = ratio_score
+
     # --- Composite ---
     weights = {
-        "rsi2_oversold": 0.40,
-        "trend_intact": 0.25,
-        "down_streak": 0.15,
+        "rsi2_oversold": 0.35,
+        "trend_intact": 0.22,
+        "down_streak": 0.13,
         "proximity_to_low": 0.10,
         "liquidity": 0.10,
+        "fundamental": 0.10,
     }
     composite = sum(scores[k] * weights[k] for k in weights)
 

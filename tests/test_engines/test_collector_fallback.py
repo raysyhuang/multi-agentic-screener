@@ -50,6 +50,7 @@ async def test_koocore_falls_back_to_generic_endpoint(monkeypatch):
     results, failed = await collector.collect_engine_results()
     assert len(results) == 1
     assert results[0].engine_name == "koocore_d"
+    assert failed == []
 
 
 @pytest.mark.asyncio
@@ -100,3 +101,4 @@ async def test_koocore_falls_back_when_custom_payload_is_degenerate(monkeypatch)
     results, failed = await collector.collect_engine_results()
     assert len(results) == 1
     assert results[0].candidates_screened == 6
+    assert failed == []

@@ -69,6 +69,10 @@ class Settings(BaseSettings):
     holding_periods: list[int] = Field(default=[3, 5, 7])
     slippage_pct: float = 0.001  # 0.10%
     commission_per_trade: float = 1.0  # dollars
+    fmp_daily_call_budget: int = 750
+    fmp_budget_warn_threshold_pct: float = 0.80
+    fmp_enforce_daily_budget: bool = False
+    fmp_fundamentals_max_tickers_per_run: int = 150
 
     # --- Execution mode ---
     execution_mode: str = "agentic_full"  # quant_only | hybrid | agentic_full
@@ -154,6 +158,10 @@ class Settings(BaseSettings):
     # --- Execution Gates (pre-synthesis safety checks) ---
     min_engines_for_trade: int = 2  # Require N engines reporting before allowing synthesis
     require_known_regime: bool = False  # Block trades when regime is "unknown"
+
+    # --- Cross-Engine Alert Cooldown ---
+    cross_engine_alert_cooldown_hours: int = 4
+    engine_drop_alert_cooldown_minutes: int = 60
 
     # --- Regime Strategy Gate ---
     regime_strategy_gate_enabled: bool = True

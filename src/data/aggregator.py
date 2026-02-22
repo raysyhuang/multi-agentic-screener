@@ -298,9 +298,11 @@ class DataAggregator:
         earnings_task = self.fmp.get_earnings_surprise(ticker)
         insider_task = self.fmp.get_insider_trading(ticker)
         profile_task = self.fmp.get_company_profile(ticker)
+        analyst_task = self.fmp.get_analyst_estimates(ticker)
+        ratios_task = self.fmp.get_ratios(ticker)
 
         results = await asyncio.gather(
-            earnings_task, insider_task, profile_task,
+            earnings_task, insider_task, profile_task, analyst_task, ratios_task,
             return_exceptions=True,
         )
         had_failures = any(isinstance(result, Exception) for result in results)
@@ -308,20 +310,32 @@ class DataAggregator:
         earnings = results[0] if not isinstance(results[0], Exception) else []
         insiders = results[1] if not isinstance(results[1], Exception) else []
         profile = results[2] if not isinstance(results[2], Exception) else {}
+        analyst_estimates = results[3] if not isinstance(results[3], Exception) else []
+        ratios = results[4] if not isinstance(results[4], Exception) else {}
 
         data = {
             "earnings_surprises": earnings[:4] if earnings else [],
             "insider_transactions": insiders[:20] if insiders else [],
             "profile": profile,
+            "analyst_estimates": analyst_estimates[:8] if analyst_estimates else [],
+            "ratios": ratios if isinstance(ratios, dict) else {},
         }
 
-        all_empty = not earnings and not insiders and not profile
-        should_cache = not (had_failures and all_empty)
+        profile_ok = (
+            isinstance(profile, dict)
+            and bool(profile.get("symbol") or profile.get("companyName"))
+        )
+        ratios_ok = isinstance(ratios, dict) and any(v is not None for v in ratios.values())
+        all_empty = not earnings and not insiders and not profile_ok and not analyst_estimates and not ratios_ok
+        should_cache = not all_empty
 
         if self._cache_enabled and should_cache:
             self._cache.put(key, json.dumps(data), TTL_FUNDAMENTALS, source="fmp", ticker=ticker, endpoint="fundamentals")
-        elif had_failures and all_empty:
-            logger.info("Skipping empty fundamentals cache for %s after FMP failures", ticker)
+        elif all_empty:
+            if had_failures:
+                logger.info("Skipping empty fundamentals cache for %s after FMP failures", ticker)
+            else:
+                logger.info("Skipping empty fundamentals cache for %s (provider returned empty payload)", ticker)
 
         return data
 
@@ -341,6 +355,70 @@ class DataAggregator:
         except Exception as e:
             logger.warning("News fetch failed for %s: %s", ticker, e)
             return []
+
+    async def get_bulk_news(self, tickers: list[str], per_ticker_limit: int = 20) -> dict[str, list[dict]]:
+        """Fetch news for many tickers using FMP bulk endpoint with Polygon fallback."""
+        if not tickers:
+            return {}
+
+        out: dict[str, list[dict]] = {t: [] for t in tickers}
+        uncached: list[str] = []
+
+        if self._cache_enabled:
+            for ticker in tickers:
+                key = DataCache.build_key("polygon", ticker, "news")
+                cached = self._cache.get(key)
+                if cached is not None:
+                    try:
+                        out[ticker] = json.loads(cached)[:per_ticker_limit]
+                    except Exception:
+                        uncached.append(ticker)
+                else:
+                    uncached.append(ticker)
+        else:
+            uncached = list(tickers)
+
+        if not uncached:
+            return out
+
+        # Chunk to keep query strings reasonable.
+        chunk_size = 75
+        for i in range(0, len(uncached), chunk_size):
+            chunk = uncached[i:i + chunk_size]
+            try:
+                bulk = await self.fmp.get_stock_news_bulk(chunk, limit=min(1000, len(chunk) * per_ticker_limit))
+                for article in bulk:
+                    symbols: list[str] = []
+                    symbol = article.get("symbol") or article.get("ticker")
+                    if symbol:
+                        symbols.append(str(symbol).upper())
+                    tickers_field = article.get("tickers")
+                    if isinstance(tickers_field, list):
+                        symbols.extend(str(t).upper() for t in tickers_field if t)
+
+                    for sym in symbols:
+                        if sym in out and len(out[sym]) < per_ticker_limit:
+                            out[sym].append(article)
+            except Exception as e:
+                logger.warning("FMP bulk news failed for %d tickers: %s", len(chunk), e)
+
+        # Fallback to Polygon where bulk returned nothing.
+        fallback = [t for t in uncached if not out.get(t)]
+        if fallback:
+            tasks = [self.get_ticker_news(t) for t in fallback]
+            results = await asyncio.gather(*tasks, return_exceptions=True)
+            for ticker, result in zip(fallback, results):
+                if isinstance(result, Exception):
+                    continue
+                out[ticker] = (result or [])[:per_ticker_limit]
+
+        if self._cache_enabled:
+            for ticker, articles in out.items():
+                if articles:
+                    key = DataCache.build_key("polygon", ticker, "news")
+                    self._cache.put(key, json.dumps(articles), TTL_NEWS, source="fmp_bulk", ticker=ticker, endpoint="news")
+
+        return out
 
     async def get_macro_context(self) -> dict:
         """Fetch macro indicators for regime detection."""
@@ -407,6 +485,14 @@ class DataAggregator:
     def get_cache_stats(self) -> dict:
         """Return cache performance statistics."""
         return self._cache.get_stats()
+
+    def get_fmp_budget_status(self) -> dict:
+        """Expose FMP call-budget usage for runtime monitoring."""
+        return self.fmp.get_budget_status()
+
+    def get_fmp_endpoint_status(self) -> dict:
+        """Expose FMP endpoint availability state for diagnostics/UI."""
+        return self.fmp.get_endpoint_status()
 
     async def snapshot_ohlcv(
         self,

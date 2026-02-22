@@ -40,7 +40,7 @@ class StageCheck:
     passed: bool
     severity: Severity  # FAIL = pipeline compromised, WARN = degraded but usable
     message: str
-    value: float | str | None = None
+    value: float | str | dict | list | None = None
 
     def to_dict(self) -> dict:
         return {
@@ -373,6 +373,7 @@ def _detect_split_artifacts(price_data: dict[str, pd.DataFrame]) -> list[str]:
 def validate_features(
     features_by_ticker: dict[str, dict],
     qualified_count: int,
+    fmp_endpoint_status: dict | None = None,
 ) -> StageValidation:
     """Validate feature engineering output."""
     sv = StageValidation(stage_name="features", executed=True)
@@ -455,20 +456,42 @@ def validate_features(
             return True
         return False
 
-    fmp_ok_count = sum(1 for feat in features_by_ticker.values() if _has_fmp_payload(feat))
-    fmp_coverage = fmp_ok_count / feat_count if feat_count > 0 else 0.0
+    requested = [feat for feat in features_by_ticker.values() if feat.get("_fundamentals_requested")]
+    coverage_pool = requested if requested else list(features_by_ticker.values())
+    pool_count = len(coverage_pool)
+    fmp_ok_count = sum(1 for feat in coverage_pool if _has_fmp_payload(feat))
+    fmp_coverage = fmp_ok_count / pool_count if pool_count > 0 else 0.0
     fmp_cov_ok = fmp_coverage >= 0.70
     sv.checks.append(StageCheck(
         name="fmp_fundamentals_coverage",
         passed=fmp_cov_ok,
         severity=Severity.WARN,
         message=(
-            f"FMP fundamentals coverage low: {fmp_coverage:.0%} ({fmp_ok_count}/{feat_count})"
+            f"FMP fundamentals coverage low: {fmp_coverage:.0%} ({fmp_ok_count}/{pool_count})"
             if not fmp_cov_ok else
-            f"FMP fundamentals coverage: {fmp_coverage:.0%} ({fmp_ok_count}/{feat_count})"
+            f"FMP fundamentals coverage: {fmp_coverage:.0%} ({fmp_ok_count}/{pool_count})"
         ),
         value=round(fmp_coverage, 3),
     ))
+
+    # Endpoint-level FMP availability (supported vs plan-gated/unsupported).
+    if isinstance(fmp_endpoint_status, dict):
+        endpoints = fmp_endpoint_status.get("endpoints", {})
+        if isinstance(endpoints, dict) and endpoints:
+            degraded = {k: v for k, v in endpoints.items() if v != "supported"}
+            degraded_items = ", ".join(f"{k}={v}" for k, v in degraded.items())
+            ep_ok = len(degraded) == 0
+            sv.checks.append(StageCheck(
+                name="fmp_endpoint_availability",
+                passed=ep_ok,
+                severity=Severity.WARN,
+                message=(
+                    "FMP endpoint availability degraded: " + degraded_items
+                    if not ep_ok else
+                    "FMP endpoint availability: all required endpoints supported"
+                ),
+                value=fmp_endpoint_status,
+            ))
 
     return sv
 

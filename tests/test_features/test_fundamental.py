@@ -3,6 +3,8 @@
 from src.features.fundamental import (
     score_earnings_surprise,
     score_insider_activity,
+    score_analyst_estimates,
+    score_financial_ratios,
     days_to_next_earnings,
 )
 
@@ -62,3 +64,27 @@ def test_days_to_next_earnings():
 def test_days_to_next_earnings_not_found():
     result = days_to_next_earnings([], "AAPL")
     assert result is None
+
+
+def test_analyst_estimates_scores_revision_trend():
+    estimates = [
+        {"estimatedEpsAvg": 2.1, "estimatedRevenueAvg": 120_000_000},
+        {"estimatedEpsAvg": 1.8, "estimatedRevenueAvg": 100_000_000},
+    ]
+    result = score_analyst_estimates(estimates)
+    assert result["eps_estimate_next"] == 2.1
+    assert result["eps_revision_pct"] > 0
+    assert result["revenue_revision_pct"] > 0
+
+
+def test_financial_ratios_flags_healthy_value_profile():
+    ratios = {"priceEarningsRatio": 14.0, "priceToBookRatio": 1.8, "debtEquityRatio": 0.45}
+    result = score_financial_ratios(ratios)
+    assert result["mean_reversion_ok"] is True
+    assert result["value_score"] >= 60
+
+
+def test_financial_ratios_rejects_levered_expensive_profile():
+    ratios = {"priceEarningsRatio": 48.0, "priceToBookRatio": 7.0, "debtEquityRatio": 3.2}
+    result = score_financial_ratios(ratios)
+    assert result["mean_reversion_ok"] is False

@@ -89,8 +89,12 @@ async def test_get_ticker_fundamentals_aggregates(aggregator):
     aggregator.fmp.get_earnings_surprise = AsyncMock(return_value=[{"actual": 2.0, "estimate": 1.8}])
     aggregator.fmp.get_insider_trading = AsyncMock(return_value=[{"type": "P"}])
     aggregator.fmp.get_company_profile = AsyncMock(return_value={"symbol": "AAPL"})
+    aggregator.fmp.get_analyst_estimates = AsyncMock(return_value=[{"estimatedEpsAvg": 2.1}])
+    aggregator.fmp.get_ratios = AsyncMock(return_value={"priceEarningsRatio": 15.0})
 
     result = await aggregator.get_ticker_fundamentals("AAPL")
     assert "earnings_surprises" in result
     assert "insider_transactions" in result
     assert "profile" in result
+    assert "analyst_estimates" in result
+    assert "ratios" in result

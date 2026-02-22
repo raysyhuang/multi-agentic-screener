@@ -68,6 +68,8 @@ async def test_fundamentals_cache_hit_skips_api(aggregator):
         "earnings_surprises": [{"actual": 2.0}],
         "insider_transactions": [],
         "profile": {"symbol": "AAPL"},
+        "analyst_estimates": [],
+        "ratios": {},
     })
     aggregator._cache.get.return_value = cached
 
@@ -185,6 +187,8 @@ async def test_fundamentals_all_fail_does_not_cache_empty_payload(aggregator):
     aggregator.fmp.get_earnings_surprise = AsyncMock(side_effect=Exception("fmp blocked"))
     aggregator.fmp.get_insider_trading = AsyncMock(side_effect=Exception("fmp blocked"))
     aggregator.fmp.get_company_profile = AsyncMock(side_effect=Exception("fmp blocked"))
+    aggregator.fmp.get_analyst_estimates = AsyncMock(side_effect=Exception("fmp blocked"))
+    aggregator.fmp.get_ratios = AsyncMock(side_effect=Exception("fmp blocked"))
 
     result = await aggregator.get_ticker_fundamentals("AAPL")
 
@@ -192,5 +196,29 @@ async def test_fundamentals_all_fail_does_not_cache_empty_payload(aggregator):
         "earnings_surprises": [],
         "insider_transactions": [],
         "profile": {},
+        "analyst_estimates": [],
+        "ratios": {},
+    }
+    aggregator._cache.put.assert_not_called()
+
+
+@pytest.mark.asyncio
+async def test_fundamentals_empty_success_does_not_cache_payload(aggregator):
+    """Avoid caching provider-side empty payloads that may be transient/auth-related."""
+    aggregator._cache.get.return_value = None
+    aggregator.fmp.get_earnings_surprise = AsyncMock(return_value=[])
+    aggregator.fmp.get_insider_trading = AsyncMock(return_value=[])
+    aggregator.fmp.get_company_profile = AsyncMock(return_value={})
+    aggregator.fmp.get_analyst_estimates = AsyncMock(return_value=[])
+    aggregator.fmp.get_ratios = AsyncMock(return_value={})
+
+    result = await aggregator.get_ticker_fundamentals("AAPL")
+
+    assert result == {
+        "earnings_surprises": [],
+        "insider_transactions": [],
+        "profile": {},
+        "analyst_estimates": [],
+        "ratios": {},
     }
     aggregator._cache.put.assert_not_called()

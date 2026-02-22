@@ -12,9 +12,11 @@ Quality validation rejects stale, degenerate, or mock-looking data.
 from __future__ import annotations
 
 import asyncio
+from dataclasses import dataclass
 import logging
 import time
 from datetime import date, datetime, timedelta
+from typing import Literal
 
 import aiohttp
 from pydantic import ValidationError
@@ -24,6 +26,24 @@ from src.contracts import EngineResultPayload
 from src.engines.koocore_adapter import fetch_koocore
 
 logger = logging.getLogger(__name__)
+
+
+EngineFailureKind = Literal[
+    "exception",
+    "no_output",
+    "no_response",
+    "quality_rejected",
+]
+
+
+@dataclass(frozen=True)
+class EngineFailure:
+    """Structured description of why an engine was not usable this cycle."""
+
+    engine_name: str
+    kind: EngineFailureKind
+    detail: str = ""
+
 
 # Maximum age of engine run_date in *trading days* before it's considered stale.
 # Using trading days instead of calendar days avoids rejecting Friday data on
@@ -307,7 +327,7 @@ def _is_critical_quality_issue(warnings: list[str]) -> bool:
     )
 
 
-async def _collect_local() -> tuple[list[EngineResultPayload], list[str]]:
+async def _collect_local() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Run engines locally in parallel and return validated payloads + failure list."""
     from src.engines.koocore_runner import run_koocore_locally
     from src.engines.gemini_runner import run_gemini_locally
@@ -322,17 +342,23 @@ async def _collect_local() -> tuple[list[EngineResultPayload], list[str]]:
     results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     payloads: list[EngineResultPayload] = []
-    failed_engines: list[str] = []
+    failed_engines: list[EngineFailure] = []
     for engine_name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
             logger.warning("Engine %s local run raised exception: %s", engine_name, result)
-            failed_engines.append(f"{engine_name} (exception: {type(result).__name__})")
+            failed_engines.append(
+                EngineFailure(
+                    engine_name=engine_name,
+                    kind="exception",
+                    detail=type(result).__name__,
+                ),
+            )
         elif result is None:
             logger.warning(
                 "Engine %s returned None — engine produced no output this cycle",
                 engine_name,
             )
-            failed_engines.append(f"{engine_name} (no output)")
+            failed_engines.append(EngineFailure(engine_name=engine_name, kind="no_output"))
         else:
             quality_warnings = _validate_payload_quality(engine_name, result)
             if quality_warnings:
@@ -341,7 +367,13 @@ async def _collect_local() -> tuple[list[EngineResultPayload], list[str]]:
                     logger.warning("Engine %s quality issue: %s", engine_name, w)
                 if has_critical:
                     logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
-                    failed_engines.append(f"{engine_name} (quality rejected)")
+                    failed_engines.append(
+                        EngineFailure(
+                            engine_name=engine_name,
+                            kind="quality_rejected",
+                            detail=quality_warnings[0] if quality_warnings else "",
+                        ),
+                    )
                     continue
             payloads.append(result)
 
@@ -352,7 +384,7 @@ async def _collect_local() -> tuple[list[EngineResultPayload], list[str]]:
     return payloads, failed_engines
 
 
-async def _collect_http() -> tuple[list[EngineResultPayload], list[str]]:
+async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Fetch results from remote engines via HTTP (legacy mode)."""
     settings = get_settings()
     api_key = settings.engine_api_key
@@ -411,13 +443,20 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[str]]:
         results = await asyncio.gather(*tasks.values(), return_exceptions=True)
 
     payloads: list[EngineResultPayload] = []
-    failed_engines: list[str] = []
+    failed_engines: list[EngineFailure] = []
     for engine_name, result in zip(tasks.keys(), results):
         if isinstance(result, Exception):
             logger.warning("Engine %s raised exception: %s", engine_name, result)
-            failed_engines.append(f"{engine_name} (exception: {type(result).__name__})")
+            failed_engines.append(
+                EngineFailure(
+                    engine_name=engine_name,
+                    kind="exception",
+                    detail=type(result).__name__,
+                ),
+            )
         elif result is None:
-            failed_engines.append(f"{engine_name} (no response)")
+            logger.warning("Engine %s returned no response in HTTP mode", engine_name)
+            failed_engines.append(EngineFailure(engine_name=engine_name, kind="no_response"))
         elif result is not None:
             # Quality validation — reject payloads with critical issues
             quality_warnings = _validate_payload_quality(engine_name, result)
@@ -427,7 +466,13 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[str]]:
                     logger.warning("Engine %s quality issue: %s", engine_name, w)
                 if has_critical:
                     logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
-                    failed_engines.append(f"{engine_name} (quality rejected)")
+                    failed_engines.append(
+                        EngineFailure(
+                            engine_name=engine_name,
+                            kind="quality_rejected",
+                            detail=quality_warnings[0] if quality_warnings else "",
+                        ),
+                    )
                     continue
             payloads.append(result)
 
@@ -438,7 +483,7 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[str]]:
     return payloads, failed_engines
 
 
-async def collect_engine_results() -> tuple[list[EngineResultPayload], list[str]]:
+async def collect_engine_results() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Collect results from all engines in parallel.
 
     Mode is controlled by ``engine_run_mode`` setting:

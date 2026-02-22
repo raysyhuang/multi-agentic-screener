@@ -177,9 +177,22 @@
         pipelineBanner = renderPipelineHealthBanner(pipelineData.pipeline_health);
       }
 
+      var fmpBadge = '';
+      if (pipelineData && pipelineData.pipeline_health) {
+        fmpBadge = renderFmpEndpointBadge(pipelineData.pipeline_health);
+      }
+
       var healthBanner = '';
       if (healthData && healthData.health) {
         healthBanner = renderDatasetHealthBanner(healthData.health);
+      }
+
+      var checklistBanner = '';
+      if ((pipelineData && pipelineData.pipeline_health) || (healthData && healthData.health)) {
+        checklistBanner = renderVerificationChecklist(
+          pipelineData ? pipelineData.pipeline_health : null,
+          healthData ? healthData.health : null
+        );
       }
 
       var header = '<div class="card" style="margin-bottom:1.25rem">' +
@@ -190,7 +203,7 @@
         '</div></div>';
 
       var cards = data.signals.map(renderSignalCard).join('');
-      view.innerHTML = pipelineBanner + healthBanner + header + '<div class="signals-grid">' + cards + '</div>';
+      view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner + header + '<div class="signals-grid">' + cards + '</div>';
     }).catch(function () {
       showEmpty('signals-view', 'Failed to load signals.');
     });
@@ -262,9 +275,13 @@
 
       var checks = stage.checks || [];
       checks.forEach(function (c) {
-        if (!c.passed) {
-          html += '<div style="font-size:0.75rem;margin-left:1rem;color:var(--text-muted)">\u2022 ' + escapeHtml(c.message) + '</div>';
-        }
+        var cSeverity = (c.severity || 'pass').toLowerCase();
+        var cColor = cSeverity === 'fail' ? 'var(--red, #ef4444)' :
+                     cSeverity === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--green)';
+        var cIcon = c.passed ? '\u2705' : (cSeverity === 'fail' ? '\u274C' : '\u26A0\uFE0F');
+        html += '<div style="font-size:0.75rem;margin-left:1rem;color:var(--text-muted)">' +
+          cIcon + ' <span style="color:' + cColor + '">' + escapeHtml((c.name || '').replace(/_/g, ' ')) + '</span>: ' +
+          escapeHtml(c.message || '') + '</div>';
       });
       html += '</div>';
     });
@@ -280,6 +297,172 @@
     }
 
     html += '</div></div></div>';
+    return html;
+  }
+
+  function renderFmpEndpointBadge(pipelineHealth) {
+    if (!pipelineHealth || !pipelineHealth.stages) return '';
+
+    var endpointCheck = null;
+    (pipelineHealth.stages || []).forEach(function (stage) {
+      if (endpointCheck) return;
+      (stage.checks || []).forEach(function (c) {
+        if (!endpointCheck && c.name === 'fmp_endpoint_availability') endpointCheck = c;
+      });
+    });
+    if (!endpointCheck) return '';
+
+    var statusMap = {};
+    if (endpointCheck.value && endpointCheck.value.endpoints) {
+      statusMap = endpointCheck.value.endpoints;
+    }
+    if (!statusMap || Object.keys(statusMap).length === 0) return '';
+
+    function badge(status) {
+      if (status === 'supported') return { color: 'var(--green)', label: 'supported' };
+      if (status === 'plan_gated') return { color: 'var(--amber, #f59e0b)', label: 'plan-gated' };
+      if (status === 'unsupported') return { color: 'var(--amber, #f59e0b)', label: 'unsupported' };
+      if (status === 'disabled') return { color: 'var(--red, #ef4444)', label: 'disabled' };
+      if (status === 'auth_error') return { color: 'var(--red, #ef4444)', label: 'auth-error' };
+      return { color: 'var(--text-muted)', label: status || 'unknown' };
+    }
+
+    var html = '<div class="card" style="margin-bottom:1.25rem">' +
+      '<div class="card-header">' +
+      '<div><span class="card-title">FMP Endpoint Availability</span>' +
+      '<div class="card-subtitle">Supported vs plan-gated endpoints for this run</div></div>' +
+      '</div>';
+
+    var callsUsed = endpointCheck.value.calls_used;
+    var dailyBudget = endpointCheck.value.daily_budget;
+    if (callsUsed != null && dailyBudget != null) {
+      html += '<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.45rem">Calls used: ' +
+        escapeHtml(String(callsUsed)) + '/' + escapeHtml(String(dailyBudget)) + '</div>';
+    }
+
+    html += '<div style="display:flex;flex-wrap:wrap;gap:0.4rem">';
+    Object.keys(statusMap).forEach(function (name) {
+      var meta = badge(statusMap[name]);
+      html += '<span style="font-size:0.72rem;border:1px solid ' + meta.color + ';color:' + meta.color +
+        ';border-radius:999px;padding:0.12rem 0.42rem">' +
+        escapeHtml(name.replace(/_/g, ' ')) + ': ' + escapeHtml(meta.label) + '</span>';
+    });
+    html += '</div>';
+
+    if (endpointCheck.message) {
+      html += '<div style="font-size:0.74rem;color:var(--text-muted);margin-top:0.45rem">' +
+        escapeHtml(endpointCheck.message) + '</div>';
+    }
+    html += '</div>';
+    return html;
+  }
+
+  function renderVerificationChecklist(pipelineHealth, datasetHealth) {
+    var stageItems = [];
+    var checkItems = [];
+    var datasetItems = [];
+    var warningItems = [];
+
+    function normalizeStatus(passed, severity) {
+      var sev = (severity || '').toLowerCase();
+      if (sev === 'fail') return 'fail';
+      if (passed) return 'pass';
+      return 'warn';
+    }
+
+    function statusView(status) {
+      if (status === 'pass') return { icon: '\u2705', color: 'var(--green)', label: 'PASS' };
+      if (status === 'fail') return { icon: '\u274C', color: 'var(--red, #ef4444)', label: 'FAIL' };
+      return { icon: '\u26A0\uFE0F', color: 'var(--amber, #f59e0b)', label: 'WARN' };
+    }
+
+    function renderRows(items) {
+      if (!items.length) {
+        return '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.3rem 0">No checks in this section.</div>';
+      }
+      var section = '';
+      items.forEach(function (item) {
+        var view = statusView(item.status);
+        section += '<div style="padding:0.42rem 0.52rem;border:1px solid var(--border);border-radius:8px;margin-top:0.35rem">' +
+          '<div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">' +
+          '<div style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--text-secondary)">' +
+          '<span style="color:' + view.color + '">' + view.icon + '</span>' +
+          '<strong>' + escapeHtml(item.label) + '</strong>' +
+          '</div>' +
+          '<span style="font-size:0.68rem;color:' + view.color + ';border:1px solid ' + view.color + ';border-radius:999px;padding:0.05rem 0.35rem">' + view.label + '</span>' +
+          '</div>' +
+          '<div style="font-size:0.74rem;color:var(--text-muted);margin-top:0.18rem">' + escapeHtml(item.detail || '') + '</div>' +
+          '</div>';
+      });
+      return section;
+    }
+
+    if (pipelineHealth && pipelineHealth.stages) {
+      (pipelineHealth.stages || []).forEach(function (stage) {
+        var stageLabel = (stage.stage || '').replace(/_/g, ' ');
+        var stageStatus = normalizeStatus(!!stage.passed, stage.severity || 'warn');
+        stageItems.push({
+          label: stageLabel,
+          status: stageStatus,
+          detail: stage.passed ? 'stage passed' : 'stage requires review',
+        });
+
+        (stage.checks || []).forEach(function (c) {
+          checkItems.push({
+            label: stageLabel + ' / ' + (c.name || '').replace(/_/g, ' '),
+            status: normalizeStatus(!!c.passed, c.severity || 'warn'),
+            detail: c.message || '',
+          });
+        });
+      });
+    }
+
+    if (datasetHealth && datasetHealth.checks) {
+      (datasetHealth.checks || []).forEach(function (c) {
+        datasetItems.push({
+          label: (c.name || '').replace(/_/g, ' '),
+          status: c.passed ? 'pass' : 'warn',
+          detail: c.detail || '',
+        });
+      });
+    }
+
+    if (pipelineHealth && pipelineHealth.warnings) {
+      (pipelineHealth.warnings || []).forEach(function (w) {
+        warningItems.push({ label: 'Pipeline warning', status: 'warn', detail: w || '' });
+      });
+    }
+
+    var allItems = stageItems.concat(checkItems).concat(datasetItems).concat(warningItems);
+    var passCount = allItems.filter(function (i) { return i.status === 'pass'; }).length;
+    var warnCount = allItems.filter(function (i) { return i.status === 'warn'; }).length;
+    var failCount = allItems.filter(function (i) { return i.status === 'fail'; }).length;
+
+    var html = '<div class="card" style="margin-bottom:1.25rem">' +
+      '<div class="card-header">' +
+      '<div><span class="card-title">Verification Checklist</span>' +
+      '<div class="card-subtitle">Complete run checklist for morning verification</div></div>' +
+      '</div>' +
+      '<div style="display:flex;flex-wrap:wrap;gap:0.45rem;margin-bottom:0.6rem">' +
+      '<span style="font-size:0.72rem;color:var(--text-secondary);border:1px solid var(--border);border-radius:999px;padding:0.12rem 0.45rem">Total: ' + allItems.length + '</span>' +
+      '<span style="font-size:0.72rem;color:var(--green);border:1px solid var(--green);border-radius:999px;padding:0.12rem 0.45rem">PASS: ' + passCount + '</span>' +
+      '<span style="font-size:0.72rem;color:var(--amber, #f59e0b);border:1px solid var(--amber, #f59e0b);border-radius:999px;padding:0.12rem 0.45rem">WARN: ' + warnCount + '</span>' +
+      '<span style="font-size:0.72rem;color:var(--red, #ef4444);border:1px solid var(--red, #ef4444);border-radius:999px;padding:0.12rem 0.45rem">FAIL: ' + failCount + '</span>' +
+      '</div>' +
+      '<details open><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Pipeline Stages (' + stageItems.length + ')</summary>' +
+      renderRows(stageItems) +
+      '</details>' +
+      '<details open style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Pipeline Checks (' + checkItems.length + ')</summary>' +
+      renderRows(checkItems) +
+      '</details>' +
+      '<details open style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Dataset Checks (' + datasetItems.length + ')</summary>' +
+      renderRows(datasetItems) +
+      '</details>' +
+      '<details style="margin-top:0.45rem"><summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">Warnings (' + warningItems.length + ')</summary>' +
+      renderRows(warningItems) +
+      '</details>' +
+      '</div>';
+
     return html;
   }
 
@@ -344,6 +527,22 @@
         var cePassed = ceh.passed;
         var ceColor = cePassed ? 'var(--green)' : 'var(--amber, #f59e0b)';
         var ceBg = cePassed ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)';
+        var dropStats = ceh.engine_failure_stats || null;
+        var dropLine = '';
+        if (dropStats) {
+          var totalDropped = Number(dropStats.total_failed || 0);
+          var byKind = dropStats.by_kind || {};
+          var kindParts = [];
+          Object.keys(byKind).forEach(function (kind) {
+            var count = Number(byKind[kind] || 0);
+            if (count > 0) kindParts.push(escapeHtml(kind) + ': ' + count);
+          });
+          dropLine =
+            '<div style="margin-top:0.6rem;font-size:0.8rem;color:var(--text-secondary)">' +
+            '<strong>Engine Drop Metrics:</strong> ' + totalDropped +
+            (kindParts.length ? ' (' + kindParts.join(', ') + ')' : '') +
+            '</div>';
+        }
         html += '<div class="card" style="margin-bottom:1.25rem;border-left:3px solid ' + ceColor + ';background:' + ceBg + '">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">' +
           '<div style="display:flex;align-items:center;gap:0.5rem">' +
@@ -360,7 +559,7 @@
             icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
             escapeHtml(c.detail) + '</div>';
         });
-        html += '</div></div></div>';
+        html += '</div></div>' + dropLine + '</div>';
       }
 
       // --- Header ---
