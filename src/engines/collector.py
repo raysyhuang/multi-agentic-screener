@@ -1,8 +1,9 @@
 """Engine Collector — fetches results from all external engines in parallel.
 
-Supports two modes controlled by ``engine_run_mode`` setting:
-  - ``"local"``: runs KooCore-D and Gemini STST in-process (default)
+Supports three modes controlled by ``engine_run_mode`` setting:
+  - ``"local"``: runs KooCore-D and Gemini STST in-process
   - ``"http"``: fetches from remote Heroku apps (legacy)
+  - ``"hybrid"`` (default): KooCore-D via HTTP, Gemini STST locally
 
 Fail-open per engine: one engine being down does not block the others.
 Returns a list of validated EngineResultPayload objects.
@@ -384,6 +385,76 @@ async def _collect_local(target_date: date | None = None) -> tuple[list[EngineRe
     return payloads, failed_engines
 
 
+async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
+    """Hybrid mode: KooCore-D via HTTP (GitHub Action pushes results), Gemini STST locally."""
+    from src.engines.gemini_runner import run_gemini_locally
+
+    settings = get_settings()
+    api_key = settings.engine_api_key
+    timeout_s = settings.engine_fetch_timeout_s
+    koocore_url = settings.koocore_api_url
+
+    logger.info("Collecting engine results in HYBRID mode")
+
+    # KooCore-D: fetch via HTTP (results pushed by GitHub Action)
+    async def _fetch_koocore_http() -> EngineResultPayload | None:
+        if not koocore_url:
+            logger.warning("KooCore-D URL not configured; skipping HTTP fetch")
+            return None
+        async with aiohttp.ClientSession() as session:
+            return await _fetch_with_generic_then_custom(
+                session=session,
+                engine_name="koocore_d",
+                base_url=koocore_url,
+                api_key=api_key,
+                timeout_s=timeout_s,
+                custom_fetcher=fetch_koocore,
+            )
+
+    # Run KooCore-D (HTTP) and Gemini STST (local) in parallel
+    koocore_task = asyncio.create_task(_fetch_koocore_http())
+    gemini_task = asyncio.create_task(run_gemini_locally(target_date=target_date))
+    results = await asyncio.gather(koocore_task, gemini_task, return_exceptions=True)
+
+    engine_names = ["koocore_d", "gemini_stst"]
+    payloads: list[EngineResultPayload] = []
+    failed_engines: list[EngineFailure] = []
+
+    for engine_name, result in zip(engine_names, results):
+        if isinstance(result, Exception):
+            logger.warning("Engine %s raised exception in hybrid mode: %s", engine_name, result)
+            failed_engines.append(
+                EngineFailure(engine_name=engine_name, kind="exception", detail=type(result).__name__),
+            )
+        elif result is None:
+            kind: EngineFailureKind = "no_response" if engine_name == "koocore_d" else "no_output"
+            logger.warning("Engine %s returned no data in hybrid mode", engine_name)
+            failed_engines.append(EngineFailure(engine_name=engine_name, kind=kind))
+        else:
+            quality_warnings = _validate_payload_quality(engine_name, result)
+            if quality_warnings:
+                has_critical = _is_critical_quality_issue(quality_warnings)
+                for w in quality_warnings:
+                    logger.warning("Engine %s quality issue: %s", engine_name, w)
+                if has_critical:
+                    logger.warning("Engine %s REJECTED due to critical quality issues", engine_name)
+                    failed_engines.append(
+                        EngineFailure(
+                            engine_name=engine_name,
+                            kind="quality_rejected",
+                            detail=quality_warnings[0] if quality_warnings else "",
+                        ),
+                    )
+                    continue
+            payloads.append(result)
+
+    logger.info(
+        "Hybrid engine collection complete: %d/%d engines passed quality checks",
+        len(payloads), len(engine_names),
+    )
+    return payloads, failed_engines
+
+
 async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Fetch results from remote engines via HTTP (legacy mode)."""
     settings = get_settings()
@@ -489,16 +560,19 @@ async def collect_engine_results(
     """Collect results from all engines in parallel.
 
     Mode is controlled by ``engine_run_mode`` setting:
-      - ``"local"`` (default): runs engines in-process
-      - ``"http"``: fetches from remote Heroku apps
+      - ``"local"``: runs engines in-process
+      - ``"http"``: fetches from remote Heroku apps (legacy)
+      - ``"hybrid"`` (default): KooCore-D via HTTP, Gemini STST locally
 
     Returns (payloads, failed_engines) where failed_engines is a list of
     human-readable descriptions of engines that failed to report.
     """
     settings = get_settings()
-    mode = (settings.engine_run_mode or "local").strip().lower()
+    mode = (settings.engine_run_mode or "hybrid").strip().lower()
 
     if mode == "local":
         return await _collect_local(target_date=target_date)
+    elif mode == "hybrid":
+        return await _collect_hybrid(target_date=target_date)
     else:
         return await _collect_http()
