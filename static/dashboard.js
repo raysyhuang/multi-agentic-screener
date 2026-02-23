@@ -6,7 +6,7 @@
   // -----------------------------------------------------------------------
   // Engine display names — avoids naive title-casing of acronyms
   // -----------------------------------------------------------------------
-  var ENGINE_DISPLAY = { gemini_stst: 'Gemini STST', koocore_d: 'KooCore-D' };
+  var ENGINE_DISPLAY = { gemini_stst: 'Gemini STST', koocore_d: 'KooCore-D', mas_quant_screener: 'MAS-Quant-Screener' };
   function engineDisplayName(name) {
     return ENGINE_DISPLAY[name] || name.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }

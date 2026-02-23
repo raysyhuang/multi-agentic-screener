@@ -1,7 +1,7 @@
 """Portfolio-level trade simulation for the multi-engine backtest.
 
 Runs **7 parallel simulation tracks**:
-  1. MAS standalone
+  1. MAS-Quant-Screener standalone
   2. KooCore-D standalone
   3. Gemini STST standalone
   4. Equal-weight synthesis
@@ -54,7 +54,7 @@ class SimulatedTrade:
     ticker: str
     engine_name: str
     strategy: str
-    track: str  # "mas", "koocore_d", "gemini_stst", "eq_synth", "cred_synth", "sized_synth"
+    track: str  # "mas_quant_screener", "koocore_d", "gemini_stst", "eq_synth", "cred_synth", "sized_synth"
     signal_date: date
     entry_date: date | None
     entry_price: float
@@ -120,7 +120,7 @@ def run_portfolio_simulation(
         Dict of track_name -> TrackResult.
     """
     tracks = {
-        "mas": TrackResult("mas", [], [], []),
+        "mas_quant_screener": TrackResult("mas_quant_screener", [], [], []),
         "koocore_d": TrackResult("koocore_d", [], [], []),
         "gemini_stst": TrackResult("gemini_stst", [], [], []),
         "eq_synth": TrackResult("eq_synth", [], [], []),
@@ -134,7 +134,7 @@ def run_portfolio_simulation(
         tracks["sized_synth"] = TrackResult("sized_synth", [], [], [])
 
     # Simulate per-engine tracks
-    for engine_name in ("mas", "koocore_d", "gemini_stst"):
+    for engine_name in ("mas_quant_screener", "koocore_d", "gemini_stst"):
         _simulate_engine_track(
             engine_name, daily_records, price_data, config, tracks[engine_name]
         )

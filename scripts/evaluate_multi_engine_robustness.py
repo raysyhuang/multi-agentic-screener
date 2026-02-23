@@ -107,7 +107,7 @@ def load_report(path: Path) -> ReportRecord:
     benchmark = obj.get("benchmark") or {}
 
     mapping = {
-        "mas": per_engine.get("mas"),
+        "mas_quant_screener": per_engine.get("mas_quant_screener"),
         "koocore_d": per_engine.get("koocore_d"),
         "gemini_stst": per_engine.get("gemini_stst"),
         "eq_synth": synthesis.get("equal_weight"),
