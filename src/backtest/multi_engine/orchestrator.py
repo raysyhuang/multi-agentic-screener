@@ -538,6 +538,178 @@ def _feed_credibility_outcomes(
             tracker.record_outcome(engine_name, pnl_pct)
 
 
+# ── Multi-Horizon Backtest ────────────────────────────────────────────────
+
+
+async def run_multi_horizon_backtest(
+    end_date: date,
+    backtest_years: list[int],
+    engine_cfg: dict | None = None,
+    synthesis_cfg: dict | None = None,
+    portfolio_cfg: dict | None = None,
+    regime_gate_backtest_cfg: dict | None = None,
+    output_dir: str = "backtest_results/multi_engine",
+    universe: list[str] | None = None,
+    tuning_meta: dict | None = None,
+) -> dict:
+    """Run backtests across multiple time horizons and compare results.
+
+    For each entry in *backtest_years*, a separate multi-engine backtest is
+    executed with ``start_date = end_date - N years``.  The individual reports
+    are collected and a cross-horizon comparison is appended.
+
+    Returns a combined report with per-horizon results and comparison.
+    """
+    from dateutil.relativedelta import relativedelta
+
+    t0 = time.monotonic()
+    horizon_reports: dict[str, dict] = {}
+
+    for years in sorted(backtest_years):
+        start = end_date - relativedelta(years=years)
+        label = f"{years}y"
+        horizon_dir = f"{output_dir}/{label}"
+        logger.info("=" * 70)
+        logger.info("Starting %s horizon backtest: %s → %s", label, start, end_date)
+        logger.info("=" * 70)
+
+        report = await run_multi_engine_backtest(
+            start_date=start,
+            end_date=end_date,
+            engine_cfg=engine_cfg,
+            synthesis_cfg=synthesis_cfg,
+            portfolio_cfg=portfolio_cfg,
+            regime_gate_backtest_cfg=regime_gate_backtest_cfg,
+            output_dir=horizon_dir,
+            universe=universe,
+            tuning_meta=tuning_meta,
+        )
+        horizon_reports[label] = report
+
+    # Build cross-horizon comparison
+    comparison = _compare_horizons(horizon_reports)
+
+    elapsed = time.monotonic() - t0
+    combined = {
+        "run_date": str(date.today()),
+        "end_date": str(end_date),
+        "backtest_years": backtest_years,
+        "elapsed_total_s": round(elapsed, 1),
+        "horizons": horizon_reports,
+        "cross_horizon_comparison": comparison,
+    }
+
+    # Save combined report
+    out_path = Path(output_dir)
+    out_path.mkdir(parents=True, exist_ok=True)
+    combined_file = out_path / f"multi_horizon_{'_'.join(str(y) for y in backtest_years)}y_{end_date}.json"
+    combined_file.write_text(json.dumps(combined, indent=2, default=str))
+    logger.info("Combined multi-horizon report saved to %s", combined_file)
+
+    return combined
+
+
+def _compare_horizons(horizon_reports: dict[str, dict]) -> dict:
+    """Build a cross-horizon comparison from individual backtest reports.
+
+    Extracts key metrics from each horizon's synthesis and per-engine results
+    and presents them side-by-side for easy comparison.
+    """
+    if not horizon_reports:
+        return {"error": "No horizon reports to compare"}
+
+    # Per-engine comparison across horizons
+    engine_comparison: dict[str, dict[str, dict]] = {}
+    synthesis_comparison: dict[str, dict[str, dict]] = {}
+
+    for horizon, report in sorted(horizon_reports.items()):
+        # Per-engine metrics
+        per_engine = report.get("per_engine", {})
+        for engine, data in per_engine.items():
+            summary = data.get("summary", {})
+            engine_comparison.setdefault(engine, {})[horizon] = {
+                "total_trades": summary.get("total_trades", 0),
+                "win_rate": summary.get("win_rate", 0),
+                "avg_return_pct": summary.get("avg_return_pct", 0),
+                "sharpe_ratio": summary.get("sharpe_ratio", 0),
+                "sortino_ratio": summary.get("sortino_ratio", 0),
+                "max_drawdown_pct": summary.get("max_drawdown_pct", 0),
+                "profit_factor": summary.get("profit_factor", 0),
+                "calmar_ratio": summary.get("calmar_ratio", 0),
+                "total_return_pct": summary.get("total_return_pct", 0),
+            }
+
+        # Synthesis metrics
+        synthesis = report.get("synthesis", {})
+        for track_name in ("equal_weight", "credibility_weight", "regime_gated"):
+            track_data = synthesis.get(track_name, {})
+            summary = track_data.get("summary", {})
+            if summary:
+                synthesis_comparison.setdefault(track_name, {})[horizon] = {
+                    "total_trades": summary.get("total_trades", 0),
+                    "win_rate": summary.get("win_rate", 0),
+                    "avg_return_pct": summary.get("avg_return_pct", 0),
+                    "sharpe_ratio": summary.get("sharpe_ratio", 0),
+                    "sortino_ratio": summary.get("sortino_ratio", 0),
+                    "max_drawdown_pct": summary.get("max_drawdown_pct", 0),
+                    "profit_factor": summary.get("profit_factor", 0),
+                    "calmar_ratio": summary.get("calmar_ratio", 0),
+                    "total_return_pct": summary.get("total_return_pct", 0),
+                }
+
+    # Stability analysis: how consistent are metrics across horizons?
+    stability = _compute_stability(engine_comparison, synthesis_comparison)
+
+    return {
+        "engine_comparison": engine_comparison,
+        "synthesis_comparison": synthesis_comparison,
+        "stability_analysis": stability,
+    }
+
+
+def _compute_stability(
+    engine_comparison: dict[str, dict[str, dict]],
+    synthesis_comparison: dict[str, dict[str, dict]],
+) -> dict:
+    """Measure metric stability across horizons.
+
+    A strategy that performs consistently across 1y, 3y, and 5y windows is
+    more trustworthy than one that only shines in a single window.
+
+    Returns coefficient of variation (CV) for key metrics per engine/track.
+    Lower CV = more stable.
+    """
+    import numpy as np
+
+    result: dict[str, dict] = {}
+    key_metrics = ["win_rate", "sharpe_ratio", "avg_return_pct", "profit_factor"]
+
+    all_sources = {**engine_comparison, **{f"synth_{k}": v for k, v in synthesis_comparison.items()}}
+
+    for source_name, horizons in all_sources.items():
+        if len(horizons) < 2:
+            continue
+
+        stability: dict[str, float | str] = {}
+        for metric in key_metrics:
+            values = [h.get(metric, 0) for h in horizons.values()]
+            arr = np.array(values)
+            mean = float(np.mean(arr))
+            std = float(np.std(arr, ddof=1)) if len(arr) > 1 else 0.0
+            cv = abs(std / mean) if mean != 0 else float("inf")
+            stability[metric] = {
+                "values": {h: v for h, v in zip(horizons.keys(), values)},
+                "mean": round(mean, 4),
+                "std": round(std, 4),
+                "cv": round(cv, 4),
+                "stable": cv < 0.5,  # CV < 50% = reasonably stable
+            }
+
+        result[source_name] = stability
+
+    return result
+
+
 # ── CLI entry point ───────────────────────────────────────────────────────
 
 
@@ -549,31 +721,69 @@ def main():
     parser.add_argument("--start", type=str, help="Start date (YYYY-MM-DD)")
     parser.add_argument("--end", type=str, help="End date (YYYY-MM-DD)")
     parser.add_argument(
+        "--backtest-years",
+        type=str,
+        help="Comma-separated list of horizon years (e.g. 1,3,5)",
+    )
+    parser.add_argument(
         "--output-dir",
         type=str,
         default="backtest_results/multi_engine",
     )
     args = parser.parse_args()
 
+    # Parse --backtest-years override
+    cli_years = None
+    if args.backtest_years:
+        cli_years = [int(y.strip()) for y in args.backtest_years.split(",")]
+
     if args.config:
         cfg = load_config(args.config)
         dr = cfg.get("date_range", {})
-        # CLI --start/--end override config date_range when provided
-        start = date.fromisoformat(args.start if args.start else dr.get("start", "2024-01-01"))
         end = date.fromisoformat(args.end if args.end else dr.get("end", "2026-02-17"))
         output_dir = cfg.get("output_dir", args.output_dir)
 
+        # Determine backtest years: CLI flag > config > None (single run)
+        backtest_years = cli_years or cfg.get("backtest_years")
+
+        if backtest_years:
+            asyncio.run(
+                run_multi_horizon_backtest(
+                    end_date=end,
+                    backtest_years=backtest_years,
+                    engine_cfg=cfg.get("engines"),
+                    synthesis_cfg=cfg.get("synthesis"),
+                    portfolio_cfg=cfg.get("portfolio"),
+                    regime_gate_backtest_cfg=cfg.get("regime_gate_backtest"),
+                    output_dir=output_dir,
+                    universe=cfg.get("universe"),
+                    tuning_meta=cfg.get("tuning_meta"),
+                )
+            )
+        else:
+            # Single date-range backtest (original behavior)
+            start = date.fromisoformat(
+                args.start if args.start else dr.get("start", "2024-01-01")
+            )
+            asyncio.run(
+                run_multi_engine_backtest(
+                    start_date=start,
+                    end_date=end,
+                    engine_cfg=cfg.get("engines"),
+                    synthesis_cfg=cfg.get("synthesis"),
+                    portfolio_cfg=cfg.get("portfolio"),
+                    regime_gate_backtest_cfg=cfg.get("regime_gate_backtest"),
+                    output_dir=output_dir,
+                    universe=cfg.get("universe"),
+                    tuning_meta=cfg.get("tuning_meta"),
+                )
+            )
+    elif cli_years and args.end:
         asyncio.run(
-            run_multi_engine_backtest(
-                start_date=start,
-                end_date=end,
-                engine_cfg=cfg.get("engines"),
-                synthesis_cfg=cfg.get("synthesis"),
-                portfolio_cfg=cfg.get("portfolio"),
-                regime_gate_backtest_cfg=cfg.get("regime_gate_backtest"),
-                output_dir=output_dir,
-                universe=cfg.get("universe"),
-                tuning_meta=cfg.get("tuning_meta"),
+            run_multi_horizon_backtest(
+                end_date=date.fromisoformat(args.end),
+                backtest_years=cli_years,
+                output_dir=args.output_dir,
             )
         )
     elif args.start and args.end:
@@ -585,7 +795,7 @@ def main():
             )
         )
     else:
-        parser.error("Provide --config or both --start and --end")
+        parser.error("Provide --config, both --start and --end, or --backtest-years with --end")
 
 
 if __name__ == "__main__":
