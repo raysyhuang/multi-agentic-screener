@@ -53,9 +53,9 @@ def _synth_pick(ticker: str, score: float, strategies: list[str], engines: list[
 
 def test_synthesize_picks_respects_diversity_config_knobs():
     picks = [
-        _pick("AAA", "mas", "breakout", 80),
+        _pick("AAA", "mas_quant_screener", "breakout", 80),
         _pick("AAA", "koocore_d", "mean_reversion", 80),
-        _pick("BBB", "mas", "breakout", 80),
+        _pick("BBB", "mas_quant_screener", "breakout", 80),
         _pick("BBB", "koocore_d", "momentum", 80),
         _pick("BBB", "gemini_stst", "breakout", 80),
     ]
@@ -86,12 +86,12 @@ def test_synthesize_picks_respects_diversity_config_knobs():
 def test_rolling_credibility_tracker_custom_limits_apply():
     tracker = RollingCredibilityTracker(window=5, min_trades=2, weight_floor=0.5, weight_cap=1.2)
     for pnl in [5.0, 6.0]:
-        tracker.record_outcome("mas", pnl)
+        tracker.record_outcome("mas_quant_screener", pnl)
     for pnl in [-4.0, -3.0]:
         tracker.record_outcome("gemini_stst", pnl)
-    weights = tracker.get_rolling_weights({"mas": 1.0, "gemini_stst": 1.0})
+    weights = tracker.get_rolling_weights({"mas_quant_screener": 1.0, "gemini_stst": 1.0})
     assert weights is not None
-    assert 0.5 <= weights["mas"] <= 1.2
+    assert 0.5 <= weights["mas_quant_screener"] <= 1.2
     assert 0.5 <= weights["gemini_stst"] <= 1.2
 
 
@@ -134,7 +134,7 @@ def test_report_generator_emits_tuning_meta_and_synthesis_diagnostics():
         screen_date=date(2025, 1, 2),
         regime="bull",
         engine_picks={},
-        synthesis_eq=[_synth_pick("AAA", 100, ["breakout"], ["mas", "koocore_d"])],
+        synthesis_eq=[_synth_pick("AAA", 100, ["breakout"], ["mas_quant_screener", "koocore_d"])],
         synthesis_cred=[_synth_pick("BBB", 90, ["mean_reversion"], ["gemini_stst"])],
         synthesis_regime_gated=[],
     )
@@ -156,4 +156,4 @@ def test_report_generator_emits_tuning_meta_and_synthesis_diagnostics():
     diag = report["synthesis_diagnostics"]
     assert diag["equal_weight"]["total_picks"] == 1
     assert diag["equal_weight"]["avg_engine_count_per_pick"] == 2.0
-    assert diag["equal_weight"]["source_engine_counts"]["mas"] == 1
+    assert diag["equal_weight"]["source_engine_counts"]["mas_quant_screener"] == 1

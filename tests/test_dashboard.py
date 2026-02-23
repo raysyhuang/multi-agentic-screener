@@ -270,12 +270,12 @@ _SAMPLE_BACKTEST = {
     "run_date": "2026-02-17",
     "date_range": {"start": "2021-02-17", "end": "2026-02-17"},
     "trading_days": 1255,
-    "engines": ["mas", "koocore_d"],
+    "engines": ["mas_quant_screener", "koocore_d"],
     "config": {},
     "elapsed_s": 120.5,
     "total_trades_all_tracks": 5000,
     "per_engine": {
-        "mas": {
+        "mas_quant_screener": {
             "summary": {
                 "total_trades": 2000, "win_rate": 0.52, "avg_return_pct": 0.3,
                 "sharpe_ratio": 0.8, "sortino_ratio": 1.1, "max_drawdown_pct": -12.0,
@@ -335,8 +335,8 @@ def backtest_dir(tmp_path):
 
     sample2 = {**_SAMPLE_BACKTEST, "run_date": "2026-02-18", "trading_days": 10}
     sample2["per_engine"] = {
-        "mas": {
-            "summary": {**_SAMPLE_BACKTEST["per_engine"]["mas"]["summary"], "win_rate": 0.55},
+        "mas_quant_screener": {
+            "summary": {**_SAMPLE_BACKTEST["per_engine"]["mas_quant_screener"]["summary"], "win_rate": 0.55},
             "by_regime": {}, "by_strategy": {}, "equity_curve": [],
         },
     }
@@ -384,7 +384,7 @@ async def test_backtest_runs_prefers_db_persisted_records(app_client):
         "run_date": "2026-02-20",
         "date_range": {"start": "2025-02-20", "end": "2026-02-20"},
         "trading_days": 251,
-        "engines": ["mas", "koocore_d", "gemini_stst"],
+        "engines": ["mas_quant_screener", "koocore_d", "gemini_stst"],
         "total_trades_all_tracks": 1005,
         "elapsed_s": 42.0,
         "storage": "database",
@@ -449,8 +449,8 @@ async def test_backtest_equity_deduplicates(app_client, backtest_dir):
     assert resp.status_code == 200
     data = resp.json()
     assert "curves" in data
-    # mas had 3 entries with duplicate date 2021-03-01 — should keep last (1.5)
-    mas_curve = data["curves"]["mas"]
+    # mas_quant_screener had 3 entries with duplicate date 2021-03-01 — should keep last (1.5)
+    mas_curve = data["curves"]["mas_quant_screener"]
     dates = [p["date"] for p in mas_curve]
     assert dates == ["2021-03-01", "2021-03-02"]
     assert mas_curve[0]["cumulative_pnl_pct"] == 1.5  # last entry for that date

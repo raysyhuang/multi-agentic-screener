@@ -483,7 +483,7 @@ def verify_cross_engine(
             breadth_issues.append(f"{name}: no picks or screening data")
 
     breadth_ok = len(breadth_issues) == 0
-    _DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D"}
+    _DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D", "mas_quant_screener": "MAS-Quant-Screener"}
     engine_summary = ", ".join(
         f"{_DISPLAY.get(er.get('engine_name', '?'), er.get('engine_name', '?'))}={er.get('candidates_screened', '?')}"
         for er in engine_results

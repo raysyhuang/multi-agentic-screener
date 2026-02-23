@@ -73,8 +73,8 @@ def _build_adapters(engine_cfg: dict) -> list[EngineAdapter]:
     """Instantiate enabled engine adapters from config."""
     adapters: list[EngineAdapter] = []
 
-    if engine_cfg.get("mas", {}).get("enabled", True):
-        top_n = engine_cfg.get("mas", {}).get("top_n", 10)
+    if engine_cfg.get("mas_quant_screener", {}).get("enabled", True):
+        top_n = engine_cfg.get("mas_quant_screener", {}).get("top_n", 10)
         adapters.append(MASAdapter(top_n=top_n))
 
     if engine_cfg.get("koocore_d", {}).get("enabled", True):
@@ -236,7 +236,7 @@ async def run_multi_engine_backtest(
     # ── Step 3: Day-by-day signal generation ──
     synth_config = SynthesisConfig(
         initial_weights=synthesis_cfg_dict.get(
-            "initial_weights", {"mas": 1.0, "koocore_d": 1.0, "gemini_stst": 1.0}
+            "initial_weights", {"mas_quant_screener": 1.0, "koocore_d": 1.0, "gemini_stst": 1.0}
         ),
         convergence_multipliers={
             int(k.split("_")[0]): v

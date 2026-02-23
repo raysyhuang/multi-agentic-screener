@@ -1,4 +1,4 @@
-"""MAS (Multi-Agentic Screener) adapter for multi-engine backtest.
+"""MAS-Quant-Screener adapter for multi-engine backtest.
 
 Wraps the existing breakout, mean-reversion, and catalyst scoring functions
 from ``src/signals/`` into the :class:`NormalizedPick` interface.
@@ -30,14 +30,14 @@ logger = logging.getLogger(__name__)
 
 
 class MASAdapter(EngineAdapter):
-    """Adapter wrapping the MAS quant pipeline (breakout + mean_rev + catalyst)."""
+    """Adapter wrapping the MAS-Quant-Screener pipeline (breakout + mean_rev + catalyst)."""
 
     def __init__(self, top_n: int = 10):
         self._top_n = top_n
 
     @property
     def engine_name(self) -> str:
-        return "mas"
+        return "mas_quant_screener"
 
     def required_lookback_days(self) -> int:
         return 300
@@ -134,7 +134,7 @@ class MASAdapter(EngineAdapter):
             ))
 
         logger.info(
-            "MAS adapter: %d signals → %d ranked → %d picks (regime=%s) on %s",
+            "MAS-Quant-Screener adapter: %d signals → %d ranked → %d picks (regime=%s) on %s",
             len(all_signals), len(ranked), len(picks), regime.value, screen_date,
         )
         return picks

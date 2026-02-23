@@ -25,7 +25,7 @@ def _esc(text: str | None) -> str:
     return _html_escape(str(text), quote=False)
 
 # Engine display names — avoids .title() mangling acronyms
-_ENGINE_DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D"}
+_ENGINE_DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D", "mas_quant_screener": "MAS-Quant-Screener"}
 
 # Telegram message limit (API max is 4096, leave margin)
 MAX_MESSAGE_LENGTH = 4000

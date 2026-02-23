@@ -295,7 +295,7 @@ def compute_weighted_picks(
             stats = engine_stats.get(engine_name)
             if stats:
                 weight = stats.weight
-            elif engine_name == "multi_agentic_screener":
+            elif engine_name == "mas_quant_screener":
                 # Preserve baseline influence for the host engine.
                 weight = 1.0
             else:
@@ -316,7 +316,7 @@ def compute_weighted_picks(
             key=lambda p: (
                 engine_stats[p["engine_name"]].weight
                 if p["engine_name"] in engine_stats
-                else (1.0 if p["engine_name"] == "multi_agentic_screener"
+                else (1.0 if p["engine_name"] == "mas_quant_screener"
                       else _DEFAULT_UNKNOWN_ENGINE_WEIGHT)
             ) * p["confidence"],
         )

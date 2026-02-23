@@ -2109,10 +2109,10 @@ async def _run_cross_engine_steps(
                     continue
                 all_picks.append(normalized_pick)
 
-        # Add screener's own picks with engine_name="multi_agentic_screener"
+        # Add screener's own picks with engine_name="mas_quant_screener"
         for sp in screener_picks:
             normalized_pick = {
-                "engine_name": "multi_agentic_screener",
+                "engine_name": "mas_quant_screener",
                 "ticker": sp.get("ticker", ""),
                 "strategy": sp.get("signal_model", ""),
                 "entry_price": sp.get("entry_price", 0),
@@ -2125,9 +2125,9 @@ async def _run_cross_engine_steps(
             }
             ok, reason = _validate_cross_engine_pick_risk(normalized_pick)
             if not ok:
-                dropped_by_engine["multi_agentic_screener"] += 1
-                if len(drop_reasons["multi_agentic_screener"]) < 5:
-                    drop_reasons["multi_agentic_screener"].append(reason)
+                dropped_by_engine["mas_quant_screener"] += 1
+                if len(drop_reasons["mas_quant_screener"]) < 5:
+                    drop_reasons["mas_quant_screener"].append(reason)
                 continue
             all_picks.append(normalized_pick)
 

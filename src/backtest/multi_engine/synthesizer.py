@@ -60,7 +60,7 @@ class SynthesisConfig:
     """Configuration for cross-engine synthesis."""
 
     initial_weights: dict[str, float] = field(
-        default_factory=lambda: {"mas": 1.0, "koocore_d": 1.0, "gemini_stst": 1.0}
+        default_factory=lambda: {"mas_quant_screener": 1.0, "koocore_d": 1.0, "gemini_stst": 1.0}
     )
     convergence_multipliers: dict[int, float] = field(
         default_factory=lambda: {2: 1.3, 3: 1.0}
