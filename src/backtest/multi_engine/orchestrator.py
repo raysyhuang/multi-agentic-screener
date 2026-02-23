@@ -19,6 +19,7 @@ import argparse
 import asyncio
 import json
 import logging
+import re
 import time
 from datetime import date, timedelta
 from pathlib import Path
@@ -61,6 +62,11 @@ logger = logging.getLogger(__name__)
 def load_config(path: str | Path) -> dict:
     with open(path) as f:
         return yaml.safe_load(f)
+
+
+def _slugify_label(value: str) -> str:
+    slug = re.sub(r"[^a-zA-Z0-9_-]+", "-", value.strip()).strip("-_").lower()
+    return slug[:40] or "candidate"
 
 
 def _build_adapters(engine_cfg: dict) -> list[EngineAdapter]:
@@ -147,8 +153,10 @@ async def run_multi_engine_backtest(
     engine_cfg: dict | None = None,
     synthesis_cfg: dict | None = None,
     portfolio_cfg: dict | None = None,
+    regime_gate_backtest_cfg: dict | None = None,
     output_dir: str = "backtest_results/multi_engine",
     universe: list[str] | None = None,
+    tuning_meta: dict | None = None,
 ) -> dict:
     """Execute the full multi-engine cross-backtest.
 
@@ -163,6 +171,7 @@ async def run_multi_engine_backtest(
     engine_cfg = engine_cfg or {}
     synthesis_cfg_dict = synthesis_cfg or {}
     portfolio_cfg_dict = portfolio_cfg or {}
+    regime_gate_cfg = regime_gate_backtest_cfg or {}
 
     adapters = _build_adapters(engine_cfg)
     if not adapters:
@@ -237,14 +246,40 @@ async def run_multi_engine_backtest(
         } if synthesis_cfg_dict.get("convergence_multipliers") else {2: 1.3, 3: 1.0},
         top_n_per_day=synthesis_cfg_dict.get("top_n_per_day", 5),
         rolling_credibility=synthesis_cfg_dict.get("rolling_credibility", False),
+        rolling_credibility_window=synthesis_cfg_dict.get(
+            "rolling_credibility_window", 20
+        ),
+        rolling_credibility_min_trades=synthesis_cfg_dict.get(
+            "rolling_credibility_min_trades", 10
+        ),
+        rolling_credibility_weight_floor=synthesis_cfg_dict.get(
+            "rolling_credibility_weight_floor", 0.3
+        ),
+        rolling_credibility_weight_cap=synthesis_cfg_dict.get(
+            "rolling_credibility_weight_cap", 2.5
+        ),
         min_confidence=synthesis_cfg_dict.get("min_confidence", 35.0),
+        diversity_enabled=synthesis_cfg_dict.get("diversity_enabled", True),
+        diversity_boost_multi_category=synthesis_cfg_dict.get(
+            "diversity_boost_multi_category", 1.15
+        ),
+        diversity_penalty_homogeneous_3plus=synthesis_cfg_dict.get(
+            "diversity_penalty_homogeneous_3plus", 0.70
+        ),
         regime_convergence_overrides=_parse_convergence_overrides(
             synthesis_cfg_dict.get("regime_convergence_overrides")
         ),
     )
 
     # Rolling credibility tracker (fed with resolved trade outcomes)
-    cred_tracker = RollingCredibilityTracker() if synth_config.rolling_credibility else None
+    cred_tracker = None
+    if synth_config.rolling_credibility:
+        cred_tracker = RollingCredibilityTracker(
+            window=synth_config.rolling_credibility_window,
+            min_trades=synth_config.rolling_credibility_min_trades,
+            weight_floor=synth_config.rolling_credibility_weight_floor,
+            weight_cap=synth_config.rolling_credibility_weight_cap,
+        )
 
     daily_records: list[DailyPickRecord] = []
     total_picks = 0
@@ -314,7 +349,11 @@ async def run_multi_engine_backtest(
         )
 
         # Regime-gated synthesis: apply strategy weighting + bear blocking
-        synth_regime_gated = _apply_regime_gate_to_synthesis(synth_eq, regime_label)
+        synth_regime_gated = _apply_regime_gate_to_synthesis(
+            synth_eq,
+            regime_label,
+            overrides=regime_gate_cfg if regime_gate_cfg.get("enabled", True) else {},
+        )
 
         daily_records.append(DailyPickRecord(
             screen_date=day,
@@ -365,6 +404,8 @@ async def run_multi_engine_backtest(
             "engines": engine_cfg,
             "synthesis": synthesis_cfg_dict,
             "portfolio": portfolio_cfg_dict,
+            "regime_gate_backtest": regime_gate_cfg,
+            "tuning_meta": tuning_meta or {},
         },
         elapsed_s=elapsed,
     )
@@ -372,7 +413,17 @@ async def run_multi_engine_backtest(
     # Save report
     out_path = Path(output_dir)
     out_path.mkdir(parents=True, exist_ok=True)
-    report_file = out_path / f"multi_engine_{start_date}_{end_date}.json"
+    filename_label = None
+    if tuning_meta and isinstance(tuning_meta, dict):
+        raw_label = tuning_meta.get("config_label")
+        if raw_label:
+            filename_label = _slugify_label(str(raw_label))
+    report_name = (
+        f"multi_engine_{start_date}_{end_date}_{filename_label}.json"
+        if filename_label
+        else f"multi_engine_{start_date}_{end_date}.json"
+    )
+    report_file = out_path / report_name
     report_file.write_text(json.dumps(report, indent=2, default=str))
     logger.info("Report saved to %s", report_file)
     persisted = await persist_multi_engine_backtest_report(report, report_file.name)
@@ -393,6 +444,7 @@ async def run_multi_engine_backtest(
 def _apply_regime_gate_to_synthesis(
     synth_picks: list[SynthesisPick],
     regime: str,
+    overrides: dict | None = None,
 ) -> list[SynthesisPick]:
     """Apply regime strategy gate to synthesized picks for backtest comparison.
 
@@ -408,7 +460,9 @@ def _apply_regime_gate_to_synthesis(
         d["strategy_tags"] = sp.strategies
         pick_dicts.append(d)
 
-    gated, _meta = apply_regime_strategy_gate(pick_dicts, regime=regime)
+    gated, _meta = apply_regime_strategy_gate(
+        pick_dicts, regime=regime, overrides=overrides or {}
+    )
 
     result: list[SynthesisPick] = []
     for gd in gated:
@@ -516,8 +570,10 @@ def main():
                 engine_cfg=cfg.get("engines"),
                 synthesis_cfg=cfg.get("synthesis"),
                 portfolio_cfg=cfg.get("portfolio"),
+                regime_gate_backtest_cfg=cfg.get("regime_gate_backtest"),
                 output_dir=output_dir,
                 universe=cfg.get("universe"),
+                tuning_meta=cfg.get("tuning_meta"),
             )
         )
     elif args.start and args.end:

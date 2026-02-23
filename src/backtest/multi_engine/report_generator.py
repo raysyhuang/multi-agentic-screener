@@ -16,7 +16,7 @@ plus comparison functions from ``src.engines.backtest_comparator``.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
+from collections import Counter, defaultdict
 from datetime import date
 
 import numpy as np
@@ -111,6 +111,8 @@ def generate_report(
 
     # Regime distribution
     report["regime_distribution"] = _regime_distribution(daily_records)
+    report["tuning_meta"] = dict(config.get("tuning_meta") or {})
+    report["synthesis_diagnostics"] = _build_synthesis_diagnostics(daily_records)
 
     return report
 
@@ -319,6 +321,61 @@ def _convergence_analysis(
             "sharpe": m.sharpe_ratio,
         }
     return result
+
+
+def _build_synthesis_diagnostics(daily_records: list[DailyPickRecord]) -> dict:
+    """Aggregate simple explainability stats for synthesis tracks.
+
+    These diagnostics are intentionally lightweight and append-only so they do
+    not disrupt existing report consumers.
+    """
+    return {
+        "equal_weight": _summarize_synth_series(
+            [r.synthesis_eq for r in daily_records]
+        ),
+        "credibility_weight": _summarize_synth_series(
+            [r.synthesis_cred for r in daily_records]
+        ),
+        "regime_gated": _summarize_synth_series(
+            [r.synthesis_regime_gated for r in daily_records]
+        ),
+    }
+
+
+def _summarize_synth_series(series: list[list]) -> dict:
+    days = len(series)
+    non_empty_days = 0
+    total_picks = 0
+    engine_count_sum = 0
+    source_engine_counts: Counter[str] = Counter()
+    strategy_counts: Counter[str] = Counter()
+
+    for picks in series:
+        if not picks:
+            continue
+        non_empty_days += 1
+        total_picks += len(picks)
+        for pick in picks:
+            engine_count_sum += int(getattr(pick, "engine_count", 0) or 0)
+            for eng in getattr(pick, "engines", []) or []:
+                source_engine_counts[str(eng)] += 1
+            for strat in getattr(pick, "strategies", []) or []:
+                strategy_counts[str(strat)] += 1
+
+    avg_picks_per_day = (total_picks / days) if days else 0.0
+    avg_engine_count_per_pick = (
+        engine_count_sum / total_picks if total_picks else 0.0
+    )
+    return {
+        "days": days,
+        "days_with_picks": non_empty_days,
+        "days_with_picks_pct": round((non_empty_days / days) * 100, 2) if days else 0.0,
+        "total_picks": total_picks,
+        "avg_picks_per_day": round(avg_picks_per_day, 3),
+        "avg_engine_count_per_pick": round(avg_engine_count_per_pick, 3),
+        "source_engine_counts": dict(source_engine_counts),
+        "strategy_counts": dict(strategy_counts.most_common(10)),
+    }
 
 
 def _statistical_tests(

@@ -1,6 +1,6 @@
 date_range:
-  start: "2023-02-01"
-  end: "2026-02-17"
+  start: "2023-02-20"
+  end: "2026-02-20"
 
 engines:
   mas:
@@ -20,13 +20,13 @@ synthesis:
     koocore_d: 1.3
     gemini_stst: 1.2
   convergence_multipliers:
-    2_engines: 1.3
+    2_engines: 1.2
     3_engines: 1.0
   rolling_credibility: true
-  rolling_credibility_window: 20
+  rolling_credibility_window: 30
   rolling_credibility_min_trades: 10
   rolling_credibility_weight_floor: 0.3
-  rolling_credibility_weight_cap: 2.5
+  rolling_credibility_weight_cap: 2.2
   top_n_per_day: 5
   min_confidence: 35.0
   diversity_enabled: true
@@ -34,13 +34,13 @@ synthesis:
   diversity_penalty_homogeneous_3plus: 0.70
   regime_convergence_overrides:
     bull:
-      2_engines: 1.3
+      2_engines: 1.2
       3_engines: 0.85
     bear:
       2_engines: 1.0
       3_engines: 0.7
     choppy:
-      2_engines: 1.1
+      2_engines: 1.0
       3_engines: 0.8
 
 regime_gate_backtest:
@@ -77,4 +77,4 @@ portfolio:
 
 output_dir: "backtest_results/multi_engine"
 tuning_meta:
-  config_label: "baseline_default"
+  config_label: "cred_mild_window30_cap22_conv12"

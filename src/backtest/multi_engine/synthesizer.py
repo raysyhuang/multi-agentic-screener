@@ -32,18 +32,26 @@ for _s in EVENT_STRATEGIES:
     _STRATEGY_CATEGORY[_s] = "event"
 
 
-def _compute_diversity_score(strategies: list[str]) -> float:
+def _compute_diversity_score(
+    strategies: list[str],
+    *,
+    enabled: bool = True,
+    boost_multi_category: float = 1.15,
+    penalty_homogeneous_3plus: float = 0.70,
+) -> float:
     """Return a diversity multiplier based on strategy category mix.
 
     - 2+ distinct categories (e.g. trend + reversion) → 1.15x (diverse, higher WR)
     - 3+ strategies all in the same category → 0.70x (homogeneous, crowding penalty)
     - Otherwise → 1.0x (neutral)
     """
+    if not enabled:
+        return 1.0
     categories = {_STRATEGY_CATEGORY.get(s, "other") for s in strategies}
     if len(categories) >= 2:
-        return 1.15
+        return boost_multi_category
     if len(strategies) >= 3 and len(categories) == 1:
-        return 0.70
+        return penalty_homogeneous_3plus
     return 1.0
 
 
@@ -59,7 +67,14 @@ class SynthesisConfig:
     )
     top_n_per_day: int = 5
     rolling_credibility: bool = False
+    rolling_credibility_window: int = 20
+    rolling_credibility_min_trades: int = 10
+    rolling_credibility_weight_floor: float = 0.3
+    rolling_credibility_weight_cap: float = 2.5
     min_confidence: float = 35.0
+    diversity_enabled: bool = True
+    diversity_boost_multi_category: float = 1.15
+    diversity_penalty_homogeneous_3plus: float = 0.70
     regime_convergence_overrides: dict[str, dict[int, float]] = field(
         default_factory=dict
     )
@@ -278,7 +293,12 @@ def synthesize_picks(
             continue
 
         # Diversity scoring: penalize homogeneous combos, boost diverse ones
-        diversity_mult = _compute_diversity_score(strategies)
+        diversity_mult = _compute_diversity_score(
+            strategies,
+            enabled=config.diversity_enabled,
+            boost_multi_category=config.diversity_boost_multi_category,
+            penalty_homogeneous_3plus=config.diversity_penalty_homogeneous_3plus,
+        )
         combined_score = avg_weighted_conf * convergence_mult * diversity_mult
 
         # Best pick = highest weighted contribution

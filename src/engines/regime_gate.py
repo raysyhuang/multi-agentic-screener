@@ -64,10 +64,22 @@ def _csv_to_set(csv_value: str, fallback: set[str]) -> set[str]:
     return parsed or set(fallback)
 
 
+def _override_to_set(value: Any, fallback: set[str]) -> set[str]:
+    if value is None:
+        return set(fallback)
+    if isinstance(value, list):
+        parsed = {_norm_strategy(str(v)) for v in value if str(v).strip()}
+        return parsed or set(fallback)
+    if isinstance(value, str):
+        return _csv_to_set(value, fallback)
+    return set(fallback)
+
+
 def apply_regime_strategy_gate(
     weighted_picks: list[dict],
     regime: str,
     settings: Any | None = None,
+    overrides: dict[str, Any] | None = None,
 ) -> tuple[list[dict], dict]:
     """Apply deterministic strategy gating before LLM synthesis.
 
@@ -77,6 +89,7 @@ def apply_regime_strategy_gate(
         include a protective strategy (e.g. mean_reversion).
     """
     cfg = settings or get_settings()
+    overrides = overrides or {}
     regime_label = (regime or "").strip().lower()
     gate_meta = {
         "applied": False,
@@ -94,23 +107,32 @@ def apply_regime_strategy_gate(
     # Non-bear regimes skip blocking/penalty but still get proactive weighting
     if regime_label != "bear":
         filtered = [dict(p) for p in weighted_picks]
-        weight_table = _REGIME_STRATEGY_WEIGHTS.get(regime_label, {})
+        weight_table = _get_regime_weight_table(regime_label, overrides)
         if weight_table:
-            filtered = _apply_regime_weights(filtered, weight_table)
+            filtered = _apply_regime_weights(
+                filtered, weight_table,
+                mode=str(overrides.get("strategy_weight_selection_mode", "best")),
+                uplift_cap=float(overrides.get("strategy_weight_uplift_cap", 1.10)),
+            )
             gate_meta["regime_weights_applied"] = True
         else:
             gate_meta["regime_weights_applied"] = False
         return filtered, gate_meta
 
-    blocked = _csv_to_set(
-        getattr(cfg, "regime_gate_bear_blocked_strategies", "momentum"),
+    blocked = _override_to_set(
+        overrides.get("bear_blocked_strategies", getattr(cfg, "regime_gate_bear_blocked_strategies", "momentum")),
         {"momentum"},
     )
-    penalized = _csv_to_set(
-        getattr(cfg, "regime_gate_bear_penalized_strategies", "breakout,swing"),
+    penalized = _override_to_set(
+        overrides.get("bear_penalized_strategies", getattr(cfg, "regime_gate_bear_penalized_strategies", "breakout,swing")),
         {"breakout", "swing"},
     )
-    penalty_mult = float(getattr(cfg, "regime_gate_bear_penalty_multiplier", 0.65))
+    penalty_mult = float(
+        overrides.get(
+            "bear_penalty_multiplier",
+            getattr(cfg, "regime_gate_bear_penalty_multiplier", 0.65),
+        )
+    )
     penalty_mult = max(0.1, min(1.0, penalty_mult))
 
     filtered: list[dict] = []
@@ -151,14 +173,27 @@ def apply_regime_strategy_gate(
     filtered.sort(key=lambda p: float(p.get("combined_score", 0.0)), reverse=True)
 
     # --- Proactive regime-strategy weighting (all regimes) ---
-    weight_table = _REGIME_STRATEGY_WEIGHTS.get(regime_label, {})
+    weight_table = _get_regime_weight_table(regime_label, overrides)
     if weight_table:
-        filtered = _apply_regime_weights(filtered, weight_table)
+        filtered = _apply_regime_weights(
+            filtered, weight_table,
+            mode=str(overrides.get("strategy_weight_selection_mode", "best")),
+            uplift_cap=float(overrides.get("strategy_weight_uplift_cap", 1.10)),
+        )
         gate_meta["regime_weights_applied"] = True
     else:
         gate_meta["regime_weights_applied"] = False
 
     return filtered, gate_meta
+
+
+def _get_regime_weight_table(regime_label: str, overrides: dict[str, Any]) -> dict[str, float]:
+    raw_table = overrides.get("weights")
+    if isinstance(raw_table, dict):
+        regime_table = raw_table.get(regime_label)
+        if isinstance(regime_table, dict):
+            return {_norm_strategy(str(k)): float(v) for k, v in regime_table.items()}
+    return _REGIME_STRATEGY_WEIGHTS.get(regime_label, {})
 
 
 def _best_regime_weight(strategies: set[str], weight_table: dict[str, float]) -> float:
@@ -172,13 +207,46 @@ def _best_regime_weight(strategies: set[str], weight_table: dict[str, float]) ->
     return max(weights) if weights else 1.0
 
 
-def _apply_regime_weights(picks: list[dict], weight_table: dict[str, float]) -> list[dict]:
+def _regime_weight_for_pick(
+    strategies: set[str],
+    weight_table: dict[str, float],
+    *,
+    mode: str = "best",
+    uplift_cap: float = 1.10,
+) -> float:
+    """Compute regime multiplier for a pick from its strategy set.
+
+    Modes:
+      - ``best``: highest weight among strategies (existing behavior)
+      - ``average``: arithmetic mean of strategy weights
+      - ``capped_best``: ``best`` with upside capped to avoid over-boosting mixed-tag picks
+    """
+    weights = [weight_table.get(s, 1.0) for s in strategies]
+    if not weights:
+        return 1.0
+    if mode == "average":
+        return sum(weights) / len(weights)
+    if mode == "capped_best":
+        best = max(weights)
+        return min(best, max(1.0, uplift_cap))
+    return max(weights)
+
+
+def _apply_regime_weights(
+    picks: list[dict],
+    weight_table: dict[str, float],
+    *,
+    mode: str = "best",
+    uplift_cap: float = 1.10,
+) -> list[dict]:
     """Multiply combined_score by regime-strategy weight and re-sort."""
     weighted: list[dict] = []
     for pick in picks:
         adjusted = dict(pick)
         strategies = _as_strategy_set(pick.get("strategies", []))
-        mult = _best_regime_weight(strategies, weight_table)
+        mult = _regime_weight_for_pick(
+            strategies, weight_table, mode=mode, uplift_cap=uplift_cap
+        )
         if mult != 1.0:
             adjusted["combined_score"] = round(
                 float(adjusted.get("combined_score", 0.0)) * mult, 2
