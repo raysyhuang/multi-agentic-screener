@@ -116,7 +116,7 @@ class Settings(BaseSettings):
     engine_api_key: str = ""
 
     # --- Local Engine Runners ---
-    engine_run_mode: str = "local"  # "local" (run in-process) or "http" (legacy remote fetch)
+    engine_run_mode: str = "hybrid"  # "local" | "http" | "hybrid" (KooCore-D via HTTP, Gemini local)
     koocore_config_path: str = "KooCore-D/config/default.yaml"
 
     # --- Cross-Engine System ---

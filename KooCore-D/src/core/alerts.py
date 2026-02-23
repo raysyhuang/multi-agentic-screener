@@ -651,6 +651,11 @@ def send_run_summary_alert(
     regime: Optional[str] = None,
 ) -> dict[str, bool]:
     """Send comprehensive daily scan summary - ONE message with all details."""
+    # When running as a MAS subprocess, suppress standalone alerts —
+    # MAS sends its own cross-engine synthesis alert.
+    if os.environ.get("MAS_SUBPROCESS"):
+        return {"telegram": False, "suppressed_by_mas": True}
+
     manager = AlertManager(config)
     
     all_three = overlaps.get("all_three", [])

@@ -486,11 +486,16 @@ def validate_features(
                 }
             else:
                 checked_set = set(endpoints.keys())
+            informational = {
+                k: v for k, v in endpoints.items()
+                if k in checked_set and v == "plan_gated"
+            }
             degraded = {
                 k: v for k, v in endpoints.items()
-                if k in checked_set and v != "supported"
+                if k in checked_set and v not in {"supported", "plan_gated"}
             }
             degraded_items = ", ".join(f"{k}={v}" for k, v in degraded.items())
+            informational_items = ", ".join(f"{k}={v}" for k, v in informational.items())
             ep_ok = len(degraded) == 0
             sv.checks.append(StageCheck(
                 name="fmp_endpoint_availability",
@@ -499,6 +504,8 @@ def validate_features(
                 message=(
                     "FMP endpoint availability degraded: " + degraded_items
                     if not ep_ok else
+                    "FMP endpoint availability: checked endpoints supported; plan-gated: " + informational_items
+                    if informational_items else
                     "FMP endpoint availability: all checked endpoints supported"
                 ),
                 value=fmp_endpoint_status,
