@@ -1,11 +1,12 @@
 """
 Telegram notification module.
 
-Sends a Markdown-formatted daily summary to the configured Telegram chat
+Sends an HTML-formatted daily summary to the configured Telegram chat
 after each screener run. Includes market regime, signal count, and
 per-ticker details with Finnhub headlines.
 """
 
+import html
 import logging
 import ssl
 
@@ -21,24 +22,34 @@ TELEGRAM_API = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
 _ssl_ctx = ssl.create_default_context(cafile=certifi.where())
 
 
-def _escape_md(text: str) -> str:
-    """Escape special Markdown characters for Telegram MarkdownV2."""
-    for ch in r"\_*[]()~`>#+-=|{}.!":
-        text = text.replace(ch, f"\\{ch}")
-    return text
+def _esc(text: str) -> str:
+    """Escape HTML special characters for Telegram parse_mode=HTML."""
+    if not text:
+        return ""
+    return html.escape(str(text), quote=False)
+
+
+def _regime_dot(regime_str: str) -> str:
+    """Map regime string to coloured circle emoji."""
+    r = regime_str.lower() if regime_str else ""
+    if "bull" in r:
+        return "\U0001f7e2"
+    if "bear" in r:
+        return "\U0001f534"
+    return "\U0001f7e1"
 
 
 def _format_flow(sig: dict) -> str:
-    """Format options flow as escaped MarkdownV2 string."""
+    """Format options flow as HTML-safe string."""
     sentiment = sig.get("options_sentiment")
     pcr = sig.get("put_call_ratio")
     if not sentiment or sentiment == "Neutral":
         if pcr is not None:
-            return _escape_md(f"Flow: Neutral (P/C: {pcr})")
-        return _escape_md("Flow: --")
+            return f"Flow: Neutral (P/C: {_esc(str(pcr))})"
+        return "Flow: --"
     icon = "\U0001f402" if sentiment == "Bullish" else "\U0001f43b"
-    pcr_str = f" \\(P/C: {_escape_md(str(pcr))}\\)" if pcr is not None else ""
-    return f"Flow: {_escape_md(icon)} {_escape_md(sentiment)}{pcr_str}"
+    pcr_str = f" (P/C: {_esc(str(pcr))})" if pcr is not None else ""
+    return f"Flow: {icon} {_esc(sentiment)}{pcr_str}"
 
 
 def _build_message(
@@ -47,7 +58,7 @@ def _build_message(
     reversion_result: dict | None = None,
 ) -> str:
     """
-    Build a unified Telegram MarkdownV2 message with both momentum
+    Build a unified Telegram HTML message with both momentum
     and mean-reversion signals.
     """
     d = screener_result["date"]
@@ -55,22 +66,20 @@ def _build_message(
     signals = screener_result["signals"]
     regime_str = regime.get("regime", "Unknown")
 
-    date_str = _escape_md(str(d))
-    regime_display = _escape_md(regime_str)
+    rdot = _regime_dot(regime_str)
 
     # Header
     lines = [
-        f"*QuantScreener Daily Report*",
-        f"Date: {date_str}",
-        f"Market Regime: *{regime_display}*",
+        "<b>[Gemini STST] Daily Screener</b>",
+        f"\U0001f4c5 {_esc(str(d))}  \u2022  {rdot} {_esc(regime_str)}",
         "",
     ]
 
     skip_mom = False
     if regime_str == "Bearish":
-        lines.append(_escape_md("⚠️ Bearish Regime — exercise caution"))
+        lines.append("\u26a0\ufe0f Bearish Regime \u2014 exercise caution")
         if SKIP_BEARISH_REGIME:
-            lines.append(_escape_md("⛔ Momentum trades SKIPPED (bearish regime filter)"))
+            lines.append("\u26d4 Momentum trades SKIPPED (bearish regime filter)")
             skip_mom = True
         lines.append("")
 
@@ -79,13 +88,12 @@ def _build_message(
     n_mom = len(signals)
     n_trade = len(tradeable) if not skip_mom else 0
     if n_trade < n_mom and not skip_mom:
-        lines.append(f"*— MOMENTUM BREAKOUTS \\({n_mom} signals, {n_trade} tradeable Q\\>\\={MOMENTUM_QUALITY_FLOOR}\\) —*")
+        lines.append(f"\u2500\u2500 \U0001f4c8 Momentum Breakouts ({n_mom} signals, {n_trade} tradeable Q&gt;={MOMENTUM_QUALITY_FLOOR}) \u2500\u2500\u2500\u2500\u2500\u2500\n")
     else:
-        lines.append(f"*— MOMENTUM BREAKOUTS \\({n_mom}\\) —*")
-    lines.append("")
+        lines.append(f"\u2500\u2500 \U0001f4c8 Momentum Breakouts ({n_mom}) \u2500\u2500\u2500\u2500\u2500\u2500\n")
 
     if not signals:
-        lines.append(_escape_md("No momentum signals today."))
+        lines.append("No momentum signals today.")
         lines.append("")
     else:
         for sig in signals:
@@ -96,73 +104,70 @@ def _build_message(
             quality = sig.get("quality_score")
             confluence = sig.get("confluence", False)
 
-            sym_esc = _escape_md(sym)
             # Mark signals that won't be traded
             will_trade = (quality or 0) >= MOMENTUM_QUALITY_FLOOR and not skip_mom
-            badge = "\u2B50 " if confluence else ""
+            badge = "\u2b50 " if confluence else ""
             skip_icon = "" if will_trade else "\U0001f6ab "
-            lines.append(f"{badge}{skip_icon}*{sym_esc}* — ${_escape_md(str(price))}")
+            lines.append(f"{badge}{skip_icon}<b>{_esc(sym)}</b> \u2014 ${_esc(str(price))}")
 
             rsi_14 = sig.get("rsi_14")
             pct_52w = sig.get("pct_from_52w_high")
 
             flow_str = _format_flow(sig)
-            quality_str = f"Q: {_escape_md(str(quality))}" if quality is not None else ""
             detail_parts = [
-                f"RVOL: {_escape_md(str(rvol))}",
-                f"ATR: {_escape_md(str(atr))}%",
+                f"RVOL: {_esc(str(rvol))}",
+                f"ATR: {_esc(str(atr))}%",
             ]
             if rsi_14 is not None:
-                detail_parts.append(f"RSI: {_escape_md(str(rsi_14))}")
+                detail_parts.append(f"RSI: {_esc(str(rsi_14))}")
             if pct_52w is not None:
-                detail_parts.append(f"52w: {_escape_md(str(pct_52w))}%")
+                detail_parts.append(f"52w: {_esc(str(pct_52w))}%")
             detail_parts.append(flow_str)
-            if quality_str:
-                detail_parts.append(quality_str)
-            lines.append("  " + " \\| ".join(detail_parts))
+            if quality is not None:
+                detail_parts.append(f"Q: {_esc(str(quality))}")
+            lines.append("  " + " | ".join(detail_parts))
 
             if confluence:
-                lines.append(f"  {_escape_md('Confluence: recent reversion signal')}")
+                lines.append("  \u2b50 Confluence: recent reversion signal")
 
             articles = news_map.get(sym, [])
             for article in articles[:2]:
-                headline = _escape_md(article.get("headline", ""))
-                lines.append(f"  • {headline}")
+                headline = _esc(article.get("headline", ""))
+                lines.append(f"  \u2022 {headline}")
 
             lines.append("")
 
     # --- Reversion Section ---
     rev_signals = reversion_result.get("signals", []) if reversion_result else []
     n_rev = len(rev_signals)
-    lines.append(f"*— OVERSOLD REVERSIONS \\({n_rev}\\) —*")
-    lines.append("")
+    lines.append(f"\u2500\u2500 \U0001f504 Oversold Reversions ({n_rev}) \u2500\u2500\u2500\u2500\u2500\u2500\n")
 
     if not rev_signals:
-        lines.append(_escape_md("No oversold reversals today."))
+        lines.append("No oversold reversals today.")
     else:
         for sig in rev_signals:
-            sym_esc = _escape_md(sig["symbol"])
-            price_esc = _escape_md(str(sig["trigger_price"]))
-            rsi_esc = _escape_md(str(sig["rsi2"]))
-            dd_esc = _escape_md(str(sig["drawdown_3d_pct"]))
+            sym = sig["symbol"]
+            price = sig["trigger_price"]
+            rsi2 = sig["rsi2"]
+            dd = sig["drawdown_3d_pct"]
             quality = sig.get("quality_score")
             confluence = sig.get("confluence", False)
             flow_str = _format_flow(sig)
 
-            badge = "\u2B50 " if confluence else ""
-            lines.append(f"{badge}*{sym_esc}* — ${price_esc}")
+            badge = "\u2b50 " if confluence else ""
+            lines.append(f"{badge}<b>{_esc(sym)}</b> \u2014 ${_esc(str(price))}")
 
             detail_parts = [
-                f"RSI\\(2\\): {rsi_esc}",
-                f"3d Drop: {dd_esc}%",
+                f"RSI(2): {_esc(str(rsi2))}",
+                f"3d Drop: {_esc(str(dd))}%",
                 flow_str,
             ]
             if quality is not None:
-                detail_parts.append(f"Q: {_escape_md(str(quality))}")
-            lines.append("  " + " \\| ".join(detail_parts))
+                detail_parts.append(f"Q: {_esc(str(quality))}")
+            lines.append("  " + " | ".join(detail_parts))
 
             if confluence:
-                lines.append(f"  {_escape_md('Confluence: recent momentum signal')}")
+                lines.append("  \u2b50 Confluence: recent momentum signal")
 
             lines.append("")
 
@@ -191,7 +196,7 @@ async def send_telegram_alert(
     payload = {
         "chat_id": TELEGRAM_CHAT_ID,
         "text": message,
-        "parse_mode": "MarkdownV2",
+        "parse_mode": "HTML",
         "disable_web_page_preview": True,
     }
 

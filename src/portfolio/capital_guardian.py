@@ -351,21 +351,27 @@ def apply_guardian_to_portfolio(
 
 
 def format_guardian_summary(verdict: GuardianVerdict) -> str:
-    """Format guardian verdict for Telegram alert."""
+    """Format guardian verdict as HTML for Telegram alert."""
+    from html import escape as _html_esc
+
+    def _esc(text) -> str:
+        if not text:
+            return ""
+        return _html_esc(str(text), quote=False)
+
     rs = verdict.risk_state
-    lines = ["\n--- Capital Guardian ---"]
+
+    lines = [
+        "",
+        "\u2500\u2500 \U0001f6e1\ufe0f Capital Guardian \u2500\u2500\u2500\u2500\u2500",
+        "",
+    ]
 
     if verdict.halt:
-        lines.append(f"HALT: {verdict.halt_reason}")
+        lines.append(f"\U0001f6d1 <b>HALT</b>: {_esc(verdict.halt_reason)}")
         return "\n".join(lines)
 
-    lines.append(
-        f"Sizing: {verdict.sizing_multiplier:.0%} "
-        f"[DD={verdict.drawdown_factor:.2f} "
-        f"Streak={verdict.streak_factor:.2f} "
-        f"Regime={verdict.regime_factor:.2f} "
-        f"Heat={verdict.heat_factor:.2f}]"
-    )
+    lines.append(f"Sizing: <b>{verdict.sizing_multiplier:.0%}</b> of base")
 
     if rs.current_drawdown_pct < 0:
         lines.append(f"Drawdown: {rs.current_drawdown_pct:.1f}% from peak")
@@ -378,13 +384,8 @@ def format_guardian_summary(verdict: GuardianVerdict) -> str:
             f"Open: {rs.open_position_count} positions, "
             f"{rs.total_open_risk_pct:.1f}% heat"
         )
-    if rs.total_closed_trades > 0:
-        lines.append(
-            f"Recent: {rs.recent_win_rate:.0%} win rate, "
-            f"{rs.recent_avg_return:+.1f}% avg ({rs.total_closed_trades} trades)"
-        )
 
     for w in verdict.warnings:
-        lines.append(f"  {w}")
+        lines.append(f"\u26a0\ufe0f {_esc(w)}")
 
     return "\n".join(lines)
