@@ -202,7 +202,7 @@ class TestCrossEngineRegimeExtraction:
             },
         }
         msg = format_cross_engine_alert(synthesis=synthesis, credibility={})
-        assert "Cross-Engine Synthesis Update" in msg
+        assert "Cross-Engine Update" in msg
         assert "Revision <b>#3</b>" in msg
         assert "supersedes <b>#2</b>" in msg
         assert "2026-02-21" in msg
