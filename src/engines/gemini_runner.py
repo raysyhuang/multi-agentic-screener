@@ -293,10 +293,10 @@ async def run_gemini_locally(target_date: date | None = None) -> EngineResultPay
     try:
         return await asyncio.wait_for(
             asyncio.to_thread(_run_gemini_pipeline, target_date),
-            timeout=120.0,
+            timeout=300.0,
         )
     except asyncio.TimeoutError:
-        logger.error("Gemini STST local runner timed out after 120s")
+        logger.error("Gemini STST local runner timed out after 300s")
         return None
     except Exception as e:
         logger.error("Gemini STST local runner failed: %s: %s", type(e).__name__, e, exc_info=True)
