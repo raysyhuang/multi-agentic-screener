@@ -462,9 +462,12 @@ async def run_morning_pipeline() -> None:
 
         # Attempt Telegram alert about failure
         try:
+            # Sanitize error message — raw exception strings may contain
+            # angle-bracket class names that break Telegram HTML parsing.
+            err_msg = str(exc).replace("<", "&lt;").replace(">", "&gt;")
             await send_alert(
                 f"PIPELINE FAILED ({today}, run_id={run_id})\n"
-                f"Error: {type(exc).__name__}: {exc}\n"
+                f"Error: {type(exc).__name__}: {err_msg}\n"
                 f"Decision: NoTrade (fail-closed)"
             )
         except Exception:
@@ -1413,6 +1416,17 @@ async def _run_pipeline_core(
             )
             stale_signal_ids = [row[0] for row in stale_signals.fetchall()]
             if stale_signal_ids:
+                # Delete signal_exit_events FIRST (references outcomes via FK)
+                await session.execute(
+                    delete(SignalExitEvent).where(
+                        SignalExitEvent.signal_id.in_(stale_signal_ids)
+                    )
+                )
+                await session.execute(
+                    delete(PositionDailyMetric).where(
+                        PositionDailyMetric.signal_id.in_(stale_signal_ids)
+                    )
+                )
                 # Only delete unresolved outcomes — preserve closed ones with real exit data
                 await session.execute(
                     delete(Outcome).where(
@@ -1432,16 +1446,6 @@ async def _run_pipeline_core(
                     logger.warning(
                         "Preserving %d resolved outcome(s) from previous run", resolved_count
                     )
-                await session.execute(
-                    delete(PositionDailyMetric).where(
-                        PositionDailyMetric.signal_id.in_(stale_signal_ids)
-                    )
-                )
-                await session.execute(
-                    delete(SignalExitEvent).where(
-                        SignalExitEvent.signal_id.in_(stale_signal_ids)
-                    )
-                )
 
             # 2. Delete flat child tables keyed on run_date
             for model in (Candidate, Signal, AgentLog, PipelineArtifact):
