@@ -6,6 +6,7 @@ Supports Slack, Discord, Email, and Telegram.
 """
 
 from __future__ import annotations
+import html
 import os
 import json
 import logging
@@ -27,6 +28,25 @@ except ImportError:
 logger = logging.getLogger(__name__)
 
 from src.utils.time import utc_now
+
+
+def _esc(text) -> str:
+    """Escape HTML special characters for Telegram parse_mode=HTML."""
+    if not text:
+        return ""
+    return html.escape(str(text), quote=False)
+
+
+def _regime_dot(regime: str | None) -> str:
+    """Map regime string to coloured circle emoji."""
+    if not regime:
+        return "\U0001f7e1"
+    r = regime.lower()
+    if "bull" in r:
+        return "\U0001f7e2"
+    if "bear" in r:
+        return "\U0001f534"
+    return "\U0001f7e1"
 
 
 @dataclass
@@ -318,13 +338,16 @@ class AlertManager:
         priority: str
     ) -> bool:
         """
-        Send alert to Telegram.
-        
+        Send alert to Telegram using HTML parse mode.
+
+        If ``message`` already contains HTML formatting (starts with ``<b>``),
+        it is sent as-is.  Otherwise a lightweight header is prepended.
+
         Note: Retries are compute-only - no side effects emitted on retry attempts.
         """
         from pathlib import Path
         from src.core.retry_guard import is_retry_attempt, log_retry_suppression
-        
+
         token = self.config.telegram_bot_token or os.environ.get("TELEGRAM_BOT_TOKEN")
         chat_id = self.config.telegram_chat_id or os.environ.get("TELEGRAM_CHAT_ID")
 
@@ -336,76 +359,54 @@ class AlertManager:
         if missing:
             logger.warning(f"Telegram not configured (missing {', '.join(missing)})")
             return False
-        
+
         # Get GitHub workflow metadata (will be empty locally, populated in CI)
-        workflow = os.environ.get("GITHUB_WORKFLOW", "local")
         run_id = os.environ.get("GITHUB_RUN_ID", "N/A")
         run_attempt = os.environ.get("GITHUB_RUN_ATTEMPT", "1")
         sha = os.environ.get("GITHUB_SHA", "N/A")
         if sha != "N/A" and len(sha) > 7:
             sha = sha[:7]
-        
+
         # Retries re-run computation but MUST NOT emit side effects
         if is_retry_attempt():
             log_retry_suppression("Telegram alert", run_id=run_id, title=title)
             return True  # Silent success - don't break workflow
-        
+
         # Extract asof date from data or title if available
         asof_date = data.get("asof") if data and "asof" in data else None
         if not asof_date and data and "Date" in data:
             asof_date = data["Date"]
-        
+
         # Check for duplicate send marker file
         if asof_date and run_id != "N/A":
             outputs_dir = Path("outputs") / asof_date
             marker_file = outputs_dir / f".telegram_sent_{run_id}_{run_attempt}.txt"
-            
+
             if marker_file.exists():
                 logger.info(f"Telegram alert already sent for run_id={run_id}, attempt={run_attempt}. Skipping.")
                 return True  # Return True since it was already sent successfully
-        
-        emoji = {"low": "📊", "normal": "📈", "high": "🚨"}.get(priority, "📈")
-        
-        # Build message header with GitHub metadata
+
         run_started_utc = datetime.utcnow().isoformat()
-        
-        header_parts = [
-            f"{emoji} {title}",
-            "",
-            "━━━━━━━━━━━━━━━━━━━━━━━",
-            f"🔍 Run Metadata:",
-            f"  workflow: {workflow}",
-            f"  run_id: {run_id}",
-            f"  attempt: {run_attempt}",
-            f"  sha: {sha}",
-            f"  run_started_utc: {run_started_utc}",
-        ]
-        
-        if asof_date:
-            header_parts.append(f"  asof: {asof_date}")
-            report_path = f"outputs/{asof_date}/report_{asof_date}.html"
-            header_parts.append(f"  report_path: {report_path}")
-        
-        header_parts.append("━━━━━━━━━━━━━━━━━━━━━━━")
-        header_parts.append("")
-        
-        # Build full message
-        text = "\n".join(header_parts) + message
-        
-        if data:
-            text += "\n\nDetails:"
-            for k, v in data.items():
-                if k not in ["asof", "Date"]:  # Skip these as they're in header
-                    text += f"\n• {k}: {v}"
-        
+
+        # If the caller already built a full HTML message, send it directly;
+        # otherwise wrap with a minimal header.
+        if message.lstrip().startswith("<b>"):
+            text = message
+        else:
+            text = f"<b>[KooCore-D] {_esc(title)}</b>\n\n{_esc(message)}"
+
+        # Compact CI/CD footer (one italic line)
+        if run_id != "N/A":
+            text += f"\n\n<i>run {_esc(run_id)} \u2022 {_esc(sha)}</i>"
+
         url = f"https://api.telegram.org/bot{token}/sendMessage"
-        
-        # Try without Markdown first (more reliable)
+
         payload = {
             "chat_id": chat_id,
             "text": text,
+            "parse_mode": "HTML",
         }
-        
+
         try:
             logger.info(
                 "Telegram config: token_present=%s chat_id=%s run_id=%s attempt=%s",
@@ -415,20 +416,19 @@ class AlertManager:
                 run_attempt,
             )
             response = requests.post(url, json=payload, timeout=10)
-            
+
             if response.status_code == 200:
                 logger.info(f"Telegram alert sent successfully: {title} (run_id={run_id}, attempt={run_attempt})")
-                
+
                 # Write marker file to prevent duplicate sends
                 if asof_date and run_id != "N/A":
                     outputs_dir = Path("outputs") / asof_date
                     outputs_dir.mkdir(parents=True, exist_ok=True)
                     marker_file = outputs_dir / f".telegram_sent_{run_id}_{run_attempt}.txt"
-                    
+
                     try:
                         with open(marker_file, "w") as f:
                             f.write(f"Sent at: {run_started_utc}\n")
-                            f.write(f"Workflow: {workflow}\n")
                             f.write(f"Run ID: {run_id}\n")
                             f.write(f"Attempt: {run_attempt}\n")
                             f.write(f"SHA: {sha}\n")
@@ -436,7 +436,7 @@ class AlertManager:
                         logger.info(f"Created marker file: {marker_file}")
                     except Exception as e:
                         logger.warning(f"Failed to create marker file: {e}")
-                
+
                 return True
             else:
                 # Log the actual error from Telegram
@@ -447,7 +447,7 @@ class AlertManager:
                 except Exception:
                     logger.error(f"Telegram API error ({response.status_code}): {response.text[:200]}")
                 return False
-                
+
         except requests.exceptions.Timeout:
             logger.error("Telegram request timed out")
             return False
@@ -561,47 +561,50 @@ def send_overlap_alert(
 ) -> dict[str, bool]:
     """Send alert for overlap detection."""
     manager = AlertManager(config)
-    
+
     if overlap_type == "all_three" and not manager.config.trigger_all_three_overlap:
         return {}
     if overlap_type == "weekly_pro30" and not manager.config.trigger_weekly_pro30_overlap:
         return {}
-    
+
     emoji_map = {
-        "all_three": "⭐",
-        "weekly_pro30": "🔥",
-        "weekly_movers": "📈",
-        "pro30_movers": "💎"
+        "all_three": "\u2b50",
+        "weekly_pro30": "\U0001f525",
+        "weekly_movers": "\U0001f4c8",
+        "pro30_movers": "\U0001f48e",
     }
-    
-    title_map = {
-        "all_three": "ALL THREE Overlap Detected!",
-        "weekly_pro30": "Weekly + Pro30 Overlap",
-        "weekly_movers": "Weekly + Movers Overlap",
-        "pro30_movers": "Pro30 + Movers Overlap"
+
+    label_map = {
+        "all_three": "All Three",
+        "weekly_pro30": "Weekly + Pro30",
+        "weekly_movers": "Weekly + Movers",
+        "pro30_movers": "Pro30 + Movers",
     }
-    
-    emoji = emoji_map.get(overlap_type, "📊")
-    title = title_map.get(overlap_type, f"{overlap_type} Overlap")
-    
-    message = f"{emoji} {len(tickers)} ticker(s) found in {overlap_type.replace('_', ' ')} overlap:\n"
-    message += ", ".join(tickers[:10])
+
+    emoji = emoji_map.get(overlap_type, "\U0001f4ca")
+    label = label_map.get(overlap_type, overlap_type.replace("_", " "))
+
+    ticker_list = ", ".join(_esc(t) for t in tickers[:10])
     if len(tickers) > 10:
-        message += f" (+{len(tickers) - 10} more)"
-    
+        ticker_list += f" (+{len(tickers) - 10} more)"
+
+    message = (
+        f"<b>[KooCore-D] Overlap Alert</b>\n"
+        f"\U0001f4c5 {_esc(date_str)}\n\n"
+        f"\u2500\u2500 {emoji} {_esc(label)} \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n\n"
+        f"  {len(tickers)} ticker(s): <b>{ticker_list}</b>"
+    )
+
     priority = "high" if overlap_type == "all_three" else "normal"
-    
+
     return manager.send_alert(
-        title=title,
+        title=f"Overlap Alert: {label}",
         message=message,
         data={
             "asof": date_str,
             "Date": date_str,
-            "Overlap Type": overlap_type,
-            "Ticker Count": len(tickers),
-            "Tickers": ", ".join(tickers)
         },
-        priority=priority
+        priority=priority,
     )
 
 
@@ -614,21 +617,25 @@ def send_high_score_alert(
 ) -> dict[str, bool]:
     """Send alert for high composite score."""
     manager = AlertManager(config)
-    
+
     if score < manager.config.trigger_high_composite_score:
         return {}
-    
+
+    star = " \u2b50" if score >= 8.0 else ""
+    message = (
+        f"<b>[KooCore-D] High Score</b>\n"
+        f"\U0001f4c5 {_esc(date_str)}\n\n"
+        f"  <b>{_esc(ticker)}</b>  #{rank}  Score {score:.2f}{star}"
+    )
+
     return manager.send_alert(
-        title=f"High Score Alert: {ticker}",
-        message=f"🏆 {ticker} ranked #{rank} with composite score {score:.2f}",
+        title=f"High Score: {ticker}",
+        message=message,
         data={
             "asof": date_str,
             "Date": date_str,
-            "Ticker": ticker,
-            "Rank": rank,
-            "Composite Score": f"{score:.2f}"
         },
-        priority="high" if score >= 8.0 else "normal"
+        priority="high" if score >= 8.0 else "normal",
     )
 
 
@@ -657,55 +664,50 @@ def send_run_summary_alert(
         return {"telegram": False, "suppressed_by_mas": True}
 
     manager = AlertManager(config)
-    
+
     all_three = overlaps.get("all_three", [])
     primary_pro30 = overlaps.get("primary_pro30", overlaps.get("weekly_pro30", []))
     primary_movers = overlaps.get("primary_movers", overlaps.get("weekly_movers", []))
     pro30_movers = overlaps.get("pro30_movers", [])
-    
+
     # Ensure lists
     weekly_tickers = list(weekly_tickers) if weekly_tickers else []
     pro30_tickers = list(pro30_tickers) if pro30_tickers else []
     movers_tickers = list(movers_tickers) if movers_tickers else []
     weekly_top5_data = weekly_top5_data or []
     hybrid_top3 = hybrid_top3 or []
-    
-    # Build comprehensive message similar to CLI output
+
+    rdot = _regime_dot(regime)
+    regime_display = _esc(regime) if regime else "Unknown"
+
+    # --- Build unified HTML message ---
     lines = [
-        f"{'='*35}",
-        f"SCAN COMPLETE - {date_str}",
-        f"{'='*35}",
+        f"<b>[KooCore-D] Daily Scan</b>",
+        f"\U0001f4c5 {_esc(date_str)}  \u2022  {rdot} {regime_display}",
     ]
-    if regime:
-        lines.append(f"Regime: {regime}")
-    lines.append(f"Primary Strategy: {primary_label}")
     if primary_candidates_count is not None:
-        lines.append(f"Primary Candidates: {primary_candidates_count}")
+        lines.append(f"Strategy: <b>{_esc(primary_label)}</b>  |  Candidates: {primary_candidates_count}")
+    else:
+        lines.append(f"Strategy: <b>{_esc(primary_label)}</b>")
     lines.append("")
-    
-    # ═══════════════════════════════════════════════════════════════════════════════
-    # HYBRID TOP 3 (Most Important - Best across all models by weighted hit rate)
-    # ═══════════════════════════════════════════════════════════════════════════════
+
+    # --- Hybrid Top 3 ---
     if hybrid_top3:
-        lines.append("🏆 HYBRID TOP 3 (Best Picks):")
+        lines.append("\u2500\u2500 \U0001f3c6 Top Picks \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n")
         for item in hybrid_top3[:3]:
-            ticker = item.get("ticker", "?")
+            ticker = _esc(item.get("ticker", "?"))
             hybrid_score = item.get("hybrid_score", 0)
             sources = ", ".join(item.get("sources", []))
             confidence = item.get("confidence", "?")
-            name = item.get("name", "")
-            if name:
-                name = name[:20]  # Truncate for Telegram
-            
-            lines.append(f"  {item.get('rank', '?')}. {ticker} ({sources})")
-            lines.append(f"     Score: {hybrid_score:.1f} pts | {confidence}")
+            star = " \u2b50" if confidence and "high" in str(confidence).lower() else ""
+            lines.append(f"  <b>{ticker}</b>  Score {hybrid_score:.1f}  ({_esc(sources)}){star}")
         lines.append("")
 
-    # Primary Top 5
+    # --- Strategy Top 5 ---
     if weekly_top5_data:
-        lines.append(f"⭐ {primary_label} TOP PICKS:")
+        lines.append(f"\u2500\u2500 \u2b50 {_esc(primary_label)} Picks \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n")
         for item in weekly_top5_data[:5]:
-            ticker = item.get("ticker", "?")
+            ticker = _esc(item.get("ticker", "?"))
             score = item.get("composite_score")
             if score is None:
                 score = item.get("swing_score", 0) or 0
@@ -714,74 +716,53 @@ def send_run_summary_alert(
             except Exception:
                 score = 0.0
             verdict = item.get("verdict") or item.get("confidence", "")
-            lines.append(f"  - {ticker}: {score:.2f} {verdict}".rstrip())
+            verdict_str = f"  {_esc(str(verdict))}" if verdict else ""
+            lines.append(f"  <b>{ticker}</b>  {score:.2f}{verdict_str}")
         lines.append("")
-    
-    # Overlaps Section
+
+    # --- Overlaps ---
     if all_three or primary_pro30 or primary_movers or pro30_movers:
-        lines.append("🎯 OVERLAPS (High Conviction):")
+        lines.append("\u2500\u2500 \U0001f3af Overlaps \u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\u2500\n")
         if all_three:
-            lines.append(f"  ⭐ ALL THREE: {', '.join(all_three)}")
+            lines.append(f"  \u2b50 All Three: <b>{', '.join(_esc(t) for t in all_three)}</b>")
         if primary_pro30:
             non_triple = [t for t in primary_pro30 if t not in all_three]
             if non_triple:
-                lines.append(f"  🔥 {primary_label}+Pro30: {', '.join(non_triple)}")
+                lines.append(f"  \U0001f525 {_esc(primary_label)}+Pro30: {', '.join(_esc(t) for t in non_triple)}")
         if primary_movers:
             non_other = [t for t in primary_movers if t not in all_three]
             if non_other:
-                lines.append(f"  📈 {primary_label}+Movers: {', '.join(non_other)}")
+                lines.append(f"  \U0001f4c8 {_esc(primary_label)}+Movers: {', '.join(_esc(t) for t in non_other)}")
         if pro30_movers:
             non_other = [t for t in pro30_movers if t not in all_three]
             if non_other:
-                lines.append(f"  💎 Pro30+Movers: {', '.join(non_other)}")
+                lines.append(f"  \U0001f48e Pro30+Movers: {', '.join(_esc(t) for t in non_other)}")
         lines.append("")
-    
-    # Summary counts
-    lines.append("📊 SUMMARY:")
-    lines.append(f"  {primary_label}: {weekly_count} | Pro30: {pro30_count} | Movers: {movers_count}")
-    lines.append("")
-    
-    # Model Health
+
+    # --- Model Health (compact) ---
     if model_health:
-        health_status = model_health.get("status", "Unknown")
-        lines.append(f"📈 MODEL: {health_status}")
-        
         hit_rate = model_health.get("hit_rate")
         win_rate = model_health.get("win_rate")
         if hit_rate is not None and win_rate is not None:
-            lines.append(f"  Hit: {hit_rate * 100:.0f}% | Win: {win_rate * 100:.0f}%")
-        
-        # Strategy breakdown (compact)
-        strategies = model_health.get("strategies", [])
-        if strategies:
-            strat_parts = []
-            for s in strategies[:3]:
-                name = s.get("name", "?")
-                s_hit = s.get("hit_rate", 0) * 100
-                strat_parts.append(f"{name}:{s_hit:.0f}%")
-            lines.append(f"  {' | '.join(strat_parts)}")
+            lines.append(f"\U0001f4ca Model: Hit {hit_rate * 100:.0f}% | Win {win_rate * 100:.0f}%")
+        else:
+            lines.append(f"\U0001f4ca Model: {_esc(model_health.get('status', 'Unknown'))}")
 
-        # Regime breakdown (compact)
-        regime_bd = model_health.get("regime_breakdown", [])
-        if regime_bd:
-            parts = []
-            for r in regime_bd:
-                name = r.get("regime", "?")
-                hr = (r.get("hit_rate") or 0) * 100
-                parts.append(f"{name}:{hr:.0f}%")
-            lines.append(f"  📊 {' | '.join(parts)}")
-        lines.append("")
+    # --- Summary counts ---
+    lines.append(
+        f"\U0001f4ca {_esc(primary_label)}: {weekly_count} | Pro30: {pro30_count} | Movers: {movers_count}"
+    )
 
+    # --- Position Alerts ---
     if position_alerts:
-        lines.append("📌 POSITION ALERTS:")
-        lines.append(f"  Total: {position_alerts.get('count', 0)} | High: {position_alerts.get('high', 0)} | Warning: {position_alerts.get('warning', 0)}")
+        count = position_alerts.get("count", 0)
+        high = position_alerts.get("high", 0)
+        warning = position_alerts.get("warning", 0)
+        lines.append(f"\U0001f4cc Positions: {count} total | {high} high | {warning} warning")
         samples = position_alerts.get("sample") or []
         for msg in samples[:3]:
-            lines.append(f"  - {msg}")
-        lines.append("")
-    
-    lines.append(f"{'='*35}")
-    
+            lines.append(f"  \u2022 {_esc(str(msg))}")
+
     # Determine priority based on hybrid top 3 and overlaps
     if all_three:
         priority = "high"
@@ -791,17 +772,17 @@ def send_run_summary_alert(
         priority = "normal"
     else:
         priority = "low"
-    
+
     message = "\n".join(lines)
-    
+
     # Pass asof date for marker file creation
     metadata = {
         "asof": date_str,
     }
-    
+
     return manager.send_alert(
-        title=f"Scan Complete: {date_str} ({primary_label})",
+        title=f"Daily Scan: {date_str}",
         message=message,
-        data=metadata,  # Include asof for marker file tracking
-        priority=priority
+        data=metadata,
+        priority=priority,
     )
