@@ -773,6 +773,20 @@ async def _run_pipeline_core(
     # --- Pipeline health report (accumulated throughout the run) ---
     pipeline_health = PipelineHealthReport(run_date=today)
 
+    # --- Pre-fetch: kick off engine collection in background ---
+    # Engine collection (Gemini STST local runner, KooCore-D HTTP) runs heavy
+    # DB queries that stall under contention with the main pipeline's Polygon
+    # OHLCV fetches. By starting it concurrently with Steps 1-9, the engine
+    # queries run while the main pipeline does Polygon/LLM work instead of after.
+    engine_prefetch_task: asyncio.Task | None = None
+    if settings.cross_engine_enabled:
+        from src.engines.collector import collect_engine_results
+        engine_prefetch_task = asyncio.create_task(
+            collect_engine_results(target_date=today),
+            name="engine_prefetch",
+        )
+        logger.info("Engine collection pre-fetch started (runs concurrently with Steps 1-9)")
+
     # --- Step 1: Macro context and regime detection (preliminary, breadth added after OHLCV) ---
     logger.info("Step 1: Fetching macro context...")
     macro = await aggregator.get_macro_context()
@@ -1715,6 +1729,7 @@ async def _run_pipeline_core(
         },
         screener_picks=picks_for_alert,
         settings=settings,
+        engine_prefetch_task=engine_prefetch_task,
     )
 
     logger.info(
@@ -1823,6 +1838,7 @@ async def _run_cross_engine_steps(
     regime_context: dict,
     screener_picks: list[dict],
     settings,
+    engine_prefetch_task: asyncio.Task | None = None,
 ) -> None:
     """Steps 10-14: Cross-engine integration pipeline.
 
@@ -1854,8 +1870,12 @@ async def _run_cross_engine_steps(
 
     try:
         # --- Step 10: Collect external engine results ---
-        logger.info("Step 10: Collecting external engine results...")
-        engine_results, failed_engines = await collect_engine_results(target_date=today)
+        if engine_prefetch_task is not None:
+            logger.info("Step 10: Awaiting pre-fetched engine results...")
+            engine_results, failed_engines = await engine_prefetch_task
+        else:
+            logger.info("Step 10: Collecting external engine results...")
+            engine_results, failed_engines = await collect_engine_results(target_date=today)
 
         sent_drop_alert = await maybe_send_engine_drop_alert(
             failed_engines=failed_engines,
