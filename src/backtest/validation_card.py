@@ -272,12 +272,13 @@ def run_validation_checks(
 
     # ── Check 5: threshold_sensitivity_check ──
     # Score threshold +/- 10% should not flip >30% of signals.
-    if validation_card and validation_card.total_trades > 0:
+    # Requires minimum 30 trades for statistical significance (same as checks 6-7).
+    if validation_card and validation_card.total_trades >= 30:
         threshold_ok = validation_card.threshold_sensitivity < 0.3
         threshold_sens = validation_card.threshold_sensitivity
     else:
         threshold_ok = True
-        threshold_sens = 0.0
+        threshold_sens = validation_card.threshold_sensitivity if validation_card and validation_card.total_trades > 0 else 0.0
     checks["threshold_sensitivity_check"] = _PASS if threshold_ok else _FAIL
     if not threshold_ok:
         key_risks.append(f"Threshold sensitivity too high ({threshold_sens:.2f})")
