@@ -113,6 +113,7 @@ class Settings(BaseSettings):
     # --- External Engine URLs ---
     koocore_api_url: str = ""
     gemini_api_url: str = ""
+    top3_7d_api_url: str = ""
     engine_api_key: str = ""
 
     # --- Local Engine Runners ---
