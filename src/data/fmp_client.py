@@ -472,10 +472,14 @@ class FMPClient:
         resp = await self._request(url, params)
         data = resp.json()
 
-        if not isinstance(data, dict):
+        # FMP stable API may return a list directly or {"historical": [...]}
+        if isinstance(data, list):
+            historical = data
+        elif isinstance(data, dict):
+            historical = data.get("historical", [])
+        else:
             logger.warning("FMP daily_prices/%s returned unexpected type: %s", ticker, type(data).__name__)
             return pd.DataFrame()
-        historical = data.get("historical", [])
         if not historical:
             return pd.DataFrame()
 
