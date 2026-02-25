@@ -375,6 +375,119 @@ async def dashboard_mode_comparison():
     return {"comparison": await get_mode_comparison()}
 
 
+@app.get("/api/dashboard/engine-strategy-performance")
+async def dashboard_engine_strategy_performance(days: int = Query(default=90, ge=7, le=365)):
+    """Per-engine and per-strategy hit rates, returns, and weekly trend."""
+    from datetime import timedelta
+    from collections import defaultdict
+    from src.db.models import EnginePickOutcome, CrossEngineSynthesis
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+        result = await session.execute(
+            select(EnginePickOutcome).where(
+                EnginePickOutcome.outcome_resolved == True,
+                EnginePickOutcome.run_date >= cutoff,
+            )
+        )
+        outcomes = result.scalars().all()
+
+        # Latest credibility weights
+        cred_result = await session.execute(
+            select(CrossEngineSynthesis)
+            .order_by(CrossEngineSynthesis.run_date.desc())
+            .limit(1)
+        )
+        cred_row = cred_result.scalar_one_or_none()
+
+    if not outcomes:
+        return {"engines": [], "time_series": [], "all_strategies": [], "days": days}
+
+    cred_weights = (cred_row.credibility_weights or {}) if cred_row else {}
+
+    # Group by engine
+    engine_data = defaultdict(list)
+    all_strategies = set()
+    for o in outcomes:
+        engine_data[o.engine_name].append(o)
+        all_strategies.add(o.strategy)
+
+    engines_out = []
+    for eng_name, picks in sorted(engine_data.items()):
+        hits = sum(1 for p in picks if p.hit_target)
+        returns = [p.actual_return_pct for p in picks if p.actual_return_pct is not None]
+        confs = [p.confidence for p in picks if p.confidence is not None]
+
+        # Per-strategy breakdown
+        strat_data = defaultdict(list)
+        for p in picks:
+            strat_data[p.strategy].append(p)
+
+        strategies = []
+        for strat, spicks in sorted(strat_data.items()):
+            s_hits = sum(1 for p in spicks if p.hit_target)
+            s_returns = [p.actual_return_pct for p in spicks if p.actual_return_pct is not None]
+            strategies.append({
+                "strategy": strat,
+                "picks": len(spicks),
+                "hits": s_hits,
+                "hit_rate": round(s_hits / len(spicks), 3) if spicks else 0,
+                "avg_return_pct": round(sum(s_returns) / len(s_returns), 2) if s_returns else None,
+            })
+
+        # Engine weight from credibility
+        weight = cred_weights.get(eng_name, {}).get("weight") if isinstance(cred_weights.get(eng_name), dict) else cred_weights.get(eng_name)
+
+        engines_out.append({
+            "engine_name": eng_name,
+            "total_picks": len(picks),
+            "hits": hits,
+            "hit_rate": round(hits / len(picks), 3) if picks else 0,
+            "avg_return_pct": round(sum(returns) / len(returns), 2) if returns else None,
+            "avg_confidence": round(sum(confs) / len(confs), 1) if confs else None,
+            "weight": round(weight, 2) if weight is not None else None,
+            "strategies": strategies,
+        })
+
+    # Weekly time series per engine (cumulative)
+    week_engine = defaultdict(list)
+    for o in outcomes:
+        iso_week = o.run_date.isocalendar()
+        week_start = o.run_date - timedelta(days=o.run_date.weekday())
+        week_key = str(week_start)
+        week_engine[(week_key, o.engine_name)].append(o)
+
+    # Build cumulative series per engine
+    engine_weeks = defaultdict(dict)
+    for (week, eng), picks in sorted(week_engine.items()):
+        engine_weeks[eng][week] = picks
+
+    time_series = []
+    for eng in sorted(engine_weeks.keys()):
+        cum_picks = 0
+        cum_hits = 0
+        cum_return = 0.0
+        for week in sorted(engine_weeks[eng].keys()):
+            wpicks = engine_weeks[eng][week]
+            cum_picks += len(wpicks)
+            cum_hits += sum(1 for p in wpicks if p.hit_target)
+            cum_return += sum(p.actual_return_pct for p in wpicks if p.actual_return_pct is not None)
+            time_series.append({
+                "week": week,
+                "engine_name": eng,
+                "cum_hit_rate": round(cum_hits / cum_picks, 3) if cum_picks else 0,
+                "cum_return_pct": round(cum_return, 2),
+                "picks_so_far": cum_picks,
+            })
+
+    return {
+        "engines": engines_out,
+        "time_series": time_series,
+        "all_strategies": sorted(all_strategies),
+        "days": days,
+    }
+
+
 @app.get("/api/dashboard/dataset-health")
 async def dashboard_dataset_health():
     """Return the latest dataset health report from the most recent DailyRun."""

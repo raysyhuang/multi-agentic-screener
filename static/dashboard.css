@@ -886,6 +886,27 @@ body {
   }
 }
 
+/* ---- Strategy Matrix & Engine Ranking ---- */
+
+.strategy-matrix td {
+  padding: 0.6rem 0.75rem;
+  min-width: 100px;
+  text-align: center;
+}
+
+.strategy-matrix td:first-child {
+  text-align: left;
+}
+
+.engine-rank-1 {
+  border-top: 3px solid var(--teal-500) !important;
+  box-shadow: 0 0 0 1px rgba(20, 184, 166, 0.15), var(--card-shadow);
+}
+
+.cell-good { background: var(--green-soft); }
+.cell-warn { background: var(--amber-soft); }
+.cell-poor { background: var(--red-soft); }
+
 /* Backtest tab */
 .backtest-select {
   width: 100%;

@@ -6,7 +6,7 @@
   // -----------------------------------------------------------------------
   // Engine display names — avoids naive title-casing of acronyms
   // -----------------------------------------------------------------------
-  var ENGINE_DISPLAY = { gemini_stst: 'Gemini STST', koocore_d: 'KooCore-D', mas_quant_screener: 'MAS-Quant-Screener' };
+  var ENGINE_DISPLAY = { gemini_stst: 'Gemini STST', koocore_d: 'KooCore-D', mas_quant_screener: 'MAS-Quant-Screener', top3_7d: 'Top3-7D' };
   function engineDisplayName(name) {
     return ENGINE_DISPLAY[name] || name.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
   }
@@ -1120,57 +1120,232 @@
   // -----------------------------------------------------------------------
   // Compare Tab
   // -----------------------------------------------------------------------
+  var enginePerfChart = null;
+
   function loadCompare() {
     showSpinner('compare-view');
-    fetchJSON('/api/dashboard/mode-comparison').then(function (data) {
+    Promise.all([
+      fetchJSON('/api/dashboard/mode-comparison'),
+      fetchJSON('/api/dashboard/engine-strategy-performance').catch(function () { return null; })
+    ]).then(function (results) {
+      var data = results[0];
+      var engData = results[1];
       var view = document.getElementById('compare-view');
+      var html = '';
 
-      if (!data.comparison || data.comparison.length === 0) {
-        showEmpty('compare-view', 'No mode comparison data. Run the pipeline in different modes first.');
-        return;
+      // ── Section 1: Mode Comparison (existing) ──
+      if (data.comparison && data.comparison.length > 0) {
+        html += '<div class="card">' +
+          '<div class="card-title" style="margin-bottom:0.5rem">LLM Uplift: Mode Comparison</div>' +
+          '<p class="card-subtitle" style="margin-bottom:1rem">Compare Quant Only vs Hybrid vs Agentic Full performance</p>';
+
+        var modeColors = { agentic_full: 'var(--teal-500)', hybrid: '#a855f7', quant_only: 'var(--green)' };
+        var modeDisplay = { agentic_full: 'Agentic Full', hybrid: 'Hybrid', quant_only: 'Quant Only' };
+        function modeName(m) { return modeDisplay[m] || m.replace(/_/g, ' '); }
+
+        html += '<div class="metrics-grid">';
+        data.comparison.forEach(function (m) {
+          var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
+          var borderColor = modeColors[m.mode] || 'var(--teal-500)';
+          html += '<div class="metric-card" style="border-top:3px solid ' + borderColor + '">' +
+            '<div class="metric-value">' + escapeHtml(modeName(m.mode || 'unknown')) + '</div>' +
+            '<div class="metric-label">' + m.trades + ' trades</div>' +
+            '<div class="metric-label ' + pnlClass + '">WR: ' + fmtPct(m.win_rate * 100) +
+            ' | Avg: ' + fmtPct(m.avg_pnl) +
+            ' | Total: ' + fmtPct(m.total_return) + '</div>' +
+          '</div>';
+        });
+        html += '</div>';
+
+        var rows = data.comparison.map(function (m) {
+          var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
+          return '<tr>' +
+            '<td><b>' + escapeHtml(modeName(m.mode || '?')) + '</b></td>' +
+            '<td>' + m.trades + '</td>' +
+            '<td>' + fmtPct(m.win_rate * 100) + '</td>' +
+            '<td class="' + pnlClass + '">' + fmtPct(m.avg_pnl) + '</td>' +
+            '<td class="' + pnlClass + '">' + fmtPct(m.total_return) + '</td>' +
+          '</tr>';
+        }).join('');
+
+        html += '<table class="data-table">' +
+          '<thead><tr><th>Mode</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th><th>Total Return</th></tr></thead>' +
+          '<tbody>' + rows + '</tbody>' +
+        '</table></div>';
       }
 
-      var html = '<div class="card">' +
-        '<div class="card-title" style="margin-bottom:0.5rem">LLM Uplift: Mode Comparison</div>' +
-        '<p class="card-subtitle" style="margin-bottom:1rem">Compare Quant Only vs Hybrid vs Agentic Full performance</p>';
+      // ── Section 2: Engine Leaderboard ──
+      if (engData && engData.engines && engData.engines.length > 0) {
+        var engineColors = { koocore_d: 'var(--teal-500)', gemini_stst: '#a855f7', top3_7d: 'var(--amber)' };
+        var sorted = engData.engines.slice().sort(function (a, b) { return b.hit_rate - a.hit_rate; });
 
-      var modeColors = { agentic_full: 'var(--teal-500)', hybrid: '#a855f7', quant_only: 'var(--green)' };
-      var modeDisplay = { agentic_full: 'Agentic Full', hybrid: 'Hybrid', quant_only: 'Quant Only' };
-      function modeName(m) { return modeDisplay[m] || m.replace(/_/g, ' '); }
+        html += '<div class="card">' +
+          '<div class="card-title" style="margin-bottom:0.5rem">Engine Leaderboard</div>' +
+          '<p class="card-subtitle" style="margin-bottom:1rem">Per-engine performance over the last ' + engData.days + ' days</p>' +
+          '<div class="metrics-grid">';
 
-      html += '<div class="metrics-grid">';
-      data.comparison.forEach(function (m) {
-        var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
-        var borderColor = modeColors[m.mode] || 'var(--teal-500)';
-        html += '<div class="metric-card" style="border-top:3px solid ' + borderColor + '">' +
-          '<div class="metric-value">' + escapeHtml(modeName(m.mode || 'unknown')) + '</div>' +
-          '<div class="metric-label">' + m.trades + ' trades</div>' +
-          '<div class="metric-label ' + pnlClass + '">WR: ' + fmtPct(m.win_rate * 100) +
-          ' | Avg: ' + fmtPct(m.avg_pnl) +
-          ' | Total: ' + fmtPct(m.total_return) + '</div>' +
-        '</div>';
-      });
-      html += '</div>';
+        sorted.forEach(function (eng, idx) {
+          var borderColor = idx === 0 ? 'var(--teal-500)' : (engineColors[eng.engine_name] || 'var(--slate-400)');
+          var rankClass = idx === 0 ? ' engine-rank-1' : '';
+          var pnlClass = (eng.avg_return_pct || 0) > 0 ? 'positive' : ((eng.avg_return_pct || 0) < 0 ? 'negative' : '');
 
-      var rows = data.comparison.map(function (m) {
-        var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
-        return '<tr>' +
-          '<td><b>' + escapeHtml(modeName(m.mode || '?')) + '</b></td>' +
-          '<td>' + m.trades + '</td>' +
-          '<td>' + fmtPct(m.win_rate * 100) + '</td>' +
-          '<td class="' + pnlClass + '">' + fmtPct(m.avg_pnl) + '</td>' +
-          '<td class="' + pnlClass + '">' + fmtPct(m.total_return) + '</td>' +
-        '</tr>';
-      }).join('');
+          // Find best strategy
+          var bestStrat = null;
+          if (eng.strategies && eng.strategies.length > 0) {
+            bestStrat = eng.strategies.slice().sort(function (a, b) { return b.hit_rate - a.hit_rate; })[0];
+          }
 
-      html += '<table class="data-table">' +
-        '<thead><tr><th>Mode</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th><th>Total Return</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
+          html += '<div class="metric-card' + rankClass + '" style="border-top:3px solid ' + borderColor + ';text-align:left;padding:1.25rem">' +
+            '<div class="metric-value" style="font-size:1.1rem;margin-bottom:0.5rem">' + escapeHtml(engineDisplayName(eng.engine_name)) + '</div>' +
+            '<div style="font-size:1.8rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.25rem">' + fmtPct(eng.hit_rate * 100) + '</div>' +
+            '<div class="progress-bar" style="margin:0.4rem 0"><div class="progress-fill" style="width:' + Math.min(eng.hit_rate * 100, 100) + '%;background:' + borderColor + '"></div></div>' +
+            '<div style="display:flex;gap:1rem;margin-top:0.5rem;font-size:0.75rem;color:var(--text-secondary)">' +
+              '<span>Avg <span class="' + pnlClass + '">' + fmtPct(eng.avg_return_pct) + '</span></span>' +
+              '<span>Wt ' + (eng.weight != null ? fmt(eng.weight, 2) : '\u2014') + '</span>' +
+              '<span>' + eng.total_picks + ' picks</span>' +
+            '</div>';
+
+          if (bestStrat) {
+            html += '<div style="margin-top:0.5rem"><span class="badge badge-success" style="font-size:0.6rem">' +
+              escapeHtml(bestStrat.strategy) + ' ' + fmtPct(bestStrat.hit_rate * 100) + '</span></div>';
+          }
+
+          html += '</div>';
+        });
+
+        html += '</div></div>';
+
+        // ── Section 3: Strategy Matrix ──
+        if (engData.all_strategies && engData.all_strategies.length > 0) {
+          var engineNames = sorted.map(function (e) { return e.engine_name; });
+          // Build lookup: engine_name -> strategy -> stats
+          var lookup = {};
+          sorted.forEach(function (eng) {
+            lookup[eng.engine_name] = {};
+            (eng.strategies || []).forEach(function (s) {
+              lookup[eng.engine_name][s.strategy] = s;
+            });
+          });
+
+          html += '<div class="card">' +
+            '<div class="card-title" style="margin-bottom:0.5rem">Strategy Matrix</div>' +
+            '<p class="card-subtitle" style="margin-bottom:1rem">Hit rate by strategy and engine</p>' +
+            '<div style="overflow-x:auto">' +
+            '<table class="data-table strategy-matrix">' +
+            '<thead><tr><th>Strategy</th>';
+
+          engineNames.forEach(function (eng) {
+            var w = null;
+            sorted.forEach(function (e) { if (e.engine_name === eng) w = e.weight; });
+            html += '<th>' + escapeHtml(engineDisplayName(eng)) +
+              (w != null ? '<br><span style="font-weight:400;font-size:0.6rem">wt ' + fmt(w, 2) + '</span>' : '') +
+              '</th>';
+          });
+          html += '</tr></thead><tbody>';
+
+          engData.all_strategies.forEach(function (strat) {
+            html += '<tr><td><b>' + escapeHtml(strat) + '</b></td>';
+            engineNames.forEach(function (eng) {
+              var s = lookup[eng] && lookup[eng][strat];
+              if (s && s.picks > 0) {
+                var cellClass = s.hit_rate >= 0.6 ? 'cell-good' : (s.hit_rate >= 0.4 ? 'cell-warn' : 'cell-poor');
+                html += '<td class="' + cellClass + '">' +
+                  fmtPct(s.hit_rate * 100) + '<br><span style="font-size:0.65rem;color:var(--text-muted)">' + s.picks + ' picks</span></td>';
+              } else {
+                html += '<td style="color:var(--text-muted)">\u2014</td>';
+              }
+            });
+            html += '</tr>';
+          });
+
+          html += '</tbody></table></div></div>';
+        }
+
+        // ── Section 4: Performance Trend Chart ──
+        if (engData.time_series && engData.time_series.length > 0) {
+          var trendEngines = {};
+          engData.time_series.forEach(function (pt) {
+            if (!trendEngines[pt.engine_name]) trendEngines[pt.engine_name] = [];
+            trendEngines[pt.engine_name].push(pt);
+          });
+
+          var trendNames = Object.keys(trendEngines).sort();
+          var trendColors = { koocore_d: '#14b8a6', gemini_stst: '#a855f7', top3_7d: '#f59e0b' };
+          var fallbackColors = ['#14b8a6', '#a855f7', '#f59e0b', '#3b82f6', '#ef4444'];
+
+          var legendHtml = '<div class="chart-legend">';
+          trendNames.forEach(function (name, i) {
+            var color = trendColors[name] || fallbackColors[i % fallbackColors.length];
+            legendHtml += '<div class="chart-legend-item">' +
+              '<span class="chart-legend-swatch" style="background:' + color + '"></span>' +
+              '<span>' + escapeHtml(engineDisplayName(name)) + '</span></div>';
+          });
+          legendHtml += '</div>';
+
+          html += '<div class="card">' +
+            '<div class="card-title" style="margin-bottom:0.5rem">Performance Trend</div>' +
+            '<p class="card-subtitle" style="margin-bottom:1rem">Cumulative return % by engine (weekly)</p>' +
+            legendHtml +
+            '<div id="engine-perf-chart" style="height:300px"></div>' +
+          '</div>';
+        }
+      } else if (!data.comparison || data.comparison.length === 0) {
+        html += '<div class="empty-state"><h3>No Data</h3><p>No mode comparison or engine performance data yet. Run the pipeline first.</p></div>';
+      } else {
+        html += '<div class="card"><div class="empty-state" style="padding:1.5rem"><p>Not enough resolved engine outcomes for engine comparison yet.</p></div></div>';
+      }
 
       view.innerHTML = html;
+
+      // Render chart after DOM is ready
+      if (engData && engData.time_series && engData.time_series.length > 0) {
+        renderEnginePerfChart(engData.time_series);
+      }
     }).catch(function () {
-      showEmpty('compare-view', 'Failed to load mode comparison data.');
+      showEmpty('compare-view', 'Failed to load comparison data.');
+    });
+  }
+
+  function renderEnginePerfChart(timeSeries) {
+    var el = document.getElementById('engine-perf-chart');
+    if (!el || typeof LightweightCharts === 'undefined') return;
+
+    if (enginePerfChart) { enginePerfChart.remove(); enginePerfChart = null; }
+
+    var c = chartColors();
+    var chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth,
+      height: 300,
+      layout: { background: { color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+    enginePerfChart = chart;
+
+    var trendColors = { koocore_d: '#14b8a6', gemini_stst: '#a855f7', top3_7d: '#f59e0b' };
+    var fallbackColors = ['#14b8a6', '#a855f7', '#f59e0b', '#3b82f6', '#ef4444'];
+
+    // Group by engine
+    var byEngine = {};
+    timeSeries.forEach(function (pt) {
+      if (!byEngine[pt.engine_name]) byEngine[pt.engine_name] = [];
+      byEngine[pt.engine_name].push(pt);
+    });
+
+    var names = Object.keys(byEngine).sort();
+    names.forEach(function (name, i) {
+      var color = trendColors[name] || fallbackColors[i % fallbackColors.length];
+      var series = chart.addLineSeries({ color: color, lineWidth: 2, title: engineDisplayName(name) });
+      var pts = byEngine[name].map(function (p) {
+        return { time: p.week, value: p.cum_return_pct };
+      });
+      series.setData(pts);
+    });
+
+    chart.timeScale().fitContent();
+    window.addEventListener('resize', function () {
+      if (enginePerfChart && el.clientWidth > 0) enginePerfChart.applyOptions({ width: el.clientWidth });
     });
   }
 
