@@ -25,7 +25,7 @@ async def test_collect_engine_results_local_passes_target_date_to_gemini(monkeyp
     class _Settings:
         engine_run_mode = "local"
 
-    target_date = date(2026, 2, 21)
+    target_date = date.today()
     seen: dict[str, date | None] = {"target": None}
 
     async def _fake_koocore():
