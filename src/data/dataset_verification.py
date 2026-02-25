@@ -26,6 +26,7 @@ MAX_STALE_TRADING_DAYS = 3   # OHLCV freshness threshold
 MIN_SCREENED_BY_ENGINE: dict[str, int] = {
     "koocore_d": 5,
     "gemini_stst": 5,
+    "top3_7d": 10,
 }
 DEFAULT_MIN_SCREENED = 20
 
@@ -483,7 +484,7 @@ def verify_cross_engine(
             breadth_issues.append(f"{name}: no picks or screening data")
 
     breadth_ok = len(breadth_issues) == 0
-    _DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D", "mas_quant_screener": "MAS-Quant-Screener"}
+    _DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D", "top3_7d": "Top3-7D", "mas_quant_screener": "MAS-Quant-Screener"}
     engine_summary = ", ".join(
         f"{_DISPLAY.get(er.get('engine_name', '?'), er.get('engine_name', '?'))}={er.get('candidates_screened', '?')}"
         for er in engine_results

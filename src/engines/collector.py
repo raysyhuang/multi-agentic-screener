@@ -55,6 +55,7 @@ _MAX_STALENESS_TRADING_DAYS = 2
 _ENGINE_CONFIG = {
     "koocore_d": "koocore_api_url",
     "gemini_stst": "gemini_api_url",
+    "top3_7d": "top3_7d_api_url",
 }
 
 
@@ -393,6 +394,7 @@ async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineR
     api_key = settings.engine_api_key
     timeout_s = settings.engine_fetch_timeout_s
     koocore_url = settings.koocore_api_url
+    top3_7d_url = settings.top3_7d_api_url
 
     logger.info("Collecting engine results in HYBRID mode")
 
@@ -411,12 +413,27 @@ async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineR
                 custom_fetcher=fetch_koocore,
             )
 
-    # Run KooCore-D (HTTP) and Gemini STST (local) in parallel
+    # Top3-7D: fetch via HTTP (standard EngineResultPayload, no custom adapter)
+    async def _fetch_top3_7d_http() -> EngineResultPayload | None:
+        if not top3_7d_url:
+            logger.warning("Top3-7D URL not configured; skipping HTTP fetch")
+            return None
+        async with aiohttp.ClientSession() as session:
+            return await _fetch_engine(
+                session=session,
+                engine_name="top3_7d",
+                base_url=top3_7d_url,
+                api_key=api_key,
+                timeout_s=timeout_s,
+            )
+
+    # Run KooCore-D (HTTP), Gemini STST (local), and Top3-7D (HTTP) in parallel
     koocore_task = asyncio.create_task(_fetch_koocore_http())
     gemini_task = asyncio.create_task(run_gemini_locally(target_date=target_date))
-    results = await asyncio.gather(koocore_task, gemini_task, return_exceptions=True)
+    top3_7d_task = asyncio.create_task(_fetch_top3_7d_http())
+    results = await asyncio.gather(koocore_task, gemini_task, top3_7d_task, return_exceptions=True)
 
-    engine_names = ["koocore_d", "gemini_stst"]
+    engine_names = ["koocore_d", "gemini_stst", "top3_7d"]
     payloads: list[EngineResultPayload] = []
     failed_engines: list[EngineFailure] = []
 
@@ -427,7 +444,7 @@ async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineR
                 EngineFailure(engine_name=engine_name, kind="exception", detail=type(result).__name__),
             )
         elif result is None:
-            kind: EngineFailureKind = "no_response" if engine_name == "koocore_d" else "no_output"
+            kind: EngineFailureKind = "no_response" if engine_name in ("koocore_d", "top3_7d") else "no_output"
             logger.warning("Engine %s returned no data in hybrid mode", engine_name)
             failed_engines.append(EngineFailure(engine_name=engine_name, kind=kind))
         else:
