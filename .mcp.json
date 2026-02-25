@@ -1,0 +1,44 @@
+{
+  "mcpServers": {
+    "daloopa": {
+      "type": "http",
+      "url": "https://mcp.daloopa.com/server/mcp",
+      "_comment": "Financial data extraction — KPIs, revenue breakdowns, unit economics"
+    },
+    "morningstar": {
+      "type": "http",
+      "url": "https://mcp.morningstar.com/mcp",
+      "_comment": "Valuation, fair value estimates, moat ratings, analyst consensus"
+    },
+    "sp-global": {
+      "type": "http",
+      "url": "https://kfinance.kensho.com/integrations/mcp",
+      "_comment": "Capital IQ — comps, fundamentals, institutional ownership"
+    },
+    "factset": {
+      "type": "http",
+      "url": "https://mcp.factset.com/mcp",
+      "_comment": "Comprehensive financial data — estimates, ownership, supply chain"
+    },
+    "moodys": {
+      "type": "http",
+      "url": "https://api.moodys.com/genai-ready-data/m1/mcp",
+      "_comment": "Credit analytics — ratings, default probabilities, risk scores"
+    },
+    "mtnewswires": {
+      "type": "http",
+      "url": "https://vast-mcp.blueskyapi.com/mtnewswires",
+      "_comment": "Real-time financial news, market-moving events, catalysts"
+    },
+    "aiera": {
+      "type": "http",
+      "url": "https://mcp-pub.aiera.com",
+      "_comment": "Earnings call transcripts, event detection, sentiment scoring"
+    },
+    "lseg": {
+      "type": "http",
+      "url": "https://api.analytics.lseg.com/lfa/mcp",
+      "_comment": "Fixed income, FX, equities, macro dashboards — enriches regime detection"
+    }
+  }
+}

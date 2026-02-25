@@ -27,6 +27,7 @@ from src.data.polygon_client import PolygonClient
 from src.data.fmp_client import FMPClient
 from src.data.yfinance_client import YFinanceClient
 from src.data.fred_client import FREDClient
+from src.data.mcp_client import MCPClient
 from src.data.circuit_breaker import APICircuitBreaker
 from src.data.cache import (
     DataCache,
@@ -56,6 +57,7 @@ class DataAggregator:
         self.fmp = FMPClient()
         self.yfinance = YFinanceClient()
         self.fred = FREDClient(api_key=settings.fred_api_key or None)
+        self.mcp = MCPClient() if settings.mcp_enabled else None
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
         self._cache = DataCache()
         self._cache_enabled = True
@@ -481,6 +483,91 @@ class DataAggregator:
         except Exception as e:
             logger.warning("Earnings calendar failed: %s", e)
             return []
+
+    async def enrich_candidates_via_mcp(
+        self,
+        tickers: list[str],
+        top_n: int | None = None,
+    ) -> dict[str, dict]:
+        """Enrich top candidates with institutional-grade MCP data.
+
+        Called after the initial screen to add fundamentals, earnings context,
+        news, and credit risk from MCP connectors. Only enriches the top N
+        candidates to control cost.
+
+        Returns {ticker: enrichment_dict} — empty dict for tickers with no data.
+        """
+        if not self.mcp or not self.mcp.available:
+            return {}
+
+        settings = get_settings()
+        limit = top_n or settings.mcp_enrich_top_n
+        subset = tickers[:limit]
+
+        if not subset:
+            return {}
+
+        logger.info("MCP enrichment: fetching data for %d candidates", len(subset))
+
+        tasks = [self.mcp.enrich_candidate(t) for t in subset]
+        results = await asyncio.gather(*tasks, return_exceptions=True)
+
+        enrichments: dict[str, dict] = {}
+        for ticker, result in zip(subset, results):
+            if isinstance(result, Exception):
+                logger.warning("MCP enrichment failed for %s: %s", ticker, result)
+                enrichments[ticker] = {}
+            else:
+                enrichments[ticker] = result
+
+        enriched_count = sum(1 for v in enrichments.values() if v)
+        logger.info(
+            "MCP enrichment complete: %d/%d candidates enriched",
+            enriched_count, len(subset),
+        )
+
+        # Cache enriched data
+        if self._cache_enabled:
+            for ticker, data in enrichments.items():
+                if data:
+                    key = DataCache.build_key("mcp", ticker, "enrichment")
+                    self._cache.put(
+                        key, json.dumps(data), TTL_FUNDAMENTALS,
+                        source="mcp", ticker=ticker, endpoint="enrichment",
+                    )
+
+        return enrichments
+
+    async def get_mcp_macro_enrichment(self) -> dict:
+        """Fetch macro enrichment from LSEG via MCP (yield curves, credit spreads).
+
+        Supplements FRED macro data for richer regime detection.
+        """
+        if not self.mcp or not self.mcp.available:
+            return {}
+
+        if self._cache_enabled:
+            key = DataCache.build_key("mcp", "", "macro_enrichment")
+            cached = self._cache.get(key)
+            if cached is not None:
+                return json.loads(cached)
+
+        result = await self.mcp.get_macro_enrichment()
+
+        if self._cache_enabled and result:
+            key = DataCache.build_key("mcp", "", "macro_enrichment")
+            self._cache.put(
+                key, json.dumps(result), TTL_MACRO,
+                source="mcp_lseg", endpoint="macro_enrichment",
+            )
+
+        return result
+
+    def get_mcp_stats(self) -> dict:
+        """Return MCP connector stats for monitoring."""
+        if not self.mcp:
+            return {"enabled": False}
+        return {"enabled": True, **self.mcp.get_stats()}
 
     def get_cache_stats(self) -> dict:
         """Return cache performance statistics."""

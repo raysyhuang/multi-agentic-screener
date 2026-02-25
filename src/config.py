@@ -163,6 +163,12 @@ class Settings(BaseSettings):
     min_engines_for_trade: int = 2  # Require N engines reporting before allowing synthesis
     require_known_regime: bool = False  # Block trades when regime is "unknown"
 
+    # --- MCP Data Connectors ---
+    mcp_enabled: bool = True  # Master toggle for MCP enrichment layer
+    mcp_enabled_providers: str = ""  # Comma-separated list (empty = all from .mcp.json)
+    mcp_enrich_top_n: int = 10  # Only enrich top N candidates (controls cost)
+    mcp_request_timeout_s: float = 30.0
+
     # --- Cross-Engine Alert Cooldown ---
     cross_engine_alert_cooldown_hours: int = 4
     engine_drop_alert_cooldown_minutes: int = 60
