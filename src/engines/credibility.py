@@ -84,14 +84,22 @@ def _compute_brier_score(picks: list[dict]) -> float:
     return total / len(picks)
 
 
-async def compute_credibility_snapshot() -> CredibilitySnapshot:
-    """Compute current credibility stats for all engines from resolved outcomes."""
+async def compute_credibility_snapshot(
+    asof_date: date | None = None,
+) -> CredibilitySnapshot:
+    """Compute current credibility stats for all engines from resolved outcomes.
+
+    Args:
+        asof_date: Reference date for lookback window. Defaults to today.
+                   Pass an explicit date to replay credibility for backtesting.
+    """
     settings = get_settings()
     lookback = settings.credibility_lookback_days
     min_picks = settings.credibility_min_picks_for_weight
-    cutoff_date = date.today() - timedelta(days=lookback)
+    reference = asof_date or date.today()
+    cutoff_date = reference - timedelta(days=lookback)
 
-    snapshot = CredibilitySnapshot(snapshot_date=date.today())
+    snapshot = CredibilitySnapshot(snapshot_date=reference)
 
     async with get_session() as session:
         # Fetch all resolved outcomes within lookback window

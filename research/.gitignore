@@ -1,0 +1,8 @@
+# Qlib binary data (large, machine-specific)
+data/
+outputs/
+*.bin
+*.pkl
+
+# Jupyter checkpoints
+.ipynb_checkpoints/
