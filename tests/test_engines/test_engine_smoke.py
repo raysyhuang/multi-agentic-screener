@@ -12,7 +12,6 @@ from __future__ import annotations
 from datetime import date, timedelta
 
 import httpx
-import numpy as np
 import pytest
 
 # ── Engine URLs ──────────────────────────────────────────────────────────

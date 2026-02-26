@@ -8,7 +8,7 @@ from unittest.mock import AsyncMock, MagicMock, patch
 import httpx
 import pytest
 
-from src.data.mcp_client import MCPClient, _load_mcp_config
+from src.data.mcp_client import MCPClient, _load_mcp_config  # noqa: F401
 
 
 # ---------------------------------------------------------------------------
