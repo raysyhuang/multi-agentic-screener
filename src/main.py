@@ -2065,6 +2065,7 @@ async def _run_cross_engine_steps(
                         stop_loss=pick.stop_loss,
                         confidence=pick.confidence,
                         holding_period_days=pick.holding_period_days,
+                        is_paper_trade=True,  # default paper; flipped after synthesis
                     ))
 
         logger.info("Step 10 complete: %d engines reported", len(engine_results))
@@ -2162,6 +2163,10 @@ async def _run_cross_engine_steps(
                 engine_name,
                 drop_reasons.get(engine_name, [])[:3],
             )
+
+        # Enrich picks with sector metadata for sector convergence analysis
+        from src.engines.sector_lookup import enrich_picks_with_sector
+        enrich_picks_with_sector(all_picks)
 
         logger.info("Step 11 complete: %d picks collected for weighting", len(all_picks))
 
@@ -2433,6 +2438,29 @@ async def _run_cross_engine_steps(
                 )
         else:
             logger.info("Step 13.5: Capital Guardian disabled, skipping")
+
+        # --- Step 13.6: Flip paper-trade flag for portfolio picks ---
+        # All engine picks default to is_paper_trade=True. Flip to False for
+        # picks that made the final synthesized portfolio.
+        portfolio_tickers = {pos.ticker.upper() for pos in synthesis.portfolio}
+        if portfolio_tickers:
+            async with get_session() as session:
+                from sqlalchemy import update
+                count_result = await session.execute(
+                    update(EnginePickOutcome)
+                    .where(
+                        EnginePickOutcome.run_date == today,
+                        EnginePickOutcome.ticker.in_(portfolio_tickers),
+                        EnginePickOutcome.is_paper_trade == True,  # noqa: E712
+                    )
+                    .values(is_paper_trade=False)
+                )
+                flipped = count_result.rowcount
+                if flipped:
+                    logger.info(
+                        "Step 13.6: marked %d engine pick(s) as live trades: %s",
+                        flipped, sorted(portfolio_tickers),
+                    )
 
         # --- Step 14: Save to DB + send Telegram ---
         logger.info("Step 14: Saving synthesis and sending alert...")

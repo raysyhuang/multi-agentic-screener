@@ -39,11 +39,19 @@ the independent sub-strategies that contributed to it. Use these for richer anal
     than same-engine multi-strategy (e.g. KooCore weekly + KooCore pro30)
   - effective_signal_count captures this: cross-engine signals count as 1.0, same-engine extras as 0.5
 
+SECTOR CONVERGENCE:
+When no exact ticker overlap exists, sector convergence can provide a supporting signal.
+If 2+ engines pick different stocks in the same GICS sector, those picks carry a
+"sector" convergence_type (weaker than "ticker" convergence but still meaningful).
+Use sector convergence as a tiebreaker and directional confidence signal, not as
+strong as ticker-level agreement.
+
 YOUR TASK:
 1. CONVERGENT PICKS: Identify tickers picked by 2+ engines. These are highest conviction.
    - Weight them by combined engine credibility and convergence multiplier.
    - Note which engines agree, their strategies, and strategy_tags.
    - Highlight cross-strategy convergence (e.g. momentum + reversion on same ticker).
+   - Also note sector convergence when present (convergence_type: "sector").
 
 2. UNIQUE OPPORTUNITIES: Find strong single-engine picks worth including.
    - Only include if the engine has high credibility AND the pick has high confidence.

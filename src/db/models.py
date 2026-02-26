@@ -404,6 +404,9 @@ class EnginePickOutcome(Base):
     confidence: Mapped[float] = mapped_column(Float, nullable=False)
     holding_period_days: Mapped[int] = mapped_column(Integer, nullable=False)
 
+    # Paper trade flag — True for picks tracked for credibility but not in portfolio
+    is_paper_trade: Mapped[bool] = mapped_column(Boolean, default=False, server_default="false")
+
     # Outcome fields (resolved later)
     outcome_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
     actual_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)

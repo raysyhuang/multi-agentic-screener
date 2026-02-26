@@ -14,6 +14,7 @@ from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Res
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
+import sqlalchemy as sa
 from sqlalchemy import select, text
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
@@ -1247,7 +1248,47 @@ async def cross_engine_credibility():
     if not row or not row.credibility_weights:
         return {"engines": {}, "note": "No credibility data yet — need 10+ resolved picks per engine"}
 
-    return {"engines": row.credibility_weights, "as_of": str(row.run_date)}
+    # Enrich with paper trade stats from EnginePickOutcome
+    from src.db.models import EnginePickOutcome
+    from sqlalchemy import func as sa_func
+
+    paper_stats = {}
+    async with get_session() as session2:
+        paper_result = await session2.execute(
+            select(
+                EnginePickOutcome.engine_name,
+                sa_func.count().label("total"),
+                sa_func.sum(
+                    sa.case((EnginePickOutcome.outcome_resolved == True, 1), else_=0)  # noqa: E712
+                ).label("resolved"),
+                sa_func.sum(
+                    sa.case(
+                        (sa.and_(
+                            EnginePickOutcome.outcome_resolved == True,  # noqa: E712
+                            EnginePickOutcome.hit_target == True,  # noqa: E712
+                        ), 1),
+                        else_=0,
+                    )
+                ).label("hits"),
+            )
+            .where(EnginePickOutcome.is_paper_trade == True)  # noqa: E712
+            .group_by(EnginePickOutcome.engine_name)
+        )
+        for r in paper_result:
+            resolved = int(r.resolved or 0)
+            hits = int(r.hits or 0)
+            paper_stats[r.engine_name] = {
+                "total": int(r.total),
+                "resolved": resolved,
+                "hits": hits,
+                "hit_rate": round(hits / resolved, 3) if resolved > 0 else 0.0,
+            }
+
+    return {
+        "engines": row.credibility_weights,
+        "paper_trade_stats": paper_stats,
+        "as_of": str(row.run_date),
+    }
 
 
 @app.get("/api/cross-engine/convergence/{date_str}")
