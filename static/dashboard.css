@@ -886,6 +886,82 @@ body {
   }
 }
 
+/* ---- Verifier Notes Cards ---- */
+
+.verifier-pick-card {
+  padding: 0.75rem 1rem;
+  border-radius: 10px;
+  border-left: 3px solid var(--slate-300);
+  background: var(--gradient-brand-soft);
+}
+.verifier-pick-card.pick-verified { border-left-color: var(--green); }
+.verifier-pick-card.pick-flagged  { border-left-color: var(--amber); }
+.verifier-pick-card.pick-rejected { border-left-color: var(--red); }
+
+.verifier-pick-header {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.status-badge {
+  display: inline-flex;
+  align-items: center;
+  padding: 0.1rem 0.5rem;
+  border-radius: 12px;
+  font-size: 0.65rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+.status-badge.status-verified { background: var(--green-soft); color: var(--green); }
+.status-badge.status-flagged  { background: var(--amber-soft); color: var(--amber); }
+.status-badge.status-rejected { background: var(--red-soft);   color: var(--red); }
+
+.weight-adj-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.5rem 0.75rem;
+  border-radius: 8px;
+  background: var(--gradient-brand-soft);
+}
+
+.weight-adj-engine {
+  font-weight: 600;
+  font-size: 0.85rem;
+  min-width: 100px;
+  flex-shrink: 0;
+}
+
+.weight-adj-mult {
+  font-weight: 700;
+  font-size: 0.8rem;
+  padding: 0.1rem 0.5rem;
+  border-radius: 8px;
+  flex-shrink: 0;
+}
+.weight-adj-mult.mult-full { background: var(--green-soft); color: var(--green); }
+.weight-adj-mult.mult-mid  { background: var(--amber-soft); color: var(--amber); }
+.weight-adj-mult.mult-low  { background: var(--red-soft);   color: var(--red); }
+.weight-adj-mult.mult-zero { background: var(--slate-200);  color: var(--text-muted); }
+
+@media (prefers-color-scheme: dark) {
+  .weight-adj-mult.mult-zero { background: var(--slate-700); }
+}
+
+.weight-adj-reason {
+  font-size: 0.8rem;
+  color: var(--text-secondary);
+  line-height: 1.4;
+}
+
+@media (max-width: 768px) {
+  .weight-adj-row { flex-wrap: wrap; }
+  .weight-adj-engine { min-width: auto; }
+}
+
 /* ---- Strategy Matrix & Engine Ranking ---- */
 
 .strategy-matrix td {
