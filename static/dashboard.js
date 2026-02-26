@@ -772,97 +772,161 @@
           escapeHtml(synthesis.executive_summary) + '</p></div>';
       }
 
-      // --- Verifier Notes ---
+      // --- Verifier Notes (5 sub-sections) ---
       if (synthesis.verifier_notes) {
         var notes = synthesis.verifier_notes;
-        var notesHtml = '';
         if (typeof notes === 'object' && notes !== null) {
-          Object.keys(notes).forEach(function (key) {
-            var val = notes[key];
-            var label = key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+          // Section header
+          html += '<div class="section-header">' +
+            '<div class="section-icon">\uD83D\uDD0D</div>' +
+            '<span class="section-title">Verifier Analysis</span></div>';
 
-            if (key === 'verified_picks' && Array.isArray(val)) {
-              // Structured ticker cards for verified picks
-              notesHtml += '<div style="margin-bottom:0.75rem"><strong>' + escapeHtml(label) + ':</strong></div>';
-              notesHtml += '<div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">';
-              val.forEach(function (pick) {
-                if (typeof pick !== 'object' || pick === null) {
-                  notesHtml += '<div class="verifier-pick-card"><li>' + escapeHtml(String(pick)) + '</li></div>';
-                  return;
-                }
-                var status = (pick.verification_status || '').toLowerCase();
-                var statusClass = status === 'verified' ? 'verified' : status === 'rejected' ? 'rejected' : 'flagged';
-                var rawConf = pick.adjusted_confidence;
-                var conf = rawConf != null ? (typeof rawConf === 'number' ? (rawConf <= 1 ? (rawConf * 100).toFixed(0) : rawConf.toFixed(0)) + '%' : String(rawConf)) : '';
-                notesHtml += '<div class="verifier-pick-card pick-' + statusClass + '">';
-                notesHtml += '<div class="verifier-pick-header">';
-                notesHtml += '<span style="font-weight:700;font-size:0.9rem">' + escapeHtml(pick.ticker || '???') + '</span>';
-                notesHtml += '<span class="status-badge status-' + statusClass + '">' + escapeHtml(status || 'unknown') + '</span>';
-                if (conf) notesHtml += '<span style="margin-left:auto;font-weight:600;font-size:0.8rem;color:var(--text-secondary)">' + escapeHtml(conf) + '</span>';
-                notesHtml += '</div>';
-                if (pick.engines_agreeing && pick.engines_agreeing.length) {
-                  notesHtml += '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem">';
-                  pick.engines_agreeing.forEach(function (eng) {
-                    notesHtml += '<span class="engine-dot">' + escapeHtml(String(eng)) + '</span>';
-                  });
-                  notesHtml += '</div>';
-                }
-                if (pick.notes) {
-                  notesHtml += '<div style="margin-top:0.35rem;font-size:0.8rem;line-height:1.5;color:var(--text-secondary)">' + escapeHtml(String(pick.notes)) + '</div>';
-                }
-                notesHtml += '</div>';
-              });
-              notesHtml += '</div>';
+          // 1) Summary callout
+          if (notes.summary) {
+            html += '<div class="verifier-section vs-summary">' +
+              '<div class="verifier-section-title"><span class="vs-icon">\uD83E\uDDE0</span> Summary</div>' +
+              '<div class="summary-callout">' + escapeHtml(String(notes.summary)) + '</div></div>';
+          }
 
-            } else if (key === 'weight_adjustments' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
-              // Structured rows for weight adjustments
-              notesHtml += '<div style="margin-bottom:0.75rem"><strong>' + escapeHtml(label) + ':</strong></div>';
-              notesHtml += '<div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.75rem">';
-              Object.keys(val).forEach(function (engine) {
-                var adj = val[engine];
+          // 2) Red Flags — collapsible with count badge
+          if (notes.red_flags && Array.isArray(notes.red_flags) && notes.red_flags.length > 0) {
+            var flags = notes.red_flags;
+            var flagLimit = 3;
+            html += '<div class="verifier-section vs-red-flags">' +
+              '<div class="verifier-section-title"><span class="vs-icon">\u26A0\uFE0F</span> Red Flags ' +
+              '<span class="red-flags-count">' + flags.length + '</span></div>';
+            flags.forEach(function (flag, idx) {
+              var hidden = idx >= flagLimit ? ' style="display:none"' : '';
+              html += '<div class="red-flag-item" data-rf-extra="' + (idx >= flagLimit ? '1' : '0') + '"' + hidden + '>' +
+                '<span class="rf-icon">\u25CF</span>' +
+                '<span>' + escapeHtml(typeof flag === 'object' ? JSON.stringify(flag) : String(flag)) + '</span></div>';
+            });
+            if (flags.length > flagLimit) {
+              html += '<button class="collapse-toggle" onclick="' +
+                "var sec=this.parentElement;var extras=sec.querySelectorAll('[data-rf-extra=\\'1\\']');" +
+                "var show=extras[0].style.display==='none';" +
+                "extras.forEach(function(el){el.style.display=show?'flex':'none'});" +
+                "this.textContent=show?'Show less':'Show " + (flags.length - flagLimit) + " more'" +
+                '">Show ' + (flags.length - flagLimit) + ' more</button>';
+            }
+            html += '</div>';
+          }
+
+          // 3) Verified Picks — notes collapsed by default
+          if (notes.verified_picks && Array.isArray(notes.verified_picks) && notes.verified_picks.length > 0) {
+            html += '<div class="verifier-section vs-picks">' +
+              '<div class="verifier-section-title"><span class="vs-icon">\u2705</span> Verified Picks</div>' +
+              '<div style="display:flex;flex-direction:column;gap:0.5rem">';
+            notes.verified_picks.forEach(function (pick) {
+              if (typeof pick !== 'object' || pick === null) {
+                html += '<div class="verifier-pick-card">' + escapeHtml(String(pick)) + '</div>';
+                return;
+              }
+              var status = (pick.verification_status || '').toLowerCase();
+              var statusClass = status === 'verified' ? 'verified' : status === 'rejected' ? 'rejected' : 'flagged';
+              var rawConf = pick.adjusted_confidence;
+              var conf = rawConf != null ? (typeof rawConf === 'number' ? (rawConf <= 1 ? (rawConf * 100).toFixed(0) : rawConf.toFixed(0)) + '%' : String(rawConf)) : '';
+              html += '<div class="verifier-pick-card pick-' + statusClass + '">';
+              html += '<div class="verifier-pick-header">';
+              html += '<span style="font-weight:700;font-size:0.9rem">' + escapeHtml(pick.ticker || '???') + '</span>';
+              html += '<span class="status-badge status-' + statusClass + '">' + escapeHtml(status || 'unknown') + '</span>';
+              if (conf) html += '<span style="margin-left:auto;font-weight:600;font-size:0.8rem;color:var(--text-secondary)">' + escapeHtml(conf) + '</span>';
+              html += '</div>';
+              if (pick.engines_agreeing && pick.engines_agreeing.length) {
+                html += '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem">';
+                pick.engines_agreeing.forEach(function (eng) {
+                  html += '<span class="engine-dot">' + escapeHtml(String(eng)) + '</span>';
+                });
+                html += '</div>';
+              }
+              if (pick.notes) {
+                var noteId = 'pn-' + Math.random().toString(36).substr(2, 6);
+                html += '<div class="collapsible-text collapsed" id="' + noteId + '" style="margin-top:0.35rem">' +
+                  escapeHtml(String(pick.notes)) + '</div>' +
+                  '<button class="collapse-toggle" onclick="' +
+                  "var el=document.getElementById('" + noteId + "');" +
+                  "var c=el.classList.toggle('collapsed');" +
+                  "this.textContent=c?'Show more':'Show less'" +
+                  '">Show more</button>';
+              }
+              html += '</div>';
+            });
+            html += '</div></div>';
+          }
+
+          // 4) Weight Adjustments — reasons collapsed by default
+          if (notes.weight_adjustments && typeof notes.weight_adjustments === 'object' && !Array.isArray(notes.weight_adjustments)) {
+            var wa = notes.weight_adjustments;
+            var waKeys = Object.keys(wa);
+            if (waKeys.length > 0) {
+              html += '<div class="verifier-section vs-weights">' +
+                '<div class="verifier-section-title"><span class="vs-icon">\u2696\uFE0F</span> Weight Adjustments</div>' +
+                '<div style="display:flex;flex-direction:column;gap:0.4rem">';
+              waKeys.forEach(function (engine) {
+                var adj = wa[engine];
                 if (typeof adj !== 'object' || adj === null) {
-                  notesHtml += '<div class="weight-adj-row"><span>' + escapeHtml(engine) + ': ' + escapeHtml(String(adj)) + '</span></div>';
+                  html += '<div class="weight-adj-row"><span>' + escapeHtml(engine) + ': ' + escapeHtml(String(adj)) + '</span></div>';
                   return;
                 }
                 var mult = adj.weight_multiplier != null ? Number(adj.weight_multiplier) : null;
                 var multText = mult != null ? mult.toFixed(2) + 'x' : '?';
                 var multClass = mult === 0 ? 'mult-zero' : mult != null && mult < 0.5 ? 'mult-low' : mult != null && mult < 1 ? 'mult-mid' : 'mult-full';
                 var engineLabel = engine.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-                notesHtml += '<div class="weight-adj-row">';
-                notesHtml += '<span class="weight-adj-engine">' + escapeHtml(engineLabel) + '</span>';
-                notesHtml += '<span class="weight-adj-mult ' + multClass + '">' + escapeHtml(multText) + '</span>';
-                if (adj.reason) notesHtml += '<span class="weight-adj-reason">' + escapeHtml(String(adj.reason)) + '</span>';
-                notesHtml += '</div>';
+                html += '<div class="weight-adj-row">';
+                html += '<span class="weight-adj-engine">' + escapeHtml(engineLabel) + '</span>';
+                html += '<span class="weight-adj-mult ' + multClass + '">' + escapeHtml(multText) + '</span>';
+                if (adj.reason) {
+                  var reasonId = 'wr-' + Math.random().toString(36).substr(2, 6);
+                  html += '<span class="collapsible-text collapsed weight-adj-reason" id="' + reasonId + '">' + escapeHtml(String(adj.reason)) + '</span>' +
+                    '<button class="collapse-toggle" onclick="' +
+                    "var el=document.getElementById('" + reasonId + "');" +
+                    "var c=el.classList.toggle('collapsed');" +
+                    "this.textContent=c?'Show more':'Show less'" +
+                    '">Show more</button>';
+                }
+                html += '</div>';
               });
-              notesHtml += '</div>';
+              html += '</div></div>';
+            }
+          }
 
-            } else if (Array.isArray(val)) {
-              // Generic array — string bullets
-              notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
+          // 5) Regime Recommendation — styled callout
+          if (notes.regime_recommendation) {
+            html += '<div class="verifier-section vs-regime">' +
+              '<div class="verifier-section-title"><span class="vs-icon">\uD83E\uDDED</span> Regime Recommendation</div>' +
+              '<div class="regime-callout">' + escapeHtml(String(notes.regime_recommendation)) + '</div></div>';
+          }
+
+          // Fallback: any remaining keys not handled above
+          Object.keys(notes).forEach(function (key) {
+            if (['summary', 'red_flags', 'verified_picks', 'weight_adjustments', 'regime_recommendation'].indexOf(key) !== -1) return;
+            var val = notes[key];
+            var label = key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+            html += '<div class="verifier-section">' +
+              '<div class="verifier-section-title">' + escapeHtml(label) + '</div>' +
+              '<div style="font-size:0.8rem;line-height:1.5;color:var(--text-secondary)">';
+            if (Array.isArray(val)) {
               val.forEach(function (item) {
-                notesHtml += '<li>' + escapeHtml(typeof item === 'object' ? JSON.stringify(item) : String(item)) + '</li>';
+                html += '<div style="margin-bottom:0.25rem">\u2022 ' + escapeHtml(typeof item === 'object' ? JSON.stringify(item) : String(item)) + '</div>';
               });
-              notesHtml += '</ul>';
             } else if (typeof val === 'object' && val !== null) {
-              // Generic object — key/value bullets
-              notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
               Object.keys(val).forEach(function (k) {
                 var v = val[k];
-                var subLabel = k.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-                notesHtml += '<li>' + escapeHtml(subLabel) + ': ' + escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v)) + '</li>';
+                var sub = k.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+                html += '<div style="margin-bottom:0.25rem"><strong>' + escapeHtml(sub) + ':</strong> ' + escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v)) + '</div>';
               });
-              notesHtml += '</ul>';
             } else {
-              notesHtml += '<div style="margin-bottom:0.25rem"><strong>' + escapeHtml(label) + ':</strong> ' + escapeHtml(String(val)) + '</div>';
+              html += escapeHtml(String(val));
             }
+            html += '</div></div>';
           });
+
         } else {
-          notesHtml = '<p>' + escapeHtml(String(notes)) + '</p>';
+          // Plain string fallback
+          html += '<div class="verifier-section vs-summary">' +
+            '<div class="verifier-section-title"><span class="vs-icon">\uD83D\uDD0D</span> Verifier Notes</div>' +
+            '<div class="summary-callout">' + escapeHtml(String(notes)) + '</div></div>';
         }
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.5rem">Verifier Notes</div>' +
-          '<div style="font-size:0.85rem;line-height:1.7;color:var(--text-secondary)">' +
-          notesHtml + '</div></div>';
       }
 
       view.innerHTML = html;
