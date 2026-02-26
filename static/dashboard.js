@@ -792,7 +792,8 @@
                 }
                 var status = (pick.verification_status || '').toLowerCase();
                 var statusClass = status === 'verified' ? 'verified' : status === 'rejected' ? 'rejected' : 'flagged';
-                var conf = pick.adjusted_confidence != null ? (typeof pick.adjusted_confidence === 'number' ? (pick.adjusted_confidence * 100).toFixed(0) + '%' : String(pick.adjusted_confidence)) : '';
+                var rawConf = pick.adjusted_confidence;
+                var conf = rawConf != null ? (typeof rawConf === 'number' ? (rawConf <= 1 ? (rawConf * 100).toFixed(0) : rawConf.toFixed(0)) + '%' : String(rawConf)) : '';
                 notesHtml += '<div class="verifier-pick-card pick-' + statusClass + '">';
                 notesHtml += '<div class="verifier-pick-header">';
                 notesHtml += '<span style="font-weight:700;font-size:0.9rem">' + escapeHtml(pick.ticker || '???') + '</span>';
