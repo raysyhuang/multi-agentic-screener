@@ -962,6 +962,116 @@ body {
   .weight-adj-engine { min-width: auto; }
 }
 
+/* ---- Verifier Sub-Sections ---- */
+
+.verifier-section {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 1.25rem 1.5rem;
+  margin-bottom: 0.75rem;
+  box-shadow: var(--card-shadow);
+  border-left: 4px solid var(--slate-300);
+}
+
+.verifier-section.vs-summary    { border-left-color: var(--teal-500); }
+.verifier-section.vs-red-flags  { border-left-color: var(--red); }
+.verifier-section.vs-picks      { border-left-color: var(--slate-300); }
+.verifier-section.vs-weights    { border-left-color: var(--slate-300); }
+.verifier-section.vs-regime     { border-left-color: var(--blue); }
+
+.verifier-section-title {
+  display: flex;
+  align-items: center;
+  gap: 0.4rem;
+  font-weight: 700;
+  font-size: 0.85rem;
+  margin-bottom: 0.6rem;
+  color: var(--text);
+}
+
+.verifier-section-title .vs-icon {
+  font-size: 0.95rem;
+  flex-shrink: 0;
+}
+
+.red-flag-item {
+  display: flex;
+  align-items: flex-start;
+  gap: 0.5rem;
+  padding: 0.45rem 0.65rem;
+  border-radius: 8px;
+  background: var(--red-soft);
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  margin-bottom: 0.35rem;
+}
+
+.red-flag-item .rf-icon {
+  flex-shrink: 0;
+  color: var(--red);
+  font-size: 0.8rem;
+  margin-top: 0.1rem;
+}
+
+.collapse-toggle {
+  background: none;
+  border: 1px solid var(--card-border);
+  border-radius: 6px;
+  padding: 0.15rem 0.6rem;
+  cursor: pointer;
+  color: var(--text-secondary);
+  font-size: 0.7rem;
+  font-weight: 500;
+  margin-top: 0.35rem;
+  transition: background 0.15s ease;
+}
+.collapse-toggle:hover {
+  background: var(--gradient-brand-soft);
+}
+
+.collapsible-text {
+  font-size: 0.8rem;
+  line-height: 1.5;
+  color: var(--text-secondary);
+  overflow: hidden;
+}
+.collapsible-text.collapsed {
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
+.red-flags-count {
+  font-size: 0.65rem;
+  font-weight: 600;
+  background: var(--red-soft);
+  color: var(--red);
+  padding: 0.1rem 0.45rem;
+  border-radius: 10px;
+}
+
+.regime-callout {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  font-style: italic;
+  padding: 0.25rem 0;
+}
+
+.summary-callout {
+  font-size: 0.85rem;
+  line-height: 1.7;
+  color: var(--text-secondary);
+  font-style: italic;
+}
+
+@media (max-width: 768px) {
+  .verifier-section { padding: 1rem; }
+}
+
 /* ---- Strategy Matrix & Engine Ranking ---- */
 
 .strategy-matrix td {
