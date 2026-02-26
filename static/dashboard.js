@@ -780,13 +780,70 @@
           Object.keys(notes).forEach(function (key) {
             var val = notes[key];
             var label = key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-            if (Array.isArray(val)) {
+
+            if (key === 'verified_picks' && Array.isArray(val)) {
+              // Structured ticker cards for verified picks
+              notesHtml += '<div style="margin-bottom:0.75rem"><strong>' + escapeHtml(label) + ':</strong></div>';
+              notesHtml += '<div style="display:flex;flex-direction:column;gap:0.5rem;margin-bottom:0.75rem">';
+              val.forEach(function (pick) {
+                if (typeof pick !== 'object' || pick === null) {
+                  notesHtml += '<div class="verifier-pick-card"><li>' + escapeHtml(String(pick)) + '</li></div>';
+                  return;
+                }
+                var status = (pick.verification_status || '').toLowerCase();
+                var statusClass = status === 'verified' ? 'verified' : status === 'rejected' ? 'rejected' : 'flagged';
+                var conf = pick.adjusted_confidence != null ? (typeof pick.adjusted_confidence === 'number' ? (pick.adjusted_confidence * 100).toFixed(0) + '%' : String(pick.adjusted_confidence)) : '';
+                notesHtml += '<div class="verifier-pick-card pick-' + statusClass + '">';
+                notesHtml += '<div class="verifier-pick-header">';
+                notesHtml += '<span style="font-weight:700;font-size:0.9rem">' + escapeHtml(pick.ticker || '???') + '</span>';
+                notesHtml += '<span class="status-badge status-' + statusClass + '">' + escapeHtml(status || 'unknown') + '</span>';
+                if (conf) notesHtml += '<span style="margin-left:auto;font-weight:600;font-size:0.8rem;color:var(--text-secondary)">' + escapeHtml(conf) + '</span>';
+                notesHtml += '</div>';
+                if (pick.engines_agreeing && pick.engines_agreeing.length) {
+                  notesHtml += '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem">';
+                  pick.engines_agreeing.forEach(function (eng) {
+                    notesHtml += '<span class="engine-dot">' + escapeHtml(String(eng)) + '</span>';
+                  });
+                  notesHtml += '</div>';
+                }
+                if (pick.notes) {
+                  notesHtml += '<div style="margin-top:0.35rem;font-size:0.8rem;line-height:1.5;color:var(--text-secondary)">' + escapeHtml(String(pick.notes)) + '</div>';
+                }
+                notesHtml += '</div>';
+              });
+              notesHtml += '</div>';
+
+            } else if (key === 'weight_adjustments' && typeof val === 'object' && val !== null && !Array.isArray(val)) {
+              // Structured rows for weight adjustments
+              notesHtml += '<div style="margin-bottom:0.75rem"><strong>' + escapeHtml(label) + ':</strong></div>';
+              notesHtml += '<div style="display:flex;flex-direction:column;gap:0.4rem;margin-bottom:0.75rem">';
+              Object.keys(val).forEach(function (engine) {
+                var adj = val[engine];
+                if (typeof adj !== 'object' || adj === null) {
+                  notesHtml += '<div class="weight-adj-row"><span>' + escapeHtml(engine) + ': ' + escapeHtml(String(adj)) + '</span></div>';
+                  return;
+                }
+                var mult = adj.weight_multiplier != null ? Number(adj.weight_multiplier) : null;
+                var multText = mult != null ? mult.toFixed(2) + 'x' : '?';
+                var multClass = mult === 0 ? 'mult-zero' : mult != null && mult < 0.5 ? 'mult-low' : mult != null && mult < 1 ? 'mult-mid' : 'mult-full';
+                var engineLabel = engine.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
+                notesHtml += '<div class="weight-adj-row">';
+                notesHtml += '<span class="weight-adj-engine">' + escapeHtml(engineLabel) + '</span>';
+                notesHtml += '<span class="weight-adj-mult ' + multClass + '">' + escapeHtml(multText) + '</span>';
+                if (adj.reason) notesHtml += '<span class="weight-adj-reason">' + escapeHtml(String(adj.reason)) + '</span>';
+                notesHtml += '</div>';
+              });
+              notesHtml += '</div>';
+
+            } else if (Array.isArray(val)) {
+              // Generic array — string bullets
               notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
               val.forEach(function (item) {
                 notesHtml += '<li>' + escapeHtml(typeof item === 'object' ? JSON.stringify(item) : String(item)) + '</li>';
               });
               notesHtml += '</ul>';
             } else if (typeof val === 'object' && val !== null) {
+              // Generic object — key/value bullets
               notesHtml += '<div style="margin-bottom:0.5rem"><strong>' + escapeHtml(label) + ':</strong></div><ul style="margin:0 0 0.5rem 1rem;padding:0">';
               Object.keys(val).forEach(function (k) {
                 var v = val[k];
