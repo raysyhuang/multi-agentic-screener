@@ -20,14 +20,13 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
-import pytest
 
 # ── Make Gemini STST importable ──────────────────────────────────────────
 _GEMINI_ROOT = Path(__file__).resolve().parents[2] / ".." / "Gemini STST"
 if str(_GEMINI_ROOT) not in sys.path:
     sys.path.insert(0, str(_GEMINI_ROOT))
 
-from app.indicators import compute_atr_pct, compute_rsi, compute_sma  # type: ignore[import-untyped]
+from app.indicators import compute_atr_pct, compute_rsi  # type: ignore[import-untyped]  # noqa: E402
 
 
 # ── Helpers ──────────────────────────────────────────────────────────────
