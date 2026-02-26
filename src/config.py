@@ -135,6 +135,7 @@ class Settings(BaseSettings):
     convergence_3_engine_multiplier: float = 1.0
     convergence_4_engine_multiplier: float = 1.0
     convergence_1_engine_multiplier: float = 0.9
+    convergence_sector_multiplier: float = 1.15  # boost when 2+ engines pick same sector
 
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True

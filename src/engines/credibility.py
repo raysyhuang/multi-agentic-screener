@@ -28,6 +28,17 @@ _DEFAULT_UNKNOWN_ENGINE_WEIGHT = 0.3
 
 
 @dataclass
+class PaperTradeStats:
+    """Performance statistics from paper trades (picks not in portfolio)."""
+
+    total: int = 0
+    resolved: int = 0
+    hits: int = 0
+    hit_rate: float = 0.0
+    avg_return_pct: float = 0.0
+
+
+@dataclass
 class EngineStats:
     """Performance statistics for a single engine."""
 
@@ -43,6 +54,7 @@ class EngineStats:
     weight: float = 1.0
     has_enough_data: bool = False
     per_strategy: dict[str, dict] = field(default_factory=dict)
+    paper_trade_stats: PaperTradeStats = field(default_factory=PaperTradeStats)
 
 
 @dataclass
@@ -97,10 +109,12 @@ async def compute_credibility_snapshot() -> CredibilitySnapshot:
         logger.info("No resolved engine outcomes found — all engines get default weight 1.0")
         return snapshot
 
-    # Group by engine
+    # Group by engine — all picks go into by_engine for stats computation.
+    # Paper trades are also tracked separately for reporting.
     by_engine: dict[str, list[dict]] = defaultdict(list)
+    paper_by_engine: dict[str, list[dict]] = defaultdict(list)
     for o in outcomes:
-        by_engine[o.engine_name].append({
+        entry = {
             "ticker": o.ticker,
             "strategy": o.strategy,
             "confidence": o.confidence,
@@ -108,7 +122,11 @@ async def compute_credibility_snapshot() -> CredibilitySnapshot:
             "actual_return_pct": o.actual_return_pct or 0.0,
             "run_date": o.run_date,
             "days_held": o.days_held,
-        })
+            "is_paper_trade": getattr(o, "is_paper_trade", False),
+        }
+        by_engine[o.engine_name].append(entry)
+        if entry["is_paper_trade"]:
+            paper_by_engine[o.engine_name].append(entry)
 
     # Compute per-engine stats
     all_hit_rates: list[float] = []
@@ -129,7 +147,11 @@ async def compute_credibility_snapshot() -> CredibilitySnapshot:
             else 0.0
         )
         stats.brier_score = _compute_brier_score(picks)
-        stats.has_enough_data = stats.resolved_picks >= min_picks
+        # Paper trades count at 0.5x for data maturity assessment
+        paper_count = sum(1 for p in picks if p.get("is_paper_trade"))
+        live_count = stats.resolved_picks - paper_count
+        effective_resolved = live_count + (paper_count * 0.5)
+        stats.has_enough_data = effective_resolved >= min_picks
 
         # Per-strategy breakdown
         by_strategy: dict[str, list[dict]] = defaultdict(list)
@@ -146,6 +168,20 @@ async def compute_credibility_snapshot() -> CredibilitySnapshot:
                 ),
             }
 
+        # Paper trade stats for this engine
+        paper_picks = paper_by_engine.get(engine_name, [])
+        if paper_picks:
+            paper_hits = sum(1 for p in paper_picks if p["hit_target"])
+            stats.paper_trade_stats = PaperTradeStats(
+                total=len(paper_picks),
+                resolved=len(paper_picks),
+                hits=paper_hits,
+                hit_rate=paper_hits / len(paper_picks) if paper_picks else 0.0,
+                avg_return_pct=(
+                    sum(p["actual_return_pct"] for p in paper_picks) / len(paper_picks)
+                ),
+            )
+
         all_hit_rates.append(stats.hit_rate)
         snapshot.engine_stats[engine_name] = stats
 
@@ -160,10 +196,12 @@ async def compute_credibility_snapshot() -> CredibilitySnapshot:
         len(snapshot.engine_stats), snapshot.avg_hit_rate * 100,
     )
     for name, stats in snapshot.engine_stats.items():
+        paper = stats.paper_trade_stats
+        paper_info = f", paper={paper.resolved}({paper.hit_rate*100:.0f}%)" if paper.resolved > 0 else ""
         logger.info(
-            "  %s: hits=%d/%d (%.1f%%), weight=%.2f, brier=%.3f, enough_data=%s",
+            "  %s: hits=%d/%d (%.1f%%), weight=%.2f, brier=%.3f, enough_data=%s%s",
             name, stats.hits, stats.resolved_picks, stats.hit_rate * 100,
-            stats.weight, stats.brier_score, stats.has_enough_data,
+            stats.weight, stats.brier_score, stats.has_enough_data, paper_info,
         )
 
     return snapshot
@@ -176,16 +214,21 @@ def _compute_weight(stats: EngineStats, avg_hit_rate: float) -> float:
 
     Cold-start engines (< min_picks resolved) get a ramped weight:
     weight scales linearly from 0.1 (0 picks) to 1.0 (min_picks).
-    This prevents untested engines from getting equal influence.
+    Paper trades count at 0.5x for data maturity ramp.
     """
     settings = get_settings()
     min_picks = settings.credibility_min_picks_for_weight
 
+    # Effective picks: paper trades count at 0.5x weight
+    paper_count = stats.paper_trade_stats.resolved if stats.paper_trade_stats else 0
+    live_count = stats.resolved_picks - paper_count
+    effective_picks = live_count + (paper_count * 0.5)
+
     if not stats.has_enough_data:
         # Ramp weight linearly: 0 picks → 0.1, min_picks → 1.0
-        if stats.resolved_picks <= 0:
+        if effective_picks <= 0:
             return 0.1
-        ramp = stats.resolved_picks / min_picks  # 0.0 to ~1.0
+        ramp = effective_picks / min_picks  # 0.0 to ~1.0
         return round(max(0.1, min(1.0, ramp)), 3)
 
     base_weight = 1.0
@@ -321,11 +364,16 @@ def compute_weighted_picks(
             ) * p["confidence"],
         )
 
+        # Determine convergence type
+        convergence_type = "ticker" if engine_count >= 2 else "none"
+
         weighted_results.append({
             "ticker": ticker,
+            "sector": best_pick.get("sector", "Unknown"),
             "combined_score": round(combined_score, 2),
             "avg_weighted_confidence": round(avg_weighted_conf, 2),
             "convergence_multiplier": convergence_mult,
+            "convergence_type": convergence_type,
             "engine_count": engine_count,
             "engines": engines_agreeing,
             "strategies": strategies,
@@ -339,6 +387,39 @@ def compute_weighted_picks(
             "thesis": best_pick.get("thesis"),
             "risk_factors": best_pick.get("risk_factors", []),
         })
+
+    # --- Sector convergence pass ---
+    # If 2+ engines pick different tickers in the same sector, apply a
+    # sector convergence multiplier (weaker than ticker convergence).
+    sector_mult = settings.convergence_sector_multiplier
+    if sector_mult > 1.0:
+        # Build sector → set of engines that contributed picks in that sector
+        sector_engines: dict[str, set[str]] = defaultdict(set)
+        for wp in weighted_results:
+            sector = wp.get("sector", "Unknown")
+            if sector and sector != "Unknown":
+                for eng in wp["engines"]:
+                    sector_engines[sector].add(eng)
+
+        # Sectors with multi-engine coverage
+        convergent_sectors = {
+            sector for sector, engines in sector_engines.items()
+            if len(engines) >= 2
+        }
+
+        if convergent_sectors:
+            for wp in weighted_results:
+                sector = wp.get("sector", "Unknown")
+                if sector in convergent_sectors and wp["convergence_type"] == "none":
+                    wp["combined_score"] = round(wp["combined_score"] * sector_mult, 2)
+                    wp["convergence_type"] = "sector"
+                    wp["convergence_multiplier"] = round(
+                        wp["convergence_multiplier"] * sector_mult, 3
+                    )
+            logger.info(
+                "Sector convergence applied: %d sectors with multi-engine coverage: %s",
+                len(convergent_sectors), sorted(convergent_sectors),
+            )
 
     # Sort by combined score descending
     weighted_results.sort(key=lambda x: x["combined_score"], reverse=True)
