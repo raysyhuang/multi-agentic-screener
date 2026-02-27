@@ -311,13 +311,18 @@ async def _evaluate_position(
     max_favorable = (max_price - entry_price) / entry_price * 100
     max_adverse = (min_price - entry_price) / entry_price * 100
 
+    def _clean(v: float) -> float | None:
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return v
+
     from src.utils.trading_calendar import trading_days_between
     days_held = trading_days_between(outcome.entry_date, to_date)
 
     update = {
-        "pnl_pct": round(pnl_pct, 4),
-        "max_favorable": round(max_favorable, 4),
-        "max_adverse": round(max_adverse, 4),
+        "pnl_pct": _clean(round(pnl_pct, 4)),
+        "max_favorable": _clean(round(max_favorable, 4)),
+        "max_adverse": _clean(round(max_adverse, 4)),
     }
 
     # Check exit conditions
