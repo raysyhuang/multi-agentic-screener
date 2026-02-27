@@ -22,6 +22,8 @@ import numpy as np
 import pandas as pd
 import pytest
 
+pytestmark = pytest.mark.sibling_repo
+
 # ── Make Gemini STST importable ──────────────────────────────────────────
 _GEMINI_ROOT = Path(__file__).resolve().parents[2] / ".." / "Gemini STST"
 if not _GEMINI_ROOT.exists():

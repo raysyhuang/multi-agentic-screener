@@ -22,6 +22,8 @@ import sys
 
 import pytest
 
+pytestmark = pytest.mark.sibling_repo
+
 # ── Import KooCore-D's engine_endpoint via absolute path ─────────────────
 # We can't use ``from src.api.engine_endpoint import ...`` because MAS's own
 # ``src/`` package shadows KooCore-D's during full-suite collection.

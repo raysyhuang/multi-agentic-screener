@@ -3,10 +3,35 @@
 from __future__ import annotations
 
 from datetime import date, timedelta
+from pathlib import Path
 
 import numpy as np
 import pandas as pd
 import pytest
+
+# ── Sibling-repo paths (KooCore-D, Gemini STST) ─────────────────────────
+# These repos are expected as siblings of the MAS project root for local
+# cross-engine tests.  In CI they don't exist, so tests importing from
+# them must be skipped.  Two layers of protection:
+#   1. Module-level pytest.skip() guards in each test file (immediate)
+#   2. The @pytest.mark.sibling_repo marker + auto-skip hook below (belt & suspenders)
+
+_PROJECT_ROOT = Path(__file__).resolve().parent.parent
+SIBLING_REPOS = {
+    "KooCore-D": _PROJECT_ROOT / ".." / "KooCore-D",
+    "Gemini STST": _PROJECT_ROOT / ".." / "Gemini STST",
+}
+SIBLING_REPOS_AVAILABLE = all(p.exists() for p in SIBLING_REPOS.values())
+
+
+def pytest_collection_modifyitems(config, items):
+    """Auto-skip @pytest.mark.sibling_repo tests when repos aren't cloned."""
+    if SIBLING_REPOS_AVAILABLE:
+        return
+    skip_marker = pytest.mark.skip(reason="Sibling repos not found (expected in CI)")
+    for item in items:
+        if "sibling_repo" in item.keywords:
+            item.add_marker(skip_marker)
 
 
 @pytest.fixture
