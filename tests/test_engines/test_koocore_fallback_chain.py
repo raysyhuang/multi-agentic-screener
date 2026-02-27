@@ -28,6 +28,11 @@ import pytest
 _KOOCORE_MODULE_PATH = (
     Path(__file__).resolve().parents[2] / ".." / "KooCore-D" / "src" / "api" / "engine_endpoint.py"
 )
+if not _KOOCORE_MODULE_PATH.exists():
+    pytest.skip(
+        "KooCore-D sibling repo not found (expected in CI)",
+        allow_module_level=True,
+    )
 _spec = importlib.util.spec_from_file_location("koocore_engine_endpoint", _KOOCORE_MODULE_PATH)
 _mod = importlib.util.module_from_spec(_spec)  # type: ignore[arg-type]
 sys.modules["koocore_engine_endpoint"] = _mod

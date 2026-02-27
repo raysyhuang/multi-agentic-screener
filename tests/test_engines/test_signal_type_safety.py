@@ -20,9 +20,15 @@ from pathlib import Path
 
 import numpy as np
 import pandas as pd
+import pytest
 
 # ── Make Gemini STST importable ──────────────────────────────────────────
 _GEMINI_ROOT = Path(__file__).resolve().parents[2] / ".." / "Gemini STST"
+if not _GEMINI_ROOT.exists():
+    pytest.skip(
+        "Gemini STST sibling repo not found (expected in CI)",
+        allow_module_level=True,
+    )
 if str(_GEMINI_ROOT) not in sys.path:
     sys.path.insert(0, str(_GEMINI_ROOT))
 
