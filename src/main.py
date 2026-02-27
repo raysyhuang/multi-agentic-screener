@@ -2837,6 +2837,33 @@ async def run_evening_collection() -> None:
     except Exception as e:
         logger.warning("Failed to load today's screener context: %s", e)
 
+    # Fallback: derive regime from engine-reported regimes when DailyRun is missing
+    if regime_context["regime"] == "unknown":
+        try:
+            from src.db.models import ExternalEngineResult
+
+            async with get_session() as session:
+                engine_rows = await session.execute(
+                    select(ExternalEngineResult.regime)
+                    .where(
+                        ExternalEngineResult.run_date == context_date,
+                        ExternalEngineResult.status == "success",
+                        ExternalEngineResult.regime.isnot(None),
+                    )
+                )
+                engine_regimes = [r[0].lower() for r in engine_rows.all() if r[0]]
+                if engine_regimes:
+                    from collections import Counter
+                    regime_votes = Counter(engine_regimes)
+                    consensus_regime = regime_votes.most_common(1)[0][0]
+                    logger.info(
+                        "Regime fallback from %d engine(s): %s (votes: %s)",
+                        len(engine_regimes), consensus_regime, dict(regime_votes),
+                    )
+                    regime_context["regime"] = consensus_regime
+        except Exception as e:
+            logger.warning("Failed engine-regime fallback: %s", e)
+
     if regime_context["regime"] == "unknown" or not screener_picks:
         logger.warning(
             "Evening collection running with incomplete morning context: "

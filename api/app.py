@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 import glob
+import math
 import re
 from collections import Counter
 from contextlib import asynccontextmanager
@@ -603,6 +604,15 @@ async def list_runs(limit: int = Query(default=30, le=100)):
     ]
 
 
+def _safe_float(val: float | None) -> float | None:
+    """Convert NaN/inf to None for JSON-safe serialization."""
+    if val is None:
+        return None
+    if math.isnan(val) or math.isinf(val):
+        return None
+    return val
+
+
 @app.get("/api/outcomes")
 async def list_outcomes(
     date_from: str | None = Query(default=None, description="YYYY-MM-DD"),
@@ -644,13 +654,13 @@ async def list_outcomes(
         {
             "ticker": outcome.ticker,
             "entry_date": str(outcome.entry_date),
-            "entry_price": outcome.entry_price,
+            "entry_price": _safe_float(outcome.entry_price),
             "exit_date": str(outcome.exit_date) if outcome.exit_date else None,
-            "exit_price": outcome.exit_price,
+            "exit_price": _safe_float(outcome.exit_price),
             "exit_reason": outcome.exit_reason,
-            "pnl_pct": outcome.pnl_pct,
-            "max_favorable": outcome.max_favorable,
-            "max_adverse": outcome.max_adverse,
+            "pnl_pct": _safe_float(outcome.pnl_pct),
+            "max_favorable": _safe_float(outcome.max_favorable),
+            "max_adverse": _safe_float(outcome.max_adverse),
             "still_open": outcome.still_open,
             "signal_model": signal.signal_model,
             "regime": signal.regime,
@@ -679,11 +689,11 @@ async def ticker_outcomes(ticker: str):
     return [
         {
             "entry_date": str(o.entry_date),
-            "entry_price": o.entry_price,
+            "entry_price": _safe_float(o.entry_price),
             "exit_date": str(o.exit_date) if o.exit_date else None,
-            "exit_price": o.exit_price,
+            "exit_price": _safe_float(o.exit_price),
             "exit_reason": o.exit_reason,
-            "pnl_pct": o.pnl_pct,
+            "pnl_pct": _safe_float(o.pnl_pct),
             "still_open": o.still_open,
             "signal_model": s.signal_model,
             "regime": s.regime,
