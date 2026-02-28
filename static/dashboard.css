@@ -452,6 +452,7 @@ body {
 .badge-bull { background: var(--green-soft); color: var(--green); }
 .badge-bear { background: var(--red-soft); color: var(--red); }
 .badge-choppy { background: var(--amber-soft); color: var(--amber); }
+.badge-unknown { background: var(--text-muted); color: #fff; opacity: 0.7; }
 
 /* ---- Cross-Engine Tab ---- */
 

@@ -131,6 +131,12 @@ if STATIC_DIR.is_dir():
     app.mount("/static", StaticFiles(directory=str(STATIC_DIR)), name="static")
 
 
+@app.get("/favicon.ico", include_in_schema=False)
+async def favicon():
+    """Return 204 No Content to silence favicon 404s."""
+    return Response(status_code=204)
+
+
 @app.get("/", response_class=HTMLResponse)
 async def index():
     """Serve the dashboard as the main entry page."""
@@ -1339,7 +1345,7 @@ async def cross_engine_convergence(date_str: str):
 
     return {
         "date": date_str,
-        "total_engines": len(rows),
+        "total_engines": len({r.engine_name for r in rows}),
         "convergent_tickers": convergent,
         "all_tickers": {t: e for t, e in ticker_engines.items()},
     }

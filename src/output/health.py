@@ -134,7 +134,7 @@ async def compute_health_card(
     entry_price = outcome.entry_price
     current_price = feat.get("close", entry_price)
 
-    days_held = (today - outcome.entry_date).days
+    days_held = max(0, (today - outcome.entry_date).days)
 
     # Excursion tracking
     if "date" in df.columns:
