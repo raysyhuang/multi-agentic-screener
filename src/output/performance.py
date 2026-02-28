@@ -287,6 +287,10 @@ async def _evaluate_position(
     from src.output.health import HISTORY_LOOKBACK_DAYS
 
     to_date = date.today()
+
+    # Guard: skip evaluation if market date hasn't reached entry yet (e.g. weekend signal)
+    if to_date < outcome.entry_date:
+        return {}, None
     from_date = outcome.entry_date - timedelta(days=HISTORY_LOOKBACK_DAYS)
     df = await aggregator.get_ohlcv(outcome.ticker, from_date, to_date)
 
@@ -368,6 +372,8 @@ async def _evaluate_position(
 
 async def record_new_signals(pipeline_results: list[dict]) -> None:
     """Record new approved signals as outcomes for tracking."""
+    from src.utils.trading_calendar import next_trading_day
+
     async with get_session() as session:
         for result in pipeline_results:
             signal_id = result.get("signal_id")
@@ -377,7 +383,7 @@ async def record_new_signals(pipeline_results: list[dict]) -> None:
             outcome = Outcome(
                 signal_id=signal_id,
                 ticker=result["ticker"],
-                entry_date=result.get("entry_date", date.today() + timedelta(days=1)),
+                entry_date=result.get("entry_date", next_trading_day(date.today())),
                 entry_price=result["entry_price"],
                 still_open=True,
             )
