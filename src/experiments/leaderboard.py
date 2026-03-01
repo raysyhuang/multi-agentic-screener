@@ -3,6 +3,9 @@
 Composite = 0.30*sharpe + 0.20*profit_factor + 0.20*win_rate
           + 0.15*calmar + 0.15*avg_return  (min-max normalized)
 
+Deflated Sharpe Ratio (Bailey & López de Prado) penalizes for multiple
+testing — critical since we run 20+ tracks simultaneously.
+
 Tracks with < 5 resolved picks are flagged as 'insufficient data'.
 """
 
@@ -14,7 +17,7 @@ from datetime import date, timedelta
 
 from sqlalchemy import select, and_, func
 
-from src.backtest.metrics import compute_metrics
+from src.backtest.metrics import compute_metrics, deflated_sharpe_ratio
 from src.db.models import ShadowTrack, ShadowTrackPick, ShadowTrackSnapshot
 from src.db.session import get_session
 
@@ -33,6 +36,7 @@ class TrackScorecard:
     generation: int
     parent_track: str | None
     config: dict
+    description: str | None = None
 
     # Metrics
     total_picks: int = 0
@@ -45,6 +49,9 @@ class TrackScorecard:
     calmar_ratio: float = 0.0
     profit_factor: float = 0.0
     max_drawdown_pct: float = 0.0
+
+    # DSR — probability the Sharpe is real after correcting for multiple testing
+    deflated_sharpe: float = 0.0
 
     # Composite
     composite_score: float = 0.0
@@ -104,6 +111,7 @@ async def compute_leaderboard(lookback_days: int = 14) -> list[TrackScorecard]:
                 generation=track.generation,
                 parent_track=track.parent_track,
                 config=track.config,
+                description=track.description,
                 total_picks=total_picks,
                 resolved_picks=len(resolved),
                 has_sufficient_data=len(resolved) >= MIN_RESOLVED_FOR_RANKING,
@@ -123,8 +131,24 @@ async def compute_leaderboard(lookback_days: int = 14) -> list[TrackScorecard]:
                     sc.calmar_ratio = metrics.calmar_ratio
                     sc.profit_factor = metrics.profit_factor
                     sc.max_drawdown_pct = metrics.max_drawdown_pct
+                    sc._returns = returns  # stash for DSR computation
 
             scorecards.append(sc)
+
+    # Count total active tracks for DSR multiple-testing correction
+    num_tracks = max(1, len([s for s in scorecards if s.status == "active"]))
+
+    # Compute Deflated Sharpe Ratio for each track
+    for sc in scorecards:
+        returns = getattr(sc, "_returns", None)
+        if returns and sc.sharpe_ratio > 0 and len(returns) >= 10:
+            sc.deflated_sharpe = deflated_sharpe_ratio(
+                observed_sharpe=sc.sharpe_ratio,
+                num_trials=num_tracks,
+                returns=returns,
+            )
+        if hasattr(sc, "_returns"):
+            del sc._returns
 
     # Compute composite scores (min-max normalized)
     _compute_composite_scores(scorecards)
@@ -176,13 +200,16 @@ def _compute_composite_scores(scorecards: list[TrackScorecard]) -> None:
         else:
             normalized[metric_name] = [(v - mn) / rng for v in values]
 
-    # Compute weighted composite
+    # Compute weighted composite with DSR penalty
     for i, sc in enumerate(eligible):
-        score = sum(
+        raw_score = sum(
             weights[m] * normalized[m][i]
             for m in weights
         )
-        sc.composite_score = round(score, 4)
+        # DSR penalty: if DSR < 0.50, the Sharpe is likely noise — scale down
+        # DSR >= 0.95 = no penalty; DSR ~0.50 = 25% penalty; DSR ~0 = 50% penalty
+        dsr_factor = 0.5 + 0.5 * min(1.0, sc.deflated_sharpe / 0.95) if sc.deflated_sharpe > 0 else 1.0
+        sc.composite_score = round(raw_score * dsr_factor, 4)
 
 
 def _compute_baseline_deltas(scorecards: list[TrackScorecard]) -> None:

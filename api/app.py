@@ -1670,6 +1670,7 @@ async def tracks_leaderboard(days: int = Query(default=14, ge=1, le=90)):
                 "avg_return_pct": sc.avg_return_pct,
                 "total_return_pct": sc.total_return_pct,
                 "sharpe_ratio": sc.sharpe_ratio,
+                "deflated_sharpe": sc.deflated_sharpe,
                 "profit_factor": sc.profit_factor,
                 "max_drawdown_pct": sc.max_drawdown_pct,
                 "composite_score": sc.composite_score,
@@ -1677,6 +1678,7 @@ async def tracks_leaderboard(days: int = Query(default=14, ge=1, le=90)):
                 "delta_win_rate": sc.delta_win_rate,
                 "delta_avg_return": sc.delta_avg_return,
                 "config": sc.config,
+                "description": sc.description,
             }
             for sc in scorecards
         ],
@@ -1770,15 +1772,30 @@ async def track_equity(name: str):
 
 @app.post("/api/tracks/evolve")
 async def trigger_evolution():
-    """Trigger next evolutionary generation (auth required via middleware)."""
+    """Trigger next evolutionary generation + send Telegram digest (auth required)."""
     from src.experiments.evolution import evolve_tracks
+    from src.output.telegram import send_shadow_tracks_digest
 
     offspring = await evolve_tracks()
+
+    # Send digest after evolution
+    digest_sent = await send_shadow_tracks_digest(lookback_days=30)
+
     return {
         "status": "ok",
         "new_tracks": len(offspring),
         "offspring": offspring,
+        "digest_sent": digest_sent,
     }
+
+
+@app.post("/api/tracks/digest")
+async def send_tracks_digest(days: int = Query(default=14, ge=1, le=90)):
+    """Send a shadow tracks Telegram digest (auth required via middleware)."""
+    from src.output.telegram import send_shadow_tracks_digest
+
+    sent = await send_shadow_tracks_digest(lookback_days=days)
+    return {"status": "sent" if sent else "skipped", "lookback_days": days}
 
 
 @app.post("/api/tracks/{name}/promote")

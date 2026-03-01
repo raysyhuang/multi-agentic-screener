@@ -2041,6 +2041,10 @@
   // -----------------------------------------------------------------------
   var tracksDaysSelect = 14;
   var tracksEquityChart = null;
+  var tracksStatusFilter = 'all';
+  var tracksSortCol = 'composite_score';
+  var tracksSortAsc = false;
+  var tracksData = null;  // cached for re-sorting/filtering
 
   function loadTracks() {
     showSpinner('tracks-view');
@@ -2051,101 +2055,233 @@
         return;
       }
 
-      var html = '<div class="section-header">'
-        + '<h2>Shadow Tracks — Parallel Parameter Experiments</h2>'
-        + '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;">'
-        + '<label style="font-size:0.85rem;color:var(--muted);">Lookback:</label>'
-        + '<select id="tracks-days-select" style="background:var(--card-bg);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;">'
-        + '<option value="7"' + (tracksDaysSelect === 7 ? ' selected' : '') + '>7 days</option>'
-        + '<option value="14"' + (tracksDaysSelect === 14 ? ' selected' : '') + '>14 days</option>'
-        + '<option value="30"' + (tracksDaysSelect === 30 ? ' selected' : '') + '>30 days</option>'
-        + '</select></div></div>';
-
-      // Leaderboard table
-      html += '<div class="card" style="overflow-x:auto;"><table class="data-table" style="width:100%;">'
-        + '<thead><tr>'
-        + '<th>#</th><th>Track</th><th>Gen</th><th>Status</th>'
-        + '<th>Picks</th><th>Resolved</th><th>Win Rate</th><th>Avg Ret</th>'
-        + '<th>Sharpe</th><th>PF</th><th>Max DD</th><th>Composite</th>'
-        + '<th>\u0394 Sharpe</th><th>\u0394 WR</th>'
-        + '</tr></thead><tbody>';
-
-      data.tracks.forEach(function (t, i) {
-        var statusBadge = t.status === 'active' ? '<span class="badge badge-green">active</span>'
-          : t.status === 'eliminated' ? '<span class="badge badge-red">eliminated</span>'
-          : t.status === 'promoted' ? '<span class="badge badge-teal">promoted</span>'
-          : '<span class="badge">' + t.status + '</span>';
-
-        var insufficientClass = t.has_sufficient_data ? '' : ' style="opacity:0.5;"';
-
-        function deltaCell(val) {
-          if (!val && val !== 0) return '<td>—</td>';
-          var cls = val > 0 ? 'pos' : val < 0 ? 'neg' : '';
-          var sign = val > 0 ? '+' : '';
-          return '<td class="' + cls + '">' + sign + (val * 100).toFixed(1) + '%</td>';
-        }
-
-        html += '<tr' + insufficientClass + '>'
-          + '<td>' + (i + 1) + '</td>'
-          + '<td><a href="#" class="track-detail-link" data-track="' + t.name + '">' + t.name + '</a></td>'
-          + '<td>' + t.generation + '</td>'
-          + '<td>' + statusBadge + '</td>'
-          + '<td>' + t.total_picks + '</td>'
-          + '<td>' + t.resolved_picks + '</td>'
-          + '<td>' + (t.win_rate * 100).toFixed(1) + '%</td>'
-          + '<td class="' + (t.avg_return_pct > 0 ? 'pos' : t.avg_return_pct < 0 ? 'neg' : '') + '">'
-          + (t.avg_return_pct > 0 ? '+' : '') + t.avg_return_pct.toFixed(2) + '%</td>'
-          + '<td>' + t.sharpe_ratio.toFixed(2) + '</td>'
-          + '<td>' + t.profit_factor.toFixed(2) + '</td>'
-          + '<td class="neg">' + t.max_drawdown_pct.toFixed(1) + '%</td>'
-          + '<td><strong>' + t.composite_score.toFixed(3) + '</strong></td>'
-          + deltaCell(t.delta_sharpe)
-          + deltaCell(t.delta_win_rate)
-          + '</tr>';
-      });
-
-      html += '</tbody></table></div>';
-
-      // Equity curve chart container
-      html += '<div class="card" style="margin-top:16px;">'
-        + '<h3>Equity Curves</h3>'
-        + '<div id="tracks-equity-chart" style="height:350px;"></div>'
-        + '</div>';
-
-      // Config viewer
-      html += '<div id="track-detail-panel" class="card" style="margin-top:16px;display:none;">'
-        + '<h3 id="track-detail-title">Track Config</h3>'
-        + '<pre id="track-detail-config" style="font-size:0.8rem;overflow-x:auto;"></pre>'
-        + '<div id="track-detail-picks"></div>'
-        + '</div>';
-
-      view.innerHTML = html;
-
-      // Bind lookback selector
-      var sel = document.getElementById('tracks-days-select');
-      if (sel) {
-        sel.addEventListener('change', function () {
-          tracksDaysSelect = parseInt(sel.value);
-          loaded.tracks = false;
-          loadTracks();
-        });
-      }
-
-      // Bind track detail links
-      view.querySelectorAll('.track-detail-link').forEach(function (link) {
-        link.addEventListener('click', function (e) {
-          e.preventDefault();
-          showTrackDetail(link.dataset.track, data.tracks);
-        });
-      });
-
-      // Build equity curves
-      loadTracksEquityCurves(data.tracks);
+      tracksData = data;
+      renderTracksView(view, data);
     }).catch(function (err) {
       document.getElementById('tracks-view').innerHTML =
         '<div class="empty-state"><p>Failed to load tracks: ' + err.message + '</p></div>';
     });
   }
+
+  function renderTracksView(view, data) {
+    var tracks = filterAndSortTracks(data.tracks);
+
+    // Count by status for filter pills
+    var counts = { all: data.tracks.length, active: 0, eliminated: 0, promoted: 0 };
+    data.tracks.forEach(function (t) { if (counts[t.status] !== undefined) counts[t.status]++; });
+
+    var html = '<div class="section-header">'
+      + '<h2>Shadow Tracks</h2>'
+      + '<p style="color:var(--text-secondary);font-size:0.85rem;margin-top:4px;">'
+      + 'Parallel parameter experiments — evolutionary optimization</p></div>';
+
+    // Controls bar: status filters + lookback selector
+    html += '<div class="tracks-controls">'
+      + '<div class="tracks-filters">';
+    ['all', 'active', 'eliminated', 'promoted'].forEach(function (s) {
+      if (s !== 'all' && counts[s] === 0) return;
+      var active = tracksStatusFilter === s ? ' tracks-filter-active' : '';
+      var label = s.charAt(0).toUpperCase() + s.slice(1);
+      html += '<button class="tracks-filter-btn' + active + '" data-filter="' + s + '">'
+        + label + ' <span class="tracks-filter-count">' + counts[s] + '</span></button>';
+    });
+    html += '</div>'
+      + '<select id="tracks-days-select" class="tracks-select">'
+      + '<option value="7"' + (tracksDaysSelect === 7 ? ' selected' : '') + '>7 days</option>'
+      + '<option value="14"' + (tracksDaysSelect === 14 ? ' selected' : '') + '>14 days</option>'
+      + '<option value="30"' + (tracksDaysSelect === 30 ? ' selected' : '') + '>30 days</option>'
+      + '</select></div>';
+
+    // Leaderboard table
+    var cols = [
+      { key: 'rank', label: '#', sortable: false },
+      { key: 'name', label: 'Track', sortable: true },
+      { key: 'generation', label: 'Gen', sortable: true },
+      { key: 'status', label: 'Status', sortable: false },
+      { key: 'total_picks', label: 'Picks', sortable: true },
+      { key: 'resolved_picks', label: 'Resolved', sortable: true },
+      { key: 'win_rate', label: 'Win Rate', sortable: true },
+      { key: 'avg_return_pct', label: 'Avg Ret', sortable: true },
+      { key: 'sharpe_ratio', label: 'Sharpe', sortable: true },
+      { key: 'deflated_sharpe', label: 'DSR', sortable: true },
+      { key: 'profit_factor', label: 'PF', sortable: true },
+      { key: 'max_drawdown_pct', label: 'Max DD', sortable: true },
+      { key: 'composite_score', label: 'Composite', sortable: true },
+      { key: 'delta_sharpe', label: '\u0394 Sharpe', sortable: true },
+      { key: 'delta_win_rate', label: '\u0394 WR', sortable: true },
+    ];
+
+    html += '<div class="card tracks-table-wrap"><table class="data-table tracks-table"><thead><tr>';
+    cols.forEach(function (c) {
+      if (c.sortable) {
+        var arrow = tracksSortCol === c.key ? (tracksSortAsc ? ' \u25B2' : ' \u25BC') : '';
+        html += '<th class="sortable-th" data-sort="' + c.key + '">' + c.label + arrow + '</th>';
+      } else {
+        html += '<th>' + c.label + '</th>';
+      }
+    });
+    html += '</tr></thead><tbody>';
+
+    tracks.forEach(function (t, i) {
+      var statusBadge = t.status === 'active' ? '<span class="badge badge-success">active</span>'
+        : t.status === 'eliminated' ? '<span class="badge badge-failed">eliminated</span>'
+        : t.status === 'promoted' ? '<span class="badge badge-bull">promoted</span>'
+        : '<span class="badge badge-unknown">' + t.status + '</span>';
+
+      var rowClass = t.has_sufficient_data ? '' : ' class="tracks-insufficient"';
+      var genBadge = '<span class="tracks-gen-badge">G' + t.generation + '</span>';
+
+      // DSR indicator
+      var dsrHtml;
+      var dsr = t.deflated_sharpe || 0;
+      if (!t.has_sufficient_data) {
+        dsrHtml = '<span class="tracks-dsr tracks-dsr-na" title="Insufficient data">--</span>';
+      } else if (dsr >= 0.95) {
+        dsrHtml = '<span class="tracks-dsr tracks-dsr-strong" title="DSR ' + dsr.toFixed(2) + '">' + dsr.toFixed(2) + '</span>';
+      } else if (dsr >= 0.50) {
+        dsrHtml = '<span class="tracks-dsr tracks-dsr-ok" title="DSR ' + dsr.toFixed(2) + '">' + dsr.toFixed(2) + '</span>';
+      } else {
+        dsrHtml = '<span class="tracks-dsr tracks-dsr-weak" title="DSR ' + dsr.toFixed(2) + ' — likely noise">' + dsr.toFixed(2) + '</span>';
+      }
+
+      // Composite score with color gradient
+      var composite = t.composite_score || 0;
+      var compositeColor = compositeScoreColor(composite, tracks);
+
+      html += '<tr' + rowClass + '>'
+        + '<td>' + (i + 1) + '</td>'
+        + '<td><a href="#" class="track-detail-link" data-track="' + t.name + '">' + t.name + '</a></td>'
+        + '<td>' + genBadge + '</td>'
+        + '<td>' + statusBadge + '</td>'
+        + '<td>' + t.total_picks + '</td>'
+        + '<td>' + t.resolved_picks + '</td>'
+        + '<td>' + fmtPctSafe(t.win_rate) + '</td>'
+        + '<td class="' + posNegClass(t.avg_return_pct) + '">'
+        + signedPct(t.avg_return_pct) + '</td>'
+        + '<td>' + fmtNum(t.sharpe_ratio) + '</td>'
+        + '<td>' + dsrHtml + '</td>'
+        + '<td>' + fmtNum(t.profit_factor) + '</td>'
+        + '<td class="negative">' + fmtNum(t.max_drawdown_pct) + '%</td>'
+        + '<td><span class="tracks-composite" style="background:' + compositeColor + ';">'
+        + composite.toFixed(3) + '</span></td>'
+        + tracksDeltaCell(t.delta_sharpe)
+        + tracksDeltaCell(t.delta_win_rate)
+        + '</tr>';
+    });
+
+    html += '</tbody></table></div>';
+
+    // Equity curve chart container
+    html += '<div class="card" style="margin-top:16px;">'
+      + '<h3 style="margin-bottom:8px;">Equity Curves</h3>'
+      + '<div id="tracks-equity-chart" style="height:350px;"></div>'
+      + '</div>';
+
+    // Config viewer / detail panel
+    html += '<div id="track-detail-panel" class="card tracks-detail-panel">'
+      + '<div class="tracks-detail-header">'
+      + '<h3 id="track-detail-title">Track Config</h3>'
+      + '<button id="track-detail-close" class="tracks-detail-close">&times;</button>'
+      + '</div>'
+      + '<pre id="track-detail-config" class="tracks-config-pre"></pre>'
+      + '<div id="track-detail-picks"></div>'
+      + '</div>';
+
+    view.innerHTML = html;
+
+    // Bind lookback selector
+    var sel = document.getElementById('tracks-days-select');
+    if (sel) {
+      sel.addEventListener('change', function () {
+        tracksDaysSelect = parseInt(sel.value);
+        loaded.tracks = false;
+        loadTracks();
+      });
+    }
+
+    // Bind status filter buttons
+    view.querySelectorAll('.tracks-filter-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        tracksStatusFilter = btn.dataset.filter;
+        renderTracksView(view, tracksData);
+      });
+    });
+
+    // Bind sortable headers
+    view.querySelectorAll('.sortable-th').forEach(function (th) {
+      th.addEventListener('click', function () {
+        var col = th.dataset.sort;
+        if (tracksSortCol === col) {
+          tracksSortAsc = !tracksSortAsc;
+        } else {
+          tracksSortCol = col;
+          tracksSortAsc = false;
+        }
+        renderTracksView(view, tracksData);
+      });
+    });
+
+    // Bind track detail links
+    view.querySelectorAll('.track-detail-link').forEach(function (link) {
+      link.addEventListener('click', function (e) {
+        e.preventDefault();
+        showTrackDetail(link.dataset.track, data.tracks);
+      });
+    });
+
+    // Bind detail close button
+    var closeBtn = document.getElementById('track-detail-close');
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function () {
+        document.getElementById('track-detail-panel').style.display = 'none';
+      });
+    }
+
+    // Build equity curves
+    loadTracksEquityCurves(data.tracks);
+  }
+
+  function filterAndSortTracks(tracks) {
+    var filtered = tracks;
+    if (tracksStatusFilter !== 'all') {
+      filtered = tracks.filter(function (t) { return t.status === tracksStatusFilter; });
+    }
+    var col = tracksSortCol;
+    var asc = tracksSortAsc;
+    filtered = filtered.slice().sort(function (a, b) {
+      var va = a[col], vb = b[col];
+      if (typeof va === 'string') {
+        return asc ? va.localeCompare(vb) : vb.localeCompare(va);
+      }
+      va = va || 0; vb = vb || 0;
+      return asc ? va - vb : vb - va;
+    });
+    return filtered;
+  }
+
+  function compositeScoreColor(score, tracks) {
+    // Color gradient: red (0) -> amber (0.3) -> green (0.7+)
+    var maxScore = 0;
+    tracks.forEach(function (t) { if (t.composite_score > maxScore) maxScore = t.composite_score; });
+    if (maxScore === 0) return 'rgba(100,100,100,0.15)';
+    var pct = score / maxScore;
+    if (pct >= 0.7) return 'rgba(34, 197, 94, 0.2)';
+    if (pct >= 0.4) return 'rgba(245, 158, 11, 0.15)';
+    if (pct > 0) return 'rgba(239, 68, 68, 0.15)';
+    return 'rgba(100,100,100,0.1)';
+  }
+
+  function tracksDeltaCell(val) {
+    if (val == null) return '<td class="tracks-delta">--</td>';
+    var cls = val > 0 ? 'positive' : val < 0 ? 'negative' : '';
+    var sign = val > 0 ? '+' : '';
+    return '<td class="tracks-delta ' + cls + '">' + sign + fmtNum(val) + '</td>';
+  }
+
+  function posNegClass(val) { return val > 0 ? 'positive' : val < 0 ? 'negative' : ''; }
+  function signedPct(val) { return (val > 0 ? '+' : '') + fmtNum(val) + '%'; }
+  function fmtNum(v) { return v != null ? v.toFixed(2) : '--'; }
+  function fmtPctSafe(v) { return v != null ? (v * 100).toFixed(1) + '%' : '--'; }
 
   function loadTracksEquityCurves(tracks) {
     var container = document.getElementById('tracks-equity-chart');
@@ -2175,8 +2311,10 @@
     });
 
     Promise.all(promises).then(function (results) {
+      var hasData = false;
       results.forEach(function (eq, i) {
         if (!eq.snapshots || eq.snapshots.length === 0) return;
+        hasData = true;
         var series = tracksEquityChart.addLineSeries({
           color: lineColors[i % lineColors.length],
           lineWidth: 2,
@@ -2187,12 +2325,16 @@
         });
         series.setData(chartData);
       });
-      tracksEquityChart.timeScale().fitContent();
+      if (!hasData) {
+        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem;">No equity data yet — picks need to resolve first.</p>';
+      } else {
+        tracksEquityChart.timeScale().fitContent();
+      }
     });
 
     // Resize handler
     new ResizeObserver(function () {
-      tracksEquityChart.applyOptions({ width: container.clientWidth });
+      if (tracksEquityChart) tracksEquityChart.applyOptions({ width: container.clientWidth });
     }).observe(container);
   }
 
@@ -2204,42 +2346,70 @@
 
     if (!panel) return;
     panel.style.display = 'block';
+    panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
 
     var track = allTracks.find(function (t) { return t.name === trackName; });
-    title.textContent = 'Track: ' + trackName + (track ? ' (gen ' + track.generation + ')' : '');
-    configEl.textContent = track ? JSON.stringify(track.config, null, 2) : '{}';
+    title.textContent = trackName + (track ? ' (Gen ' + track.generation + ')' : '');
+
+    // Format config with syntax highlighting
+    var configJson = track ? JSON.stringify(track.config, null, 2) : '{}';
+    configEl.textContent = configJson;
+
+    // Description
+    var descHtml = '';
+    if (track && track.description) {
+      descHtml = '<p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px;">' + track.description + '</p>';
+    }
+
+    // Scorecard summary
+    if (track) {
+      descHtml += '<div class="tracks-scorecard-row">'
+        + scorecardPill('Win Rate', fmtPctSafe(track.win_rate))
+        + scorecardPill('Sharpe', fmtNum(track.sharpe_ratio))
+        + scorecardPill('DSR', fmtNum(track.deflated_sharpe))
+        + scorecardPill('Profit Factor', fmtNum(track.profit_factor))
+        + scorecardPill('Composite', (track.composite_score || 0).toFixed(3))
+        + '</div>';
+    }
 
     // Load recent picks
-    picksEl.innerHTML = '<div class="spinner">Loading picks...</div>';
+    picksEl.innerHTML = descHtml + '<div class="spinner" style="margin-top:12px;">Loading picks...</div>';
     fetchJSON('/api/tracks/' + encodeURIComponent(trackName) + '/picks?limit=20').then(function (data) {
+      var picksHtml = descHtml;
       if (!data.picks || data.picks.length === 0) {
-        picksEl.innerHTML = '<p style="color:var(--muted);">No picks yet.</p>';
+        picksHtml += '<p style="color:var(--text-muted);margin-top:12px;">No picks yet.</p>';
+        picksEl.innerHTML = picksHtml;
         return;
       }
 
-      var html = '<h4 style="margin-top:12px;">Recent Picks</h4>'
-        + '<table class="data-table" style="width:100%;font-size:0.8rem;"><thead><tr>'
+      picksHtml += '<h4 style="margin-top:16px;margin-bottom:8px;">Recent Picks</h4>'
+        + '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;"><thead><tr>'
         + '<th>Date</th><th>Ticker</th><th>Strategy</th><th>Conf</th><th>Weight</th>'
         + '<th>Return</th><th>Exit</th></tr></thead><tbody>';
 
       data.picks.forEach(function (p) {
-        var retClass = p.actual_return > 0 ? 'pos' : p.actual_return < 0 ? 'neg' : '';
-        html += '<tr>'
+        var retClass = p.actual_return > 0 ? 'positive' : p.actual_return < 0 ? 'negative' : '';
+        picksHtml += '<tr>'
           + '<td>' + p.run_date + '</td>'
           + '<td><strong>' + p.ticker + '</strong></td>'
           + '<td>' + p.strategy + '</td>'
           + '<td>' + (p.confidence || 0).toFixed(1) + '</td>'
           + '<td>' + (p.weight_pct || 0).toFixed(1) + '%</td>'
-          + '<td class="' + retClass + '">' + (p.outcome_resolved ? (p.actual_return > 0 ? '+' : '') + p.actual_return.toFixed(2) + '%' : '—') + '</td>'
-          + '<td>' + (p.exit_reason || '—') + '</td>'
+          + '<td class="' + retClass + '">' + (p.outcome_resolved ? (p.actual_return > 0 ? '+' : '') + p.actual_return.toFixed(2) + '%' : '--') + '</td>'
+          + '<td>' + (p.exit_reason || '--') + '</td>'
           + '</tr>';
       });
 
-      html += '</tbody></table>';
-      picksEl.innerHTML = html;
+      picksHtml += '</tbody></table></div>';
+      picksEl.innerHTML = picksHtml;
     }).catch(function () {
-      picksEl.innerHTML = '<p style="color:var(--muted);">Failed to load picks.</p>';
+      picksEl.innerHTML = descHtml + '<p style="color:var(--text-muted);">Failed to load picks.</p>';
     });
+  }
+
+  function scorecardPill(label, value) {
+    return '<div class="tracks-pill"><span class="tracks-pill-label">' + label + '</span>'
+      + '<span class="tracks-pill-value">' + value + '</span></div>';
   }
 
   // -----------------------------------------------------------------------
