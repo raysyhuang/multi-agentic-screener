@@ -1,7 +1,5 @@
 """Tests for evolution mutation operators."""
 
-import pytest
-
 from src.experiments.evolution import (
     _nudge,
     _crossover,

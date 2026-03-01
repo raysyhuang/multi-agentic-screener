@@ -1,14 +1,9 @@
 """Tests for shadow track config loading and validation."""
 
-from pathlib import Path
 from textwrap import dedent
-
-import pytest
-import yaml
 
 from src.experiments.config import (
     FLAT_OVERRIDE_KEYS,
-    TrackConfig,
     load_tracks_from_yaml,
     validate_overrides,
 )
