@@ -18,7 +18,7 @@ from datetime import date, timedelta
 from sqlalchemy import select, and_, func
 
 from src.backtest.metrics import compute_metrics, deflated_sharpe_ratio
-from src.db.models import ShadowTrack, ShadowTrackPick, ShadowTrackSnapshot
+from src.db.models import ShadowTrack, ShadowTrackPick
 from src.db.session import get_session
 
 logger = logging.getLogger(__name__)

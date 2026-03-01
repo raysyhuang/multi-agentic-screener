@@ -1,13 +1,10 @@
 """Tests for parameterized credibility and ranker functions."""
 
-import pytest
-
 from src.engines.credibility import (
     compute_convergence_multiplier,
     compute_weighted_picks,
     EngineStats,
 )
-from src.signals.ranker import rank_candidates, REGIME_MULTIPLIERS
 
 
 class TestConvergenceMultiplierOverrides:

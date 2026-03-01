@@ -1,7 +1,5 @@
 """Tests for shadow track runner — override application logic."""
 
-import pytest
-
 from src.engines.credibility import EngineStats
 from src.experiments.runner import _run_single_track, _apply_guardian_sizing
 

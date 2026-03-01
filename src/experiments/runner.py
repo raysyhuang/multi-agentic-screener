@@ -7,12 +7,11 @@ All shadow track picks are paper-only.
 
 from __future__ import annotations
 
-import copy
 import logging
 import time
 from datetime import date
 
-from sqlalchemy import select, and_
+from sqlalchemy import select
 from sqlalchemy.dialects.postgresql import insert as pg_insert
 
 from src.config import get_settings

@@ -15,7 +15,6 @@ from __future__ import annotations
 import copy
 import logging
 import random
-from datetime import datetime
 
 import yaml
 from sqlalchemy import select
