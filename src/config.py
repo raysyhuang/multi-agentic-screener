@@ -174,6 +174,9 @@ class Settings(BaseSettings):
     cross_engine_alert_cooldown_hours: int = 4
     engine_drop_alert_cooldown_minutes: int = 60
 
+    # --- Shadow Tracks (parallel parameter experiments) ---
+    shadow_tracks_enabled: bool = False
+
     # --- Regime Strategy Gate ---
     regime_strategy_gate_enabled: bool = True
     regime_gate_bear_blocked_strategies: str = "momentum"

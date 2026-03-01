@@ -2098,6 +2098,16 @@ async def _run_cross_engine_steps(
         # --- Step 11: Resolve previous engine pick outcomes ---
         logger.info("Step 11: Resolving previous engine pick outcomes...")
         feedback = await resolve_engine_outcomes()
+
+        # Resolve shadow track outcomes alongside engine outcomes
+        if settings.shadow_tracks_enabled:
+            try:
+                from src.experiments.outcome_resolver import resolve_shadow_track_outcomes
+                shadow_resolved = await resolve_shadow_track_outcomes()
+                if shadow_resolved:
+                    logger.info("Step 11: resolved %d shadow track picks", shadow_resolved)
+            except Exception as e:
+                logger.error("Shadow track outcome resolution failed (non-fatal): %s", e)
         for fb in feedback:
             logger.info(
                 "Engine feedback — %s: %d resolved, %.0f%% hit rate, avg return %+.1f%%",
@@ -2461,6 +2471,21 @@ async def _run_cross_engine_steps(
                         "Step 13.6: marked %d engine pick(s) as live trades: %s",
                         flipped, sorted(portfolio_tickers),
                     )
+
+        # --- Step 13.7: Shadow tracks (paper-only parallel experiments) ---
+        if settings.shadow_tracks_enabled:
+            try:
+                from src.experiments.runner import run_shadow_tracks
+
+                logger.info("Step 13.7: Running shadow tracks...")
+                await run_shadow_tracks(
+                    all_picks=all_picks,
+                    cred_snapshot_stats=cred_snapshot.engine_stats,
+                    regime_context=regime_context,
+                    run_date=today,
+                )
+            except Exception as e:
+                logger.error("Step 13.7 shadow tracks failed (non-fatal): %s", e, exc_info=True)
 
         # --- Step 14: Save to DB + send Telegram ---
         logger.info("Step 14: Saving synthesis and sending alert...")

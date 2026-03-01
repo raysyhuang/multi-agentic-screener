@@ -1,0 +1,31 @@
+tracks:
+  - name: high_convergence
+    description: "Reward 2-engine agreement more aggressively"
+    overrides:
+      convergence_2_engine_multiplier: 1.5
+      convergence_3_engine_multiplier: 1.2
+
+  - name: tight_guardian
+    description: "Tighter risk management"
+    overrides:
+      guardian_max_drawdown_pct: 15.0
+      guardian_bear_sizing: 0.50
+      guardian_max_portfolio_heat_pct: 8.0
+
+  - name: bull_breakout_boost
+    description: "Amplify breakout in bull regime"
+    overrides:
+      regime_multipliers:
+        bull:
+          breakout: 1.5
+          mean_reversion: 0.7
+
+  - name: quality_floor_45
+    description: "Higher minimum confidence for synthesis"
+    overrides:
+      min_confidence: 45.0
+
+  - name: long_credibility_memory
+    description: "Longer lookback for engine credibility"
+    overrides:
+      credibility_lookback_days: 60
