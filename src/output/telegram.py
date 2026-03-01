@@ -527,3 +527,127 @@ def format_outcome_alert(outcomes: list[dict]) -> str:
             lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% ({_esc(status)})")
 
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Shadow Tracks Digest
+# ---------------------------------------------------------------------------
+
+def format_shadow_tracks_digest(scorecards: list[dict]) -> str:
+    """Format a compact Telegram digest of shadow track performance.
+
+    Args:
+        scorecards: List of TrackScorecard-like dicts from the leaderboard.
+    """
+    lines: list[str] = [
+        "\U0001f9ec <b>Shadow Tracks Digest</b>",
+        _section_line(),
+    ]
+
+    active = [s for s in scorecards if s.get("status") == "active"]
+    if not active:
+        lines.append("No active shadow tracks.")
+        return "\n".join(lines)
+
+    # Summary stats
+    total = len(scorecards)
+    n_active = len(active)
+    n_sufficient = sum(1 for s in active if s.get("has_sufficient_data"))
+    lines.append(f"\U0001f4ca {n_active} active / {total} total | {n_sufficient} with data")
+    lines.append("")
+
+    # Top 5 by composite
+    ranked = sorted(active, key=lambda s: s.get("composite_score", 0), reverse=True)
+    top = ranked[:5]
+
+    lines.append("<b>Leaderboard (top 5):</b>")
+    for i, t in enumerate(top, 1):
+        name = _esc(t.get("name", "?"))
+        sharpe = t.get("sharpe_ratio", 0)
+        wr = t.get("win_rate", 0) * 100
+        avg_ret = t.get("avg_return_pct", 0)
+        composite = t.get("composite_score", 0)
+        dsr = t.get("deflated_sharpe", 0)
+        delta_s = t.get("delta_sharpe", 0)
+
+        medal = ["\U0001f947", "\U0001f948", "\U0001f949", "4\ufe0f\u20e3", "5\ufe0f\u20e3"][i - 1]
+        delta_str = f" ({'+' if delta_s > 0 else ''}{delta_s:.2f})" if delta_s else ""
+
+        lines.append(
+            f"  {medal} <b>{name}</b>"
+        )
+        lines.append(
+            f"     Sharpe {sharpe:.2f}{delta_str} | WR {wr:.0f}% | "
+            f"Avg {avg_ret:+.2f}%"
+        )
+        if dsr > 0:
+            dsr_flag = "\u2705" if dsr >= 0.95 else "\u26a0\ufe0f" if dsr >= 0.50 else "\u274c"
+            lines.append(f"     DSR {dsr:.2f} {dsr_flag} | Composite {composite:.3f}")
+        else:
+            lines.append(f"     Composite {composite:.3f}")
+
+    # Baseline comparison
+    baseline = next((s for s in scorecards if s.get("name") == "_baseline"), None)
+    if baseline and baseline.get("resolved_picks", 0) > 0:
+        lines.append("")
+        lines.append(
+            f"\U0001f3af Baseline: Sharpe {baseline.get('sharpe_ratio', 0):.2f} | "
+            f"WR {baseline.get('win_rate', 0) * 100:.0f}% | "
+            f"Avg {baseline.get('avg_return_pct', 0):+.2f}%"
+        )
+
+    # Best vs worst delta
+    with_delta = [s for s in active if s.get("delta_sharpe") is not None and s.get("has_sufficient_data")]
+    if len(with_delta) >= 2:
+        best = max(with_delta, key=lambda s: s.get("delta_sharpe", 0))
+        worst = min(with_delta, key=lambda s: s.get("delta_sharpe", 0))
+        lines.append("")
+        lines.append(
+            f"\U0001f4c8 Best: {_esc(best['name'])} (+{best['delta_sharpe']:.2f} Sharpe)"
+        )
+        lines.append(
+            f"\U0001f4c9 Worst: {_esc(worst['name'])} ({worst['delta_sharpe']:.2f} Sharpe)"
+        )
+
+    return "\n".join(lines)
+
+
+async def send_shadow_tracks_digest(lookback_days: int = 14) -> bool:
+    """Compute leaderboard and send a Telegram digest.
+
+    Safe to call from the pipeline or from the evolution endpoint.
+    """
+    try:
+        from src.experiments.leaderboard import compute_leaderboard
+
+        scorecards = await compute_leaderboard(lookback_days=lookback_days)
+        if not scorecards:
+            return False
+
+        # Convert dataclass scorecards to dicts for the formatter
+        scorecard_dicts = [
+            {
+                "name": sc.name,
+                "status": sc.status,
+                "generation": sc.generation,
+                "total_picks": sc.total_picks,
+                "resolved_picks": sc.resolved_picks,
+                "has_sufficient_data": sc.has_sufficient_data,
+                "win_rate": sc.win_rate,
+                "avg_return_pct": sc.avg_return_pct,
+                "sharpe_ratio": sc.sharpe_ratio,
+                "deflated_sharpe": sc.deflated_sharpe,
+                "profit_factor": sc.profit_factor,
+                "composite_score": sc.composite_score,
+                "delta_sharpe": sc.delta_sharpe,
+                "delta_win_rate": sc.delta_win_rate,
+                "delta_avg_return": sc.delta_avg_return,
+            }
+            for sc in scorecards
+        ]
+
+        message = format_shadow_tracks_digest(scorecard_dicts)
+        return await send_alert(message)
+    except Exception as e:
+        logger.error("Failed to send shadow tracks digest: %s", e, exc_info=True)
+        return False

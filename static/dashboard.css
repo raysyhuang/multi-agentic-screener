@@ -1181,3 +1181,239 @@ body {
   height: 3px;
   border-radius: 2px;
 }
+
+/* ---- Tracks Tab ---- */
+
+.tracks-controls {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 16px;
+  flex-wrap: wrap;
+}
+
+.tracks-filters {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.tracks-filter-btn {
+  display: inline-flex;
+  align-items: center;
+  gap: 4px;
+  padding: 6px 14px;
+  border: 1px solid var(--card-border);
+  border-radius: 20px;
+  background: var(--card-bg);
+  color: var(--text-secondary);
+  font-size: 0.78rem;
+  font-weight: 500;
+  cursor: pointer;
+  transition: all 0.15s ease;
+}
+
+.tracks-filter-btn:hover {
+  border-color: var(--teal-500);
+  color: var(--text);
+}
+
+.tracks-filter-btn.tracks-filter-active {
+  background: var(--gradient-brand);
+  color: #fff;
+  border-color: transparent;
+}
+
+.tracks-filter-count {
+  font-size: 0.7rem;
+  opacity: 0.7;
+}
+
+.tracks-select {
+  background: var(--card-bg);
+  color: var(--text);
+  border: 1px solid var(--card-border);
+  padding: 6px 12px;
+  border-radius: 8px;
+  font-size: 0.8rem;
+  cursor: pointer;
+}
+
+.tracks-select:focus {
+  outline: 2px solid var(--teal-500);
+  outline-offset: -1px;
+}
+
+.tracks-table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.tracks-table th.sortable-th {
+  cursor: pointer;
+  user-select: none;
+  white-space: nowrap;
+}
+
+.tracks-table th.sortable-th:hover {
+  color: var(--teal-500);
+}
+
+.tracks-insufficient {
+  opacity: 0.45;
+}
+
+.tracks-gen-badge {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 28px;
+  height: 20px;
+  border-radius: 4px;
+  font-size: 0.65rem;
+  font-weight: 700;
+  background: var(--gradient-brand-soft);
+  color: var(--teal-600);
+  letter-spacing: 0.02em;
+}
+
+@media (prefers-color-scheme: dark) {
+  .tracks-gen-badge { color: var(--teal-400); }
+}
+
+.tracks-composite {
+  display: inline-block;
+  padding: 2px 8px;
+  border-radius: 6px;
+  font-weight: 700;
+  font-size: 0.8rem;
+  font-variant-numeric: tabular-nums;
+}
+
+.tracks-delta {
+  font-variant-numeric: tabular-nums;
+  font-size: 0.78rem;
+}
+
+/* DSR indicators */
+.tracks-dsr {
+  display: inline-block;
+  padding: 1px 6px;
+  border-radius: 4px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  font-variant-numeric: tabular-nums;
+}
+
+.tracks-dsr-strong {
+  background: var(--green-soft);
+  color: var(--green);
+}
+
+.tracks-dsr-ok {
+  background: var(--amber-soft);
+  color: var(--amber);
+}
+
+.tracks-dsr-weak {
+  background: var(--red-soft);
+  color: var(--red);
+}
+
+.tracks-dsr-na {
+  color: var(--text-muted);
+  font-weight: 400;
+}
+
+/* Detail panel */
+.tracks-detail-panel {
+  margin-top: 16px;
+  display: none;
+}
+
+.tracks-detail-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 12px;
+}
+
+.tracks-detail-close {
+  background: none;
+  border: none;
+  color: var(--text-muted);
+  font-size: 1.4rem;
+  cursor: pointer;
+  padding: 4px 8px;
+  border-radius: 4px;
+}
+
+.tracks-detail-close:hover {
+  background: var(--card-border);
+  color: var(--text);
+}
+
+.tracks-config-pre {
+  font-size: 0.8rem;
+  overflow-x: auto;
+  background: var(--bg);
+  padding: 12px;
+  border-radius: 8px;
+  border: 1px solid var(--card-border);
+  margin-bottom: 12px;
+}
+
+.tracks-scorecard-row {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.tracks-pill {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 14px;
+  background: var(--gradient-brand-soft);
+  border-radius: 10px;
+  min-width: 80px;
+}
+
+.tracks-pill-label {
+  font-size: 0.65rem;
+  font-weight: 500;
+  color: var(--text-muted);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.tracks-pill-value {
+  font-size: 0.95rem;
+  font-weight: 700;
+  color: var(--text);
+  font-variant-numeric: tabular-nums;
+}
+
+/* Responsive: stack controls on mobile */
+@media (max-width: 640px) {
+  .tracks-controls {
+    flex-direction: column;
+    align-items: stretch;
+  }
+  .tracks-filters {
+    justify-content: center;
+  }
+  .tracks-table {
+    font-size: 0.72rem;
+  }
+  .tracks-table th,
+  .tracks-table td {
+    padding: 0.5rem 0.4rem;
+  }
+  .tracks-scorecard-row {
+    justify-content: center;
+  }
+}

@@ -69,6 +69,17 @@ async def run_shadow_tracks(
     baseline_picks = compute_weighted_picks(all_picks, cred_snapshot_stats)
     results["_baseline"] = baseline_picks
 
+    # Persist baseline picks — ensures leaderboard deltas are computed from real data
+    baseline_track = await _ensure_baseline_track()
+    if baseline_track:
+        await _save_track_picks(
+            track_id=baseline_track.id,
+            track_name="_baseline",
+            picks=baseline_picks,
+            regime_context=regime_context,
+            run_date=today,
+        )
+
     for track in active_tracks:
         try:
             track_picks = _run_single_track(
@@ -186,6 +197,30 @@ def _apply_guardian_sizing(
             pick["weight_pct"] = round(pick.get("weight_pct", 0) * scale, 2)
 
     return picks
+
+
+async def _ensure_baseline_track() -> ShadowTrack | None:
+    """Ensure a '_baseline' track row exists in the DB (generation=0, no overrides)."""
+    async with get_session() as session:
+        result = await session.execute(
+            select(ShadowTrack).where(ShadowTrack.name == "_baseline")
+        )
+        existing = result.scalar_one_or_none()
+        if existing:
+            return existing
+
+        baseline = ShadowTrack(
+            name="_baseline",
+            generation=0,
+            parent_track=None,
+            status="active",
+            config={},
+            description="Production baseline — no parameter overrides. Control group.",
+        )
+        session.add(baseline)
+        await session.flush()
+        logger.info("Created _baseline track (id=%d)", baseline.id)
+        return baseline
 
 
 async def _save_track_picks(
