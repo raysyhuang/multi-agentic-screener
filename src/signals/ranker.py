@@ -73,6 +73,7 @@ def rank_candidates(
     regime: Regime,
     features_by_ticker: dict[str, dict],
     top_n: int = 10,
+    regime_multiplier_overrides: dict | None = None,
 ) -> list[RankedCandidate]:
     """Rank all signal candidates, applying regime gate and adjustment.
 
@@ -81,8 +82,26 @@ def rank_candidates(
       2. Apply regime multiplier to raw scores
       3. Sort by adjusted score descending
       4. Return top N
+
+    Args:
+        regime_multiplier_overrides: Optional nested dict of regime multipliers
+            for shadow tracks. Format: {"bull": {"breakout": 1.5, ...}, ...}.
+            When set, merges with default REGIME_MULTIPLIERS.
     """
     allowed_models = get_regime_allowed_models(regime)
+
+    # Build effective regime multipliers (merge overrides onto defaults)
+    effective_multipliers = {r: dict(m) for r, m in REGIME_MULTIPLIERS.items()}
+    if regime_multiplier_overrides:
+        for regime_key_str, model_mults in regime_multiplier_overrides.items():
+            try:
+                regime_enum = Regime(regime_key_str)
+            except ValueError:
+                continue
+            if regime_enum not in effective_multipliers:
+                effective_multipliers[regime_enum] = {}
+            effective_multipliers[regime_enum].update(model_mults)
+
     candidates = []
 
     for signal in signals:
@@ -97,7 +116,7 @@ def rank_candidates(
             continue
 
         # Apply regime multiplier
-        multiplier = REGIME_MULTIPLIERS.get(regime, {}).get(model_name, 1.0)
+        multiplier = effective_multipliers.get(regime, {}).get(model_name, 1.0)
         adjusted_score = signal.score * multiplier
 
         features = features_by_ticker.get(signal.ticker, {})

@@ -257,9 +257,27 @@ def _compute_weight(stats: EngineStats, avg_hit_rate: float) -> float:
     return round(weight, 3)
 
 
-def compute_convergence_multiplier(engine_count: int) -> float:
-    """Get the conviction multiplier for a given number of agreeing engines."""
+def compute_convergence_multiplier(
+    engine_count: int,
+    overrides: dict | None = None,
+) -> float:
+    """Get the conviction multiplier for a given number of agreeing engines.
+
+    Args:
+        engine_count: Number of engines agreeing on a ticker.
+        overrides: Optional dict of parameter overrides (shadow track config).
+                   When set, reads multipliers from it instead of settings.
+    """
     settings = get_settings()
+    if overrides:
+        if engine_count >= 4:
+            return overrides.get("convergence_4_engine_multiplier", settings.convergence_4_engine_multiplier)
+        elif engine_count == 3:
+            return overrides.get("convergence_3_engine_multiplier", settings.convergence_3_engine_multiplier)
+        elif engine_count == 2:
+            return overrides.get("convergence_2_engine_multiplier", settings.convergence_2_engine_multiplier)
+        return overrides.get("convergence_1_engine_multiplier", settings.convergence_1_engine_multiplier)
+
     if engine_count >= 4:
         return settings.convergence_4_engine_multiplier
     elif engine_count == 3:
@@ -299,12 +317,17 @@ def _compute_effective_signal_count(
 def compute_weighted_picks(
     all_picks: list[dict],
     engine_stats: dict[str, EngineStats],
+    config_overrides: dict | None = None,
 ) -> list[dict]:
     """Compute weighted conviction scores for picks across engines.
 
     Groups picks by ticker, applies engine weights, convergence multipliers,
     and strategy-level convergence scoring.
     Returns sorted list of weighted picks (highest conviction first).
+
+    Args:
+        config_overrides: Optional parameter overrides for shadow tracks.
+                         Passed through to convergence multiplier + min_confidence.
     """
     settings = get_settings()
 
@@ -326,7 +349,7 @@ def compute_weighted_picks(
         deduped_picks = list(by_engine.values())
 
         engine_count = len(deduped_picks)
-        convergence_mult = compute_convergence_multiplier(engine_count)
+        convergence_mult = compute_convergence_multiplier(engine_count, overrides=config_overrides)
 
         # Collect strategy tags across all picks for this ticker
         all_strategy_tags = _collect_strategy_tags(ticker_picks)
@@ -399,7 +422,11 @@ def compute_weighted_picks(
     # --- Sector convergence pass ---
     # If 2+ engines pick different tickers in the same sector, apply a
     # sector convergence multiplier (weaker than ticker convergence).
-    sector_mult = settings.convergence_sector_multiplier
+    sector_mult = (
+        config_overrides.get("convergence_sector_multiplier", settings.convergence_sector_multiplier)
+        if config_overrides
+        else settings.convergence_sector_multiplier
+    )
     if sector_mult > 1.0:
         # Build sector → set of engines that contributed picks in that sector
         sector_engines: dict[str, set[str]] = defaultdict(set)

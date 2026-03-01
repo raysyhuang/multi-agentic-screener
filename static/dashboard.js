@@ -33,7 +33,7 @@
   var loaded = {
     signals: false, crossengine: false, performance: false,
     charts: false, compare: false, pipeline: false, costs: false, histories: false,
-    backtest: false
+    backtest: false, tracks: false
   };
   var equityChart = null;
 
@@ -96,6 +96,7 @@
       case 'costs': loadCosts(); break;
       case 'histories': loadHistories(); break;
       case 'backtest': loadBacktest(); break;
+      case 'tracks': loadTracks(); break;
     }
   }
 
@@ -2032,6 +2033,212 @@
       detail.innerHTML = html;
     }).catch(function () {
       detail.innerHTML = '<div class="empty-state"><p>Failed to load comparison.</p></div>';
+    });
+  }
+
+  // -----------------------------------------------------------------------
+  // Tracks Tab — Shadow Track Leaderboard + Equity Curves
+  // -----------------------------------------------------------------------
+  var tracksDaysSelect = 14;
+  var tracksEquityChart = null;
+
+  function loadTracks() {
+    showSpinner('tracks-view');
+    fetchJSON('/api/tracks/leaderboard?days=' + tracksDaysSelect).then(function (data) {
+      var view = document.getElementById('tracks-view');
+      if (!data.tracks || data.tracks.length === 0) {
+        showEmpty('tracks-view', 'No shadow tracks configured. Enable with SHADOW_TRACKS_ENABLED=true and add tracks to configs/tracks.yaml.');
+        return;
+      }
+
+      var html = '<div class="section-header">'
+        + '<h2>Shadow Tracks — Parallel Parameter Experiments</h2>'
+        + '<div style="display:flex;gap:8px;align-items:center;margin-top:8px;">'
+        + '<label style="font-size:0.85rem;color:var(--muted);">Lookback:</label>'
+        + '<select id="tracks-days-select" style="background:var(--card-bg);color:var(--text);border:1px solid var(--border);padding:4px 8px;border-radius:4px;">'
+        + '<option value="7"' + (tracksDaysSelect === 7 ? ' selected' : '') + '>7 days</option>'
+        + '<option value="14"' + (tracksDaysSelect === 14 ? ' selected' : '') + '>14 days</option>'
+        + '<option value="30"' + (tracksDaysSelect === 30 ? ' selected' : '') + '>30 days</option>'
+        + '</select></div></div>';
+
+      // Leaderboard table
+      html += '<div class="card" style="overflow-x:auto;"><table class="data-table" style="width:100%;">'
+        + '<thead><tr>'
+        + '<th>#</th><th>Track</th><th>Gen</th><th>Status</th>'
+        + '<th>Picks</th><th>Resolved</th><th>Win Rate</th><th>Avg Ret</th>'
+        + '<th>Sharpe</th><th>PF</th><th>Max DD</th><th>Composite</th>'
+        + '<th>\u0394 Sharpe</th><th>\u0394 WR</th>'
+        + '</tr></thead><tbody>';
+
+      data.tracks.forEach(function (t, i) {
+        var statusBadge = t.status === 'active' ? '<span class="badge badge-green">active</span>'
+          : t.status === 'eliminated' ? '<span class="badge badge-red">eliminated</span>'
+          : t.status === 'promoted' ? '<span class="badge badge-teal">promoted</span>'
+          : '<span class="badge">' + t.status + '</span>';
+
+        var insufficientClass = t.has_sufficient_data ? '' : ' style="opacity:0.5;"';
+
+        function deltaCell(val) {
+          if (!val && val !== 0) return '<td>—</td>';
+          var cls = val > 0 ? 'pos' : val < 0 ? 'neg' : '';
+          var sign = val > 0 ? '+' : '';
+          return '<td class="' + cls + '">' + sign + (val * 100).toFixed(1) + '%</td>';
+        }
+
+        html += '<tr' + insufficientClass + '>'
+          + '<td>' + (i + 1) + '</td>'
+          + '<td><a href="#" class="track-detail-link" data-track="' + t.name + '">' + t.name + '</a></td>'
+          + '<td>' + t.generation + '</td>'
+          + '<td>' + statusBadge + '</td>'
+          + '<td>' + t.total_picks + '</td>'
+          + '<td>' + t.resolved_picks + '</td>'
+          + '<td>' + (t.win_rate * 100).toFixed(1) + '%</td>'
+          + '<td class="' + (t.avg_return_pct > 0 ? 'pos' : t.avg_return_pct < 0 ? 'neg' : '') + '">'
+          + (t.avg_return_pct > 0 ? '+' : '') + t.avg_return_pct.toFixed(2) + '%</td>'
+          + '<td>' + t.sharpe_ratio.toFixed(2) + '</td>'
+          + '<td>' + t.profit_factor.toFixed(2) + '</td>'
+          + '<td class="neg">' + t.max_drawdown_pct.toFixed(1) + '%</td>'
+          + '<td><strong>' + t.composite_score.toFixed(3) + '</strong></td>'
+          + deltaCell(t.delta_sharpe)
+          + deltaCell(t.delta_win_rate)
+          + '</tr>';
+      });
+
+      html += '</tbody></table></div>';
+
+      // Equity curve chart container
+      html += '<div class="card" style="margin-top:16px;">'
+        + '<h3>Equity Curves</h3>'
+        + '<div id="tracks-equity-chart" style="height:350px;"></div>'
+        + '</div>';
+
+      // Config viewer
+      html += '<div id="track-detail-panel" class="card" style="margin-top:16px;display:none;">'
+        + '<h3 id="track-detail-title">Track Config</h3>'
+        + '<pre id="track-detail-config" style="font-size:0.8rem;overflow-x:auto;"></pre>'
+        + '<div id="track-detail-picks"></div>'
+        + '</div>';
+
+      view.innerHTML = html;
+
+      // Bind lookback selector
+      var sel = document.getElementById('tracks-days-select');
+      if (sel) {
+        sel.addEventListener('change', function () {
+          tracksDaysSelect = parseInt(sel.value);
+          loaded.tracks = false;
+          loadTracks();
+        });
+      }
+
+      // Bind track detail links
+      view.querySelectorAll('.track-detail-link').forEach(function (link) {
+        link.addEventListener('click', function (e) {
+          e.preventDefault();
+          showTrackDetail(link.dataset.track, data.tracks);
+        });
+      });
+
+      // Build equity curves
+      loadTracksEquityCurves(data.tracks);
+    }).catch(function (err) {
+      document.getElementById('tracks-view').innerHTML =
+        '<div class="empty-state"><p>Failed to load tracks: ' + err.message + '</p></div>';
+    });
+  }
+
+  function loadTracksEquityCurves(tracks) {
+    var container = document.getElementById('tracks-equity-chart');
+    if (!container || typeof LightweightCharts === 'undefined') return;
+
+    if (tracksEquityChart) {
+      tracksEquityChart.remove();
+      tracksEquityChart = null;
+    }
+
+    var colors = chartColors();
+    tracksEquityChart = LightweightCharts.createChart(container, {
+      width: container.clientWidth,
+      height: 350,
+      layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
+      grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
+      rightPriceScale: { borderColor: colors.border },
+      timeScale: { borderColor: colors.border },
+    });
+
+    var lineColors = ['#14b8a6', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#22c55e', '#06b6d4'];
+    var activeNames = tracks.filter(function (t) { return t.status === 'active'; }).map(function (t) { return t.name; });
+
+    // Fetch equity data for each active track
+    var promises = activeNames.map(function (name) {
+      return fetchJSON('/api/tracks/' + encodeURIComponent(name) + '/equity').catch(function () { return { snapshots: [] }; });
+    });
+
+    Promise.all(promises).then(function (results) {
+      results.forEach(function (eq, i) {
+        if (!eq.snapshots || eq.snapshots.length === 0) return;
+        var series = tracksEquityChart.addLineSeries({
+          color: lineColors[i % lineColors.length],
+          lineWidth: 2,
+          title: activeNames[i],
+        });
+        var chartData = eq.snapshots.map(function (s) {
+          return { time: s.date, value: s.total_return || 0 };
+        });
+        series.setData(chartData);
+      });
+      tracksEquityChart.timeScale().fitContent();
+    });
+
+    // Resize handler
+    new ResizeObserver(function () {
+      tracksEquityChart.applyOptions({ width: container.clientWidth });
+    }).observe(container);
+  }
+
+  function showTrackDetail(trackName, allTracks) {
+    var panel = document.getElementById('track-detail-panel');
+    var title = document.getElementById('track-detail-title');
+    var configEl = document.getElementById('track-detail-config');
+    var picksEl = document.getElementById('track-detail-picks');
+
+    if (!panel) return;
+    panel.style.display = 'block';
+
+    var track = allTracks.find(function (t) { return t.name === trackName; });
+    title.textContent = 'Track: ' + trackName + (track ? ' (gen ' + track.generation + ')' : '');
+    configEl.textContent = track ? JSON.stringify(track.config, null, 2) : '{}';
+
+    // Load recent picks
+    picksEl.innerHTML = '<div class="spinner">Loading picks...</div>';
+    fetchJSON('/api/tracks/' + encodeURIComponent(trackName) + '/picks?limit=20').then(function (data) {
+      if (!data.picks || data.picks.length === 0) {
+        picksEl.innerHTML = '<p style="color:var(--muted);">No picks yet.</p>';
+        return;
+      }
+
+      var html = '<h4 style="margin-top:12px;">Recent Picks</h4>'
+        + '<table class="data-table" style="width:100%;font-size:0.8rem;"><thead><tr>'
+        + '<th>Date</th><th>Ticker</th><th>Strategy</th><th>Conf</th><th>Weight</th>'
+        + '<th>Return</th><th>Exit</th></tr></thead><tbody>';
+
+      data.picks.forEach(function (p) {
+        var retClass = p.actual_return > 0 ? 'pos' : p.actual_return < 0 ? 'neg' : '';
+        html += '<tr>'
+          + '<td>' + p.run_date + '</td>'
+          + '<td><strong>' + p.ticker + '</strong></td>'
+          + '<td>' + p.strategy + '</td>'
+          + '<td>' + (p.confidence || 0).toFixed(1) + '</td>'
+          + '<td>' + (p.weight_pct || 0).toFixed(1) + '%</td>'
+          + '<td class="' + retClass + '">' + (p.outcome_resolved ? (p.actual_return > 0 ? '+' : '') + p.actual_return.toFixed(2) + '%' : '—') + '</td>'
+          + '<td>' + (p.exit_reason || '—') + '</td>'
+          + '</tr>';
+      });
+
+      html += '</tbody></table>';
+      picksEl.innerHTML = html;
+    }).catch(function () {
+      picksEl.innerHTML = '<p style="color:var(--muted);">Failed to load picks.</p>';
     });
   }
 

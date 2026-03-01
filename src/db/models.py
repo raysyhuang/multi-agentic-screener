@@ -487,3 +487,92 @@ class DivergenceOutcome(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+# ---------------------------------------------------------------------------
+# Shadow Tracks — parallel parameter experiments
+# ---------------------------------------------------------------------------
+
+
+class ShadowTrack(Base):
+    """Registry of active shadow track configurations for parallel experiments."""
+
+    __tablename__ = "shadow_tracks"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    name: Mapped[str] = mapped_column(String(80), unique=True, nullable=False, index=True)
+    generation: Mapped[int] = mapped_column(Integer, default=1, nullable=False)
+    parent_track: Mapped[str | None] = mapped_column(String(80), nullable=True)
+    status: Mapped[str] = mapped_column(
+        String(20), default="active", nullable=False
+    )  # active | eliminated | promoted
+    config: Mapped[dict] = mapped_column(JSONB, nullable=False)
+    description: Mapped[str | None] = mapped_column(Text, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ShadowTrackPick(Base):
+    """Paper positions per track per day — mirrors EnginePickOutcome pattern."""
+
+    __tablename__ = "shadow_track_picks"
+    __table_args__ = (
+        UniqueConstraint("track_id", "run_date", "ticker", name="uq_shadow_pick_track_date_ticker"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    track_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("shadow_tracks.id"), nullable=False, index=True
+    )
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
+    direction: Mapped[str] = mapped_column(String(10), nullable=False)
+    strategy: Mapped[str] = mapped_column(String(30), nullable=False)
+    entry_price: Mapped[float] = mapped_column(Float, nullable=False)
+    stop_loss: Mapped[float | None] = mapped_column(Float, nullable=True)
+    target_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    confidence: Mapped[float] = mapped_column(Float, nullable=False)
+    holding_period: Mapped[int] = mapped_column(Integer, nullable=False)
+    weight_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    source_engines: Mapped[str | None] = mapped_column(String(100), nullable=True)
+
+    # Outcome (resolved later by outcome resolver)
+    outcome_resolved: Mapped[bool] = mapped_column(Boolean, default=False)
+    actual_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    days_held: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    max_favorable: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_adverse: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ShadowTrackSnapshot(Base):
+    """Daily cumulative metrics per track for charting equity curves."""
+
+    __tablename__ = "shadow_track_snapshots"
+    __table_args__ = (
+        UniqueConstraint("track_id", "snapshot_date", name="uq_shadow_snapshot_track_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    track_id: Mapped[int] = mapped_column(
+        Integer, ForeignKey("shadow_tracks.id"), nullable=False, index=True
+    )
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    total_picks: Mapped[int] = mapped_column(Integer, default=0)
+    resolved_picks: Mapped[int] = mapped_column(Integer, default=0)
+    win_rate: Mapped[float | None] = mapped_column(Float, nullable=True)
+    avg_return_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    total_return: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sharpe_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    profit_factor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    max_drawdown: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

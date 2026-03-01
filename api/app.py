@@ -1612,3 +1612,196 @@ async def health_check():
             content={"status": "degraded", "issues": issues},
         )
     return {"status": "healthy"}
+
+
+# ---------------------------------------------------------------------------
+# Shadow Tracks API
+# ---------------------------------------------------------------------------
+
+@app.get("/api/tracks")
+async def list_tracks():
+    """List all shadow tracks with status and config."""
+    from src.db.models import ShadowTrack
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(ShadowTrack).order_by(ShadowTrack.generation.desc(), ShadowTrack.name)
+        )
+        tracks = result.scalars().all()
+
+    return {
+        "tracks": [
+            {
+                "id": t.id,
+                "name": t.name,
+                "generation": t.generation,
+                "parent_track": t.parent_track,
+                "status": t.status,
+                "config": t.config,
+                "description": t.description,
+                "created_at": str(t.created_at) if t.created_at else None,
+            }
+            for t in tracks
+        ],
+        "total": len(tracks),
+    }
+
+
+@app.get("/api/tracks/leaderboard")
+async def tracks_leaderboard(days: int = Query(default=14, ge=1, le=90)):
+    """Ranked comparison table of all tracks vs baseline."""
+    from src.experiments.leaderboard import compute_leaderboard
+
+    scorecards = await compute_leaderboard(lookback_days=days)
+
+    return {
+        "lookback_days": days,
+        "tracks": [
+            {
+                "name": sc.name,
+                "track_id": sc.track_id,
+                "status": sc.status,
+                "generation": sc.generation,
+                "parent_track": sc.parent_track,
+                "total_picks": sc.total_picks,
+                "resolved_picks": sc.resolved_picks,
+                "has_sufficient_data": sc.has_sufficient_data,
+                "win_rate": sc.win_rate,
+                "avg_return_pct": sc.avg_return_pct,
+                "total_return_pct": sc.total_return_pct,
+                "sharpe_ratio": sc.sharpe_ratio,
+                "profit_factor": sc.profit_factor,
+                "max_drawdown_pct": sc.max_drawdown_pct,
+                "composite_score": sc.composite_score,
+                "delta_sharpe": sc.delta_sharpe,
+                "delta_win_rate": sc.delta_win_rate,
+                "delta_avg_return": sc.delta_avg_return,
+                "config": sc.config,
+            }
+            for sc in scorecards
+        ],
+    }
+
+
+@app.get("/api/tracks/{name}/picks")
+async def track_picks(name: str, limit: int = Query(default=50, ge=1, le=200)):
+    """Pick history for one track."""
+    from src.db.models import ShadowTrack, ShadowTrackPick
+
+    async with get_session() as session:
+        track_result = await session.execute(
+            select(ShadowTrack).where(ShadowTrack.name == name)
+        )
+        track = track_result.scalar_one_or_none()
+        if not track:
+            raise HTTPException(404, f"Track '{name}' not found")
+
+        picks_result = await session.execute(
+            select(ShadowTrackPick)
+            .where(ShadowTrackPick.track_id == track.id)
+            .order_by(ShadowTrackPick.run_date.desc())
+            .limit(limit)
+        )
+        picks = picks_result.scalars().all()
+
+    return {
+        "track_name": name,
+        "picks": [
+            {
+                "run_date": str(p.run_date),
+                "ticker": p.ticker,
+                "direction": p.direction,
+                "strategy": p.strategy,
+                "entry_price": p.entry_price,
+                "stop_loss": p.stop_loss,
+                "target_price": p.target_price,
+                "confidence": p.confidence,
+                "holding_period": p.holding_period,
+                "weight_pct": p.weight_pct,
+                "source_engines": p.source_engines,
+                "outcome_resolved": p.outcome_resolved,
+                "actual_return": p.actual_return,
+                "exit_reason": p.exit_reason,
+                "days_held": p.days_held,
+            }
+            for p in picks
+        ],
+    }
+
+
+@app.get("/api/tracks/{name}/equity")
+async def track_equity(name: str):
+    """Equity curve from snapshots for one track."""
+    from src.db.models import ShadowTrack, ShadowTrackSnapshot
+
+    async with get_session() as session:
+        track_result = await session.execute(
+            select(ShadowTrack).where(ShadowTrack.name == name)
+        )
+        track = track_result.scalar_one_or_none()
+        if not track:
+            raise HTTPException(404, f"Track '{name}' not found")
+
+        snaps_result = await session.execute(
+            select(ShadowTrackSnapshot)
+            .where(ShadowTrackSnapshot.track_id == track.id)
+            .order_by(ShadowTrackSnapshot.snapshot_date.asc())
+        )
+        snapshots = snaps_result.scalars().all()
+
+    return {
+        "track_name": name,
+        "snapshots": [
+            {
+                "date": str(s.snapshot_date),
+                "total_picks": s.total_picks,
+                "resolved_picks": s.resolved_picks,
+                "win_rate": s.win_rate,
+                "avg_return_pct": s.avg_return_pct,
+                "total_return": s.total_return,
+                "sharpe_ratio": s.sharpe_ratio,
+                "profit_factor": s.profit_factor,
+                "max_drawdown": s.max_drawdown,
+            }
+            for s in snapshots
+        ],
+    }
+
+
+@app.post("/api/tracks/evolve")
+async def trigger_evolution():
+    """Trigger next evolutionary generation (auth required via middleware)."""
+    from src.experiments.evolution import evolve_tracks
+
+    offspring = await evolve_tracks()
+    return {
+        "status": "ok",
+        "new_tracks": len(offspring),
+        "offspring": offspring,
+    }
+
+
+@app.post("/api/tracks/{name}/promote")
+async def promote_track(name: str):
+    """Copy winner config to production Settings (auth required via middleware)."""
+    from src.db.models import ShadowTrack
+
+    async with get_session() as session:
+        result = await session.execute(
+            select(ShadowTrack).where(ShadowTrack.name == name)
+        )
+        track = result.scalar_one_or_none()
+        if not track:
+            raise HTTPException(404, f"Track '{name}' not found")
+
+        if track.status != "active":
+            raise HTTPException(400, f"Track '{name}' is not active (status={track.status})")
+
+        track.status = "promoted"
+
+    return {
+        "status": "promoted",
+        "track_name": name,
+        "config": track.config,
+        "note": "Config extracted. Apply overrides to .env or Settings manually to activate in production.",
+    }
