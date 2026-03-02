@@ -1822,3 +1822,75 @@ async def promote_track(name: str):
         "config": track.config,
         "note": "Config extracted. Apply overrides to .env or Settings manually to activate in production.",
     }
+
+
+# ---------------------------------------------------------------------------
+# Telegram Log — read/ingest messages from MAS and external engines
+# ---------------------------------------------------------------------------
+
+
+@app.get("/api/telegram/log")
+async def telegram_log(
+    hours: int = Query(default=24, ge=1, le=168),
+    source: str = Query(default="all"),
+):
+    """Return recent Telegram messages logged by MAS and engines."""
+    from datetime import datetime, timedelta, timezone
+    from src.db.models import TelegramLog
+
+    cutoff = datetime.now(timezone.utc) - timedelta(hours=hours)
+
+    async with get_session() as session:
+        stmt = select(TelegramLog).where(TelegramLog.sent_at >= cutoff)
+        if source != "all":
+            stmt = stmt.where(TelegramLog.source == source)
+        stmt = stmt.order_by(TelegramLog.sent_at.desc()).limit(100)
+        result = await session.execute(stmt)
+        rows = result.scalars().all()
+
+    return {
+        "hours": hours,
+        "source_filter": source,
+        "count": len(rows),
+        "messages": [
+            {
+                "id": r.id,
+                "source": r.source,
+                "message_text": r.message_text,
+                "sent_at": r.sent_at.isoformat() if r.sent_at else None,
+                "chat_id": r.chat_id,
+                "message_id": r.message_id,
+            }
+            for r in rows
+        ],
+    }
+
+
+@app.post("/api/telegram/ingest")
+async def telegram_ingest(request: Request):
+    """Receive a Telegram message from an external engine and log it.
+
+    Body: {"source": "koocore_d", "message": "...", "chat_id": "...", "message_id": 123}
+    Auth: Bearer token via existing middleware.
+    """
+    from src.db.models import TelegramLog
+
+    body = await request.json()
+    source = body.get("source", "unknown")
+    message = body.get("message", "")
+    if not message:
+        raise HTTPException(400, "message is required")
+
+    valid_sources = {"koocore_d", "gemini_stst", "top3_7d", "mas"}
+    if source not in valid_sources:
+        raise HTTPException(400, f"source must be one of {valid_sources}")
+
+    async with get_session() as session:
+        session.add(TelegramLog(
+            source=source,
+            message_text=message,
+            chat_id=body.get("chat_id"),
+            message_id=body.get("message_id"),
+        ))
+
+    return {"status": "ok", "source": source, "chars": len(message)}
