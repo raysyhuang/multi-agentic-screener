@@ -576,3 +576,20 @@ class ShadowTrackSnapshot(Base):
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
+
+
+class TelegramLog(Base):
+    """Log of every Telegram message sent by MAS or ingested from engines."""
+
+    __tablename__ = "telegram_log"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    source: Mapped[str] = mapped_column(
+        String(30), nullable=False, index=True
+    )  # mas, koocore_d, gemini_stst, top3_7d
+    message_text: Mapped[str] = mapped_column(Text, nullable=False)
+    sent_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), index=True
+    )
+    chat_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)

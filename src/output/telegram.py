@@ -109,12 +109,17 @@ async def send_alert(message: str) -> bool:
         sent = False
         for attempt in range(1, SEND_RETRIES + 1):
             try:
-                await bot.send_message(
+                result = await bot.send_message(
                     chat_id=settings.telegram_chat_id,
                     text=chunk,
                     parse_mode=ParseMode.HTML,
                 )
                 sent = True
+                # Log to DB (best-effort, don't fail the send)
+                msg_id = result.message_id if result else None
+                await _log_to_db(
+                    "mas", chunk, settings.telegram_chat_id, msg_id,
+                )
                 break
             except Exception as e:
                 delay = SEND_BACKOFF_BASE * (2 ** (attempt - 1))
@@ -133,6 +138,28 @@ async def send_alert(message: str) -> bool:
             return False
 
     return True
+
+
+async def _log_to_db(
+    source: str,
+    message_text: str,
+    chat_id: str | None = None,
+    message_id: int | None = None,
+) -> None:
+    """Best-effort log of a sent Telegram message to the database."""
+    try:
+        from src.db.session import get_session
+        from src.db.models import TelegramLog
+
+        async with get_session() as session:
+            session.add(TelegramLog(
+                source=source,
+                message_text=message_text,
+                chat_id=str(chat_id) if chat_id else None,
+                message_id=message_id,
+            ))
+    except Exception as e:
+        logger.debug("Failed to log telegram message to DB: %s", e)
 
 
 # ---------------------------------------------------------------------------
