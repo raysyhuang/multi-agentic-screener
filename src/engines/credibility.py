@@ -366,6 +366,33 @@ def compute_weighted_picks(
             )
         all_picks = filtered_picks
 
+    # --- Confidence recalibration ---
+    # Scale raw confidence by engine's actual hit rate vs its average stated
+    # confidence.  This corrects overconfident engines (e.g. engine says 60%
+    # but only hits 20% → confidence halved).  Only applied when the engine
+    # has enough resolved data.
+    if settings.credibility_recalibration_enabled:
+        min_recal = settings.credibility_recalibration_min_picks
+        for pick in all_picks:
+            eng = pick["engine_name"]
+            stats = engine_stats.get(eng)
+            if not stats or stats.resolved_picks < min_recal:
+                continue
+            # Scale = actual_hit_rate / (avg_confidence / 100)
+            avg_conf_prob = stats.avg_confidence / 100.0 if stats.avg_confidence > 0 else 0.5
+            if avg_conf_prob > 0:
+                scale = stats.hit_rate / avg_conf_prob
+                scale = max(0.3, min(1.5, scale))  # clamp to avoid extremes
+            else:
+                scale = 1.0
+            original = pick["confidence"]
+            pick["confidence"] = round(original * scale, 1)
+            if abs(scale - 1.0) > 0.05:
+                logger.debug(
+                    "Recalibrated %s/%s confidence: %.0f → %.0f (scale=%.2f)",
+                    eng, pick["ticker"], original, pick["confidence"], scale,
+                )
+
     # Group by ticker
     by_ticker: dict[str, list[dict]] = defaultdict(list)
     for pick in all_picks:

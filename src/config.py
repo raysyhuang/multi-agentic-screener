@@ -142,6 +142,10 @@ class Settings(BaseSettings):
     credibility_strategy_floor_hit_rate: float = 0.15  # reject strategies below 15% hit rate
     credibility_strategy_floor_min_picks: int = 5      # only enforce floor with >= N resolved picks
 
+    # --- Confidence Recalibration ---
+    credibility_recalibration_enabled: bool = True
+    credibility_recalibration_min_picks: int = 10  # only recalibrate engines with >= N resolved picks
+
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True
     guardian_max_drawdown_pct: float = 20.0       # Halt all trading beyond this drawdown
