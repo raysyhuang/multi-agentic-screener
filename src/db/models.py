@@ -578,6 +578,40 @@ class ShadowTrackSnapshot(Base):
     )
 
 
+class EngineRun(Base):
+    """One row per engine per collection attempt — tracks execution metadata and failures."""
+
+    __tablename__ = "engine_runs"
+    __table_args__ = (
+        UniqueConstraint("engine_name", "run_date", "attempt", name="uq_engine_run_name_date_attempt"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    engine_name: Mapped[str] = mapped_column(String(30), nullable=False, index=True)
+    run_date: Mapped[date] = mapped_column(Date, nullable=False, index=True)
+    attempt: Mapped[int] = mapped_column(Integer, nullable=False, default=1)
+    status: Mapped[str] = mapped_column(
+        String(20), nullable=False
+    )  # success | failed | quality_rejected | no_response | no_output | timeout
+    fetch_started_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fetch_finished_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    fetch_duration_ms: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    picks_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    candidates_screened: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    error_message: Mapped[str | None] = mapped_column(Text, nullable=True)
+    payload_hash: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    engine_result_id: Mapped[int | None] = mapped_column(
+        Integer, ForeignKey("external_engine_results.id"), nullable=True
+    )
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
 class TelegramLog(Base):
     """Log of every Telegram message sent by MAS or ingested from engines."""
 
