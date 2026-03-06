@@ -331,6 +331,41 @@ def compute_weighted_picks(
     """
     settings = get_settings()
 
+    # --- Strategy-level hit-rate floor ---
+    # Drop picks from engine+strategy combos that have proven unreliable.
+    if settings.credibility_strategy_floor_enabled:
+        floor_rate = settings.credibility_strategy_floor_hit_rate
+        floor_min = settings.credibility_strategy_floor_min_picks
+        filtered_picks: list[dict] = []
+        for pick in all_picks:
+            eng = pick["engine_name"]
+            strat = pick.get("strategy", "unknown")
+            stats = engine_stats.get(eng)
+            if stats and stats.per_strategy:
+                strat_info = stats.per_strategy.get(strat)
+                if (
+                    strat_info
+                    and strat_info["picks"] >= floor_min
+                    and strat_info["hit_rate"] < floor_rate
+                ):
+                    logger.warning(
+                        "Strategy floor: dropped %s from %s/%s "
+                        "(hit_rate=%.1f%% < %.1f%%, picks=%d)",
+                        pick["ticker"], eng, strat,
+                        strat_info["hit_rate"] * 100, floor_rate * 100,
+                        strat_info["picks"],
+                    )
+                    continue
+            filtered_picks.append(pick)
+
+        dropped = len(all_picks) - len(filtered_picks)
+        if dropped:
+            logger.info(
+                "Strategy floor: dropped %d/%d picks below %.0f%% hit rate",
+                dropped, len(all_picks), floor_rate * 100,
+            )
+        all_picks = filtered_picks
+
     # Group by ticker
     by_ticker: dict[str, list[dict]] = defaultdict(list)
     for pick in all_picks:
