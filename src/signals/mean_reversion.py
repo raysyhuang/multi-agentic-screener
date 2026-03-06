@@ -4,6 +4,13 @@ Ported from gemini_STST's 3-day RSI(2) model with next-day-open execution.
 Looks for oversold conditions in stocks with intact long-term uptrends.
 
 Fires on day T close, execution at T+1 open.
+
+Parameters optimized via walk-forward backtest (S&P 500, 2yr, 35K+ trades):
+  - RSI(2) threshold: 10 (was 20) — stricter filter, stronger per-trade signal
+  - Stop: 0.75x ATR (was 1.0x) — tighter invalidation, Sharpe 0.887 vs 0.641
+  - Target: 1.5x ATR floor (was 1.0x) — wider target, Sharpe 0.875 vs 0.629
+  - Hold: 3 days (unchanged) — edge decays quickly after day 3
+  See outputs/research/sweep_mean_reversion_all.csv for full parameter sweep.
 """
 
 from __future__ import annotations
@@ -69,12 +76,8 @@ def score_mean_reversion(
         rsi_score = 100  # extreme oversold
     elif rsi_2 <= 10:
         rsi_score = 80
-    elif rsi_2 <= 15:
-        rsi_score = 50
-    elif rsi_2 <= 20:
-        rsi_score = 30
     else:
-        return None  # not oversold enough
+        return None  # backtest: RSI(2)<=10 is the optimal threshold
 
     scores["rsi2_oversold"] = rsi_score
 
@@ -160,18 +163,18 @@ def score_mean_reversion(
         atr = close_price * 0.02
     atr = max(atr, close_price * 0.005)
 
-    # Mean reversion target: back to 5-day SMA with 1x ATR floor
+    # Primary target: 1.5x ATR (backtest-optimized, was 1.0x)
     sma_5 = close.rolling(5).mean().iloc[-1]
     sma_5_val = float(sma_5) if pd.notna(sma_5) else close_price * 1.03
-    target_1 = max(sma_5_val, close_price + 1.0 * atr)
+    target_1 = max(sma_5_val, close_price + 1.5 * atr)
 
-    # Extended target: back to 10-day SMA with 1.5x ATR floor
+    # Extended target: back to 10-day SMA with 2.0x ATR floor
     sma_10 = close.rolling(10).mean().iloc[-1]
     sma_10_val = float(sma_10) if pd.notna(sma_10) else close_price * 1.05
-    target_2 = max(sma_10_val, close_price + 1.5 * atr)
+    target_2 = max(sma_10_val, close_price + 2.0 * atr)
 
-    # Tight stop: 1.0x ATR below current price (thesis invalidated quickly)
-    stop_loss = close_price - 1.0 * atr
+    # Tight stop: 0.75x ATR (backtest-optimized, was 1.0x — if it doesn't bounce fast, thesis is wrong)
+    stop_loss = close_price - 0.75 * atr
 
     return MeanReversionSignal(
         ticker=ticker,

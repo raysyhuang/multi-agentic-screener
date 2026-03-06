@@ -69,6 +69,16 @@ class Settings(BaseSettings):
     holding_periods: list[int] = Field(default=[3, 5, 7])
     slippage_pct: float = 0.001  # 0.10%
     commission_per_trade: float = 1.0  # dollars
+    trail_activate_pct: float = 0.5   # activate trailing stop after +0.5% MFE
+    trail_distance_pct: float = 0.3   # trail 0.3% below high watermark
+
+    # Ticker blacklist: mean reversion backtest (S&P500, 2yr, 24K trades) showed
+    # these tickers have <35% win rate with >=50 trades. Comma-separated.
+    # See outputs/research/sweep_trailing_best_trades.csv for data.
+    mean_reversion_blacklist: str = (
+        "NKE,DECK,TTD,GNRC,CDW,DOW,CPRT,CDNS,EXE,LULU,STZ,BIIB,HSY,APD,"
+        "INTC,COST,CL,PSA,AMT,LHX,TSN,PAYX,MTB,VRSK"
+    )
     fmp_daily_call_budget: int = 750
     fmp_budget_warn_threshold_pct: float = 0.80
     fmp_enforce_daily_budget: bool = False
@@ -78,7 +88,10 @@ class Settings(BaseSettings):
     fmp_health_check_endpoints: str = "profile,earnings,insider_trading,screener,ratios,analyst_estimates"
 
     # --- Execution mode ---
-    execution_mode: str = "agentic_full"  # quant_only | hybrid | agentic_full
+    # Default changed to quant_only: backtest proved mean reversion signal
+    # works without LLM layers (Sharpe 2.47 with trailing stop). LLM debate
+    # added cost ($0.15/run) without measurable improvement.
+    execution_mode: str = "quant_only"  # quant_only | hybrid | agentic_full
 
     # --- Trading mode ---
     trading_mode: str = "PAPER"  # PAPER or LIVE — paper trading until 30-day gate passes

@@ -51,6 +51,9 @@ Gemini STST/venv/
 # Backtest result cache
 backtest_results/
 
+# OHLCV data cache (parquet files, regenerated on demand)
+data/cache/
+
 # SQLite WAL/SHM
 *.sqlite-wal
 *.sqlite-shm
