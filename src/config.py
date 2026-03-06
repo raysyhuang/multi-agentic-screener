@@ -137,6 +137,11 @@ class Settings(BaseSettings):
     convergence_1_engine_multiplier: float = 0.9
     convergence_sector_multiplier: float = 1.15  # boost when 2+ engines pick same sector
 
+    # --- Strategy-level hit-rate floor ---
+    credibility_strategy_floor_enabled: bool = True
+    credibility_strategy_floor_hit_rate: float = 0.15  # reject strategies below 15% hit rate
+    credibility_strategy_floor_min_picks: int = 5      # only enforce floor with >= N resolved picks
+
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True
     guardian_max_drawdown_pct: float = 20.0       # Halt all trading beyond this drawdown
