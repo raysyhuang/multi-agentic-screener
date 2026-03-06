@@ -97,6 +97,8 @@ def run_walk_forward(
                 slippage_pct=settings.slippage_pct,
                 commission=settings.commission_per_trade,
                 entry_price_hint=signal["entry_price"],
+                trail_activate_pct=settings.trail_activate_pct,
+                trail_distance_pct=settings.trail_distance_pct,
             )
             if trade:
                 trade_result = TradeResult(
@@ -162,11 +164,17 @@ def _simulate_trade(
     slippage_pct: float,
     commission: float,
     entry_price_hint: float,
+    trail_activate_pct: float = 0.5,
+    trail_distance_pct: float = 0.3,
 ) -> dict | None:
-    """Simulate a single trade.
+    """Simulate a single trade with trailing stop.
 
     Entry: T+1 open (first trading day after signal_date).
-    Exit: first of target hit / stop hit / max holding period.
+    Exit: first of target hit / stop hit / trailing stop hit / max holding period.
+
+    Trailing stop: once unrealized gain >= trail_activate_pct, a trailing stop
+    activates at (high_watermark * (1 - trail_distance_pct/100)). It only
+    ratchets up. Set both to 0 to disable.
     """
     # Find T+1 (first trading day after signal date)
     future = df[df["date"] > signal_date].sort_values("date")
@@ -190,6 +198,9 @@ def _simulate_trade(
 
     max_favorable = 0.0
     max_adverse = 0.0
+    high_watermark = entry_price
+    trailing_active = False
+    use_trailing = trail_activate_pct > 0 and trail_distance_pct > 0
     exit_price = None
     exit_date = None
     exit_reason = None
@@ -201,11 +212,26 @@ def _simulate_trade(
         close = float(row["close"])
 
         if direction == "LONG":
-            # Check stop loss (hit during the day)
-            if low <= stop_loss:
-                exit_price = stop_loss * (1 - slippage_pct)
+            # Update high watermark
+            high_watermark = max(high_watermark, high)
+
+            # Activate trailing stop once MFE threshold reached
+            if use_trailing and not trailing_active:
+                gain_pct = (high_watermark - entry_price) / entry_price * 100
+                if gain_pct >= trail_activate_pct:
+                    trailing_active = True
+
+            # Compute effective stop
+            effective_stop = stop_loss
+            if trailing_active:
+                trail_stop = high_watermark * (1 - trail_distance_pct / 100)
+                effective_stop = max(stop_loss, trail_stop)
+
+            # Check stop (fixed or trailing)
+            if low <= effective_stop:
+                exit_price = effective_stop * (1 - slippage_pct)
                 exit_date = row["date"]
-                exit_reason = "stop"
+                exit_reason = "trail_stop" if trailing_active and effective_stop > stop_loss else "stop"
                 break
 
             # Check target (hit during the day)

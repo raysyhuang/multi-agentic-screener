@@ -1090,24 +1090,33 @@ async def _run_pipeline_core(
     logger.info("Step 5: Generating signals...")
     all_signals = []
 
+    # Ticker blacklist: backtest-proven poor mean reversion candidates
+    _blacklist_raw = settings.mean_reversion_blacklist
+    mr_blacklist = {t.strip().upper() for t in _blacklist_raw.split(",") if t.strip()}
+    if mr_blacklist:
+        logger.info("Mean reversion blacklist: %d tickers excluded", len(mr_blacklist))
+
     for ticker in qualified_tickers:
         feat = features_by_ticker.get(ticker, {})
         df = price_data.get(ticker)
         if df is None or df.empty:
             continue
 
-        # Breakout model
-        breakout = score_breakout(ticker, df, feat)
-        if breakout:
-            all_signals.append(breakout)
+        # Breakout model — disabled: backtest showed zero edge
+        # (58K trades, S&P500, 2yr: Sharpe -0.00, PF 1.00, symmetric MFE/MAE)
+        # See outputs/research/backtest_breakout_trades.csv
+        # breakout = score_breakout(ticker, df, feat)
+        # if breakout:
+        #     all_signals.append(breakout)
 
-        # Mean reversion model
-        mean_rev = score_mean_reversion(
-            ticker, df, feat,
-            fundamental_data=feat.get("fundamental", {}),
-        )
-        if mean_rev:
-            all_signals.append(mean_rev)
+        # Mean reversion model (skip blacklisted tickers)
+        if ticker not in mr_blacklist:
+            mean_rev = score_mean_reversion(
+                ticker, df, feat,
+                fundamental_data=feat.get("fundamental", {}),
+            )
+            if mean_rev:
+                all_signals.append(mean_rev)
 
         # Catalyst model
         catalyst = score_catalyst(

@@ -46,7 +46,7 @@ class TestExecutionModeEnum:
             ExecutionMode("invalid_mode")
 
     def test_default_setting(self):
-        """Settings should default to agentic_full."""
+        """Settings should default to quant_only (backtest-proven, no LLM cost)."""
         with patch.dict("os.environ", {}, clear=False):
             s = Settings(
                 anthropic_api_key="test",
@@ -55,7 +55,7 @@ class TestExecutionModeEnum:
                 fmp_api_key="test",
                 database_url="sqlite+aiosqlite:///test.db",
             )
-            assert s.execution_mode == "agentic_full"
+            assert s.execution_mode == "quant_only"
 
 
 # ---------------------------------------------------------------------------

@@ -28,7 +28,7 @@ def test_walk_forward_basic(sample_ohlcv):
     assert result.total_trades > 0
     assert len(result.trades) > 0
     for trade in result.trades:
-        assert trade.exit_reason in ("target", "stop", "expiry")
+        assert trade.exit_reason in ("target", "stop", "trail_stop", "expiry")
         assert trade.entry_date > signals_df["date"].iloc[0]  # no look-ahead
 
 
