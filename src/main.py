@@ -3215,6 +3215,23 @@ async def _debug_engines() -> None:
     logger.info("Debug output saved to %s", debug_path)
 
 
+async def _run_reliability_report() -> None:
+    """CLI mode: compute and print engine reliability report."""
+    from src.engines.reliability_report import compute_reliability_report, format_reliability_report
+
+    lookback = 90
+    import sys
+    for arg in sys.argv:
+        if arg.startswith("--lookback="):
+            try:
+                lookback = int(arg.split("=", 1)[1])
+            except ValueError:
+                pass
+
+    report = await compute_reliability_report(lookback_days=lookback)
+    print(format_reliability_report(report))
+
+
 async def _run_agreement_report() -> None:
     """CLI mode: compute and print engine agreement analysis."""
     from src.engines.agreement_analysis import compute_agreement_report, format_agreement_report
@@ -3290,6 +3307,10 @@ async def main():
 
     if "--agreement-report" in sys.argv:
         await _run_agreement_report()
+        return
+
+    if "--reliability-report" in sys.argv:
+        await _run_reliability_report()
         return
 
     # Start scheduler + API server
