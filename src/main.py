@@ -63,7 +63,7 @@ from src.validation.stage_validator import (
 )
 from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
-from src.signals.catalyst import score_catalyst
+# from src.signals.catalyst import score_catalyst  # disabled: unproven, sparse data
 from src.signals.ranker import (
     rank_candidates,
     deduplicate_signals,
@@ -196,20 +196,8 @@ def _technical_priority_score(feat: dict) -> float:
 def _is_fundamental_candidate(feat: dict) -> bool:
     """Technical prefilter before spending FMP fundamentals calls."""
     rsi2 = _safe_float(feat.get("rsi_2"))
-    rsi14 = _safe_float(feat.get("rsi_14"))
-    rvol = _safe_float(feat.get("rvol"))
-    roc5 = _safe_float(feat.get("roc_5"))
-    roc10 = _safe_float(feat.get("roc_10"))
-    days_to_earnings = feat.get("days_to_earnings")
-
-    oversold_setup = rsi2 is not None and rsi2 <= 22
-    breakout_setup = (
-        rsi14 is not None and rsi14 >= 52
-        and ((roc5 is not None and roc5 > 0) or (roc10 is not None and roc10 > 0))
-        and (rvol is not None and rvol >= 0.9)
-    )
-    catalyst_window = isinstance(days_to_earnings, int) and 2 <= days_to_earnings <= 30
-    return oversold_setup or breakout_setup or catalyst_window
+    # Only mean reversion is active (breakout + catalyst disabled)
+    return rsi2 is not None and rsi2 <= 22
 
 
 def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
@@ -1118,15 +1106,17 @@ async def _run_pipeline_core(
             if mean_rev:
                 all_signals.append(mean_rev)
 
-        # Catalyst model
-        catalyst = score_catalyst(
-            ticker, feat,
-            fundamental_data=feat.get("fundamental", {}),
-            days_to_earnings=feat.get("days_to_earnings"),
-            sentiment=feat.get("sentiment"),
-        )
-        if catalyst:
-            all_signals.append(catalyst)
+        # Catalyst model — disabled: depends on sparse earnings calendar data
+        # (days_to_earnings is None for most tickers → timing_score=0 → filtered).
+        # Cannot be backtested without historical earnings dates.
+        # catalyst = score_catalyst(
+        #     ticker, feat,
+        #     fundamental_data=feat.get("fundamental", {}),
+        #     days_to_earnings=feat.get("days_to_earnings"),
+        #     sentiment=feat.get("sentiment"),
+        # )
+        # if catalyst:
+        #     all_signals.append(catalyst)
 
     logger.info("Generated %d raw signals", len(all_signals))
 
