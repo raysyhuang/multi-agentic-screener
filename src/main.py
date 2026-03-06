@@ -1866,16 +1866,22 @@ async def _run_cross_engine_steps(
         ExternalEngineResultRevision,
         EnginePickOutcome,
         CrossEngineSynthesis,
+        EngineRun,
     )
 
     try:
         # --- Step 10: Collect external engine results ---
+        _engine_fetch_started = datetime.now(timezone.utc)
         if engine_prefetch_task is not None:
             logger.info("Step 10: Awaiting pre-fetched engine results...")
             engine_results, failed_engines = await engine_prefetch_task
         else:
             logger.info("Step 10: Collecting external engine results...")
             engine_results, failed_engines = await collect_engine_results(target_date=today)
+        _engine_fetch_finished = datetime.now(timezone.utc)
+        _engine_fetch_duration_ms = int(
+            (_engine_fetch_finished - _engine_fetch_started).total_seconds() * 1000
+        )
 
         sent_drop_alert = await maybe_send_engine_drop_alert(
             failed_engines=failed_engines,
@@ -2069,6 +2075,82 @@ async def _run_cross_engine_steps(
                     ))
 
         logger.info("Step 10 complete: %d engines reported", len(engine_results))
+
+        # Persist EngineRun rows for both successes and failures
+        try:
+            async with get_session() as run_session:
+                # Determine attempt number for today
+                from sqlalchemy import func as sa_func
+                existing_attempts = (
+                    await run_session.execute(
+                        select(sa_func.max(EngineRun.attempt)).where(
+                            EngineRun.run_date == today,
+                        )
+                    )
+                ).scalar_one_or_none()
+                attempt_num = (existing_attempts or 0) + 1
+
+                # Build engine_name -> engine_result_id map from upsert loop
+                engine_result_ids: dict[str, int] = {}
+                for er in engine_results:
+                    try:
+                        erd = date.fromisoformat(er.run_date)
+                    except ValueError:
+                        erd = today
+                    existing = (
+                        await run_session.execute(
+                            select(ExternalEngineResult.id).where(
+                                ExternalEngineResult.engine_name == er.engine_name,
+                                ExternalEngineResult.run_date == erd,
+                            )
+                        )
+                    ).scalar_one_or_none()
+                    if existing is not None:
+                        engine_result_ids[er.engine_name] = existing
+
+                # Insert success rows
+                for er in engine_results:
+                    p_hash = _stable_payload_hash(_json_safe(er.model_dump()))
+                    run_session.add(EngineRun(
+                        engine_name=er.engine_name,
+                        run_date=today,
+                        attempt=attempt_num,
+                        status="success",
+                        fetch_started_at=_engine_fetch_started,
+                        fetch_finished_at=_engine_fetch_finished,
+                        fetch_duration_ms=_engine_fetch_duration_ms,
+                        picks_count=len(er.picks),
+                        candidates_screened=er.candidates_screened,
+                        payload_hash=p_hash,
+                        engine_result_id=engine_result_ids.get(er.engine_name),
+                    ))
+
+                # Insert failure rows
+                _failure_status_map = {
+                    "exception": "failed",
+                    "no_output": "no_output",
+                    "no_response": "no_response",
+                    "quality_rejected": "quality_rejected",
+                }
+                for failure in failed_engines:
+                    run_session.add(EngineRun(
+                        engine_name=failure.engine_name,
+                        run_date=today,
+                        attempt=attempt_num,
+                        status=_failure_status_map.get(failure.kind, "failed"),
+                        fetch_started_at=_engine_fetch_started,
+                        fetch_finished_at=_engine_fetch_finished,
+                        fetch_duration_ms=_engine_fetch_duration_ms,
+                        error_message=failure.detail[:2000] if failure.detail else None,
+                    ))
+
+            logger.info(
+                "Persisted %d engine run rows (attempt=%d)",
+                len(engine_results) + len(failed_engines),
+                attempt_num,
+            )
+        except Exception:
+            logger.exception("Failed to persist engine_runs rows (non-fatal)")
 
         # --- Step 10b: Cross-engine dataset health check ---
         from src.data.dataset_verification import verify_cross_engine
@@ -3133,6 +3215,24 @@ async def _debug_engines() -> None:
     logger.info("Debug output saved to %s", debug_path)
 
 
+async def _run_agreement_report() -> None:
+    """CLI mode: compute and print engine agreement analysis."""
+    from src.engines.agreement_analysis import compute_agreement_report, format_agreement_report
+
+    lookback = 90
+    # Allow --lookback=N override
+    import sys
+    for arg in sys.argv:
+        if arg.startswith("--lookback="):
+            try:
+                lookback = int(arg.split("=", 1)[1])
+            except ValueError:
+                pass
+
+    report = await compute_agreement_report(lookback_days=lookback)
+    print(format_agreement_report(report))
+
+
 async def main():
     """Entry point — init DB, optionally run pipeline now, start scheduler."""
     import signal
@@ -3186,6 +3286,10 @@ async def main():
 
     if "--debug-engines" in sys.argv:
         await _debug_engines()
+        return
+
+    if "--agreement-report" in sys.argv:
+        await _run_agreement_report()
         return
 
     # Start scheduler + API server
