@@ -378,7 +378,7 @@ async def dashboard_calibration(mode: str | None = "quant_only"):
 
 @app.get("/api/dashboard/mode-comparison")
 async def dashboard_mode_comparison():
-    """LLM uplift: quant_only vs hybrid vs agentic_full metrics."""
+    """Performance comparison across execution modes (quant_only vs legacy)."""
     from src.output.performance import get_mode_comparison
     return {"comparison": await get_mode_comparison()}
 
