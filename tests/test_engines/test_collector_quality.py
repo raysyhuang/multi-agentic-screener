@@ -1,3 +1,5 @@
+from datetime import date, timedelta
+
 from src.contracts import EngineResultPayload
 from src.engines.collector import _is_critical_quality_issue, _validate_payload_quality
 
@@ -98,4 +100,53 @@ def test_quality_flags_duplicate_price_tuples_as_critical():
     )
     warnings = _validate_payload_quality("koocore_d", p)
     assert any("duplicate price tuples across tickers" in w for w in warnings)
+    assert _is_critical_quality_issue(warnings) is True
+
+
+def test_top3_morning_no_artifacts_classifies_expected_stale():
+    run_date = (date.today() - timedelta(days=1)).isoformat()
+    payload = EngineResultPayload.model_validate({
+        "engine_name": "top3_7d",
+        "engine_version": "1.0",
+        "run_date": run_date,
+        "run_timestamp": f"{run_date}T22:30:00Z",
+        "regime": "bear",
+        "status": "no_artifacts",
+        "candidates_screened": 0,
+        "pipeline_duration_s": None,
+        "picks": [],
+    })
+
+    warnings = _validate_payload_quality(
+        "top3_7d",
+        payload,
+        collection_time="morning",
+        asof_date=date.today(),
+    )
+    assert any(w.startswith("expected_stale:") for w in warnings)
+    assert _is_critical_quality_issue(warnings) is True
+
+
+def test_top3_evening_no_artifacts_is_real_failure():
+    run_date = (date.today() - timedelta(days=1)).isoformat()
+    payload = EngineResultPayload.model_validate({
+        "engine_name": "top3_7d",
+        "engine_version": "1.0",
+        "run_date": run_date,
+        "run_timestamp": f"{run_date}T22:30:00Z",
+        "regime": "bear",
+        "status": "no_artifacts",
+        "candidates_screened": 0,
+        "pipeline_duration_s": None,
+        "picks": [],
+    })
+
+    warnings = _validate_payload_quality(
+        "top3_7d",
+        payload,
+        collection_time="evening",
+        asof_date=date.today(),
+    )
+    assert any(w.startswith("no_artifacts:") for w in warnings)
+    assert not any(w.startswith("expected_stale:") for w in warnings)
     assert _is_critical_quality_issue(warnings) is True

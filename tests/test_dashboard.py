@@ -156,6 +156,38 @@ async def test_dashboard_performance_empty(app_client):
 
 
 @pytest.mark.asyncio
+async def test_dashboard_engine_reliability_endpoint(app_client):
+    """/api/dashboard/engine-reliability returns snapshot payload."""
+    app, _ = app_client
+    mock_payload = {
+        "as_of": "2026-03-07",
+        "days": 30,
+        "engines": [
+            {
+                "engine_name": "koocore_d",
+                "latest_status": "success",
+                "latest_reason": "success",
+                "last_success_date": "2026-03-07",
+                "consecutive_failures": 0,
+                "success_rate_7d": 0.8,
+                "success_rate_30d": 0.7,
+            },
+        ],
+    }
+    with patch("src.engines.reliability_snapshot.get_engine_reliability_snapshot", new_callable=AsyncMock) as mock_fn:
+        mock_fn.return_value = mock_payload
+        transport = ASGITransport(app=app)
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            resp = await client.get("/api/dashboard/engine-reliability")
+
+    assert resp.status_code == 200
+    data = resp.json()
+    assert data["as_of"] == "2026-03-07"
+    assert data["days"] == 30
+    assert data["engines"][0]["engine_name"] == "koocore_d"
+
+
+@pytest.mark.asyncio
 async def test_dashboard_performance_with_equity_curve():
     """Performance endpoint returns equity_curve with cumulative P&L."""
     mock_equity = [

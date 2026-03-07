@@ -496,6 +496,14 @@ async def dashboard_engine_strategy_performance(days: int = Query(default=90, ge
     }
 
 
+@app.get("/api/dashboard/engine-reliability")
+async def dashboard_engine_reliability(days: int = Query(default=30, ge=7, le=365)):
+    """Per-engine operational reliability summary from engine_runs."""
+    from src.engines.reliability_snapshot import get_engine_reliability_snapshot
+
+    return await get_engine_reliability_snapshot(days=days)
+
+
 @app.get("/api/dashboard/dataset-health")
 async def dashboard_dataset_health():
     """Return the latest dataset health report from the most recent DailyRun."""

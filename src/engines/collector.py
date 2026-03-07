@@ -36,6 +36,19 @@ EngineFailureKind = Literal[
     "quality_rejected",
 ]
 
+CollectionTime = Literal["morning", "evening"]
+
+EngineFailureReasonCode = Literal[
+    "stale",
+    "expected_stale",
+    "no_artifacts",
+    "schema_invalid",
+    "risk_invalid",
+    "timeout",
+    "no_response",
+    "exception",
+]
+
 
 @dataclass(frozen=True)
 class EngineFailure:
@@ -43,6 +56,7 @@ class EngineFailure:
 
     engine_name: str
     kind: EngineFailureKind
+    reason_code: EngineFailureReasonCode = "schema_invalid"
     detail: str = ""
 
 
@@ -200,50 +214,137 @@ def _trading_days_between(start: date, end: date) -> int:
     return count
 
 
-def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) -> list[str]:
+def _format_quality_issue(code: str, message: str) -> str:
+    return f"{code}: {message}"
+
+
+def _reason_code_from_issue(issue: str) -> str:
+    if ":" not in issue:
+        return "schema_invalid"
+    return issue.split(":", 1)[0].strip().lower() or "schema_invalid"
+
+
+def _validate_payload_quality(
+    engine_name: str,
+    payload: EngineResultPayload,
+    *,
+    collection_time: CollectionTime = "morning",
+    asof_date: date | None = None,
+) -> list[str]:
     """Check an engine payload for signs of stale, mock, or degenerate data.
 
     Returns a list of warning strings. Empty list means the payload is clean.
     """
     warnings: list[str] = []
-
-    # 0. Non-success status
+    reference_date = asof_date or date.today()
     status = (payload.status or "").strip().lower()
-    if status not in {"success", "ok"}:
-        warnings.append(f"non-success status={payload.status}")
 
-    # 1. Stale run_date (trading-day aware)
+    run_date: date | None = None
+    trading_days: int | None = None
+    calendar_days: int | None = None
+
+    # 0. Parse run_date once for status/staleness decisions.
     try:
         run_date = datetime.strptime(payload.run_date, "%Y-%m-%d").date()
-        trading_days = _trading_days_between(run_date, date.today())
-        if trading_days > _MAX_STALENESS_TRADING_DAYS:
-            calendar_days = (date.today() - run_date).days
-            warnings.append(
-                f"stale run_date ({payload.run_date}, {calendar_days}d / {trading_days} trading days old)"
-            )
+        trading_days = _trading_days_between(run_date, reference_date)
+        calendar_days = (reference_date - run_date).days
     except ValueError:
-        warnings.append(f"unparseable run_date: {payload.run_date}")
+        warnings.append(
+            _format_quality_issue("schema_invalid", f"unparseable run_date: {payload.run_date}")
+        )
 
-    # 1b. Pipeline-failure signature: screened nothing and emitted nothing
+    # 1. Non-success status.
+    if status not in {"success", "ok"}:
+        if (
+            engine_name == "top3_7d"
+            and status == "no_artifacts"
+            and collection_time == "morning"
+            and trading_days is not None
+            and trading_days <= 1
+        ):
+            warnings.append(
+                _format_quality_issue(
+                    "expected_stale",
+                    (
+                        f"Top3-7D no_artifacts is expected during morning collection "
+                        f"(run_date={payload.run_date}, lag={trading_days} trading day)"
+                    ),
+                )
+            )
+        elif status == "no_artifacts":
+            warnings.append(
+                _format_quality_issue("no_artifacts", f"non-success status={payload.status}")
+            )
+        else:
+            warnings.append(
+                _format_quality_issue("schema_invalid", f"non-success status={payload.status}")
+            )
+
+    # 2. Stale run_date (trading-day aware)
+    if trading_days is not None:
+        if trading_days > _MAX_STALENESS_TRADING_DAYS:
+            warnings.append(
+                _format_quality_issue(
+                    "stale",
+                    (
+                        f"stale run_date ({payload.run_date}, {calendar_days}d / "
+                        f"{trading_days} trading days old)"
+                    ),
+                )
+            )
+
+    # 2b. Pipeline-failure signature: screened nothing and emitted nothing.
     if payload.candidates_screened == 0 and not payload.picks:
-        warnings.append("zero candidates screened and zero picks")
+        if (
+            engine_name == "top3_7d"
+            and status == "no_artifacts"
+            and collection_time == "morning"
+            and trading_days is not None
+            and trading_days <= 1
+        ):
+            warnings.append(
+                _format_quality_issue(
+                    "expected_stale",
+                    "zero candidates screened and zero picks",
+                )
+            )
+        elif status == "no_artifacts":
+            warnings.append(
+                _format_quality_issue("no_artifacts", "zero candidates screened and zero picks")
+            )
+        else:
+            warnings.append(
+                _format_quality_issue("schema_invalid", "zero candidates screened and zero picks")
+            )
         return warnings  # nothing else to validate
 
-    # 2. Zero or negative entry prices
+    # 3. Zero or negative entry prices
     bad_prices = [p.ticker for p in payload.picks if p.entry_price <= 0]
     if bad_prices:
-        warnings.append(f"{len(bad_prices)} picks with zero/negative entry price: {bad_prices[:5]}")
+        warnings.append(
+            _format_quality_issue(
+                "risk_invalid",
+                f"{len(bad_prices)} picks with zero/negative entry price: {bad_prices[:5]}",
+            )
+        )
 
-    # 3. All confidence scores identical (suggests mock/hardcoded data)
+    # 4. All confidence scores identical (suggests mock/hardcoded data)
     confidences = [p.confidence for p in payload.picks]
     if len(set(confidences)) == 1 and len(confidences) > 1:
-        warnings.append(f"all {len(confidences)} picks have identical confidence={confidences[0]}")
+        warnings.append(
+            _format_quality_issue(
+                "hint",
+                f"all {len(confidences)} picks have identical confidence={confidences[0]}",
+            )
+        )
 
-    # 4. Unreasonable pick count (too many suggests no filtering)
+    # 5. Unreasonable pick count (too many suggests no filtering)
     if len(payload.picks) > 20:
-        warnings.append(f"unusually high pick count ({len(payload.picks)})")
+        warnings.append(
+            _format_quality_issue("hint", f"unusually high pick count ({len(payload.picks)})")
+        )
 
-    # 5. Stop/target direction sanity (for long picks: stop < entry < target)
+    # 6. Stop/target direction sanity (for long picks: stop < entry < target)
     inverted = []
     for p in payload.picks:
         if p.stop_loss is not None and p.stop_loss >= p.entry_price:
@@ -251,9 +352,11 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
         if p.target_price is not None and p.target_price <= p.entry_price:
             inverted.append(f"{p.ticker}(target={p.target_price}<=entry={p.entry_price})")
     if inverted:
-        warnings.append(f"inverted stop/target: {inverted[:5]}")
+        warnings.append(
+            _format_quality_issue("risk_invalid", f"inverted stop/target: {inverted[:5]}")
+        )
 
-    # 6. Stop loss too far from entry (>30% away suggests bad data)
+    # 7. Stop loss too far from entry (>30% away suggests bad data)
     wide_stops = []
     for p in payload.picks:
         if p.stop_loss is not None and p.entry_price > 0:
@@ -261,16 +364,24 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
             if pct_distance > 0.30:
                 wide_stops.append(f"{p.ticker}({pct_distance:.0%})")
     if wide_stops:
-        warnings.append(f"stop loss >30% from entry: {wide_stops[:5]}")
+        warnings.append(
+            _format_quality_issue(
+                "risk_invalid",
+                f"stop loss >30% from entry: {wide_stops[:5]}",
+            )
+        )
 
-    # 7. Missing risk parameters (strict): picks without stop/target are not tradable
+    # 8. Missing risk parameters (strict): picks without stop/target are not tradable
     missing_stop = [
         p.ticker for p in payload.picks
         if p.stop_loss is None or p.stop_loss <= 0
     ]
     if missing_stop:
         warnings.append(
-            f"{len(missing_stop)} picks missing stop_loss: {missing_stop[:5]}"
+            _format_quality_issue(
+                "risk_invalid",
+                f"{len(missing_stop)} picks missing stop_loss: {missing_stop[:5]}",
+            )
         )
 
     missing_target = [
@@ -279,10 +390,13 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
     ]
     if missing_target:
         warnings.append(
-            f"{len(missing_target)} picks missing target_price: {missing_target[:5]}"
+            _format_quality_issue(
+                "risk_invalid",
+                f"{len(missing_target)} picks missing target_price: {missing_target[:5]}",
+            )
         )
 
-    # 8. Duplicate full risk tuples across different tickers (data-mapping smell)
+    # 9. Duplicate full risk tuples across different tickers (data-mapping smell)
     tuple_to_tickers: dict[tuple[float, float, float], list[str]] = {}
     for p in payload.picks:
         key = (
@@ -302,14 +416,19 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
                 (t[0], t[1][:5]) for t in duplicate_tuples[:3]
             ]
         ]
-        warnings.append(f"duplicate price tuples across tickers: {sample}")
+        warnings.append(
+            _format_quality_issue(
+                "schema_invalid",
+                f"duplicate price tuples across tickers: {sample}",
+            )
+        )
 
-    # 9. Optional quality hint: all picks have empty score metadata
+    # 10. Optional quality hint: all picks have empty score metadata
     if engine_name == "koocore_d" and payload.picks and all(
         not ((p.metadata or {}).get("scores"))
         for p in payload.picks
     ):
-        warnings.append("all picks have empty metadata.scores")
+        warnings.append(_format_quality_issue("hint", "all picks have empty metadata.scores"))
 
     return warnings
 
@@ -317,7 +436,12 @@ def _validate_payload_quality(engine_name: str, payload: EngineResultPayload) ->
 def _is_critical_quality_issue(warnings: list[str]) -> bool:
     """Return True if any warning should reject an engine payload."""
     return any(
-        w.startswith("stale")
+        w.startswith("expected_stale:")
+        or w.startswith("stale:")
+        or w.startswith("stale run_date")
+        or w.startswith("schema_invalid:")
+        or w.startswith("risk_invalid:")
+        or w.startswith("no_artifacts:")
         or w.startswith("unparseable")
         or "zero/negative" in w
         or w.startswith("non-success status")
@@ -329,7 +453,11 @@ def _is_critical_quality_issue(warnings: list[str]) -> bool:
     )
 
 
-async def _collect_local(target_date: date | None = None) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
+async def _collect_local(
+    target_date: date | None = None,
+    *,
+    collection_time: CollectionTime = "morning",
+) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Run engines locally in parallel and return validated payloads + failure list."""
     from src.engines.koocore_runner import run_koocore_locally
     from src.engines.gemini_runner import run_gemini_locally
@@ -352,6 +480,7 @@ async def _collect_local(target_date: date | None = None) -> tuple[list[EngineRe
                 EngineFailure(
                     engine_name=engine_name,
                     kind="exception",
+                    reason_code="exception",
                     detail=type(result).__name__,
                 ),
             )
@@ -360,9 +489,20 @@ async def _collect_local(target_date: date | None = None) -> tuple[list[EngineRe
                 "Engine %s returned None — engine produced no output this cycle",
                 engine_name,
             )
-            failed_engines.append(EngineFailure(engine_name=engine_name, kind="no_output"))
+            failed_engines.append(
+                EngineFailure(
+                    engine_name=engine_name,
+                    kind="no_output",
+                    reason_code="no_response",
+                )
+            )
         else:
-            quality_warnings = _validate_payload_quality(engine_name, result)
+            quality_warnings = _validate_payload_quality(
+                engine_name,
+                result,
+                collection_time=collection_time,
+                asof_date=target_date,
+            )
             if quality_warnings:
                 has_critical = _is_critical_quality_issue(quality_warnings)
                 for w in quality_warnings:
@@ -373,6 +513,7 @@ async def _collect_local(target_date: date | None = None) -> tuple[list[EngineRe
                         EngineFailure(
                             engine_name=engine_name,
                             kind="quality_rejected",
+                            reason_code=_reason_code_from_issue(quality_warnings[0]),
                             detail=quality_warnings[0] if quality_warnings else "",
                         ),
                     )
@@ -386,7 +527,11 @@ async def _collect_local(target_date: date | None = None) -> tuple[list[EngineRe
     return payloads, failed_engines
 
 
-async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
+async def _collect_hybrid(
+    target_date: date | None = None,
+    *,
+    collection_time: CollectionTime = "morning",
+) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Hybrid mode: KooCore-D via HTTP (GitHub Action pushes results), Gemini STST locally."""
     from src.engines.gemini_runner import run_gemini_locally
 
@@ -441,14 +586,30 @@ async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineR
         if isinstance(result, Exception):
             logger.warning("Engine %s raised exception in hybrid mode: %s", engine_name, result)
             failed_engines.append(
-                EngineFailure(engine_name=engine_name, kind="exception", detail=type(result).__name__),
+                EngineFailure(
+                    engine_name=engine_name,
+                    kind="exception",
+                    reason_code="exception",
+                    detail=type(result).__name__,
+                ),
             )
         elif result is None:
             kind: EngineFailureKind = "no_response" if engine_name in ("koocore_d", "top3_7d") else "no_output"
             logger.warning("Engine %s returned no data in hybrid mode", engine_name)
-            failed_engines.append(EngineFailure(engine_name=engine_name, kind=kind))
+            failed_engines.append(
+                EngineFailure(
+                    engine_name=engine_name,
+                    kind=kind,
+                    reason_code="no_response",
+                )
+            )
         else:
-            quality_warnings = _validate_payload_quality(engine_name, result)
+            quality_warnings = _validate_payload_quality(
+                engine_name,
+                result,
+                collection_time=collection_time,
+                asof_date=target_date,
+            )
             if quality_warnings:
                 has_critical = _is_critical_quality_issue(quality_warnings)
                 for w in quality_warnings:
@@ -459,6 +620,7 @@ async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineR
                         EngineFailure(
                             engine_name=engine_name,
                             kind="quality_rejected",
+                            reason_code=_reason_code_from_issue(quality_warnings[0]),
                             detail=quality_warnings[0] if quality_warnings else "",
                         ),
                     )
@@ -472,7 +634,11 @@ async def _collect_hybrid(target_date: date | None = None) -> tuple[list[EngineR
     return payloads, failed_engines
 
 
-async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure]]:
+async def _collect_http(
+    target_date: date | None = None,
+    *,
+    collection_time: CollectionTime = "morning",
+) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Fetch results from remote engines via HTTP (legacy mode)."""
     settings = get_settings()
     api_key = settings.engine_api_key
@@ -539,15 +705,27 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure
                 EngineFailure(
                     engine_name=engine_name,
                     kind="exception",
+                    reason_code="exception",
                     detail=type(result).__name__,
                 ),
             )
         elif result is None:
             logger.warning("Engine %s returned no response in HTTP mode", engine_name)
-            failed_engines.append(EngineFailure(engine_name=engine_name, kind="no_response"))
+            failed_engines.append(
+                EngineFailure(
+                    engine_name=engine_name,
+                    kind="no_response",
+                    reason_code="no_response",
+                )
+            )
         elif result is not None:
             # Quality validation — reject payloads with critical issues
-            quality_warnings = _validate_payload_quality(engine_name, result)
+            quality_warnings = _validate_payload_quality(
+                engine_name,
+                result,
+                collection_time=collection_time,
+                asof_date=target_date,
+            )
             if quality_warnings:
                 has_critical = _is_critical_quality_issue(quality_warnings)
                 for w in quality_warnings:
@@ -558,6 +736,7 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure
                         EngineFailure(
                             engine_name=engine_name,
                             kind="quality_rejected",
+                            reason_code=_reason_code_from_issue(quality_warnings[0]),
                             detail=quality_warnings[0] if quality_warnings else "",
                         ),
                     )
@@ -573,6 +752,8 @@ async def _collect_http() -> tuple[list[EngineResultPayload], list[EngineFailure
 
 async def collect_engine_results(
     target_date: date | None = None,
+    *,
+    collection_time: CollectionTime = "morning",
 ) -> tuple[list[EngineResultPayload], list[EngineFailure]]:
     """Collect results from all engines in parallel.
 
@@ -588,8 +769,8 @@ async def collect_engine_results(
     mode = (settings.engine_run_mode or "hybrid").strip().lower()
 
     if mode == "local":
-        return await _collect_local(target_date=target_date)
+        return await _collect_local(target_date=target_date, collection_time=collection_time)
     elif mode == "hybrid":
-        return await _collect_hybrid(target_date=target_date)
+        return await _collect_hybrid(target_date=target_date, collection_time=collection_time)
     else:
-        return await _collect_http()
+        return await _collect_http(target_date=target_date, collection_time=collection_time)
