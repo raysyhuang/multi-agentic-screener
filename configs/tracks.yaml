@@ -49,21 +49,19 @@ tracks:
       guardian_max_sector_concentration: 2
 
   # ── Regime strategy weighting ────────────────────────────────────
-  - name: bull_breakout_boost
-    description: "Amplify breakout in bull regime, suppress mean reversion"
+  - name: bull_mean_rev_discount
+    description: "Discount mean reversion in bull regime — oversold signals less reliable in strong uptrends"
     overrides:
       regime_multipliers:
         bull:
-          breakout: 1.5
-          mean_reversion: 0.7
+          mean_reversion: 0.75
 
-  - name: bear_mean_reversion
-    description: "Double down on mean reversion in bear, heavy breakout penalty"
+  - name: bear_mean_rev_boost
+    description: "Amplify mean reversion in bear regime — oversold bounces more reliable in fear"
     overrides:
       regime_multipliers:
         bear:
           mean_reversion: 1.4
-          breakout: 0.3
       regime_gate_bear_penalty_multiplier: 0.45
 
   - name: soft_bear_penalty
