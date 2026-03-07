@@ -61,7 +61,8 @@ from src.validation.stage_validator import (
     validate_final_output,
     cross_validate_ohlcv,
 )
-from src.signals.breakout import score_breakout
+# Breakout model disabled — zero edge in backtesting (see outputs/research/)
+# from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
 # from src.signals.catalyst import score_catalyst  # disabled: unproven, sparse data
 from src.signals.ranker import (
@@ -73,7 +74,7 @@ from src.signals.ranker import (
     apply_cooldown,
     MODEL_MAP,
 )
-from src.agents.orchestrator import run_agent_pipeline, PipelineRun
+from src.agents.orchestrator import PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert, format_cross_engine_alert
 from src.output.performance import check_open_positions
@@ -1214,6 +1215,7 @@ async def _run_pipeline_core(
             max_picks=settings.max_final_picks,
         )
     else:
+        from src.agents.orchestrator import run_agent_pipeline
         pipeline_result = await run_agent_pipeline(
             candidates=ranked,
             regime_context=regime_context,
@@ -3079,14 +3081,16 @@ def start_scheduler() -> None:
 
 
 async def _debug_engines() -> None:
-    """Debug mode: collect all engine results, run verifier + synthesizer, print comparison."""
+    """Debug mode: collect all engine results, run deterministic synthesis, print comparison."""
     import json as _json
     from pathlib import Path
 
     from src.engines.collector import collect_engine_results
     from src.engines.credibility import compute_credibility_snapshot, compute_weighted_picks
-    from src.agents.cross_engine_verifier import CrossEngineVerifierAgent
-    from src.agents.cross_engine_synthesizer import CrossEngineSynthesizerAgent
+    from src.engines.deterministic_synthesizer import (
+        deterministic_regime_weight_adjust,
+        synthesize_deterministic,
+    )
 
     today = date.today()
     logger.info("=" * 60)
@@ -3127,7 +3131,7 @@ async def _debug_engines() -> None:
 
     weighted = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
 
-    # Verifier
+    # Deterministic regime weight adjustment
     cred_stats_dict = {
         name: {
             "hit_rate": s.hit_rate, "weight": s.weight,
@@ -3135,20 +3139,15 @@ async def _debug_engines() -> None:
         }
         for name, s in cred_snapshot.engine_stats.items()
     }
-    verifier = CrossEngineVerifierAgent()
-    verifier_result = await verifier.verify(
-        engine_results=[_json_safe(er.model_dump()) for er in engine_results],
-        credibility_stats=cred_stats_dict,
-        regime_context={"regime": "debug"},
+    weight_adjustments = deterministic_regime_weight_adjust(
+        cred_snapshot.engine_stats, "debug",
     )
 
-    # Synthesizer
-    synthesizer = CrossEngineSynthesizerAgent()
-    synthesis = await synthesizer.synthesize(
+    # Deterministic synthesis
+    synthesis = synthesize_deterministic(
         weighted_picks=weighted,
-        verifier_output=_json_safe(verifier_result.model_dump()),
-        credibility_weights=cred_stats_dict,
-        regime_context={"regime": "debug"},
+        regime="debug",
+        engines_reporting=len(engine_results),
     )
 
     # Build debug output
@@ -3157,7 +3156,7 @@ async def _debug_engines() -> None:
         "engines": engine_summary,
         "credibility": cred_stats_dict,
         "weighted_picks": weighted,
-        "verifier": _json_safe(verifier_result.model_dump()),
+        "weight_adjustments": weight_adjustments,
         "synthesis": _json_safe(synthesis.model_dump()),
     }
 
