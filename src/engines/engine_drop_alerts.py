@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date, datetime, timedelta
+from datetime import UTC, date, datetime, timedelta
 import logging
 from typing import Awaitable, Callable
 
@@ -226,7 +226,7 @@ async def maybe_send_engine_drop_alert(
         _clear_drop_signature_state()
         return sent_any
 
-    now_utc = datetime.utcnow()
+    now_utc = datetime.now(UTC)
     metrics = await _load_engine_alert_metrics(
         run_date=run_date,
         engine_names={f.engine_name for f in alertable_failures},
