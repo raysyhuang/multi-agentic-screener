@@ -14,7 +14,6 @@ from __future__ import annotations
 
 import argparse
 import itertools
-import json
 import logging
 import sys
 import time
@@ -564,14 +563,14 @@ def format_model_report(result: ModelResult) -> str:
         lines.append(f"  DSR (p-value): {result.dsr:.4f}  {'PASS' if result.dsr > 0.95 else 'FAIL'}")
 
     # Exit reasons
-    lines.append(f"\n  Exit Reasons:")
+    lines.append("\n  Exit Reasons:")
     for reason, count in sorted(result.by_exit_reason.items()):
         pct = count / m.total_trades * 100 if m.total_trades else 0
         lines.append(f"    {reason:8s}: {count:4d} ({pct:.1f}%)")
 
     # By regime
     if result.by_regime:
-        lines.append(f"\n  By Regime:")
+        lines.append("\n  By Regime:")
         for regime, rm in sorted(result.by_regime.items()):
             lines.append(
                 f"    {regime:8s}: {rm.total_trades:3d} trades, "

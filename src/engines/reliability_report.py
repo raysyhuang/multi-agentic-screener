@@ -8,7 +8,7 @@ from collections import defaultdict
 from dataclasses import dataclass, field
 from datetime import date, datetime, timedelta, timezone
 
-from sqlalchemy import select, func as sa_func
+from sqlalchemy import select
 
 from src.db.models import EngineRun, ExternalEngineResult, EnginePickOutcome
 from src.db.session import get_session

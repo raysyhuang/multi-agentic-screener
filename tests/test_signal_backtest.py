@@ -8,7 +8,6 @@ import pytest
 
 from src.research.signal_backtest import (
     ModelResult,
-    Trade,
     classify_regime,
     format_model_report,
     run_model_backtest,
