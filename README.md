@@ -63,16 +63,16 @@ The system acts as the **hub** in a multi-engine architecture, collecting and sy
 |---|---|---|---|
 | **Multi-Agentic Screener** | RSI(2) Mean Reversion, trailing stop | 3d | Local pipeline |
 | **KooCore-D** | Weekly/Pro30/Swing momentum, regime-gated | 7-30d | HTTP from Heroku (`koocore-dashboard`) |
-| **Gemini STST** | Momentum (RVOL>2, ATR>6.5%) + Reversion (RSI2<10) | 5-7d | HTTP from Heroku (`geministst`) |
+| **Gemini STST** | Momentum (RVOL>2, ATR>6.5%) + Reversion (RSI2<10) | 5-7d | Local (in-process runner) |
 | **Top3-7D** | Energy/Release/Amplification 3-gate, top 3 picks | 7d | HTTP from Heroku (`sleepy-everglades-94250`) |
 
-Engines are normalized to a standardized `EngineResultPayload` contract. All expose `GET /api/engine/results` and are collected via async HTTP.
+Collection mode is **hybrid** (`engine_run_mode=hybrid`): KooCore-D and Top3-7D via HTTP, Gemini STST runs locally in-process. All engines normalize to the `EngineResultPayload` contract.
 
 ### Pipeline Steps (10-14)
 
 After the core pipeline (Steps 1-9) completes, five cross-engine steps run:
 
-1. **Step 10 — Collect**: Fetches engine results via async HTTP in parallel. Fail-open per engine (one engine down doesn't block others). Results stored in `external_engine_results` table with payload hashing and revision tracking.
+1. **Step 10 — Collect**: Fetches engine results in parallel (hybrid mode: KooCore-D + Top3-7D via HTTP, Gemini STST locally). Fail-open per engine (one engine down doesn't block others). Results stored in `external_engine_results` table with payload hashing and revision tracking.
 
 2. **Step 11 — Resolve Outcomes**: Resolves previous-day engine pick outcomes against actual market prices via yfinance. Updates `engine_pick_outcomes` table and recomputes credibility weights.
 
