@@ -37,7 +37,7 @@ class DailyRun(Base):
     candidates_scored: Mapped[int] = mapped_column(Integer, nullable=False)
     pipeline_duration_s: Mapped[float | None] = mapped_column(Float, nullable=True)
     execution_mode: Mapped[str | None] = mapped_column(
-        String(20), nullable=True, default="agentic_full"
+        String(20), nullable=True, default="quant_only"
     )
     dataset_health: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     pipeline_health: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
