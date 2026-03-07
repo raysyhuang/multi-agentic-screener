@@ -472,6 +472,7 @@ async def get_performance_summary(
             run_result = await session.execute(
                 select(DailyRun.run_date).where(
                     DailyRun.execution_mode == execution_mode,
+                    DailyRun.run_date >= cutoff,
                 )
             )
             valid_dates = {r.run_date for r in run_result.all()}

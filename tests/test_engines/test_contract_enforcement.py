@@ -129,14 +129,14 @@ class TestPayloadQualityChecks:
 
     def test_critical_issue_detection(self):
         """Stale, missing risk params, and duplicate tuples are critical."""
-        assert _is_critical_quality_issue(["stale run_date (2025-01-01, 420d)"]) is True
-        assert _is_critical_quality_issue(["2 picks missing stop_loss: ['X', 'Y']"]) is True
-        assert _is_critical_quality_issue(["duplicate price tuples across tickers: ..."]) is True
+        assert _is_critical_quality_issue(["stale: stale run_date (2025-01-01, 420d)"]) is True
+        assert _is_critical_quality_issue(["risk_invalid: 2 picks missing stop_loss: ['X', 'Y']"]) is True
+        assert _is_critical_quality_issue(["schema_invalid: duplicate price tuples across tickers: ..."]) is True
 
     def test_non_critical_warning(self):
         """Excessive pick count and wide stops are warnings, not critical."""
-        assert _is_critical_quality_issue(["unusually high pick count (25)"]) is False
-        assert _is_critical_quality_issue(["stop loss >30% from entry: ['XYZ(35%)']"]) is False
+        assert _is_critical_quality_issue(["hint: unusually high pick count (25)"]) is False
+        assert _is_critical_quality_issue(["hint: stop loss >30% from entry: ['XYZ(35%)']"]) is False
 
     def test_wide_stop_flagged(self):
         """Stop >30% from entry is a warning."""

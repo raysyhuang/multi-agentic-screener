@@ -10,21 +10,9 @@ from sqlalchemy import select
 
 from src.db.models import EngineRun
 from src.db.session import get_session
+from src.utils.trading_calendar import trading_days_between
 
 KNOWN_ENGINES = ("koocore_d", "gemini_stst", "top3_7d")
-
-
-def _trading_days_between(start: date, end: date) -> int:
-    if start >= end:
-        return 0
-    current = start
-    days = 0
-    one_day = timedelta(days=1)
-    while current < end:
-        current += one_day
-        if current.weekday() < 5:
-            days += 1
-    return days
 
 
 def _reason_from_error_message(error_message: str | None, status: str) -> str:
@@ -95,7 +83,7 @@ async def get_engine_reliability_snapshot(
         latest_status = latest.status if latest else "no_data"
         latest_reason = _reason_from_error_message(latest.error_message if latest else None, latest_status)
         last_success_age_trading_days = (
-            _trading_days_between(last_success_date, asof)
+            trading_days_between(last_success_date, asof)
             if last_success_date is not None
             else None
         )

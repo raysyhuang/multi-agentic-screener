@@ -1,19 +1,31 @@
-"""Engine-drop alert formatting + cooldown state for cross-engine collection."""
+"""Engine-drop alert formatting + cooldown state for cross-engine collection.
+
+Alert state (alerted engines, signature, cooldown timestamp) is persisted to DB
+so it survives Heroku dyno restarts and deploys.  An in-memory cache avoids a
+DB round-trip on every call within the same process lifetime.
+"""
 
 from __future__ import annotations
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, date, datetime
 import logging
 from typing import Awaitable, Callable
 
 from sqlalchemy import func, select
+from sqlalchemy.exc import SQLAlchemyError
 
-from src.db.models import EngineRun
+from src.db.models import EngineAlertState, EngineRun
 from src.db.session import get_session
 from src.engines.collector import EngineFailure
+from src.utils.trading_calendar import trading_days_between
 
 logger = logging.getLogger(__name__)
 
+# ---------------------------------------------------------------------------
+# In-memory cache — loaded from DB on first access, written back on mutation
+# ---------------------------------------------------------------------------
+
+_state_loaded: bool = False
 _engine_drop_last_signature: str | None = None
 _engine_drop_last_sent_at: datetime | None = None
 _engine_drop_alerted_engines: set[str] = set()
@@ -21,8 +33,58 @@ _engine_drop_alerted_engines: set[str] = set()
 _SendAlertFn = Callable[[str], Awaitable[bool]]
 
 
+async def _load_state_from_db() -> None:
+    """Load persisted alert state into module-level cache (once per process)."""
+    global _state_loaded, _engine_drop_last_signature, _engine_drop_last_sent_at, _engine_drop_alerted_engines
+    if _state_loaded:
+        return
+    try:
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    select(EngineAlertState).order_by(EngineAlertState.id).limit(1)
+                )
+            ).scalar_one_or_none()
+            if row is not None:
+                _engine_drop_alerted_engines = set(row.alerted_engines or [])
+                _engine_drop_last_signature = row.last_signature
+                _engine_drop_last_sent_at = row.last_sent_at
+                logger.info(
+                    "Loaded engine alert state from DB: alerted=%s, sig=%s",
+                    _engine_drop_alerted_engines,
+                    _engine_drop_last_signature,
+                )
+    except (SQLAlchemyError, OSError) as e:
+        logger.warning("Failed to load engine alert state from DB, starting fresh: %s", e)
+    _state_loaded = True
+
+
+async def _persist_state_to_db() -> None:
+    """Upsert current in-memory alert state to DB."""
+    try:
+        async with get_session() as session:
+            row = (
+                await session.execute(
+                    select(EngineAlertState).order_by(EngineAlertState.id).limit(1)
+                )
+            ).scalar_one_or_none()
+            if row is None:
+                row = EngineAlertState(
+                    alerted_engines=sorted(_engine_drop_alerted_engines),
+                    last_signature=_engine_drop_last_signature,
+                    last_sent_at=_engine_drop_last_sent_at,
+                )
+                session.add(row)
+            else:
+                row.alerted_engines = sorted(_engine_drop_alerted_engines)
+                row.last_signature = _engine_drop_last_signature
+                row.last_sent_at = _engine_drop_last_sent_at
+    except (SQLAlchemyError, OSError) as e:
+        logger.warning("Failed to persist engine alert state to DB: %s", e)
+
+
 def clear_engine_drop_alert_state() -> None:
-    """Reset drop-alert state after a healthy cycle."""
+    """Reset drop-alert state (in-memory only — call _persist_state_to_db after)."""
     global _engine_drop_last_signature, _engine_drop_last_sent_at, _engine_drop_alerted_engines
     _engine_drop_last_signature = None
     _engine_drop_last_sent_at = None
@@ -96,19 +158,6 @@ def _failure_phrase(failure: EngineFailure) -> str:
     return failure.kind
 
 
-def _trading_days_between(start: date, end: date) -> int:
-    if start >= end:
-        return 0
-    days = 0
-    current = start
-    one_day = timedelta(days=1)
-    while current < end:
-        current += one_day
-        if current.weekday() < 5:
-            days += 1
-    return days
-
-
 async def _load_engine_alert_metrics(
     run_date: date,
     engine_names: set[str],
@@ -157,7 +206,7 @@ async def _load_engine_alert_metrics(
                 ).scalar_one_or_none()
 
                 last_success_age = (
-                    _trading_days_between(last_success_date, run_date)
+                    trading_days_between(last_success_date, run_date)
                     if last_success_date is not None
                     else None
                 )
@@ -166,7 +215,7 @@ async def _load_engine_alert_metrics(
                     "last_success_date": last_success_date,
                     "last_success_age_trading_days": last_success_age,
                 }
-    except Exception as e:
+    except (SQLAlchemyError, OSError) as e:
         logger.warning("Engine drop metrics query failed, using conservative defaults: %s", e)
     return metrics
 
@@ -182,7 +231,7 @@ def format_engine_drop_alert_message(
     metrics = failure_metrics or {}
     for failure in failed_engines:
         meta = metrics.get(failure.engine_name, {})
-        streak = int(meta.get("current_failure_streak") or 0)
+        streak = int(meta.get("current_failure_streak") or 0) or (int(meta.get("previous_failure_streak") or 0) + 1)
         last_success = meta.get("last_success_date")
         last_success_str = str(last_success) if last_success else "n/a"
         lines.append(
@@ -212,6 +261,9 @@ async def maybe_send_engine_drop_alert(
     """Send throttled drop/recovery alerts with streak-aware suppression."""
     global _engine_drop_alerted_engines
     sent_any = False
+    state_changed = False
+
+    await _load_state_from_db()
 
     success_engines = set(success_engine_names or [])
     failed_engine_names = {f.engine_name for f in failed_engines if f.reason_code != "expected_stale"}
@@ -220,10 +272,13 @@ async def maybe_send_engine_drop_alert(
         if await send_alert_fn(format_engine_recovery_alert_message(recovered)):
             _engine_drop_alerted_engines -= set(recovered)
             sent_any = True
+            state_changed = True
 
     alertable_failures = [f for f in failed_engines if f.reason_code != "expected_stale"]
     if not alertable_failures:
         _clear_drop_signature_state()
+        if state_changed:
+            await _persist_state_to_db()
         return sent_any
 
     now_utc = datetime.now(UTC)
@@ -245,6 +300,8 @@ async def maybe_send_engine_drop_alert(
 
     if not eligible_failures:
         logger.info("Engine drop alert suppressed (streak<2 and last_success_age<2 trading days)")
+        if state_changed:
+            await _persist_state_to_db()
         return sent_any
 
     signature = _engine_drop_signature(eligible_failures)
@@ -267,4 +324,8 @@ async def maybe_send_engine_drop_alert(
         _mark_engine_drop_alert_sent(signature, now_utc)
         _engine_drop_alerted_engines.update(f.engine_name for f in eligible_failures)
         sent_any = True
+        state_changed = True
+
+    if state_changed:
+        await _persist_state_to_db()
     return sent_any

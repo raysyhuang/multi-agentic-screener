@@ -612,6 +612,22 @@ class EngineRun(Base):
     )
 
 
+class EngineAlertState(Base):
+    """Single-row table persisting engine drop alert state across dyno restarts."""
+
+    __tablename__ = "engine_alert_state"
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    alerted_engines: Mapped[list] = mapped_column(JSONB, nullable=False, default=list)
+    last_signature: Mapped[str | None] = mapped_column(String(500), nullable=True)
+    last_sent_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True), nullable=True
+    )
+    updated_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
+    )
+
+
 class TelegramLog(Base):
     """Log of every Telegram message sent by MAS or ingested from engines."""
 
