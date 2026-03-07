@@ -25,7 +25,7 @@ def test_generate_daily_report_with_picks():
                 "risk_flags": ["earnings_imminent"],
             },
         ],
-        vetoed=["MSFT", "NVDA"],
+        vetoed=[],
         pipeline_stats={"universe_size": 500, "candidates_scored": 10},
     )
 
@@ -35,8 +35,6 @@ def test_generate_daily_report_with_picks():
     assert "breakout" in html
     assert "78" in html
     assert "bull" in html.lower()
-    assert "MSFT" in html
-    assert "NVDA" in html
 
 
 def test_generate_daily_report_no_picks():
@@ -49,7 +47,7 @@ def test_generate_daily_report_no_picks():
         pipeline_stats={"universe_size": 500, "candidates_scored": 10},
     )
 
-    assert "No High-Conviction Picks" in html
+    assert "No Picks Today" in html
     assert "bear" in html.lower()
 
 

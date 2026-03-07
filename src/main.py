@@ -1843,8 +1843,8 @@ async def _run_cross_engine_steps(
 
     Step 10: Collect external engine results (3 parallel HTTP calls)
     Step 11: Resolve previous day's engine pick outcomes → update credibility weights
-    Step 12: Cross-Engine Verifier Agent (audit credibility, detect anomalies)
-    Step 13: Cross-Engine Synthesizer Agent (final portfolio, executive summary)
+    Step 12: Deterministic regime weight adjustment (replaces LLM verifier)
+    Step 13: Deterministic portfolio synthesis (replaces LLM synthesizer)
     Step 14: Save to DB + send Telegram cross-engine alert
     """
     if not settings.cross_engine_enabled:
@@ -1858,8 +1858,10 @@ async def _run_cross_engine_steps(
     )
     from src.engines.regime_gate import apply_regime_strategy_gate
     from src.engines.outcome_resolver import resolve_engine_outcomes
-    from src.agents.cross_engine_verifier import CrossEngineVerifierAgent
-    from src.agents.cross_engine_synthesizer import CrossEngineSynthesizerAgent
+    from src.engines.deterministic_synthesizer import (
+        deterministic_regime_weight_adjust,
+        synthesize_deterministic,
+    )
     from src.db.models import (
         ExternalEngineResult,
         ExternalEngineResultRevision,
@@ -2261,64 +2263,20 @@ async def _run_cross_engine_steps(
 
         logger.info("Step 11 complete: %d picks collected for weighting", len(all_picks))
 
-        # --- Step 12: Cross-Engine Verifier ---
+        # --- Step 12: Deterministic regime weight adjustment ---
+        # Replaces LLM verifier — applies regime-based weight multipliers
+        # deterministically. Zero LLM cost.
         verifier_output_dict = {}
-        verifier_result = None
-        if settings.cross_engine_verify_before_synthesize:
-            logger.info("Step 12: Running cross-engine verifier...")
-            verifier = CrossEngineVerifierAgent()
-
-            engine_results_dicts = [_json_safe(er.model_dump()) for er in engine_results]
-            cred_stats_dict = {
-                name: {
-                    "hit_rate": s.hit_rate,
-                    "weight": s.weight,
-                    "resolved_picks": s.resolved_picks,
-                    "brier_score": s.brier_score,
-                    "has_enough_data": s.has_enough_data,
-                    "per_strategy": s.per_strategy,
-                }
-                for name, s in cred_snapshot.engine_stats.items()
-            }
-
-            verifier_result = await verifier.verify(
-                engine_results=engine_results_dicts,
-                credibility_stats=cred_stats_dict,
-                regime_context=regime_context,
-            )
-            verifier_output_dict = _json_safe(verifier_result.model_dump())
-
-            # Apply verifier weight adjustments to credibility stats before
-            # computing weighted picks — this closes the gap where the verifier's
-            # regime-aware adjustments were only seen as LLM context, never applied.
-            if verifier_result.weight_adjustments:
-                for engine_name, adj in verifier_result.weight_adjustments.items():
-                    if engine_name in cred_snapshot.engine_stats:
-                        old_w = cred_snapshot.engine_stats[engine_name].weight
-                        new_w = old_w * adj.weight_multiplier
-                        unclamped_w = new_w
-                        new_w = max(0.1, min(3.0, new_w))  # clamp to [0.1, 3.0]
-                        if unclamped_w != new_w:
-                            logger.warning(
-                                "Verifier weight for %s clamped: %.3f → %.3f "
-                                "(requested ×%.2f would yield %.3f, outside [0.1, 3.0])",
-                                engine_name, old_w, new_w,
-                                adj.weight_multiplier, unclamped_w,
-                            )
-                        cred_snapshot.engine_stats[engine_name].weight = round(new_w, 3)
-                        logger.info(
-                            "Verifier adjusted %s weight: %.3f → %.3f (×%.2f, reason: %s)",
-                            engine_name, old_w, new_w,
-                            adj.weight_multiplier, adj.reason,
-                        )
-
-            logger.info(
-                "Step 12 complete: %d verified picks, %d red flags, %d weight adjustments applied",
-                len(verifier_result.verified_picks), len(verifier_result.red_flags),
-                len(verifier_result.weight_adjustments),
-            )
-        else:
-            logger.info("Step 12: Verifier disabled, skipping")
+        logger.info("Step 12: Applying deterministic regime weight adjustments...")
+        regime = regime_context.get("regime", "unknown")
+        weight_adjustments = deterministic_regime_weight_adjust(
+            cred_snapshot.engine_stats, regime,
+        )
+        verifier_output_dict = {"weight_adjustments": weight_adjustments, "mode": "deterministic"}
+        logger.info(
+            "Step 12 complete: %d weight adjustments applied (deterministic)",
+            len(weight_adjustments),
+        )
 
         # Compute weighted picks AFTER verifier adjustments are applied
         weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
@@ -2361,7 +2319,9 @@ async def _run_cross_engine_steps(
             gate_reason = "Regime is UNKNOWN and require_known_regime is enabled"
             logger.warning("Execution gate BLOCKED: %s", gate_reason)
 
-        # --- Step 13: Cross-Engine Synthesizer ---
+        # --- Step 13: Deterministic Portfolio Synthesis ---
+        # Replaces LLM synthesizer — builds portfolio from weighted picks
+        # using pure deterministic logic. Zero LLM cost.
         if gate_blocked:
             from src.agents.cross_engine_synthesizer import SynthesizerOutput
 
@@ -2374,14 +2334,11 @@ async def _run_cross_engine_steps(
                 executive_summary=f"NO TRADES THIS CYCLE — {gate_reason}.",
             )
         elif weighted_picks:
-            logger.info("Step 13: Running cross-engine synthesizer...")
-            synthesizer = CrossEngineSynthesizerAgent()
-            synthesis = await synthesizer.synthesize(
+            logger.info("Step 13: Running deterministic synthesis...")
+            synthesis = synthesize_deterministic(
                 weighted_picks=weighted_picks,
-                verifier_output=verifier_output_dict,
-                credibility_weights=cred_weights_dict,
-                regime_context=regime_context,
-                screener_picks=screener_picks,
+                regime=regime_context.get("regime", "unknown"),
+                engines_reporting=len(engine_results),
             )
         else:
             from src.agents.cross_engine_synthesizer import SynthesizerOutput
@@ -2855,6 +2812,24 @@ async def run_afternoon_check() -> None:
         len(updates), len(health_cards), len(state_changes),
         len(resolved_near_misses),
     )
+
+    # Run model drift check and alert if degraded
+    try:
+        from src.research.drift_check import compute_drift, format_drift_report
+        drift_report = await compute_drift(lookback_days=30)
+        if drift_report.alerts and drift_report.total_resolved >= 10:
+            from src.output.telegram import send_alert
+            drift_msg = f"MODEL DRIFT ALERT\n{format_drift_report(drift_report)}"
+            await send_alert(drift_msg)
+            logger.warning("Drift check: %d alerts sent", len(drift_report.alerts))
+        elif drift_report.alerts:
+            logger.info("Drift check: %d alerts but only %d resolved (need 10+)",
+                        len(drift_report.alerts), drift_report.total_resolved)
+        else:
+            logger.info("Drift check: no drift detected (%d resolved picks)",
+                        drift_report.total_resolved)
+    except Exception as e:
+        logger.error("Drift check failed (non-fatal): %s", e)
 
 
 async def run_evening_collection() -> None:

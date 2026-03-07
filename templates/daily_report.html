@@ -77,14 +77,6 @@
       margin: 0.75rem 0;
       font-style: italic;
     }
-    .debate-summary {
-      font-size: 0.8rem;
-      padding: 0.75rem;
-      background: rgba(59,130,246,0.1);
-      border-left: 3px solid var(--blue);
-      border-radius: 0 4px 4px 0;
-      margin: 0.75rem 0;
-    }
     .risk-flags { display: flex; gap: 0.5rem; flex-wrap: wrap; margin-top: 0.5rem; }
     .risk-flag {
       font-size: 0.7rem;
@@ -160,12 +152,6 @@
       <div class="thesis">{{ pick.thesis }}</div>
       {% endif %}
 
-      {% if pick.debate_summary %}
-      <div class="debate-summary">
-        <strong>Debate:</strong> {{ pick.debate_summary }}
-      </div>
-      {% endif %}
-
       {% if pick.risk_flags %}
       <div class="risk-flags">
         {% for flag in pick.risk_flags %}
@@ -177,20 +163,13 @@
     {% endfor %}
   {% else %}
     <div class="no-picks">
-      <h2>No High-Conviction Picks Today</h2>
-      <p>The pipeline ran but no candidates survived the full agent review.</p>
+      <h2>No Picks Today</h2>
+      <p>The pipeline ran but no candidates met the quant signal thresholds.</p>
     </div>
   {% endif %}
 
-  {% if vetoed %}
-  <div class="card">
-    <h2>Vetoed Candidates</h2>
-    <div class="vetoed">{{ vetoed | join(', ') }}</div>
-  </div>
-  {% endif %}
-
   <div class="footer">
-    Paper trading mode — no real positions. Multi-Agentic Screener v0.1.0
+    Paper trading mode — quant-only pipeline (mean reversion + trailing stop). Multi-Agentic Screener v0.2.0
   </div>
 </body>
 </html>
