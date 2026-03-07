@@ -1,4 +1,4 @@
-from datetime import date, datetime, timezone
+from datetime import date, datetime, timedelta, timezone
 
 import pytest
 
@@ -102,3 +102,39 @@ async def test_koocore_falls_back_when_custom_payload_is_degenerate(monkeypatch)
     assert len(results) == 1
     assert results[0].candidates_screened == 6
     assert failed == []
+
+
+@pytest.mark.asyncio
+async def test_top3_expected_stale_in_morning_collection(monkeypatch):
+    class _Settings:
+        engine_api_key = ""
+        engine_fetch_timeout_s = 5
+        engine_run_mode = "http"
+        koocore_api_url = ""
+        gemini_api_url = ""
+        top3_7d_api_url = "https://top3.example"
+
+    run_date = (date.today() - timedelta(days=1)).isoformat()
+    payload = EngineResultPayload.model_validate({
+        "engine_name": "top3_7d",
+        "engine_version": "1.0",
+        "run_date": run_date,
+        "run_timestamp": _fresh_run_timestamp(),
+        "regime": None,
+        "status": "no_artifacts",
+        "candidates_screened": 0,
+        "pipeline_duration_s": 1.0,
+        "picks": [],
+    })
+
+    async def _fake_fetch_engine(*args, **kwargs):
+        return payload
+
+    monkeypatch.setattr(collector, "get_settings", lambda: _Settings())
+    monkeypatch.setattr(collector, "_fetch_engine", _fake_fetch_engine)
+
+    results, failed = await collector.collect_engine_results(collection_time="morning")
+    assert results == []
+    assert len(failed) == 1
+    assert failed[0].engine_name == "top3_7d"
+    assert failed[0].reason_code == "expected_stale"

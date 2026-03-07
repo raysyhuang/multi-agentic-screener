@@ -581,10 +581,12 @@
       fetchJSON('/api/cross-engine/latest').catch(function () { return null; }),
       fetchJSON('/api/cross-engine/credibility').catch(function () { return null; }),
       fetchJSON('/api/dashboard/dataset-health').catch(function () { return null; }),
+      fetchJSON('/api/dashboard/engine-reliability').catch(function () { return null; }),
     ]).then(function (results) {
       var synthesis = results[0];
       var credibility = results[1];
       var healthData = results[2];
+      var reliabilityData = results[3];
       var view = document.getElementById('crossengine-view');
 
       if (!synthesis) {
@@ -633,6 +635,10 @@
             escapeHtml(c.detail) + '</div>';
         });
         html += '</div></div>' + dropLine + '</div>';
+      }
+
+      if (reliabilityData && reliabilityData.engines && reliabilityData.engines.length > 0) {
+        html += renderEngineReliabilityTable(reliabilityData);
       }
 
       // --- Header ---
@@ -934,6 +940,36 @@
     }).catch(function () {
       showEmpty('crossengine-view', 'Failed to load cross-engine data.');
     });
+  }
+
+  function renderEngineReliabilityTable(data) {
+    var rows = data.engines || [];
+    var html = '<div class="card" style="margin-bottom:1.25rem">' +
+      '<div class="card-title" style="margin-bottom:0.65rem">Engine Reliability</div>' +
+      '<div class="card-subtitle" style="margin-bottom:0.75rem">As of ' + escapeHtml(data.as_of || '') + '</div>' +
+      '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
+      '<th>Engine</th><th>Status</th><th>Reason</th><th>Last Success</th><th>Streak</th><th>7d</th><th>30d</th>' +
+      '</tr></thead><tbody>';
+
+    rows.forEach(function (r) {
+      var status = String(r.latest_status || 'no_data').toLowerCase();
+      var statusLabel = escapeHtml(status);
+      var statusColor = status === 'success' ? 'var(--green)' : (status === 'no_data' ? 'var(--text-muted)' : 'var(--amber)');
+      var sr7 = r.success_rate_7d == null ? '—' : fmtPct(r.success_rate_7d * 100);
+      var sr30 = r.success_rate_30d == null ? '—' : fmtPct(r.success_rate_30d * 100);
+      html += '<tr>' +
+        '<td>' + escapeHtml(engineDisplayName(r.engine_name || '')) + '</td>' +
+        '<td><span style="color:' + statusColor + ';font-weight:600">' + statusLabel + '</span></td>' +
+        '<td>' + escapeHtml(r.latest_reason || '—') + '</td>' +
+        '<td>' + escapeHtml(r.last_success_date || '—') + '</td>' +
+        '<td>' + escapeHtml(String(r.consecutive_failures == null ? '—' : r.consecutive_failures)) + '</td>' +
+        '<td>' + sr7 + '</td>' +
+        '<td>' + sr30 + '</td>' +
+      '</tr>';
+    });
+
+    html += '</tbody></table></div></div>';
+    return html;
   }
 
   // -----------------------------------------------------------------------

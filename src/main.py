@@ -11,6 +11,7 @@ import os
 import re
 import time
 from datetime import date, datetime, timedelta, timezone
+from typing import Literal
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -330,21 +331,25 @@ def _stable_payload_hash(payload: dict) -> str:
 def _summarize_engine_failures(failed_engines: list[EngineFailure]) -> dict:
     """Build cycle-level engine failure stats for dashboard visibility."""
     by_kind: dict[str, int] = defaultdict(int)
+    by_reason_code: dict[str, int] = defaultdict(int)
     engines_by_kind: dict[str, list[str]] = defaultdict(list)
     failures: list[dict[str, str]] = []
 
     for failure in failed_engines:
         by_kind[failure.kind] += 1
+        by_reason_code[failure.reason_code] += 1
         engines_by_kind[failure.kind].append(failure.engine_name)
         failures.append({
             "engine_name": failure.engine_name,
             "kind": failure.kind,
+            "reason_code": failure.reason_code,
             "detail": failure.detail,
         })
 
     return {
         "total_failed": len(failed_engines),
         "by_kind": dict(by_kind),
+        "by_reason_code": dict(by_reason_code),
         "engines_by_kind": {k: sorted(v) for k, v in engines_by_kind.items()},
         "failures": failures,
     }
@@ -771,7 +776,7 @@ async def _run_pipeline_core(
     if settings.cross_engine_enabled:
         from src.engines.collector import collect_engine_results
         engine_prefetch_task = asyncio.create_task(
-            collect_engine_results(target_date=today),
+            collect_engine_results(target_date=today, collection_time="morning"),
             name="engine_prefetch",
         )
         logger.info("Engine collection pre-fetch started (runs concurrently with Steps 1-9)")
@@ -1731,6 +1736,7 @@ async def _run_pipeline_core(
         screener_picks=picks_for_alert,
         settings=settings,
         engine_prefetch_task=engine_prefetch_task,
+        collection_time="morning",
     )
 
     logger.info(
@@ -1840,6 +1846,7 @@ async def _run_cross_engine_steps(
     screener_picks: list[dict],
     settings,
     engine_prefetch_task: asyncio.Task | None = None,
+    collection_time: Literal["morning", "evening"] = "morning",
 ) -> None:
     """Steps 10-14: Cross-engine integration pipeline.
 
@@ -1880,7 +1887,10 @@ async def _run_cross_engine_steps(
             engine_results, failed_engines = await engine_prefetch_task
         else:
             logger.info("Step 10: Collecting external engine results...")
-            engine_results, failed_engines = await collect_engine_results(target_date=today)
+            engine_results, failed_engines = await collect_engine_results(
+                target_date=today,
+                collection_time=collection_time,
+            )
         _engine_fetch_finished = datetime.now(timezone.utc)
         _engine_fetch_duration_ms = int(
             (_engine_fetch_finished - _engine_fetch_started).total_seconds() * 1000
@@ -1889,6 +1899,8 @@ async def _run_cross_engine_steps(
         sent_drop_alert = await maybe_send_engine_drop_alert(
             failed_engines=failed_engines,
             engines_reporting=len(engine_results),
+            run_date=today,
+            success_engine_names=[er.engine_name for er in engine_results],
             settings=settings,
             send_alert_fn=send_alert,
         )
@@ -2136,6 +2148,9 @@ async def _run_cross_engine_steps(
                     "quality_rejected": "quality_rejected",
                 }
                 for failure in failed_engines:
+                    error_message = failure.reason_code
+                    if failure.detail:
+                        error_message = f"{failure.reason_code}: {failure.detail}"
                     run_session.add(EngineRun(
                         engine_name=failure.engine_name,
                         run_date=today,
@@ -2144,7 +2159,7 @@ async def _run_cross_engine_steps(
                         fetch_started_at=_engine_fetch_started,
                         fetch_finished_at=_engine_fetch_finished,
                         fetch_duration_ms=_engine_fetch_duration_ms,
-                        error_message=failure.detail[:2000] if failure.detail else None,
+                        error_message=error_message[:2000] if error_message else None,
                     ))
 
             logger.info(
@@ -2967,6 +2982,7 @@ async def run_evening_collection() -> None:
         regime_context=regime_context,
         screener_picks=screener_picks,
         settings=settings,
+        collection_time="evening",
     )
 
     logger.info(
