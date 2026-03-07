@@ -135,9 +135,9 @@ class Settings(BaseSettings):
 
     # --- Cross-Engine System ---
     cross_engine_enabled: bool = True
-    cross_engine_model: str = "claude-opus-4-6"
-    cross_engine_max_cost_usd: float = 0.50
-    cross_engine_verify_before_synthesize: bool = True
+    cross_engine_model: str = "claude-opus-4-6"  # unused: kept for agent class compat
+    cross_engine_max_cost_usd: float = 0.50      # unused: kept for agent class compat
+    cross_engine_verify_before_synthesize: bool = True  # unused: Steps 12-13 are deterministic
     engine_fetch_timeout_s: float = 30.0
     llm_request_timeout_s: float = 90.0
 

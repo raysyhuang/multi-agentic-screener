@@ -431,8 +431,19 @@ async def build_validation_card_from_history(days: int = 90):
     )
 
 
-async def get_performance_summary(days: int = 30) -> dict:
-    """Get aggregate performance data for the meta-analyst."""
+async def get_performance_summary(
+    days: int = 30,
+    execution_mode: str | None = None,
+) -> dict:
+    """Get aggregate performance data for the meta-analyst.
+
+    Args:
+        days: Lookback window in days.
+        execution_mode: Filter to a specific execution mode (e.g. "quant_only").
+            If None, includes all modes (legacy behavior).
+    """
+    from src.db.models import DailyRun
+
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
 
@@ -455,6 +466,26 @@ async def get_performance_summary(days: int = 30) -> dict:
             select(Signal).where(Signal.id.in_(signal_ids))
         )
         signals = {s.id: s for s in sig_result.scalars().all()}
+
+        # Filter by execution_mode if requested
+        if execution_mode:
+            run_result = await session.execute(
+                select(DailyRun.run_date).where(
+                    DailyRun.execution_mode == execution_mode,
+                )
+            )
+            valid_dates = {r.run_date for r in run_result.all()}
+            closed = [
+                o for o in closed
+                if signals.get(o.signal_id)
+                and signals[o.signal_id].run_date in valid_dates
+            ]
+            if not closed:
+                return {
+                    "total_signals": 0,
+                    "message": f"No closed trades in period for mode={execution_mode}",
+                    "execution_mode": execution_mode,
+                }
 
         # Aggregate by model
         by_model = {}
@@ -499,7 +530,7 @@ async def get_performance_summary(days: int = 30) -> dict:
                 return None
             return value
 
-        return {
+        result_dict = {
             "period_days": days,
             "total_signals": len(closed),
             "overall": _summary(all_pnls),
@@ -521,6 +552,9 @@ async def get_performance_summary(days: int = 30) -> dict:
             "by_confidence": {k: _summary(v) for k, v in by_confidence_bucket.items()},
             "confidence_calibration": _build_calibration(closed, signals),
         }
+        if execution_mode:
+            result_dict["execution_mode"] = execution_mode
+        return result_dict
 
 
 async def get_near_miss_stats(days: int = 30) -> dict | None:

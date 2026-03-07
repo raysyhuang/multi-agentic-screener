@@ -239,9 +239,9 @@ async def daily_report(report_date: str):
 
 
 @app.get("/performance", response_class=HTMLResponse)
-async def performance_page():
-    """30-day performance summary."""
-    data = await get_performance_summary(days=30)
+async def performance_page(mode: str | None = "quant_only"):
+    """30-day performance summary, filtered by execution mode."""
+    data = await get_performance_summary(days=30, execution_mode=mode)
     html = generate_performance_report(data, period_days=30)
     return HTMLResponse(html)
 
@@ -324,9 +324,9 @@ async def dashboard_signals():
 
 
 @app.get("/api/dashboard/performance")
-async def dashboard_performance():
+async def dashboard_performance(mode: str | None = "quant_only"):
     """Return performance data with an equity curve for charting."""
-    data = await get_performance_summary(days=90)
+    data = await get_performance_summary(days=90, execution_mode=mode)
 
     if data.get("total_signals", 0) == 0:
         return data
@@ -370,9 +370,9 @@ async def dashboard_regime_matrix(days: int = Query(default=180, le=365)):
 
 
 @app.get("/api/dashboard/calibration")
-async def dashboard_calibration():
+async def dashboard_calibration(mode: str | None = "quant_only"):
     """Confidence calibration curve (confidence vs actual hit rate)."""
-    data = await get_performance_summary(days=90)
+    data = await get_performance_summary(days=90, execution_mode=mode)
     return {"calibration": data.get("confidence_calibration", [])}
 
 
