@@ -70,7 +70,7 @@ def test_quality_flags_missing_target_price():
 
 
 def test_missing_target_is_critical_quality_issue():
-    warnings = ["1 picks missing target_price: ['AAPL']"]
+    warnings = ["risk_invalid: 1 picks missing target_price: ['AAPL']"]
     assert _is_critical_quality_issue(warnings) is True
 
 

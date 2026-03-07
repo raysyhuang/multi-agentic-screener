@@ -25,6 +25,7 @@ from pydantic import ValidationError
 from src.config import get_settings
 from src.contracts import EngineResultPayload
 from src.engines.koocore_adapter import fetch_koocore
+from src.utils.trading_calendar import trading_days_between
 
 logger = logging.getLogger(__name__)
 
@@ -200,20 +201,6 @@ async def _fetch_with_generic_then_custom(
     )
 
 
-def _trading_days_between(start: date, end: date) -> int:
-    """Count weekday (Mon-Fri) days between two dates, exclusive of start."""
-    if start >= end:
-        return 0
-    count = 0
-    current = start
-    one_day = timedelta(days=1)
-    while current < end:
-        current += one_day
-        if current.weekday() < 5:  # Mon=0 … Fri=4
-            count += 1
-    return count
-
-
 def _format_quality_issue(code: str, message: str) -> str:
     return f"{code}: {message}"
 
@@ -246,7 +233,7 @@ def _validate_payload_quality(
     # 0. Parse run_date once for status/staleness decisions.
     try:
         run_date = datetime.strptime(payload.run_date, "%Y-%m-%d").date()
-        trading_days = _trading_days_between(run_date, reference_date)
+        trading_days = trading_days_between(run_date, reference_date)
         calendar_days = (reference_date - run_date).days
     except ValueError:
         warnings.append(
@@ -294,28 +281,18 @@ def _validate_payload_quality(
             )
 
     # 2b. Pipeline-failure signature: screened nothing and emitted nothing.
+    #     Skip if check #1 already classified this as expected_stale.
     if payload.candidates_screened == 0 and not payload.picks:
-        if (
-            engine_name == "top3_7d"
-            and status == "no_artifacts"
-            and collection_time == "morning"
-            and trading_days is not None
-            and trading_days <= 1
-        ):
-            warnings.append(
-                _format_quality_issue(
-                    "expected_stale",
-                    "zero candidates screened and zero picks",
+        already_expected = any(w.startswith("expected_stale:") for w in warnings)
+        if not already_expected:
+            if status == "no_artifacts":
+                warnings.append(
+                    _format_quality_issue("no_artifacts", "zero candidates screened and zero picks")
                 )
-            )
-        elif status == "no_artifacts":
-            warnings.append(
-                _format_quality_issue("no_artifacts", "zero candidates screened and zero picks")
-            )
-        else:
-            warnings.append(
-                _format_quality_issue("schema_invalid", "zero candidates screened and zero picks")
-            )
+            else:
+                warnings.append(
+                    _format_quality_issue("schema_invalid", "zero candidates screened and zero picks")
+                )
         return warnings  # nothing else to validate
 
     # 3. Zero or negative entry prices
@@ -434,21 +411,15 @@ def _validate_payload_quality(
 
 
 def _is_critical_quality_issue(warnings: list[str]) -> bool:
-    """Return True if any warning should reject an engine payload."""
+    """Return True if any warning should reject an engine payload.
+
+    All warnings are formatted via ``_format_quality_issue("code", msg)`` →
+    ``"code: msg"``.  We match on the prefix code only.  The ``hint`` code is
+    intentionally excluded — hints don't reject payloads.
+    """
+    _CRITICAL_CODES = {"expected_stale", "stale", "schema_invalid", "risk_invalid", "no_artifacts"}
     return any(
-        w.startswith("expected_stale:")
-        or w.startswith("stale:")
-        or w.startswith("stale run_date")
-        or w.startswith("schema_invalid:")
-        or w.startswith("risk_invalid:")
-        or w.startswith("no_artifacts:")
-        or w.startswith("unparseable")
-        or "zero/negative" in w
-        or w.startswith("non-success status")
-        or w.startswith("zero candidates screened and zero picks")
-        or "missing stop_loss" in w
-        or "missing target_price" in w
-        or "duplicate price tuples across tickers" in w
+        _reason_code_from_issue(w) in _CRITICAL_CODES
         for w in warnings
     )
 
