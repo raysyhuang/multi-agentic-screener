@@ -123,7 +123,7 @@ def format_drift_report(report: DriftReport) -> str:
         f"  MODEL DRIFT CHECK ({report.lookback_days}d lookback)",
         f"{'='*50}",
         f"  Resolved trades: {report.total_resolved}",
-        f"",
+        "",
         f"  {'Metric':<20} {'Live':>10} {'Baseline':>10} {'Status':>10}",
         f"  {'-'*50}",
     ]
@@ -143,7 +143,7 @@ def format_drift_report(report: DriftReport) -> str:
         for alert in report.alerts:
             lines.append(f"    ! {alert}")
     else:
-        lines.append(f"\n  No drift detected.")
+        lines.append("\n  No drift detected.")
 
     return "\n".join(lines)
 

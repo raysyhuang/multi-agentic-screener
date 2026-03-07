@@ -1,7 +1,7 @@
 """Tests for confidence recalibration in credibility system."""
 
 from src.config import get_settings
-from src.engines.credibility import EngineStats, PaperTradeStats, compute_weighted_picks
+from src.engines.credibility import EngineStats, compute_weighted_picks
 
 
 def _make_pick(ticker: str, engine: str, strategy: str = "mean_reversion", confidence: float = 60.0) -> dict:

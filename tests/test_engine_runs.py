@@ -2,8 +2,6 @@
 
 from datetime import date, datetime, timezone
 
-import pytest
-from sqlalchemy import select
 
 from src.db.models import EngineRun
 

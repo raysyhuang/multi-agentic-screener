@@ -16,7 +16,7 @@ import asyncio
 from dataclasses import dataclass
 import logging
 import time
-from datetime import date, datetime, timedelta
+from datetime import date, datetime
 from typing import Literal
 
 import aiohttp

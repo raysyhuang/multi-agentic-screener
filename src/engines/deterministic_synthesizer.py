@@ -9,7 +9,6 @@ Replaces CrossEngineSynthesizerAgent + CrossEngineVerifierAgent.
 from __future__ import annotations
 
 import logging
-from collections import defaultdict
 
 from src.agents.cross_engine_synthesizer import (
     ConvergentPick,
@@ -17,7 +16,6 @@ from src.agents.cross_engine_synthesizer import (
     SynthesizerOutput,
     UniquePick,
 )
-from src.config import get_settings
 
 logger = logging.getLogger(__name__)
 
