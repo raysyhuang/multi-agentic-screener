@@ -2237,7 +2237,7 @@ async def _run_cross_engine_steps(
                 "stop_loss": sp.get("stop_loss", 0),
                 "target_price": sp.get("target_1", 0),
                 "confidence": sp.get("confidence", 0),
-                "holding_period_days": sp.get("holding_period", 10),
+                "holding_period_days": sp.get("holding_period", sp.get("holding_period_days", 3)),
                 "thesis": sp.get("thesis", ""),
                 "risk_factors": [],
             }
@@ -2913,7 +2913,7 @@ async def run_evening_collection() -> None:
                         "confidence": pick.get("confidence", 0),
                         "signal_model": pick.get("signal_model", ""),
                         "thesis": pick.get("thesis", ""),
-                        "holding_period": pick.get("holding_period", 10),
+                        "holding_period": pick.get("holding_period", pick.get("holding_period_days", 3)),
                     })
     except Exception as e:
         logger.warning("Failed to load today's screener context: %s", e)
