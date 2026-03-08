@@ -115,3 +115,37 @@ tracks:
       min_confidence: 52.0
       low_overlap_max_positions: 2
       guardian_per_trade_risk_cap_pct: 3.0
+
+  # ── V1.2 Alpha Upgrade Tracks ────────────────────────────────
+  - name: trailing_stop_only
+    description: "Trailing stop 0.5%/0.3% without partial profit taking"
+    overrides:
+      trail_activate_pct: 0.5
+      trail_distance_pct: 0.3
+      partial_tp_enabled: false
+
+  - name: two_leg_full
+    description: "Two-leg: 50% partial at 1.0x ATR + trailing + breakeven pivot"
+    overrides:
+      trail_activate_pct: 0.5
+      trail_distance_pct: 0.3
+      partial_tp_enabled: true
+      partial_tp_atr_multiple: 1.0
+
+  - name: veto_board
+    description: "Veto-first architecture: penalize conflicting picks, bonus idiosyncratic"
+    overrides:
+      veto_board_enabled: true
+      veto_penalty: 0.5
+      idiosyncratic_bonus_multiplier: 1.10
+
+  - name: choppy_gate_75
+    description: "Score >= 75 in choppy regime + ATR percentile floor"
+    overrides:
+      choppy_min_score: 75
+      min_atr_percentile_252: 0.10
+
+  - name: earnings_blackout
+    description: "Block picks within 2 days of earnings"
+    overrides:
+      earnings_blackout_days: 2

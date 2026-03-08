@@ -113,6 +113,12 @@ class Outcome(Base):
     max_adverse: Mapped[float | None] = mapped_column(Float, nullable=True)
     still_open: Mapped[bool] = mapped_column(Boolean, default=True)
     daily_prices: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # Two-leg trade tracking (V1.2)
+    partial_exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    partial_exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    leg2_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()
     )

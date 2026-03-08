@@ -72,6 +72,27 @@ class Settings(BaseSettings):
     trail_activate_pct: float = 0.5   # activate trailing stop after +0.5% MFE
     trail_distance_pct: float = 0.3   # trail 0.3% below high watermark
 
+    # --- Two-Leg Trade Engine (V1.2) ---
+    partial_tp_enabled: bool = True
+    partial_tp_fraction: float = 0.5       # close 50% at partial target
+    partial_tp_atr_multiple: float = 1.0   # Leg 1 target = entry + 1.0×ATR
+    breakeven_after_partial: bool = True    # move stop to entry after Leg 1 fills
+
+    # --- Entry Refinement (V1.2) ---
+    entry_gap_max_atr: float = 0.2         # reject if T+1 open > close + 0.2×ATR
+    volume_slope_lookback: int = 3          # bars for volume slope calculation
+
+    # --- Regime + Volatility Gate (V1.2) ---
+    choppy_min_score: int = 75             # score floor in choppy regime
+    min_atr_percentile_252: float = 0.10   # block if ATR14 in bottom decile
+    earnings_blackout_days: int = 2        # block picks within N days of earnings
+
+    # --- Veto Architecture (V1.2) ---
+    veto_board_enabled: bool = True
+    veto_penalty: float = 0.5              # confidence multiplier for vetoed picks
+    idiosyncratic_bonus_enabled: bool = True
+    idiosyncratic_bonus_multiplier: float = 1.10
+
     # Ticker blacklist: mean reversion backtest (S&P500, 2yr, 24K trades) showed
     # these tickers have <35% win rate with >=50 trades. Comma-separated.
     # See outputs/research/sweep_trailing_best_trades.csv for data.

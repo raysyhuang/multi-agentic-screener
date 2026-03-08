@@ -25,6 +25,9 @@ class PerformanceMetrics:
     max_consecutive_losses: int
     expectancy: float  # avg win * win_rate - avg loss * loss_rate
     payoff_ratio: float  # avg win / avg loss
+    # V1.2 metrics (optional — default 0 for backward compat)
+    foregone_profit: float = 0.0        # avg difference: full-hold PnL - two-leg PnL
+    expiry_mfe_gt_2pct: float = 0.0     # % of expiry trades with MFE > 2%
 
 
 def compute_metrics(returns: list[float]) -> PerformanceMetrics:

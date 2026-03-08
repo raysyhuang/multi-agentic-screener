@@ -321,6 +321,9 @@ async def _evaluate_position(
         return v
 
     from src.utils.trading_calendar import trading_days_between
+    from src.config import get_settings
+    settings = get_settings()
+
     days_held = trading_days_between(outcome.entry_date, to_date)
 
     update = {
@@ -329,29 +332,85 @@ async def _evaluate_position(
         "max_adverse": _clean(round(max_adverse, 4)),
     }
 
+    # --- Trailing stop ---
+    high_watermark = max_price
+    gain_pct = (high_watermark - entry_price) / entry_price * 100
+    trailing_active = gain_pct >= settings.trail_activate_pct
+    effective_stop = signal.stop_loss
+    if trailing_active and settings.trail_activate_pct > 0:
+        trail_stop = high_watermark * (1 - settings.trail_distance_pct / 100)
+        effective_stop = max(signal.stop_loss, trail_stop)
+
+    # --- Two-leg: partial TP check ---
+    if settings.partial_tp_enabled:
+        # Compute ATR from signal features or approximate from stop distance
+        atr = 0.0
+        if signal.features and isinstance(signal.features, dict):
+            atr = signal.features.get("atr_14", 0.0) or 0.0
+        if atr <= 0:
+            atr = abs(entry_price - signal.stop_loss) / 0.75  # reverse from 0.75×ATR stop
+
+        partial_target = entry_price + settings.partial_tp_atr_multiple * atr
+        partial_taken = outcome.partial_exit_price is not None
+
+        if not partial_taken and current_price >= partial_target:
+            update["partial_exit_price"] = round(partial_target, 4)
+            update["partial_exit_date"] = to_date
+            effective_stop = max(effective_stop, entry_price)  # breakeven pivot
+        elif partial_taken and settings.breakeven_after_partial:
+            effective_stop = max(effective_stop, entry_price)  # keep breakeven
+
     # Check exit conditions
-    if current_price <= signal.stop_loss:
+    if current_price <= effective_stop:
+        exit_reason = "trail_stop" if trailing_active and effective_stop > signal.stop_loss else "stop"
+
+        # Two-leg weighted PnL
+        leg2_pnl = (effective_stop - entry_price) / entry_price * 100
+        if outcome.partial_exit_price is not None and settings.partial_tp_enabled:
+            leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
+            weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
+            update["leg2_exit_reason"] = exit_reason
+        else:
+            weighted_pnl = leg2_pnl
+
         update.update({
-            "exit_price": signal.stop_loss,
+            "exit_price": effective_stop,
             "exit_date": to_date,
-            "exit_reason": "stop",
+            "exit_reason": exit_reason,
             "still_open": False,
-            "pnl_pct": round((signal.stop_loss - entry_price) / entry_price * 100, 4),
+            "pnl_pct": round(weighted_pnl, 4),
         })
     elif current_price >= signal.target_1:
+        leg2_pnl = (signal.target_1 - entry_price) / entry_price * 100
+        if outcome.partial_exit_price is not None and settings.partial_tp_enabled:
+            leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
+            weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
+            update["leg2_exit_reason"] = "target"
+        else:
+            weighted_pnl = leg2_pnl
+
         update.update({
             "exit_price": signal.target_1,
             "exit_date": to_date,
             "exit_reason": "target",
             "still_open": False,
-            "pnl_pct": round((signal.target_1 - entry_price) / entry_price * 100, 4),
+            "pnl_pct": round(weighted_pnl, 4),
         })
     elif days_held >= signal.holding_period_days:
+        leg2_pnl = pnl_pct
+        if outcome.partial_exit_price is not None and settings.partial_tp_enabled:
+            leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
+            weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
+            update["leg2_exit_reason"] = "expiry"
+        else:
+            weighted_pnl = leg2_pnl
+
         update.update({
             "exit_price": current_price,
             "exit_date": to_date,
             "exit_reason": "expiry",
             "still_open": False,
+            "pnl_pct": round(weighted_pnl, 4),
         })
 
     # Store daily prices for tracking

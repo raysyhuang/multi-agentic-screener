@@ -82,19 +82,97 @@ def deterministic_regime_weight_adjust(
     return adjustments
 
 
+def _apply_veto_board(
+    weighted_picks: list[dict],
+    engine_results: list | None = None,
+) -> list[dict]:
+    """Apply veto-first architecture: penalize picks that conflict with other engines.
+
+    If an engine screened a ticker but rejected it (especially for distribution/trend
+    reasons), that's a veto signal. Penalize confidence for conflicting picks.
+
+    Also applies idiosyncratic bonus: single-engine picks where the stock is oversold
+    but the sector is not (stock_rsi2 < 10 AND sector_rsi2 > 30) get a small boost.
+    """
+    from src.config import get_settings
+    settings = get_settings()
+
+    if not settings.veto_board_enabled:
+        return weighted_picks
+
+    # Build a set of tickers that were screened-but-rejected by any engine
+    rejected_tickers: dict[str, list[str]] = {}  # ticker -> [rejecting_engine_names]
+    if engine_results:
+        for er in engine_results:
+            # Support EngineResultPayload objects, raw dicts, or dicts with nested payload
+            if isinstance(er, dict):
+                payload = er.get("payload", er)
+            else:
+                payload = getattr(er, "payload", None) or {}
+            if isinstance(payload, dict):
+                screened_rejected = payload.get("screened_but_rejected", [])
+                for item in screened_rejected:
+                    if isinstance(item, dict):
+                        t = item.get("ticker", "")
+                        if t:
+                            rejected_tickers.setdefault(t, []).append(
+                                payload.get("engine_name", "unknown")
+                            )
+
+    for wp in weighted_picks:
+        ticker = wp["ticker"]
+        engine_count = wp.get("engine_count", 1)
+        current_conf = wp.get("avg_weighted_confidence", wp.get("combined_score", 50))
+
+        # Veto: penalize picks that other engines explicitly rejected
+        if ticker in rejected_tickers and len(rejected_tickers[ticker]) >= 1:
+            wp["avg_weighted_confidence"] = current_conf * settings.veto_penalty
+            wp["veto_applied"] = True
+            wp["veto_engines"] = rejected_tickers[ticker]
+            logger.info(
+                "Veto board: %s penalized (%.1f → %.1f), rejected by %s",
+                ticker, current_conf, wp["avg_weighted_confidence"],
+                rejected_tickers[ticker],
+            )
+
+        # Idiosyncratic bonus: single-engine pick with stock oversold but sector not
+        if settings.idiosyncratic_bonus_enabled and engine_count == 1:
+            metadata = wp.get("metadata", {}) or {}
+            stock_rsi2 = metadata.get("rsi_2") or metadata.get("stock_rsi2")
+            sector_rsi2 = metadata.get("sector_rsi2")
+            if (stock_rsi2 is not None and float(stock_rsi2) < 10
+                    and sector_rsi2 is not None and float(sector_rsi2) > 30):
+                old_conf = wp.get("avg_weighted_confidence", wp.get("combined_score", 50))
+                wp["avg_weighted_confidence"] = old_conf * settings.idiosyncratic_bonus_multiplier
+                wp["idiosyncratic_bonus"] = True
+                logger.info(
+                    "Idiosyncratic bonus: %s boosted (%.1f → %.1f), "
+                    "stock_rsi2=%.1f sector_rsi2=%.1f",
+                    ticker, old_conf, wp["avg_weighted_confidence"],
+                    float(stock_rsi2), float(sector_rsi2),
+                )
+
+    return weighted_picks
+
+
 def synthesize_deterministic(
     weighted_picks: list[dict],
     regime: str,
     engines_reporting: int,
+    engine_results: list | None = None,
 ) -> SynthesizerOutput:
     """Build portfolio from weighted picks without LLM.
 
     Logic:
+    0. Apply veto board (penalize conflicting picks, bonus idiosyncratic)
     1. Separate convergent (2+ engines) from unique (1 engine) picks
     2. Sort each group by combined_score descending
     3. Fill portfolio: convergent first, then unique, up to _MAX_PORTFOLIO
     4. Assign equal weights (Capital Guardian adjusts later)
     """
+    # Veto board step
+    weighted_picks = _apply_veto_board(weighted_picks, engine_results)
+
     convergent = []
     unique = []
 
