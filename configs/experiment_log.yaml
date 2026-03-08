@@ -224,7 +224,7 @@ experiments:
       profit_factor: true  # +0.24
       max_drawdown: true  # -3.3pp (1Y), -12.3pp (3Y)
       trade_count: true  # 100% (no trades filtered)
-    verdict: "pending_shadow"
+    verdict: "pass"
     notes: >
       Score-tiered stops improve every risk metric without filtering trades.
       1Y: Sharpe +6.7%, PF +9.4%, MaxDD -3.3pp. 3Y: Sharpe +4.5%,
@@ -232,7 +232,7 @@ experiments:
       Logic: score≥85 gets 1.25×ATR stop (wide), 70-84 gets 0.85×ATR,
       <70 gets 0.50×ATR (tight). Strong signals get room to work;
       weak signals cut losses faster. No trade count impact.
-      Pending 14-day shadow run.
+      Promoted to production default on 2026-03-09.
 
   - id: "p2b_002"
     name: "Adaptive day-1 MFE exit (without trailing stop)"

@@ -98,7 +98,7 @@ class Settings(BaseSettings):
     confirm_mode: str = "close_gt_open"       # close_gt_open | low_gt_open_minus_atr
     blocked_entry_weekdays: str = ""          # comma-separated: 0=Mon..4=Fri (empty=none)
     early_exit_mfe_pct: float = 0.0           # exit at close when MFE exceeds this % (0=disabled)
-    score_tiered_stops_enabled: bool = False   # use score-dependent stop widths
+    score_tiered_stops_enabled: bool = True    # score≥85→1.25×ATR, 70-84→0.85×ATR, <70→0.50×ATR
 
     # --- Veto Architecture (V1.2) ---
     veto_board_enabled: bool = True

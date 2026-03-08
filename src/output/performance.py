@@ -332,14 +332,28 @@ async def _evaluate_position(
         "max_adverse": _clean(round(max_adverse, 4)),
     }
 
+    # --- Score-tiered stop: override stop_loss based on signal score ---
+    base_stop = signal.stop_loss
+    if settings.score_tiered_stops_enabled and signal.score is not None:
+        # Compute ATR from stop distance (reverse-engineer from 0.75×ATR default)
+        tier_atr = abs(entry_price - signal.stop_loss) / 0.75 if signal.stop_loss else 0
+        if tier_atr > 0:
+            score = float(signal.score)
+            if score >= 85:
+                base_stop = round(entry_price - 1.25 * tier_atr, 2)
+            elif score >= 70:
+                base_stop = round(entry_price - 0.85 * tier_atr, 2)
+            else:
+                base_stop = round(entry_price - 0.50 * tier_atr, 2)
+
     # --- Trailing stop ---
     high_watermark = max_price
     gain_pct = (high_watermark - entry_price) / entry_price * 100
     trailing_active = gain_pct >= settings.trail_activate_pct
-    effective_stop = signal.stop_loss
+    effective_stop = base_stop
     if trailing_active and settings.trail_activate_pct > 0:
         trail_stop = high_watermark * (1 - settings.trail_distance_pct / 100)
-        effective_stop = max(signal.stop_loss, trail_stop)
+        effective_stop = max(base_stop, trail_stop)
 
     # --- Two-leg: partial TP check ---
     if settings.partial_tp_enabled:
@@ -362,7 +376,7 @@ async def _evaluate_position(
 
     # Check exit conditions
     if current_price <= effective_stop:
-        exit_reason = "trail_stop" if trailing_active and effective_stop > signal.stop_loss else "stop"
+        exit_reason = "trail_stop" if trailing_active and effective_stop > base_stop else "stop"
 
         # Two-leg weighted PnL
         leg2_pnl = (effective_stop - entry_price) / entry_price * 100
