@@ -168,3 +168,8 @@ tracks:
     overrides:
       weekly_trend_gate_enabled: true
       weekly_trend_sma_days: 150
+
+  - name: score_tiered_stops_v3
+    description: "Score-dependent stop widths: >=85→1.25×ATR, 70-84→0.85×ATR, <70→0.50×ATR. Sharpe +6.7%, PF +9.4%."
+    overrides:
+      score_tiered_stops_enabled: true
