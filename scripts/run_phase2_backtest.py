@@ -91,6 +91,63 @@ CANDIDATES = {
         "_shock_switch": True,
         "blocked_weekdays": {4},  # block Friday signals
     },
+    # ── Phase 2B: Adaptive exits + score-tiered stops ──
+    # Early exit WITH trailing stop (redundant — trail captures first)
+    "early_exit_2.0": {
+        **CHAMPION_PARAMS,
+        "early_exit_mfe_pct": 2.0,
+    },
+    # Early exit INSTEAD of trailing stop — simpler exit mechanism
+    "early_exit_1.5_no_trail": {
+        **CHAMPION_PARAMS,
+        "trail_activate_pct": 0.0,
+        "trail_distance_pct": 0.0,
+        "early_exit_mfe_pct": 1.5,
+    },
+    "early_exit_2.0_no_trail": {
+        **CHAMPION_PARAMS,
+        "trail_activate_pct": 0.0,
+        "trail_distance_pct": 0.0,
+        "early_exit_mfe_pct": 2.0,
+    },
+    "early_exit_1.0_no_trail": {
+        **CHAMPION_PARAMS,
+        "trail_activate_pct": 0.0,
+        "trail_distance_pct": 0.0,
+        "early_exit_mfe_pct": 1.0,
+    },
+    "score_stops": {
+        **CHAMPION_PARAMS,
+        # (min_score, stop_atr_mult): high-score → wider stop, low-score → tighter
+        "score_stop_tiers": [(80, 1.0), (65, 0.75), (40, 0.5)],
+    },
+    "score_stops_wide": {
+        **CHAMPION_PARAMS,
+        "score_stop_tiers": [(80, 1.25), (65, 0.75), (40, 0.5)],
+    },
+    "early2_score_stops": {
+        **CHAMPION_PARAMS,
+        "early_exit_mfe_pct": 2.0,
+        "score_stop_tiers": [(80, 1.0), (65, 0.75), (40, 0.5)],
+    },
+    "early1.5_score_stops": {
+        **CHAMPION_PARAMS,
+        "early_exit_mfe_pct": 1.5,
+        "score_stop_tiers": [(80, 1.0), (65, 0.75), (40, 0.5)],
+    },
+    # Sweep tier boundaries
+    "score_stops_v3": {
+        **CHAMPION_PARAMS,
+        "score_stop_tiers": [(85, 1.25), (70, 0.85), (40, 0.50)],
+    },
+    "score_stops_v4": {
+        **CHAMPION_PARAMS,
+        "score_stop_tiers": [(75, 1.0), (60, 0.75), (40, 0.50)],
+    },
+    "score_stops_v5": {
+        **CHAMPION_PARAMS,
+        "score_stop_tiers": [(80, 1.25), (60, 0.75), (40, 0.40)],
+    },
 }
 
 # Acceptance gates (Phase 2 — relaxed WR gate to +2pp)

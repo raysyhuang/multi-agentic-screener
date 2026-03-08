@@ -174,6 +174,7 @@ def simulate_trade(
     max_entry_price: float = 0.0,
     confirm_entry: bool = False,
     confirm_mode: str = "close_gt_open",
+    early_exit_mfe_pct: float = 0.0,
 ) -> dict | None:
     """Simulate a LONG trade with T+1 open entry, optional trailing stop, and two-leg exits.
 
@@ -347,6 +348,17 @@ def simulate_trade(
         day_worst = (low - entry_price) / entry_price * 100
         mfe = max(mfe, day_best)
         mae = min(mae, day_worst)
+
+        # Adaptive early exit: if MFE exceeds threshold, take profit at close
+        if early_exit_mfe_pct > 0 and mfe >= early_exit_mfe_pct:
+            exit_price = float(row["close"]) * (1 - slippage)
+            pnl = (exit_price - entry_price) / entry_price * 100
+            return dict(
+                entry_date=entry_date, entry_price=round(entry_price, 2),
+                exit_date=row["date"], exit_price=round(exit_price, 2),
+                exit_reason="early_exit", holding_days=(row["date"] - entry_date).days,
+                pnl_pct=round(pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+            )
 
     # Expiry
     last = window.iloc[-1]
@@ -540,14 +552,25 @@ def run_model_backtest(
         confirm_entry = params.get("confirm_entry", False)
         confirm_mode = params.get("confirm_mode", "close_gt_open")
         blocked_weekdays = params.get("blocked_weekdays", set())
+        early_exit_mfe = params.get("early_exit_mfe_pct", 0.0)
+        # Score-tiered stops: list of (min_score, stop_atr_mult) sorted desc
+        score_stop_tiers = params.get("score_stop_tiers", None)
+        base_stop_mult = params.get("stop_atr_mult", 0.75)
         for signal_date, sig in raw_signals:
             # Compute ATR at signal date for two-leg and gap filter
             sig_atr = getattr(sig, "_atr_value", 0.0)
             if sig_atr == 0 and hasattr(sig, "entry_price") and hasattr(sig, "stop_loss"):
                 # Approximate ATR from stop distance / stop_atr_mult
-                stop_mult = params.get("stop_atr_mult", 0.75)
-                if stop_mult > 0:
-                    sig_atr = abs(sig.entry_price - sig.stop_loss) / stop_mult
+                if base_stop_mult > 0:
+                    sig_atr = abs(sig.entry_price - sig.stop_loss) / base_stop_mult
+
+            # Score-tiered stop: override stop_loss based on signal score
+            effective_stop_loss = sig.stop_loss
+            if score_stop_tiers and sig_atr > 0:
+                for min_score, tier_mult in sorted(score_stop_tiers, reverse=True):
+                    if sig.score >= min_score:
+                        effective_stop_loss = round(sig.entry_price - tier_mult * sig_atr, 2)
+                        break
 
             # Weekday filter: skip signals on blocked days
             if blocked_weekdays and signal_date.weekday() in blocked_weekdays:
@@ -555,7 +578,7 @@ def run_model_backtest(
 
             result = simulate_trade(
                 df, signal_date,
-                stop_loss=sig.stop_loss,
+                stop_loss=effective_stop_loss,
                 target=sig.target_1,
                 max_hold=sig.holding_period,
                 trail_activate_pct=trail_activate,
@@ -565,6 +588,7 @@ def run_model_backtest(
                 max_entry_price=getattr(sig, "max_entry_price", 0.0) or 0.0,
                 confirm_entry=confirm_entry,
                 confirm_mode=confirm_mode,
+                early_exit_mfe_pct=early_exit_mfe,
             )
             if result is None:
                 continue

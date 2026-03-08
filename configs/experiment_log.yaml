@@ -185,3 +185,75 @@ experiments:
     notes: >
       Only filters 54 trades out of 7,549 (0.7%). Negligible impact.
       Most extreme-range days are already filtered by RSI/ATR gates.
+
+  - id: "p2b_001"
+    name: "Score-tiered stop widths (v3)"
+    hypothesis: "High-score signals deserve wider stops; low-score deserve tighter"
+    start_date: "2026-03-09"
+    config:
+      score_stop_tiers:
+        - {min_score: 85, stop_atr_mult: 1.25}
+        - {min_score: 70, stop_atr_mult: 0.85}
+        - {min_score: 0, stop_atr_mult: 0.50}
+    champion_1y:
+      trades: 7549
+      win_rate: 0.699
+      avg_return: 0.89
+      sharpe: 2.40
+      profit_factor: 2.54
+      max_drawdown: 32.49
+    results_1y:
+      trades: 7549
+      win_rate: 0.695
+      avg_return: 0.94
+      sharpe: 2.56
+      sortino: 7.40
+      profit_factor: 2.78
+      max_drawdown: 29.16
+    results_3y:
+      trades: 27874
+      win_rate: 0.699
+      avg_return: 0.96
+      sharpe: 2.57
+      sortino: 7.54
+      profit_factor: 2.87
+      max_drawdown: 38.30
+    gates_passed:
+      win_rate: false  # -0.4pp (but WR not the goal here)
+      expectancy: true  # +0.05%
+      profit_factor: true  # +0.24
+      max_drawdown: true  # -3.3pp (1Y), -12.3pp (3Y)
+      trade_count: true  # 100% (no trades filtered)
+    verdict: "pending_shadow"
+    notes: >
+      Score-tiered stops improve every risk metric without filtering trades.
+      1Y: Sharpe +6.7%, PF +9.4%, MaxDD -3.3pp. 3Y: Sharpe +4.5%,
+      PF +6.3%, MaxDD -12.3pp. WR flat (-0.4pp) which is fine.
+      Logic: score≥85 gets 1.25×ATR stop (wide), 70-84 gets 0.85×ATR,
+      <70 gets 0.50×ATR (tight). Strong signals get room to work;
+      weak signals cut losses faster. No trade count impact.
+      Pending 14-day shadow run.
+
+  - id: "p2b_002"
+    name: "Adaptive day-1 MFE exit (without trailing stop)"
+    hypothesis: "Exit at close when MFE exceeds threshold instead of trailing"
+    start_date: "2026-03-09"
+    config:
+      early_exit_mfe_pct: 1.5
+      trail_activate_pct: 0.0
+      trail_distance_pct: 0.0
+    results_1y:
+      trades: 7549
+      win_rate: 0.505
+      avg_return: 0.22
+      sharpe: 0.64
+      profit_factor: 1.26
+      max_drawdown: 97.08
+    verdict: "fail"
+    notes: >
+      Replacing trailing stop with MFE-threshold exit is disastrous.
+      WR drops to 50%, MaxDD explodes to 97%. The trailing stop's
+      ratchet mechanism is critical — it locks in gains progressively.
+      A fixed MFE threshold exit at close lets winners reverse intraday.
+      With trailing stop active, early exit has zero effect (trailing
+      captures the move first). Trailing stop is non-negotiable.
