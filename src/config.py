@@ -89,6 +89,15 @@ class Settings(BaseSettings):
     min_atr_percentile_252: float = 0.10   # block if ATR14 in bottom decile
     earnings_blackout_days: int = 2        # block picks within N days of earnings
 
+    # --- Phase 2: Win-Rate Lift ---
+    weekly_trend_gate_enabled: bool = False   # require close > 150-day SMA (30-week proxy)
+    weekly_trend_sma_days: int = 150          # SMA period for weekly trend gate
+    shock_killswitch_enabled: bool = False    # block when 1D true range > k × ATR14
+    shock_killswitch_atr_mult: float = 3.0   # k multiplier for shock detection
+    confirm_entry_enabled: bool = False       # require bullish confirmation on entry day
+    confirm_mode: str = "close_gt_open"       # close_gt_open | low_gt_open_minus_atr
+    blocked_entry_weekdays: str = ""          # comma-separated: 0=Mon..4=Fri (empty=none)
+
     # --- Veto Architecture (V1.2) ---
     veto_board_enabled: bool = True
     veto_penalty: float = 0.5              # confidence multiplier for vetoed picks

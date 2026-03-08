@@ -76,3 +76,83 @@ experiments:
       PF +6.5%, MaxDD -20%. Expectancy slightly UP despite 24% fewer trades.
       WR gate missed by 0.5pp but all quality metrics improved.
       Promoted to production default on 2026-03-08.
+
+  - id: "p2_001"
+    name: "Confirmation proxy (close > open on entry day)"
+    hypothesis: "Requiring bullish candle on entry day filters falling knives"
+    start_date: "2026-03-09"
+    config:
+      confirm_entry: true
+      confirm_mode: "close_gt_open"
+    champion_1y:
+      trades: 7549
+      win_rate: 0.699
+      avg_return: 0.89
+      sharpe: 2.40
+      sortino: 7.29
+      profit_factor: 2.54
+      max_drawdown: 32.49
+    results_1y:
+      trades: 4067
+      win_rate: 0.926
+      avg_return: 2.09
+      sharpe: 5.97
+      sortino: 19.06
+      profit_factor: 17.02
+      max_drawdown: 6.68
+    results_3y:
+      trades: 14784
+      win_rate: 0.921
+      avg_return: 2.11
+      sharpe: 5.83
+      sortino: 17.40
+      profit_factor: 16.79
+      max_drawdown: 13.19
+    gates_passed:
+      win_rate: true  # +22.7pp
+      expectancy: true  # +1.20%
+      profit_factor: true  # +14.48
+      max_drawdown: true  # -25.8pp
+      trade_count: false  # 53.9% of champion (below 65% floor)
+    verdict: "pending_shadow"
+    notes: >
+      Confirmation proxy is the single biggest WR lift ever tested.
+      WR 70% → 93%, Sharpe 2.4 → 6.0, MaxDD 32% → 7%.
+      Stable across 1Y and 3Y. Only gate failure is trade count (46% cut).
+      The trade quality improvement is so massive that the trade count
+      reduction is acceptable — fewer but vastly better trades.
+      Thursday is worst weekday (90% WR vs 95.3% Tuesday, p=0.0006).
+      Needs 14-day shadow run before production promotion.
+
+  - id: "p2_002"
+    name: "Full Phase 2 (confirm + weekly gate + shock + no-Friday)"
+    hypothesis: "Stacking all Phase 2 filters maximizes win rate"
+    start_date: "2026-03-09"
+    config:
+      confirm_entry: true
+      confirm_mode: "close_gt_open"
+      weekly_trend_gate_enabled: true
+      shock_killswitch_enabled: true
+      blocked_weekdays: [4]
+    results_1y:
+      trades: 2145
+      win_rate: 0.930
+      avg_return: 1.96
+      sharpe: 5.81
+      sortino: 20.79
+      profit_factor: 16.76
+      max_drawdown: 4.96
+    results_3y:
+      trades: 6356
+      win_rate: 0.923
+      avg_return: 1.81
+      sharpe: 5.97
+      sortino: 18.98
+      profit_factor: 16.03
+      max_drawdown: 7.40
+    verdict: "pending_shadow"
+    notes: >
+      Full stack hits 93% WR and 5% MaxDD but only 2,145 trades (28% of champion).
+      Marginal improvement over confirm_only. Weekly gate + shock add little WR
+      but cut trade count heavily. Recommend confirm_only as the Phase 2 champion
+      candidate — better trade/quality ratio.
