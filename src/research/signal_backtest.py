@@ -169,20 +169,36 @@ def simulate_trade(
     slippage: float = DEFAULT_SLIPPAGE_PCT,
     trail_activate_pct: float = 0.0,
     trail_distance_pct: float = 0.0,
+    partial_tp_atr_mult: float = 0.0,
+    atr_value: float = 0.0,
+    max_entry_price: float = 0.0,
 ) -> dict | None:
-    """Simulate a LONG trade with T+1 open entry and optional trailing stop.
+    """Simulate a LONG trade with T+1 open entry, optional trailing stop, and two-leg exits.
 
     Trailing stop: once unrealized gain reaches trail_activate_pct, a trailing
     stop activates at (high_watermark * (1 - trail_distance_pct/100)). It only
     ratchets up, never down. Overrides the fixed stop when higher.
-    Set both to 0 to disable.
+
+    Two-leg mode (partial_tp_atr_mult > 0):
+      Leg 1: close 50% at entry + partial_tp_atr_mult × ATR
+      Leg 2: remainder rides with trailing stop + breakeven pivot after Leg 1 fills
+      Weighted PnL = 0.5 × leg1_pnl + 0.5 × leg2_pnl
+
+    Gap filter (max_entry_price > 0):
+      Reject if T+1 open exceeds max_entry_price (reversion already gapped away).
     """
     future = df[df["date"] > signal_date].sort_values("date")
     if len(future) < 2:
         return None
 
     entry_row = future.iloc[0]
-    entry_price = float(entry_row["open"]) * (1 + slippage)
+    raw_open = float(entry_row["open"])
+
+    # Gap filter: reject if T+1 open already exceeds max entry price
+    if max_entry_price > 0 and raw_open > max_entry_price:
+        return None
+
+    entry_price = raw_open * (1 + slippage)
     entry_date = entry_row["date"]
 
     window = future.iloc[:max_hold + 1]
@@ -191,6 +207,13 @@ def simulate_trade(
     high_watermark = entry_price
     trailing_active = False
     use_trailing = trail_activate_pct > 0 and trail_distance_pct > 0
+
+    # Two-leg state
+    use_two_leg = partial_tp_atr_mult > 0 and atr_value > 0
+    partial_target = entry_price + partial_tp_atr_mult * atr_value if use_two_leg else 0.0
+    leg1_filled = False
+    leg1_pnl = 0.0
+    leg1_exit_date = None
 
     for i in range(1, len(window)):
         row = window.iloc[i]
@@ -211,27 +234,77 @@ def simulate_trade(
             trail_stop = high_watermark * (1 - trail_distance_pct / 100)
             effective_stop = max(stop_loss, trail_stop)
 
+        # Breakeven pivot: after Leg 1 fills, stop floor = entry price
+        if leg1_filled:
+            effective_stop = max(effective_stop, entry_price)
+
+        # Check Leg 1 partial TP (before stop/target checks)
+        if use_two_leg and not leg1_filled and high >= partial_target:
+            leg1_filled = True
+            leg1_pnl = (partial_target * (1 - slippage) - entry_price) / entry_price * 100
+            leg1_exit_date = row["date"]
+            # After leg1, floor stop at entry (breakeven pivot)
+            effective_stop = max(effective_stop, entry_price)
+
         # Check stop (fixed or trailing)
         if low <= effective_stop:
             exit_price = effective_stop * (1 - slippage)
-            pnl = (exit_price - entry_price) / entry_price * 100
+            leg2_pnl = (exit_price - entry_price) / entry_price * 100
             exit_reason = "trail_stop" if trailing_active and effective_stop > stop_loss else "stop"
-            return dict(
-                entry_date=entry_date, entry_price=round(entry_price, 2),
-                exit_date=row["date"], exit_price=round(exit_price, 2),
-                exit_reason=exit_reason, holding_days=(row["date"] - entry_date).days,
-                pnl_pct=round(pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-            )
+
+            if use_two_leg and leg1_filled:
+                weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl
+                # Foregone profit: what we'd have made with full position at leg2 exit
+                full_pnl = leg2_pnl
+                foregone = full_pnl - weighted_pnl
+                return dict(
+                    entry_date=entry_date, entry_price=round(entry_price, 2),
+                    exit_date=row["date"], exit_price=round(exit_price, 2),
+                    exit_reason=exit_reason, holding_days=(row["date"] - entry_date).days,
+                    pnl_pct=round(weighted_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+                    leg1_pnl=round(leg1_pnl, 4), leg2_pnl=round(leg2_pnl, 4),
+                    foregone_profit=round(foregone, 4),
+                )
+            else:
+                return dict(
+                    entry_date=entry_date, entry_price=round(entry_price, 2),
+                    exit_date=row["date"], exit_price=round(exit_price, 2),
+                    exit_reason=exit_reason, holding_days=(row["date"] - entry_date).days,
+                    pnl_pct=round(leg2_pnl if not use_two_leg else leg2_pnl, 4),
+                    mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+                )
 
         if high >= target:
             exit_price = target * (1 - slippage)
-            pnl = (exit_price - entry_price) / entry_price * 100
-            return dict(
-                entry_date=entry_date, entry_price=round(entry_price, 2),
-                exit_date=row["date"], exit_price=round(exit_price, 2),
-                exit_reason="target", holding_days=(row["date"] - entry_date).days,
-                pnl_pct=round(pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-            )
+            leg2_pnl = (exit_price - entry_price) / entry_price * 100
+
+            if use_two_leg and leg1_filled:
+                weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl
+                full_pnl = leg2_pnl
+                foregone = full_pnl - weighted_pnl
+                return dict(
+                    entry_date=entry_date, entry_price=round(entry_price, 2),
+                    exit_date=row["date"], exit_price=round(exit_price, 2),
+                    exit_reason="target", holding_days=(row["date"] - entry_date).days,
+                    pnl_pct=round(weighted_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+                    leg1_pnl=round(leg1_pnl, 4), leg2_pnl=round(leg2_pnl, 4),
+                    foregone_profit=round(foregone, 4),
+                )
+            elif use_two_leg and not leg1_filled:
+                # Target hit before partial — treat as single-leg target
+                return dict(
+                    entry_date=entry_date, entry_price=round(entry_price, 2),
+                    exit_date=row["date"], exit_price=round(exit_price, 2),
+                    exit_reason="target", holding_days=(row["date"] - entry_date).days,
+                    pnl_pct=round(leg2_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+                )
+            else:
+                return dict(
+                    entry_date=entry_date, entry_price=round(entry_price, 2),
+                    exit_date=row["date"], exit_price=round(exit_price, 2),
+                    exit_reason="target", holding_days=(row["date"] - entry_date).days,
+                    pnl_pct=round(leg2_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+                )
 
         day_best = (high - entry_price) / entry_price * 100
         day_worst = (low - entry_price) / entry_price * 100
@@ -241,13 +314,27 @@ def simulate_trade(
     # Expiry
     last = window.iloc[-1]
     exit_price = float(last["close"]) * (1 - slippage)
-    pnl = (exit_price - entry_price) / entry_price * 100
-    return dict(
-        entry_date=entry_date, entry_price=round(entry_price, 2),
-        exit_date=last["date"], exit_price=round(exit_price, 2),
-        exit_reason="expiry", holding_days=(last["date"] - entry_date).days,
-        pnl_pct=round(pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-    )
+    leg2_pnl = (exit_price - entry_price) / entry_price * 100
+
+    if use_two_leg and leg1_filled:
+        weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl
+        full_pnl = leg2_pnl
+        foregone = full_pnl - weighted_pnl
+        return dict(
+            entry_date=entry_date, entry_price=round(entry_price, 2),
+            exit_date=last["date"], exit_price=round(exit_price, 2),
+            exit_reason="expiry", holding_days=(last["date"] - entry_date).days,
+            pnl_pct=round(weighted_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+            leg1_pnl=round(leg1_pnl, 4), leg2_pnl=round(leg2_pnl, 4),
+            foregone_profit=round(foregone, 4),
+        )
+    else:
+        return dict(
+            entry_date=entry_date, entry_price=round(entry_price, 2),
+            exit_date=last["date"], exit_price=round(exit_price, 2),
+            exit_reason="expiry", holding_days=(last["date"] - entry_date).days,
+            pnl_pct=round(leg2_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+        )
 
 
 # ── Signal scanning ──────────────────────────────────────────────────────────
@@ -412,7 +499,16 @@ def run_model_backtest(
         # Simulate trades
         trail_activate = params.get("trail_activate_pct", 0.0)
         trail_distance = params.get("trail_distance_pct", 0.0)
+        partial_tp = params.get("partial_tp_atr_mult", 0.0)
         for signal_date, sig in raw_signals:
+            # Compute ATR at signal date for two-leg and gap filter
+            sig_atr = getattr(sig, "_atr_value", 0.0)
+            if sig_atr == 0 and hasattr(sig, "entry_price") and hasattr(sig, "stop_loss"):
+                # Approximate ATR from stop distance / stop_atr_mult
+                stop_mult = params.get("stop_atr_mult", 0.75)
+                if stop_mult > 0:
+                    sig_atr = abs(sig.entry_price - sig.stop_loss) / stop_mult
+
             result = simulate_trade(
                 df, signal_date,
                 stop_loss=sig.stop_loss,
@@ -420,6 +516,9 @@ def run_model_backtest(
                 max_hold=sig.holding_period,
                 trail_activate_pct=trail_activate,
                 trail_distance_pct=trail_distance,
+                partial_tp_atr_mult=partial_tp,
+                atr_value=sig_atr,
+                max_entry_price=getattr(sig, "max_entry_price", 0.0) or 0.0,
             )
             if result is None:
                 continue
@@ -430,7 +529,8 @@ def run_model_backtest(
                 signal_date=signal_date,
                 score=sig.score,
                 regime=regime,
-                **result,
+                **{k: v for k, v in result.items()
+                   if k in Trade.__dataclass_fields__},
             ))
 
     # Compute metrics

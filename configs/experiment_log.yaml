@@ -1,0 +1,33 @@
+# Experiment Log — V1.2 Unified Surgical Alpha Plan
+# Each experiment is logged with hypothesis, config, results, and verdict.
+# One champion + one challenger at a time. Promote only after 14-day shadow run.
+
+experiments: []
+
+# Template:
+#   - id: "v12_001"
+#     name: "Two-leg trade engine"
+#     hypothesis: "Partial TP at 1.0x ATR + trailing stop captures MFE leak"
+#     start_date: "2026-03-08"
+#     config:
+#       partial_tp_enabled: true
+#       partial_tp_atr_multiple: 1.0
+#       trail_activate_pct: 0.5
+#       trail_distance_pct: 0.3
+#     baseline:
+#       win_rate: 0.52
+#       expectancy: 0.46
+#       profit_factor: 1.15
+#       max_drawdown_pct: 12.0
+#       trade_count: 35291
+#       expiry_mfe_gt_2pct: 0.468
+#     results:
+#       win_rate: null
+#       expectancy: null
+#       profit_factor: null
+#       max_drawdown_pct: null
+#       trade_count: null
+#       expiry_mfe_gt_2pct: null
+#     gates_passed: null
+#     verdict: "pending"  # pending | pass | fail | borderline
+#     notes: ""

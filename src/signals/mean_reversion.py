@@ -42,6 +42,7 @@ class MeanReversionSignal:
     target_2: float
     holding_period: int
     components: dict
+    max_entry_price: float | None = None  # gap filter: reject if T+1 open exceeds this
 
 
 def score_mean_reversion(
@@ -49,6 +50,7 @@ def score_mean_reversion(
     df: pd.DataFrame,
     features: dict,
     fundamental_data: dict | None = None,
+    regime: str = "unknown",
 ) -> MeanReversionSignal | None:
     """Score a ticker for RSI(2) mean-reversion potential.
 
@@ -118,14 +120,31 @@ def score_mean_reversion(
 
     scores["proximity_to_low"] = proximity_score
 
-    # --- 5. Volume Liquidity (10%) ---
+    # --- 5. Volume Signature (10%) ---
+    # Declining volume into the low = selling exhaustion (buy).
+    # Spiking volume into the low = distribution (avoid).
     rvol = features.get("rvol")
     vol_score = 50  # neutral default
-    if _valid(rvol):
+    if len(df) >= 4 and "volume" in df.columns:
+        import numpy as np
+        recent_vol = df["volume"].astype(float).iloc[-3:].values
+        if len(recent_vol) == 3 and all(v > 0 for v in recent_vol):
+            # Linear regression slope over 3 bars
+            x = np.arange(3, dtype=float)
+            slope = float(np.polyfit(x, recent_vol, 1)[0])
+            if slope > 0 and _valid(rvol) and rvol > 1.5:
+                vol_score = 10  # spiking volume into low = distribution, penalize
+            elif slope < 0:
+                vol_score = 80  # selling exhaustion = good setup
+            elif _valid(rvol) and rvol >= 0.5:
+                vol_score = 70
+            elif _valid(rvol) and rvol < 0.3:
+                vol_score = 20
+    elif _valid(rvol):
         if rvol >= 0.5:
-            vol_score = 70  # still liquid
+            vol_score = 70
         elif rvol < 0.3:
-            vol_score = 20  # dried up, dangerous
+            vol_score = 20
     scores["liquidity"] = vol_score
 
     # --- 6. Fundamental quality/value filter (10%) ---
@@ -151,8 +170,34 @@ def score_mean_reversion(
     }
     composite = sum(scores[k] * weights[k] for k in weights)
 
-    if composite < 50:
+    # Regime-dependent score floor (choppy is a coinflip — demand higher quality)
+    from src.config import get_settings
+    _settings = get_settings()
+    regime_floors = {
+        "choppy": _settings.choppy_min_score,
+    }
+    floor = regime_floors.get(regime, 50)
+    if composite < floor:
         return None
+
+    # --- ATR percentile gate: no MR if ATR14 at 52-week low (need stretch for snapback) ---
+    atr_raw = features.get("atr_14")
+    if _valid(atr_raw) and len(df) >= 252 and "high" in df.columns and "low" in df.columns:
+        close_series = df["close"].astype(float)
+        high_series = df["high"].astype(float)
+        low_series = df["low"].astype(float)
+        # Compute historical ATR14 percentile
+        tr = pd.concat([
+            high_series - low_series,
+            (high_series - close_series.shift(1)).abs(),
+            (low_series - close_series.shift(1)).abs(),
+        ], axis=1).max(axis=1)
+        atr_series = tr.rolling(14).mean().dropna()
+        if len(atr_series) >= 252:
+            import numpy as np
+            atr_pctile = float(np.sum(atr_series.iloc[-252:] <= float(atr_raw))) / 252
+            if atr_pctile < _settings.min_atr_percentile_252:
+                return None
 
     # --- Price targets ---
     close_price = features.get("close", 0)
@@ -176,6 +221,9 @@ def score_mean_reversion(
     # Tight stop: 0.75x ATR (backtest-optimized, was 1.0x — if it doesn't bounce fast, thesis is wrong)
     stop_loss = close_price - 0.75 * atr
 
+    # Gap filter: max acceptable T+1 open price
+    max_entry = round(close_price + _settings.entry_gap_max_atr * atr, 2)
+
     return MeanReversionSignal(
         ticker=ticker,
         score=round(composite, 2),
@@ -186,4 +234,5 @@ def score_mean_reversion(
         target_2=round(target_2, 2),
         holding_period=3,  # short hold for mean reversion (WR decays after day 3)
         components=scores,
+        max_entry_price=max_entry,
     )

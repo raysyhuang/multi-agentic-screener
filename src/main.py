@@ -1103,11 +1103,17 @@ async def _run_pipeline_core(
         # if breakout:
         #     all_signals.append(breakout)
 
+        # Earnings blackout: skip tickers within N days of earnings
+        dte = feat.get("days_to_earnings")
+        if dte is not None and dte <= settings.earnings_blackout_days:
+            continue
+
         # Mean reversion model (skip blacklisted tickers)
         if ticker not in mr_blacklist:
             mean_rev = score_mean_reversion(
                 ticker, df, feat,
                 fundamental_data=feat.get("fundamental", {}),
+                regime=regime_assessment.regime.value,
             )
             if mean_rev:
                 all_signals.append(mean_rev)
@@ -2356,6 +2362,7 @@ async def _run_cross_engine_steps(
                 weighted_picks=weighted_picks,
                 regime=regime_context.get("regime", "unknown"),
                 engines_reporting=len(engine_results),
+                engine_results=engine_results,
             )
         else:
             from src.agents.cross_engine_synthesizer import SynthesizerOutput
