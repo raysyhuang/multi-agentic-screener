@@ -172,6 +172,8 @@ def simulate_trade(
     partial_tp_atr_mult: float = 0.0,
     atr_value: float = 0.0,
     max_entry_price: float = 0.0,
+    confirm_entry: bool = False,
+    confirm_mode: str = "close_gt_open",
 ) -> dict | None:
     """Simulate a LONG trade with T+1 open entry, optional trailing stop, and two-leg exits.
 
@@ -197,6 +199,18 @@ def simulate_trade(
     # Gap filter: reject if T+1 open already exceeds max entry price
     if max_entry_price > 0 and raw_open > max_entry_price:
         return None
+
+    # Confirmation proxy: require bullish candle on entry day
+    if confirm_entry:
+        entry_close = float(entry_row["close"])
+        entry_low = float(entry_row["low"])
+        if confirm_mode == "close_gt_open":
+            if entry_close <= raw_open:
+                return None  # bearish candle = falling knife
+        elif confirm_mode == "low_gt_open_minus_atr":
+            # Looser: just require price didn't crash far below open
+            if atr_value > 0 and entry_low < raw_open - 0.1 * atr_value:
+                return None
 
     entry_price = raw_open * (1 + slippage)
     entry_date = entry_row["date"]
@@ -500,6 +514,9 @@ def run_model_backtest(
         trail_activate = params.get("trail_activate_pct", 0.0)
         trail_distance = params.get("trail_distance_pct", 0.0)
         partial_tp = params.get("partial_tp_atr_mult", 0.0)
+        confirm_entry = params.get("confirm_entry", False)
+        confirm_mode = params.get("confirm_mode", "close_gt_open")
+        blocked_weekdays = params.get("blocked_weekdays", set())
         for signal_date, sig in raw_signals:
             # Compute ATR at signal date for two-leg and gap filter
             sig_atr = getattr(sig, "_atr_value", 0.0)
@@ -508,6 +525,10 @@ def run_model_backtest(
                 stop_mult = params.get("stop_atr_mult", 0.75)
                 if stop_mult > 0:
                     sig_atr = abs(sig.entry_price - sig.stop_loss) / stop_mult
+
+            # Weekday filter: skip signals on blocked days
+            if blocked_weekdays and signal_date.weekday() in blocked_weekdays:
+                continue
 
             result = simulate_trade(
                 df, signal_date,
@@ -519,6 +540,8 @@ def run_model_backtest(
                 partial_tp_atr_mult=partial_tp,
                 atr_value=sig_atr,
                 max_entry_price=getattr(sig, "max_entry_price", 0.0) or 0.0,
+                confirm_entry=confirm_entry,
+                confirm_mode=confirm_mode,
             )
             if result is None:
                 continue

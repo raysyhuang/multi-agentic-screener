@@ -180,8 +180,21 @@ def score_mean_reversion(
     if composite < floor:
         return None
 
-    # --- ATR percentile gate: no MR if ATR14 at 52-week low (need stretch for snapback) ---
+    # --- Weekly trend gate: only buy dips in uptrends (close > 150d SMA) ---
+    if _settings.weekly_trend_gate_enabled and len(df) >= _settings.weekly_trend_sma_days:
+        sma_weekly = float(close.rolling(_settings.weekly_trend_sma_days).mean().iloc[-1])
+        if close.iloc[-1] < sma_weekly:
+            return None
+
+    # --- Shock kill-switch: block repricing events (1D range > k × ATR14) ---
     atr_raw = features.get("atr_14")
+    if _settings.shock_killswitch_enabled and _valid(atr_raw):
+        if "high" in df.columns and "low" in df.columns:
+            today_range = float(df["high"].iloc[-1]) - float(df["low"].iloc[-1])
+            if today_range > _settings.shock_killswitch_atr_mult * float(atr_raw):
+                return None
+
+    # --- ATR percentile gate: no MR if ATR14 at 52-week low (need stretch for snapback) ---
     if _valid(atr_raw) and len(df) >= 252 and "high" in df.columns and "low" in df.columns:
         close_series = df["close"].astype(float)
         high_series = df["high"].astype(float)

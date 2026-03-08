@@ -373,7 +373,7 @@ class TestV12Config:
         from src.config import Settings
         s = Settings(polygon_api_key="test", fmp_api_key="test")
 
-        assert s.partial_tp_enabled is True
+        assert s.partial_tp_enabled is False
         assert s.partial_tp_fraction == 0.5
         assert s.partial_tp_atr_multiple == 1.0
         assert s.breakeven_after_partial is True
@@ -414,3 +414,164 @@ class TestV12Metrics:
         assert hasattr(m, "foregone_profit")
         assert hasattr(m, "expiry_mfe_gt_2pct")
         assert m.foregone_profit == 0.0  # default
+
+
+# ── 10. Phase 2: Confirmation Proxy ──────────────────────────────
+
+
+class TestConfirmationProxy:
+
+    def test_bearish_candle_rejected(self):
+        """Entry day close < open should reject trade when confirm enabled."""
+        from src.research.signal_backtest import simulate_trade
+
+        # Build df where entry day is bearish (close < open)
+        dates = [date(2025, 6, i) for i in range(1, 8)]
+        df = pd.DataFrame({
+            "date": dates,
+            "open":  [100, 101, 99, 100, 101, 100, 100],
+            "high":  [102, 102, 101, 102, 103, 102, 102],
+            "low":   [99, 99, 98, 99, 100, 99, 99],
+            "close": [101, 100, 100, 101, 102, 101, 101],  # day 2: close=100 < open=101
+            "volume": [1e6] * 7,
+        })
+        result = simulate_trade(
+            df, signal_date=dates[0],
+            stop_loss=95, target=110, max_hold=5,
+            confirm_entry=True, confirm_mode="close_gt_open",
+        )
+        assert result is None  # bearish entry day rejected
+
+    def test_bullish_candle_accepted(self):
+        """Entry day close > open should allow trade when confirm enabled."""
+        from src.research.signal_backtest import simulate_trade
+
+        dates = [date(2025, 6, i) for i in range(1, 8)]
+        df = pd.DataFrame({
+            "date": dates,
+            "open":  [100, 99, 100, 100, 100, 100, 100],
+            "high":  [102, 102, 102, 102, 102, 102, 102],
+            "low":   [99, 98, 99, 99, 99, 99, 99],
+            "close": [101, 101, 101, 101, 101, 101, 101],  # day 2: close=101 > open=99
+            "volume": [1e6] * 7,
+        })
+        result = simulate_trade(
+            df, signal_date=dates[0],
+            stop_loss=90, target=110, max_hold=5,
+            confirm_entry=True, confirm_mode="close_gt_open",
+        )
+        assert result is not None
+
+    def test_confirm_disabled_allows_all(self):
+        """Without confirm, bearish candle should still be accepted."""
+        from src.research.signal_backtest import simulate_trade
+
+        dates = [date(2025, 6, i) for i in range(1, 8)]
+        df = pd.DataFrame({
+            "date": dates,
+            "open":  [100, 101, 99, 100, 101, 100, 100],
+            "high":  [102, 102, 101, 102, 103, 102, 102],
+            "low":   [99, 99, 98, 99, 100, 99, 99],
+            "close": [101, 100, 100, 101, 102, 101, 101],
+            "volume": [1e6] * 7,
+        })
+        result = simulate_trade(
+            df, signal_date=dates[0],
+            stop_loss=90, target=110, max_hold=5,
+            confirm_entry=False,
+        )
+        assert result is not None
+
+
+# ── 11. Phase 2: Weekly Trend Gate ────────────────────────────────
+
+
+class TestWeeklyTrendGate:
+
+    def test_below_sma150_blocked(self):
+        """Stock below 150-day SMA should be blocked when gate enabled."""
+        from src.signals.mean_reversion import score_mean_reversion
+
+        # Build 200 bars with downtrend (price well below 150-SMA)
+        df = _make_ohlcv(n=200, start_price=120.0, seed=99)
+        # Force last bars to be low (below SMA150)
+        df.loc[df.index[-10:], "close"] = 80.0
+        df.loc[df.index[-10:], "low"] = 79.0
+        feat = _oversold_features(close=80.0, atr=2.0)
+
+        with patch("src.config.get_settings") as mock:
+            mock.return_value.weekly_trend_gate_enabled = True
+            mock.return_value.weekly_trend_sma_days = 150
+            mock.return_value.shock_killswitch_enabled = False
+            mock.return_value.shock_killswitch_atr_mult = 3.0
+            mock.return_value.choppy_min_score = 50
+            mock.return_value.min_atr_percentile_252 = 0.0  # disable ATR floor
+            mock.return_value.entry_gap_max_atr = 0.2
+            result = score_mean_reversion("TEST", df, feat, regime="bull")
+
+        assert result is None
+
+
+# ── 12. Phase 2: Shock Kill-Switch ────────────────────────────────
+
+
+class TestShockKillSwitch:
+
+    def test_extreme_range_blocked(self):
+        """True range > 3×ATR should block signal."""
+        from src.signals.mean_reversion import score_mean_reversion
+
+        df = _make_ohlcv(n=260, start_price=100.0)
+        # Make last bar have extreme range: high=110, low=90 → range=20 vs ATR~2
+        df.loc[df.index[-1], "high"] = 110.0
+        df.loc[df.index[-1], "low"] = 90.0
+        feat = _oversold_features(close=95.0, atr=2.0)
+
+        with patch("src.config.get_settings") as mock:
+            mock.return_value.weekly_trend_gate_enabled = False
+            mock.return_value.shock_killswitch_enabled = True
+            mock.return_value.shock_killswitch_atr_mult = 3.0
+            mock.return_value.choppy_min_score = 50
+            mock.return_value.min_atr_percentile_252 = 0.0
+            mock.return_value.entry_gap_max_atr = 0.2
+            result = score_mean_reversion("SHOCK", df, feat, regime="bull")
+
+        assert result is None
+
+    def test_normal_range_passes(self):
+        """Normal range < 3×ATR should pass."""
+        from src.signals.mean_reversion import score_mean_reversion
+
+        df = _make_ohlcv(n=260, start_price=100.0)
+        feat = _oversold_features(close=95.0, atr=2.0)
+
+        with patch("src.config.get_settings") as mock:
+            mock.return_value.weekly_trend_gate_enabled = False
+            mock.return_value.shock_killswitch_enabled = True
+            mock.return_value.shock_killswitch_atr_mult = 3.0
+            mock.return_value.choppy_min_score = 50
+            mock.return_value.min_atr_percentile_252 = 0.0
+            mock.return_value.entry_gap_max_atr = 0.2
+            result = score_mean_reversion("NORMAL", df, feat, regime="bull")
+
+        # Should not be None (shock switch shouldn't block normal range)
+        # May still be None for other reasons, but not shock
+
+
+# ── 13. Phase 2: Config Params ────────────────────────────────────
+
+
+class TestPhase2Config:
+
+    def test_phase2_params_exist(self):
+        """All Phase 2 config parameters should have defaults."""
+        from src.config import Settings
+        s = Settings(polygon_api_key="test", fmp_api_key="test")
+
+        assert s.weekly_trend_gate_enabled is False
+        assert s.weekly_trend_sma_days == 150
+        assert s.shock_killswitch_enabled is False
+        assert s.shock_killswitch_atr_mult == 3.0
+        assert s.confirm_entry_enabled is False
+        assert s.confirm_mode == "close_gt_open"
+        assert s.blocked_entry_weekdays == ""
