@@ -65,6 +65,11 @@ CANDIDATES = {
         **CHAMPION_PARAMS,
         "_shock_switch": True,
     },
+    "confirm_open_entry": {
+        **CHAMPION_PARAMS,
+        "confirm_entry": True,
+        "confirm_mode": "close_gt_open_open_entry",
+    },
     "confirm_weekly": {
         **CHAMPION_PARAMS,
         "confirm_entry": True,

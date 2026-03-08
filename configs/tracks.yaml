@@ -149,3 +149,22 @@ tracks:
     description: "Block picks within 2 days of earnings"
     overrides:
       earnings_blackout_days: 2
+
+  # ── Phase 2 Win-Rate Tracks ─────────────────────────────────
+  - name: confirm_close_entry
+    description: "High WR variant: require bullish T+1 candle, enter at T+1 close. 78% WR, 22% MaxDD."
+    overrides:
+      confirm_entry_enabled: true
+      confirm_mode: "close_gt_open"
+
+  - name: confirm_t2_open_entry
+    description: "Confirmation proxy: require green T+1 candle, enter at T+2 open. 73% WR."
+    overrides:
+      confirm_entry_enabled: true
+      confirm_mode: "close_gt_open_open_entry"
+
+  - name: weekly_trend_gate
+    description: "Only take MR signals when close > 150-day SMA (uptrend intact)"
+    overrides:
+      weekly_trend_gate_enabled: true
+      weekly_trend_sma_days: 150

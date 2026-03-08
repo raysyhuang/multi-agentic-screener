@@ -200,22 +200,45 @@ def simulate_trade(
     if max_entry_price > 0 and raw_open > max_entry_price:
         return None
 
-    # Confirmation proxy: require bullish candle on entry day
+    # Confirmation proxy: require bullish candle, then enter.
+    # Modes:
+    #   close_gt_open: T+1 must be green candle, enter at T+1 close (~3:55 PM)
+    #   close_gt_open_open_entry: T+1 must be green, enter at T+2 open (no look-ahead)
+    #   low_gt_open_minus_atr: T+1 low stays within 0.1×ATR of open, enter at T+1 close
     if confirm_entry:
         entry_close = float(entry_row["close"])
         entry_low = float(entry_row["low"])
         if confirm_mode == "close_gt_open":
             if entry_close <= raw_open:
-                return None  # bearish candle = falling knife
+                return None  # bearish candle = falling knife, skip
+            # Enter at close price — you watch the candle, buy at ~3:55 PM if green
+            entry_price = entry_close * (1 + slippage)
+            entry_date = entry_row["date"]
+            window = future.iloc[:max_hold + 1]
+        elif confirm_mode == "close_gt_open_open_entry":
+            # Look at T+1 candle color, enter at T+2 open (fully look-ahead free)
+            if entry_close <= raw_open:
+                return None
+            if len(future) < 3:
+                return None
+            t2_row = future.iloc[1]
+            entry_price = float(t2_row["open"]) * (1 + slippage)
+            entry_date = t2_row["date"]
+            window = future.iloc[1:max_hold + 2]
         elif confirm_mode == "low_gt_open_minus_atr":
-            # Looser: just require price didn't crash far below open
             if atr_value > 0 and entry_low < raw_open - 0.1 * atr_value:
                 return None
-
-    entry_price = raw_open * (1 + slippage)
-    entry_date = entry_row["date"]
-
-    window = future.iloc[:max_hold + 1]
+            entry_price = entry_close * (1 + slippage)
+            entry_date = entry_row["date"]
+            window = future.iloc[:max_hold + 1]
+        else:
+            entry_price = raw_open * (1 + slippage)
+            entry_date = entry_row["date"]
+            window = future.iloc[:max_hold + 1]
+    else:
+        entry_price = raw_open * (1 + slippage)
+        entry_date = entry_row["date"]
+        window = future.iloc[:max_hold + 1]
     mfe = 0.0
     mae = 0.0
     high_watermark = entry_price
