@@ -78,7 +78,7 @@ experiments:
       Promoted to production default on 2026-03-08.
 
   - id: "p2_001"
-    name: "Confirmation proxy (close > open on entry day)"
+    name: "Confirmation proxy — enter at T+1 close if green candle"
     hypothesis: "Requiring bullish candle on entry day filters falling knives"
     start_date: "2026-03-09"
     config:
@@ -94,65 +94,94 @@ experiments:
       max_drawdown: 32.49
     results_1y:
       trades: 4067
-      win_rate: 0.926
-      avg_return: 2.09
-      sharpe: 5.97
-      sortino: 19.06
-      profit_factor: 17.02
-      max_drawdown: 6.68
+      win_rate: 0.781
+      avg_return: 0.64
+      sharpe: 1.98
+      sortino: 3.46
+      profit_factor: 2.24
+      max_drawdown: 22.81
     results_3y:
       trades: 14784
-      win_rate: 0.921
-      avg_return: 2.11
-      sharpe: 5.83
-      sortino: 17.40
-      profit_factor: 16.79
-      max_drawdown: 13.19
+      win_rate: 0.781
+      avg_return: 0.63
+      sharpe: 2.02
+      sortino: 3.09
+      profit_factor: 2.24
+      max_drawdown: 30.28
     gates_passed:
-      win_rate: true  # +22.7pp
-      expectancy: true  # +1.20%
-      profit_factor: true  # +14.48
-      max_drawdown: true  # -25.8pp
+      win_rate: true   # +8.2pp (passes +2pp gate)
+      expectancy: false # -0.25% (lower than champion)
+      profit_factor: false # -0.30 (below tolerance)
+      max_drawdown: true  # -9.7pp
       trade_count: false  # 53.9% of champion (below 65% floor)
-    verdict: "pending_shadow"
+    verdict: "shadow_track"
     notes: >
-      Confirmation proxy is the single biggest WR lift ever tested.
-      WR 70% → 93%, Sharpe 2.4 → 6.0, MaxDD 32% → 7%.
-      Stable across 1Y and 3Y. Only gate failure is trade count (46% cut).
-      The trade quality improvement is so massive that the trade count
-      reduction is acceptable — fewer but vastly better trades.
-      Thursday is worst weekday (90% WR vs 95.3% Tuesday, p=0.0006).
-      Needs 14-day shadow run before production promotion.
+      After fixing look-ahead bias (enter at close, not open), WR lifts
+      from 70% to 78% (+8pp). Stable across 1Y and 3Y. However, entering
+      at close trades away expectancy (-0.25%) because the intraday bounce
+      IS the mean reversion edge. MaxDD improves -10pp.
+      Added as shadow track for high-WR/low-drawdown preference.
+      Not promoted: fails expectancy and PF gates.
 
   - id: "p2_002"
-    name: "Full Phase 2 (confirm + weekly gate + shock + no-Friday)"
-    hypothesis: "Stacking all Phase 2 filters maximizes win rate"
+    name: "Confirmation proxy — T+2 open entry after green T+1"
+    hypothesis: "Confirm T+1 green candle, enter next day open (no look-ahead)"
     start_date: "2026-03-09"
     config:
       confirm_entry: true
-      confirm_mode: "close_gt_open"
-      weekly_trend_gate_enabled: true
-      shock_killswitch_enabled: true
-      blocked_weekdays: [4]
+      confirm_mode: "close_gt_open_open_entry"
     results_1y:
-      trades: 2145
-      win_rate: 0.930
-      avg_return: 1.96
-      sharpe: 5.81
-      sortino: 20.79
-      profit_factor: 16.76
-      max_drawdown: 4.96
-    results_3y:
-      trades: 6356
-      win_rate: 0.923
-      avg_return: 1.81
-      sharpe: 5.97
-      sortino: 18.98
-      profit_factor: 16.03
-      max_drawdown: 7.40
-    verdict: "pending_shadow"
+      trades: 4047
+      win_rate: 0.733
+      avg_return: 0.79
+      sharpe: 2.00
+      sortino: 3.49
+      profit_factor: 2.17
+      max_drawdown: 31.35
+    verdict: "fail"
     notes: >
-      Full stack hits 93% WR and 5% MaxDD but only 2,145 trades (28% of champion).
-      Marginal improvement over confirm_only. Weekly gate + shock add little WR
-      but cut trade count heavily. Recommend confirm_only as the Phase 2 champion
-      candidate — better trade/quality ratio.
+      T+2 open entry preserves more expectancy than T+1 close entry
+      but WR lift is only +3.4pp (vs +8.2pp for close entry).
+      MaxDD barely improves. Worst of both worlds — not enough WR lift
+      to justify 46% trade cut and slight PF drop.
+
+  - id: "p2_003"
+    name: "Weekly trend gate (close > 150d SMA)"
+    hypothesis: "Only buy dips in uptrends to avoid falling knives"
+    start_date: "2026-03-09"
+    config:
+      weekly_trend_gate_enabled: true
+      weekly_trend_sma_days: 150
+    results_1y:
+      trades: 4945
+      win_rate: 0.705
+      avg_return: 0.84
+      sharpe: 2.43
+      sortino: 7.53
+      profit_factor: 2.55
+      max_drawdown: 32.49
+    verdict: "fail"
+    notes: >
+      +0.6pp WR, marginally better Sharpe/Sortino, but cuts 34% of trades.
+      The SMA200 filter already in the scoring model handles this.
+      Not worth the trade count hit for <1pp WR improvement.
+
+  - id: "p2_004"
+    name: "Shock kill-switch (true range > 3×ATR)"
+    hypothesis: "Block repricing events where the mean has shifted"
+    start_date: "2026-03-09"
+    config:
+      shock_killswitch_enabled: true
+      shock_killswitch_atr_mult: 3.0
+    results_1y:
+      trades: 7495
+      win_rate: 0.698
+      avg_return: 0.89
+      sharpe: 2.38
+      sortino: 7.24
+      profit_factor: 2.53
+      max_drawdown: 32.49
+    verdict: "fail"
+    notes: >
+      Only filters 54 trades out of 7,549 (0.7%). Negligible impact.
+      Most extreme-range days are already filtered by RSI/ATR gates.
