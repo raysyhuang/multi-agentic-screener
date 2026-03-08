@@ -73,7 +73,9 @@ class Settings(BaseSettings):
     trail_distance_pct: float = 0.3   # trail 0.3% below high watermark
 
     # --- Two-Leg Trade Engine (V1.2) ---
-    partial_tp_enabled: bool = True
+    # Disabled: backtest showed partial TP dilutes winners (-0.16% avg return)
+    # while trailing stop alone captures MFE efficiently. Keep code for future tuning.
+    partial_tp_enabled: bool = False
     partial_tp_fraction: float = 0.5       # close 50% at partial target
     partial_tp_atr_multiple: float = 1.0   # Leg 1 target = entry + 1.0×ATR
     breakeven_after_partial: bool = True    # move stop to entry after Leg 1 fills

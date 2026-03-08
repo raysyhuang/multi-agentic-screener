@@ -43,10 +43,12 @@ BASELINE_PARAMS = {
     "trail_distance_pct": 0.3,
 }
 
-# V1.2 parameters: baseline + two-leg exits
+# V1.2 parameters: baseline + entry filters (gap, volume slope, ATR floor, choppy gate)
+# Partial TP disabled — backtest proved trailing stop alone captures MFE better.
+# Entry filters are baked into score_mean_reversion(); no extra params needed here.
 V12_PARAMS = {
     **BASELINE_PARAMS,
-    "partial_tp_atr_mult": 1.0,
+    # partial_tp_atr_mult intentionally omitted (disabled in production)
 }
 
 # Acceptance gates (from plan)
