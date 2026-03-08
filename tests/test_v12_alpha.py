@@ -442,8 +442,8 @@ class TestConfirmationProxy:
         )
         assert result is None  # bearish entry day rejected
 
-    def test_bullish_candle_accepted(self):
-        """Entry day close > open should allow trade when confirm enabled."""
+    def test_bullish_candle_accepted_and_enters_at_close(self):
+        """Entry day close > open should allow trade and enter at close price."""
         from src.research.signal_backtest import simulate_trade
 
         dates = [date(2025, 6, i) for i in range(1, 8)]
@@ -461,6 +461,8 @@ class TestConfirmationProxy:
             confirm_entry=True, confirm_mode="close_gt_open",
         )
         assert result is not None
+        # Should enter at close (101) + slippage, not at open (99)
+        assert result["entry_price"] > 100.0
 
     def test_confirm_disabled_allows_all(self):
         """Without confirm, bearish candle should still be accepted."""
