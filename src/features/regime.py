@@ -228,8 +228,8 @@ def get_regime_allowed_models(regime: Regime) -> list[str]:
     Key insight: momentum breakouts in bear markets destroy returns.
     """
     if regime == Regime.BULL:
-        return ["breakout", "mean_reversion", "catalyst"]
+        return ["breakout", "mean_reversion", "catalyst", "sniper"]
     elif regime == Regime.BEAR:
         return ["mean_reversion"]  # Only counter-trend works in downtrends
     else:  # CHOPPY
-        return ["mean_reversion", "catalyst"]  # No momentum, range plays only
+        return ["mean_reversion", "catalyst", "sniper"]  # Sniper has own bear block
