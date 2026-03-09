@@ -230,6 +230,9 @@ class Settings(BaseSettings):
     cross_engine_alert_cooldown_hours: int = 4
     engine_drop_alert_cooldown_minutes: int = 60
 
+    # --- Production Profile ---
+    production_profile: str = "balanced"  # "balanced" (default) or future challenger profiles
+
     # --- Shadow Tracks (parallel parameter experiments) ---
     shadow_tracks_enabled: bool = False
 
