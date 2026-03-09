@@ -268,13 +268,13 @@ async def dashboard_overview():
         approved_count = 0
         if run:
             sig_result = await session.execute(
-                select(func.count(Signal.id)).where(Signal.run_id == run.id)
+                select(func.count(Signal.id)).where(Signal.run_date == run.run_date)
             )
             signals_count = sig_result.scalar() or 0
             approved_result = await session.execute(
                 select(func.count(Signal.id)).where(
-                    Signal.run_id == run.id,
-                    Signal.approved.is_(True),
+                    Signal.run_date == run.run_date,
+                    Signal.risk_gate_decision == "APPROVE",
                 )
             )
             approved_count = approved_result.scalar() or 0
