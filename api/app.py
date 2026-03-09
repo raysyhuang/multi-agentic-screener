@@ -16,7 +16,7 @@ from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
 import sqlalchemy as sa
-from sqlalchemy import select, text
+from sqlalchemy import func, select, text
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -249,6 +249,67 @@ async def performance_page(mode: str | None = "quant_only"):
 # ---------------------------------------------------------------------------
 # Dashboard API endpoints
 # ---------------------------------------------------------------------------
+
+
+@app.get("/api/dashboard/overview")
+async def dashboard_overview():
+    """Lightweight overview for dashboard landing page."""
+    from src.config import get_settings
+    settings = get_settings()
+    async with get_session() as session:
+        # Latest run
+        run_result = await session.execute(
+            select(DailyRun).order_by(DailyRun.run_date.desc()).limit(1)
+        )
+        run = run_result.scalar_one_or_none()
+
+        # Today's signals count
+        signals_count = 0
+        approved_count = 0
+        if run:
+            sig_result = await session.execute(
+                select(func.count(Signal.id)).where(Signal.run_id == run.id)
+            )
+            signals_count = sig_result.scalar() or 0
+            approved_result = await session.execute(
+                select(func.count(Signal.id)).where(
+                    Signal.run_id == run.id,
+                    Signal.approved.is_(True),
+                )
+            )
+            approved_count = approved_result.scalar() or 0
+
+        # Performance summary (last 90d)
+        perf = {}
+        try:
+            from src.output.performance import get_performance_summary
+            perf = await get_performance_summary(days=90) or {}
+        except Exception:
+            pass
+
+        overall = perf.get("overall", {})
+        risk = perf.get("risk_metrics", {})
+
+        return {
+            "profile": settings.production_profile,
+            "regime": run.regime if run else None,
+            "run_date": str(run.run_date) if run else None,
+            "pipeline_duration_s": run.pipeline_duration_s if run else None,
+            "signals_total": signals_count,
+            "signals_approved": approved_count,
+            "total_trades": perf.get("total_signals", 0),
+            "win_rate": overall.get("win_rate"),
+            "avg_pnl": overall.get("avg_pnl"),
+            "sharpe": risk.get("sharpe_ratio"),
+            "sortino": risk.get("sortino_ratio"),
+            "profit_factor": risk.get("profit_factor"),
+            "max_drawdown_pct": risk.get("max_drawdown_pct"),
+            "expectancy": risk.get("expectancy"),
+            "execution_mode": settings.execution_mode,
+            "trading_mode": settings.trading_mode,
+            "score_tiered_stops": settings.score_tiered_stops_enabled,
+        }
+
 
 @app.get("/api/dashboard/signals")
 async def dashboard_signals():

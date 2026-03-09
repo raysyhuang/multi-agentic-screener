@@ -273,14 +273,14 @@ async def test_root_serves_dashboard(app_client):
 
 
 @pytest.mark.asyncio
-async def test_dashboard_has_histories_tab(app_client):
-    """Dashboard should expose a Histories tab."""
+async def test_dashboard_has_system_tab(app_client):
+    """Dashboard should expose a System tab (merged from Pipeline/Histories/Costs)."""
     app, _ = app_client
     transport = ASGITransport(app=app)
     async with AsyncClient(transport=transport, base_url="http://test") as client:
         resp = await client.get("/dashboard")
     assert resp.status_code == 200
-    assert 'data-tab="histories"' in resp.text
+    assert 'data-tab="system"' in resp.text
 
 
 @pytest.mark.asyncio

@@ -12,36 +12,28 @@
 </head>
 <body>
   <nav class="nav">
-    <span class="nav-title">Screener</span>
-    <span class="nav-active-label">Signals</span>
+    <span class="nav-title">MAS</span>
+    <span class="nav-active-label">Overview</span>
     <button class="nav-hamburger" aria-label="Menu" aria-expanded="false">
       <span></span><span></span><span></span>
     </button>
     <div class="nav-tabs">
-      <button class="nav-tab active" data-tab="signals">Signals</button>
+      <button class="nav-tab active" data-tab="overview">Overview</button>
+      <button class="nav-tab" data-tab="signals">Signals</button>
       <button class="nav-tab" data-tab="crossengine">Engines</button>
       <button class="nav-tab" data-tab="performance">Performance</button>
-      <button class="nav-tab" data-tab="charts">Charts</button>
-      <button class="nav-tab" data-tab="compare">Compare</button>
-      <button class="nav-tab" data-tab="pipeline">Pipeline</button>
-      <button class="nav-tab" data-tab="costs">Costs</button>
-      <button class="nav-tab" data-tab="histories">Histories</button>
-      <button class="nav-tab" data-tab="backtest">Backtest</button>
       <button class="nav-tab" data-tab="tracks">Tracks</button>
+      <button class="nav-tab" data-tab="system">System</button>
     </div>
   </nav>
 
   <div class="container">
-    <div id="signals-view" class="view active"></div>
+    <div id="overview-view" class="view active"></div>
+    <div id="signals-view" class="view"></div>
     <div id="crossengine-view" class="view"></div>
     <div id="performance-view" class="view"></div>
-    <div id="charts-view" class="view"></div>
-    <div id="compare-view" class="view"></div>
-    <div id="pipeline-view" class="view"></div>
-    <div id="costs-view" class="view"></div>
-    <div id="histories-view" class="view"></div>
-    <div id="backtest-view" class="view"></div>
     <div id="tracks-view" class="view"></div>
+    <div id="system-view" class="view"></div>
   </div>
 
   <script src="/static/dashboard.js"></script>

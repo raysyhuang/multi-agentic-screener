@@ -39,6 +39,27 @@ FLAT_OVERRIDE_KEYS = {
     "low_overlap_max_positions",
     "low_overlap_max_total_weight_pct",
     "regime_gate_bear_penalty_multiplier",
+    # V1.2 Alpha Upgrade keys
+    "trail_activate_pct",
+    "trail_distance_pct",
+    "partial_tp_enabled",
+    "partial_tp_atr_multiple",
+    "veto_board_enabled",
+    "veto_penalty",
+    "idiosyncratic_bonus_multiplier",
+    "choppy_min_score",
+    "min_atr_percentile_252",
+    "earnings_blackout_days",
+    # Phase 2 Win-Rate Lift keys
+    "confirm_entry_enabled",
+    "confirm_mode",
+    "weekly_trend_gate_enabled",
+    "weekly_trend_sma_days",
+    "score_tiered_stops_enabled",
+    "shock_killswitch_enabled",
+    "shock_killswitch_atr_mult",
+    "blocked_entry_weekdays",
+    "early_exit_mfe_pct",
 }
 
 # Special-cased nested keys

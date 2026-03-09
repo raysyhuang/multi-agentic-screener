@@ -1417,3 +1417,205 @@ body {
     justify-content: center;
   }
 }
+
+/* ---- Overview Tab ---- */
+
+.overview-hero {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  flex-wrap: wrap;
+  gap: 0.75rem;
+  margin-bottom: 1.5rem;
+}
+
+.overview-hero-left {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+}
+
+.overview-hero-title {
+  font-size: 1.5rem;
+  font-weight: 700;
+  letter-spacing: -0.02em;
+}
+
+.overview-profile-badge {
+  display: inline-flex;
+  align-items: center;
+  gap: 0.3rem;
+  padding: 0.25rem 0.75rem;
+  border-radius: 20px;
+  font-size: 0.72rem;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  background: var(--gradient-brand-soft);
+  color: var(--teal-600);
+  border: 1px solid rgba(20, 184, 166, 0.2);
+}
+
+@media (prefers-color-scheme: dark) {
+  .overview-profile-badge { color: var(--teal-400); }
+}
+
+.overview-status-row {
+  display: flex;
+  align-items: center;
+  gap: 0.5rem;
+  flex-wrap: wrap;
+}
+
+.overview-status-dot {
+  display: inline-block;
+  width: 8px;
+  height: 8px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+.overview-status-dot.dot-green { background: var(--green); }
+.overview-status-dot.dot-amber { background: var(--amber); }
+.overview-status-dot.dot-red { background: var(--red); }
+
+.overview-quick-grid {
+  display: grid;
+  grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+  gap: 1rem;
+  margin-bottom: 1.5rem;
+}
+
+.overview-quick-card {
+  background: var(--card-bg);
+  border: 1px solid var(--card-border);
+  border-radius: var(--card-radius);
+  padding: 1.25rem;
+  box-shadow: var(--card-shadow);
+  cursor: pointer;
+  transition: all 0.2s ease;
+}
+
+.overview-quick-card:hover {
+  box-shadow: var(--card-shadow-hover);
+  transform: translateY(-2px);
+}
+
+.overview-quick-card-header {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin-bottom: 0.75rem;
+}
+
+.overview-quick-card-title {
+  font-size: 0.8rem;
+  font-weight: 600;
+  color: var(--text-secondary);
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+}
+
+.overview-quick-card-arrow {
+  font-size: 0.8rem;
+  color: var(--text-muted);
+}
+
+.overview-quick-card-value {
+  font-size: 2rem;
+  font-weight: 700;
+  letter-spacing: -0.03em;
+  line-height: 1;
+  margin-bottom: 0.25rem;
+}
+
+.overview-quick-card-detail {
+  font-size: 0.78rem;
+  color: var(--text-secondary);
+}
+
+.overview-signals-list {
+  display: flex;
+  flex-direction: column;
+  gap: 0.4rem;
+}
+
+.overview-signal-row {
+  display: flex;
+  align-items: center;
+  gap: 0.75rem;
+  padding: 0.6rem 0.85rem;
+  background: var(--gradient-brand-soft);
+  border-radius: 10px;
+  font-size: 0.85rem;
+}
+
+.overview-signal-ticker {
+  font-weight: 700;
+  min-width: 55px;
+}
+
+.overview-signal-conf {
+  margin-left: auto;
+  font-weight: 600;
+  font-size: 0.8rem;
+}
+
+@media (max-width: 768px) {
+  .overview-hero {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+  .overview-quick-grid {
+    grid-template-columns: 1fr;
+  }
+  .overview-quick-card-value {
+    font-size: 1.6rem;
+  }
+}
+
+/* ---- Sub-Tab Toggles (merged tabs) ---- */
+
+.subtab-bar {
+  display: flex;
+  gap: 0.25rem;
+  margin-bottom: 1.5rem;
+  border-bottom: 1px solid var(--card-border);
+  padding-bottom: 0.5rem;
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.subtab-btn {
+  padding: 0.45rem 0.85rem;
+  border: none;
+  border-radius: 8px 8px 0 0;
+  cursor: pointer;
+  color: var(--text-secondary);
+  background: none;
+  font-family: inherit;
+  font-size: 0.8rem;
+  font-weight: 500;
+  transition: all 0.15s ease;
+  white-space: nowrap;
+  border-bottom: 2px solid transparent;
+}
+
+.subtab-btn:hover {
+  color: var(--text);
+  background: var(--gradient-brand-soft);
+}
+
+.subtab-btn.subtab-active {
+  color: var(--teal-600);
+  border-bottom-color: var(--teal-500);
+  font-weight: 600;
+}
+
+@media (prefers-color-scheme: dark) {
+  .subtab-btn.subtab-active { color: var(--teal-400); }
+}
+
+.subtab-content { display: none; }
+.subtab-content.subtab-visible { display: block; }

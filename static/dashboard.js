@@ -1,4 +1,5 @@
-/* Dashboard SPA — vanilla JS with tab routing and lazy data loading */
+/* Dashboard SPA — vanilla JS with tab routing and lazy data loading
+   Tabs: Overview | Signals | Engines | Performance | Tracks | System */
 
 (function () {
   'use strict';
@@ -31,9 +32,8 @@
   // State
   // -----------------------------------------------------------------------
   var loaded = {
-    signals: false, crossengine: false, performance: false,
-    charts: false, compare: false, pipeline: false, costs: false, histories: false,
-    backtest: false, tracks: false
+    overview: false, signals: false, crossengine: false, performance: false,
+    tracks: false, system: false
   };
   var equityChart = null;
 
@@ -87,16 +87,12 @@
 
   function loadTab(tab) {
     switch (tab) {
+      case 'overview': loadOverview(); break;
       case 'signals': loadSignals(); break;
       case 'crossengine': loadCrossEngine(); break;
       case 'performance': loadPerformance(); break;
-      case 'charts': loadCharts(); break;
-      case 'compare': loadCompare(); break;
-      case 'pipeline': loadPipeline(); break;
-      case 'costs': loadCosts(); break;
-      case 'histories': loadHistories(); break;
-      case 'backtest': loadBacktest(); break;
       case 'tracks': loadTracks(); break;
+      case 'system': loadSystem(); break;
     }
   }
 
@@ -154,9 +150,176 @@
     return d.innerHTML;
   }
 
+  function metricCard(value, label, isPositive) {
+    var cls = '';
+    if (isPositive === true) cls = ' positive';
+    else if (isPositive === false && value !== '\u2014') cls = ' negative';
+    return '<div class="metric-card">' +
+      '<div class="metric-value' + cls + '">' + value + '</div>' +
+      '<div class="metric-label">' + label + '</div>' +
+    '</div>';
+  }
+
+  function numberFormat(n) {
+    if (n == null) return '\u2014';
+    return Number(n).toLocaleString();
+  }
+
   // -----------------------------------------------------------------------
-  // Signals Tab
+  // Sub-tab helper
   // -----------------------------------------------------------------------
+  function initSubTabs(viewId) {
+    var view = document.getElementById(viewId);
+    if (!view) return;
+    view.querySelectorAll('.subtab-btn').forEach(function (btn) {
+      btn.addEventListener('click', function () {
+        var target = btn.dataset.subtab;
+        // Toggle active button
+        view.querySelectorAll('.subtab-btn').forEach(function (b) { b.classList.remove('subtab-active'); });
+        btn.classList.add('subtab-active');
+        // Toggle content
+        view.querySelectorAll('.subtab-content').forEach(function (c) { c.classList.remove('subtab-visible'); });
+        var content = view.querySelector('[data-subtab-content="' + target + '"]');
+        if (content) content.classList.add('subtab-visible');
+      });
+    });
+  }
+
+  // =======================================================================
+  // OVERVIEW TAB
+  // =======================================================================
+  function loadOverview() {
+    showSpinner('overview-view');
+
+    Promise.all([
+      fetchJSON('/api/dashboard/overview').catch(function () { return {}; }),
+      fetchJSON('/api/dashboard/signals').catch(function () { return { signals: [] }; }),
+      fetchJSON('/api/dashboard/engine-reliability').catch(function () { return { engines: [] }; }),
+    ]).then(function (results) {
+      var ov = results[0];
+      var sigData = results[1];
+      var relData = results[2];
+      var view = document.getElementById('overview-view');
+      var html = '';
+
+      // Hero row: title + profile badge + regime
+      html += '<div class="overview-hero">';
+      html += '<div class="overview-hero-left">';
+      html += '<span class="overview-hero-title">Dashboard</span>';
+      if (ov.profile) {
+        html += '<span class="overview-profile-badge">' + escapeHtml(ov.profile) + '</span>';
+      }
+      if (ov.regime) {
+        html += regimeBadge(ov.regime);
+      }
+      html += '</div>';
+
+      // Status row: last run + mode + trading mode
+      html += '<div class="overview-status-row">';
+      if (ov.run_date) {
+        var dotColor = ov.pipeline_duration_s ? 'dot-green' : 'dot-amber';
+        html += '<span class="overview-status-dot ' + dotColor + '"></span>';
+        html += '<span style="font-size:0.8rem;color:var(--text-secondary)">Last run: ' + escapeHtml(ov.run_date);
+        if (ov.pipeline_duration_s) html += ' (' + fmt(ov.pipeline_duration_s, 0) + 's)';
+        html += '</span>';
+      }
+      if (ov.trading_mode) {
+        var modeColor = ov.trading_mode === 'LIVE' ? 'var(--green)' : 'var(--amber)';
+        html += '<span style="font-size:0.72rem;font-weight:600;padding:0.15rem 0.5rem;border-radius:12px;border:1px solid ' + modeColor + ';color:' + modeColor + '">' + escapeHtml(ov.trading_mode) + '</span>';
+      }
+      if (ov.score_tiered_stops) {
+        html += '<span style="font-size:0.68rem;color:var(--text-muted);border:1px solid var(--card-border);border-radius:12px;padding:0.12rem 0.45rem">tiered stops</span>';
+      }
+      html += '</div></div>';
+
+      // Key metrics row
+      html += '<div class="metrics-grid">';
+      html += metricCard(ov.total_trades || 0, 'Trades (90d)', null);
+      html += metricCard(ov.win_rate != null ? fmtPct(ov.win_rate * 100) : '\u2014', 'Win Rate', ov.win_rate >= 0.5);
+      html += metricCard(ov.avg_pnl != null ? fmtPct(ov.avg_pnl) : '\u2014', 'Avg P&L', ov.avg_pnl > 0);
+      html += metricCard(ov.sharpe != null ? fmt(ov.sharpe) : '\u2014', 'Sharpe', ov.sharpe > 0);
+      html += metricCard(ov.profit_factor != null ? fmt(ov.profit_factor) : '\u2014', 'Profit Factor', ov.profit_factor > 1);
+      html += metricCard(ov.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(ov.max_drawdown_pct)) : '\u2014', 'Max DD', false);
+      html += '</div>';
+
+      // Quick-action cards
+      html += '<div class="overview-quick-grid">';
+
+      // Signals card
+      var sigCount = (sigData.signals || []).length;
+      var sigApproved = ov.signals_approved || sigCount;
+      html += '<div class="overview-quick-card" onclick="switchTab(\'signals\')">';
+      html += '<div class="overview-quick-card-header"><span class="overview-quick-card-title">Today\'s Signals</span><span class="overview-quick-card-arrow">&rarr;</span></div>';
+      html += '<div class="overview-quick-card-value">' + sigApproved + '</div>';
+      html += '<div class="overview-quick-card-detail">' + (ov.signals_total || 0) + ' total scored, ' + sigApproved + ' approved</div>';
+      if (sigData.signals && sigData.signals.length > 0) {
+        html += '<div class="overview-signals-list" style="margin-top:0.75rem">';
+        sigData.signals.slice(0, 5).forEach(function (s) {
+          var dirClass = (s.direction || '').toLowerCase() === 'long' ? 'positive' : 'negative';
+          html += '<div class="overview-signal-row">';
+          html += '<span class="overview-signal-ticker">' + escapeHtml(s.ticker) + '</span>';
+          html += '<span class="' + dirClass + '" style="font-size:0.75rem;font-weight:600">' + escapeHtml(s.direction) + '</span>';
+          html += '<span style="font-size:0.75rem;color:var(--text-muted)">' + escapeHtml(s.signal_model || '') + '</span>';
+          html += '<span class="overview-signal-conf">' + fmt(s.confidence, 0) + '</span>';
+          html += '</div>';
+        });
+        if (sigData.signals.length > 5) {
+          html += '<div style="text-align:center;font-size:0.75rem;color:var(--text-muted);padding:0.3rem">+' + (sigData.signals.length - 5) + ' more</div>';
+        }
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // Engine health card
+      var engines = relData.engines || [];
+      html += '<div class="overview-quick-card" onclick="switchTab(\'crossengine\')">';
+      html += '<div class="overview-quick-card-header"><span class="overview-quick-card-title">Engine Health</span><span class="overview-quick-card-arrow">&rarr;</span></div>';
+      var healthyCount = engines.filter(function (e) { return e.latest_status === 'success'; }).length;
+      html += '<div class="overview-quick-card-value">' + healthyCount + '/' + engines.length + '</div>';
+      html += '<div class="overview-quick-card-detail">engines reporting</div>';
+      if (engines.length > 0) {
+        html += '<div style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.35rem">';
+        engines.forEach(function (e) {
+          var status = (e.latest_status || 'no_data').toLowerCase();
+          var dotClass = status === 'success' ? 'dot-green' : status === 'no_data' ? 'dot-amber' : 'dot-red';
+          var sr7 = e.success_rate_7d != null ? (e.success_rate_7d * 100).toFixed(0) + '%' : '--';
+          html += '<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem">';
+          html += '<span class="overview-status-dot ' + dotClass + '"></span>';
+          html += '<span style="font-weight:600;min-width:100px">' + escapeHtml(engineDisplayName(e.engine_name || '')) + '</span>';
+          html += '<span style="color:var(--text-muted)">' + sr7 + ' (7d)</span>';
+          html += '</div>';
+        });
+        html += '</div>';
+      }
+      html += '</div>';
+
+      // Performance card
+      html += '<div class="overview-quick-card" onclick="switchTab(\'performance\')">';
+      html += '<div class="overview-quick-card-header"><span class="overview-quick-card-title">Performance</span><span class="overview-quick-card-arrow">&rarr;</span></div>';
+      var sharpeStr = ov.sharpe != null ? fmt(ov.sharpe) : '--';
+      html += '<div class="overview-quick-card-value' + (ov.sharpe > 0 ? ' positive' : '') + '">' + sharpeStr + '</div>';
+      html += '<div class="overview-quick-card-detail">Sharpe ratio (90d)</div>';
+      html += '<div style="margin-top:0.75rem;display:grid;grid-template-columns:repeat(3,1fr);gap:0.5rem;text-align:center">';
+      html += '<div><div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase">Sortino</div><div style="font-weight:700">' + (ov.sortino != null ? fmt(ov.sortino) : '--') + '</div></div>';
+      html += '<div><div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase">Expectancy</div><div style="font-weight:700">' + (ov.expectancy != null ? fmt(ov.expectancy) : '--') + '</div></div>';
+      html += '<div><div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase">PF</div><div style="font-weight:700">' + (ov.profit_factor != null ? fmt(ov.profit_factor) : '--') + '</div></div>';
+      html += '</div>';
+      html += '</div>';
+
+      html += '</div>'; // close quick-grid
+
+      view.innerHTML = html;
+    }).catch(function () {
+      showEmpty('overview-view', 'Failed to load overview data.');
+    });
+  }
+
+  // Make switchTab globally accessible for onclick handlers
+  window.switchTab = switchTab;
+
+  // =======================================================================
+  // SIGNALS TAB
+  // =======================================================================
   function loadSignals() {
     showSpinner('signals-view');
     Promise.all([
@@ -240,16 +403,12 @@
     var checks = health.checks || [];
     var problemChecks = checks.filter(function (c) { return !c.passed; });
     var passChecks = checks.filter(function (c) { return c.passed; });
-    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem">' +
-      'Showing issues first. Passing checks are collapsed.' +
-      '</div>';
     if (problemChecks.length === 0) {
-      html += '<div style="font-size:0.8rem;color:var(--text-secondary)">✅ All ' + passChecks.length + ' dataset checks passed.</div>';
+      html += '<div style="font-size:0.8rem;color:var(--text-secondary)">All ' + passChecks.length + ' dataset checks passed.</div>';
     } else {
       problemChecks.forEach(function (c) {
-        var icon = c.passed ? '\u2705' : '\u26A0\uFE0F';
         html += '<div style="font-size:0.8rem;margin:0.25rem 0;color:var(--text-secondary)">' +
-          icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
+          '\u26A0\uFE0F <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
           escapeHtml(c.detail) + '</div>';
       });
     }
@@ -293,19 +452,6 @@
       'style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);font-size:0.75rem">Details</button>' +
       '<div style="display:none;width:100%;margin-top:0.5rem">';
 
-    var totalStageChecks = 0;
-    var totalStageProblems = 0;
-    stages.forEach(function (stage) { totalStageChecks += (stage.checks || []).length; });
-    stages.forEach(function (stage) {
-      (stage.checks || []).forEach(function (c) { if (!c.passed) totalStageProblems++; });
-    });
-    html += '<div style="font-size:0.75rem;color:var(--text-muted);margin-bottom:0.35rem">' +
-      'Showing stage summaries and only checks that need attention.' +
-      '</div>';
-    if (totalStageProblems === 0) {
-      html += '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.35rem">✅ All ' + totalStageChecks + ' pipeline checks passed.</div>';
-    }
-
     stages.forEach(function (stage) {
       var stageColor = stage.severity === 'pass' ? 'var(--green)' :
                        stage.severity === 'warn' ? 'var(--amber, #f59e0b)' : 'var(--red, #ef4444)';
@@ -329,23 +475,12 @@
       html += '</div>';
     });
 
-    var warnings = health.warnings || [];
-    if (warnings.length > 0) {
-      html += '<div style="margin-top:0.5rem;padding-top:0.5rem;border-top:1px solid var(--border)">' +
-        '<div style="font-size:0.75rem;font-weight:600;color:var(--text-secondary)">All Warnings (' + warnings.length + ')</div>';
-      warnings.forEach(function (w) {
-        html += '<div style="font-size:0.75rem;color:var(--text-muted)">\u2022 ' + escapeHtml(w) + '</div>';
-      });
-      html += '</div>';
-    }
-
     html += '</div></div></div>';
     return html;
   }
 
   function renderFmpEndpointBadge(pipelineHealth) {
     if (!pipelineHealth || !pipelineHealth.stages) return '';
-
     var endpointCheck = null;
     (pipelineHealth.stages || []).forEach(function (stage) {
       if (endpointCheck) return;
@@ -354,12 +489,8 @@
       });
     });
     if (!endpointCheck) return '';
-
-    var statusMap = {};
-    if (endpointCheck.value && endpointCheck.value.endpoints) {
-      statusMap = endpointCheck.value.endpoints;
-    }
-    if (!statusMap || Object.keys(statusMap).length === 0) return '';
+    var statusMap = endpointCheck.value && endpointCheck.value.endpoints ? endpointCheck.value.endpoints : {};
+    if (Object.keys(statusMap).length === 0) return '';
 
     function badge(status) {
       if (status === 'supported') return { color: 'var(--green)', label: 'supported' };
@@ -372,18 +503,12 @@
     }
 
     var html = '<div class="card" style="margin-bottom:1.25rem">' +
-      '<div class="card-header">' +
-      '<div><span class="card-title">FMP Endpoint Availability</span>' +
-      '<div class="card-subtitle">Supported vs plan-gated endpoints for this run</div></div>' +
-      '</div>';
-
+      '<div class="card-header"><div><span class="card-title">FMP Endpoint Availability</span></div></div>';
     var callsUsed = endpointCheck.value.calls_used;
     var dailyBudget = endpointCheck.value.daily_budget;
     if (callsUsed != null && dailyBudget != null) {
-      html += '<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.45rem">Calls used: ' +
-        escapeHtml(String(callsUsed)) + '/' + escapeHtml(String(dailyBudget)) + '</div>';
+      html += '<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.45rem">Calls: ' + callsUsed + '/' + dailyBudget + '</div>';
     }
-
     html += '<div style="display:flex;flex-wrap:wrap;gap:0.4rem">';
     Object.keys(statusMap).forEach(function (name) {
       var meta = badge(statusMap[name]);
@@ -391,26 +516,16 @@
         ';border-radius:999px;padding:0.12rem 0.42rem">' +
         escapeHtml(name.replace(/_/g, ' ')) + ': ' + escapeHtml(meta.label) + '</span>';
     });
-    html += '</div>';
-
-    if (endpointCheck.message) {
-      html += '<div style="font-size:0.74rem;color:var(--text-muted);margin-top:0.45rem">' +
-        escapeHtml(endpointCheck.message) + '</div>';
-    }
-    html += '</div>';
+    html += '</div></div>';
     return html;
   }
 
   function renderVerificationChecklist(pipelineHealth, datasetHealth) {
-    var stageItems = [];
-    var checkItems = [];
-    var datasetItems = [];
-    var warningItems = [];
+    var stageItems = [], checkItems = [], datasetItems = [], warningItems = [];
 
     function normalizeStatus(passed, severity) {
-      var sev = (severity || '').toLowerCase();
       if (passed) return 'pass';
-      if (sev === 'fail') return 'fail';
+      if ((severity || '').toLowerCase() === 'fail') return 'fail';
       return 'warn';
     }
 
@@ -421,136 +536,89 @@
     }
 
     function renderRows(items) {
-      if (!items.length) {
-        return '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.3rem 0">No checks in this section.</div>';
-      }
-      var section = '';
-      items.forEach(function (item) {
-        var view = statusView(item.status);
-        section += '<div style="padding:0.42rem 0.52rem;border:1px solid var(--border);border-radius:8px;margin-top:0.35rem">' +
+      if (!items.length) return '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.3rem 0">No checks.</div>';
+      return items.map(function (item) {
+        var v = statusView(item.status);
+        return '<div style="padding:0.42rem 0.52rem;border:1px solid var(--border);border-radius:8px;margin-top:0.35rem">' +
           '<div style="display:flex;align-items:center;justify-content:space-between;gap:0.5rem">' +
           '<div style="display:flex;align-items:center;gap:0.35rem;font-size:0.78rem;color:var(--text-secondary)">' +
-          '<span style="color:' + view.color + '">' + view.icon + '</span>' +
-          '<strong>' + escapeHtml(item.label) + '</strong>' +
-          '</div>' +
-          '<span style="font-size:0.68rem;color:' + view.color + ';border:1px solid ' + view.color + ';border-radius:999px;padding:0.05rem 0.35rem">' + view.label + '</span>' +
-          '</div>' +
-          '<div style="font-size:0.74rem;color:var(--text-muted);margin-top:0.18rem">' + escapeHtml(item.detail || '') + '</div>' +
-          '</div>';
-      });
-      return section;
+          '<span style="color:' + v.color + '">' + v.icon + '</span>' +
+          '<strong>' + escapeHtml(item.label) + '</strong></div>' +
+          '<span style="font-size:0.68rem;color:' + v.color + ';border:1px solid ' + v.color + ';border-radius:999px;padding:0.05rem 0.35rem">' + v.label + '</span></div>' +
+          '<div style="font-size:0.74rem;color:var(--text-muted);margin-top:0.18rem">' + escapeHtml(item.detail || '') + '</div></div>';
+      }).join('');
     }
 
     function renderSection(title, items, opts) {
       opts = opts || {};
-      var problemItems = items.filter(function (i) { return i.status !== 'pass'; });
-      var passItems = items.filter(function (i) { return i.status === 'pass'; });
-      var open = problemItems.length > 0 || !!opts.forceOpen;
-      var summarySuffix = '';
-      if (problemItems.length === 0 && items.length > 0) {
-        summarySuffix = ' \u00B7 all pass';
-      } else if (problemItems.length > 0) {
-        summarySuffix = ' \u00B7 ' + problemItems.length + ' issues';
-      }
+      var problems = items.filter(function (i) { return i.status !== 'pass'; });
+      var passes = items.filter(function (i) { return i.status === 'pass'; });
+      var open = problems.length > 0 || !!opts.forceOpen;
+      var suffix = problems.length === 0 && items.length > 0 ? ' \u00B7 all pass' :
+                   problems.length > 0 ? ' \u00B7 ' + problems.length + ' issues' : '';
       var html = '<details' + (open ? ' open' : '') + (opts.marginTop ? ' style="margin-top:' + opts.marginTop + '"' : '') + '>' +
         '<summary style="cursor:pointer;font-size:0.8rem;color:var(--text-secondary);font-weight:600">' +
-        title + ' (' + items.length + ')' + summarySuffix +
-        '</summary>';
-
-      if (items.length === 0) {
-        html += '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.3rem 0">No checks in this section.</div>';
-      } else if (problemItems.length === 0) {
-        html += '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.35rem 0">All ' + passItems.length + ' checks passed.</div>';
+        title + ' (' + items.length + ')' + suffix + '</summary>';
+      if (problems.length === 0 && items.length > 0) {
+        html += '<div style="font-size:0.78rem;color:var(--text-muted);padding:0.35rem 0">All ' + passes.length + ' checks passed.</div>';
       } else {
-        html += renderRows(problemItems);
+        html += renderRows(problems);
       }
-
-      if (passItems.length > 0) {
-        html += '<details style="margin-top:0.35rem"><summary style="cursor:pointer;font-size:0.75rem;color:var(--text-secondary)">Show passing rows (' + passItems.length + ')</summary>' +
-          renderRows(passItems) +
-          '</details>';
+      if (passes.length > 0) {
+        html += '<details style="margin-top:0.35rem"><summary style="cursor:pointer;font-size:0.75rem;color:var(--text-secondary)">Show passing (' + passes.length + ')</summary>' + renderRows(passes) + '</details>';
       }
-
-      html += '</details>';
-      return html;
+      return html + '</details>';
     }
 
     if (pipelineHealth && pipelineHealth.stages) {
       (pipelineHealth.stages || []).forEach(function (stage) {
-        var stageLabel = (stage.stage || '').replace(/_/g, ' ');
-        var stageStatus = normalizeStatus(!!stage.passed, stage.severity || 'warn');
-        stageItems.push({
-          label: stageLabel,
-          status: stageStatus,
-          detail: stage.passed ? 'stage passed' : 'stage requires review',
-        });
-
+        var label = (stage.stage || '').replace(/_/g, ' ');
+        stageItems.push({ label: label, status: normalizeStatus(!!stage.passed, stage.severity || 'warn'), detail: stage.passed ? 'passed' : 'review needed' });
         (stage.checks || []).forEach(function (c) {
-          checkItems.push({
-            label: stageLabel + ' / ' + (c.name || '').replace(/_/g, ' '),
-            status: normalizeStatus(!!c.passed, c.severity || 'warn'),
-            detail: c.message || '',
-          });
+          checkItems.push({ label: label + ' / ' + (c.name || '').replace(/_/g, ' '), status: normalizeStatus(!!c.passed, c.severity || 'warn'), detail: c.message || '' });
         });
       });
     }
-
     if (datasetHealth && datasetHealth.checks) {
       (datasetHealth.checks || []).forEach(function (c) {
-        datasetItems.push({
-          label: (c.name || '').replace(/_/g, ' '),
-          status: c.passed ? 'pass' : 'warn',
-          detail: c.detail || '',
-        });
+        datasetItems.push({ label: (c.name || '').replace(/_/g, ' '), status: c.passed ? 'pass' : 'warn', detail: c.detail || '' });
       });
     }
-
     if (pipelineHealth && pipelineHealth.warnings) {
       (pipelineHealth.warnings || []).forEach(function (w) {
         warningItems.push({ label: 'Pipeline warning', status: 'warn', detail: w || '' });
       });
     }
 
-    var allItems = stageItems.concat(checkItems).concat(datasetItems).concat(warningItems);
-    var passCount = allItems.filter(function (i) { return i.status === 'pass'; }).length;
-    var warnCount = allItems.filter(function (i) { return i.status === 'warn'; }).length;
-    var failCount = allItems.filter(function (i) { return i.status === 'fail'; }).length;
+    var all = stageItems.concat(checkItems).concat(datasetItems).concat(warningItems);
+    var passCount = all.filter(function (i) { return i.status === 'pass'; }).length;
+    var warnCount = all.filter(function (i) { return i.status === 'warn'; }).length;
+    var failCount = all.filter(function (i) { return i.status === 'fail'; }).length;
 
-    var html = '<div class="card" style="margin-bottom:1.25rem">' +
-      '<div class="card-header">' +
-      '<div><span class="card-title">Verification Checklist</span>' +
-      '<div class="card-subtitle">Complete run checklist for morning verification</div></div>' +
-      '</div>' +
+    return '<div class="card" style="margin-bottom:1.25rem">' +
+      '<div class="card-header"><div><span class="card-title">Verification Checklist</span></div></div>' +
       '<div style="display:flex;flex-wrap:wrap;gap:0.45rem;margin-bottom:0.6rem">' +
-      '<span style="font-size:0.72rem;color:var(--text-secondary);border:1px solid var(--border);border-radius:999px;padding:0.12rem 0.45rem">Total: ' + allItems.length + '</span>' +
+      '<span style="font-size:0.72rem;color:var(--text-secondary);border:1px solid var(--border);border-radius:999px;padding:0.12rem 0.45rem">Total: ' + all.length + '</span>' +
       '<span style="font-size:0.72rem;color:var(--green);border:1px solid var(--green);border-radius:999px;padding:0.12rem 0.45rem">PASS: ' + passCount + '</span>' +
       '<span style="font-size:0.72rem;color:var(--amber, #f59e0b);border:1px solid var(--amber, #f59e0b);border-radius:999px;padding:0.12rem 0.45rem">WARN: ' + warnCount + '</span>' +
       '<span style="font-size:0.72rem;color:var(--red, #ef4444);border:1px solid var(--red, #ef4444);border-radius:999px;padding:0.12rem 0.45rem">FAIL: ' + failCount + '</span>' +
-      '</div>' +
-      '<div style="font-size:0.74rem;color:var(--text-muted);margin-bottom:0.6rem">' +
-      'Row status reflects pass/fail outcome. Check severity indicates how serious the issue would be if that check failed.' +
       '</div>' +
       renderSection('Pipeline Stages', stageItems, { forceOpen: true }) +
       renderSection('Pipeline Checks', checkItems, { marginTop: '0.45rem' }) +
       renderSection('Dataset Checks', datasetItems, { marginTop: '0.45rem' }) +
       renderSection('Warnings', warningItems, { marginTop: '0.45rem' }) +
       '</div>';
-
-    return html;
   }
 
   function renderSignalCard(s) {
     var dirClass = (s.direction || '').toLowerCase() === 'long' ? 'direction-long' : 'direction-short';
     var conf = s.confidence || 0;
-
     return '<div class="card signal-card">' +
-      '<div class="card-header">' +
-        '<div>' +
-          '<span class="signal-ticker">' + escapeHtml(s.ticker) + '</span>' +
-          '<span class="direction-badge ' + dirClass + '">' + escapeHtml(s.direction) + '</span>' +
-          '<span class="signal-model">' + escapeHtml(s.signal_model || '') + '</span>' +
-        '</div>' +
-      '</div>' +
+      '<div class="card-header"><div>' +
+        '<span class="signal-ticker">' + escapeHtml(s.ticker) + '</span>' +
+        '<span class="direction-badge ' + dirClass + '">' + escapeHtml(s.direction) + '</span>' +
+        '<span class="signal-model">' + escapeHtml(s.signal_model || '') + '</span>' +
+      '</div></div>' +
       '<div class="confidence-label">Confidence: ' + fmt(conf, 0) + '/100</div>' +
       '<div class="confidence-meter"><div class="confidence-fill" style="width:' + conf + '%;background:' + confidenceColor(conf) + '"></div></div>' +
       '<div class="trade-grid">' +
@@ -565,15 +633,12 @@
 
   function gridItem(label, value, color) {
     var style = color ? ' style="color:' + color + '"' : '';
-    return '<div class="trade-grid-item">' +
-      '<div class="label">' + label + '</div>' +
-      '<div class="value"' + style + '>' + value + '</div>' +
-    '</div>';
+    return '<div class="trade-grid-item"><div class="label">' + label + '</div><div class="value"' + style + '>' + value + '</div></div>';
   }
 
-  // -----------------------------------------------------------------------
-  // Cross-Engine Tab
-  // -----------------------------------------------------------------------
+  // =======================================================================
+  // CROSS-ENGINE TAB
+  // =======================================================================
   function loadCrossEngine() {
     showSpinner('crossengine-view');
 
@@ -596,52 +661,24 @@
 
       var html = '';
 
-      // --- Cross-Engine Health Banner ---
+      // Cross-Engine Health Banner
       if (healthData && healthData.cross_engine_health) {
         var ceh = healthData.cross_engine_health;
-        var cePassed = ceh.passed;
-        var ceColor = cePassed ? 'var(--green)' : 'var(--amber, #f59e0b)';
-        var ceBg = cePassed ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)';
-        var dropStats = ceh.engine_failure_stats || null;
-        var dropLine = '';
-        if (dropStats) {
-          var totalDropped = Number(dropStats.total_failed || 0);
-          var byKind = dropStats.by_kind || {};
-          var kindParts = [];
-          Object.keys(byKind).forEach(function (kind) {
-            var count = Number(byKind[kind] || 0);
-            if (count > 0) kindParts.push(escapeHtml(kind) + ': ' + count);
-          });
-          dropLine =
-            '<div style="margin-top:0.6rem;font-size:0.8rem;color:var(--text-secondary)">' +
-            '<strong>Engine Drop Metrics:</strong> ' + totalDropped +
-            (kindParts.length ? ' (' + kindParts.join(', ') + ')' : '') +
-            '</div>';
-        }
+        var ceColor = ceh.passed ? 'var(--green)' : 'var(--amber, #f59e0b)';
+        var ceBg = ceh.passed ? 'rgba(34,197,94,0.08)' : 'rgba(245,158,11,0.08)';
         html += '<div class="card" style="margin-bottom:1.25rem;border-left:3px solid ' + ceColor + ';background:' + ceBg + '">' +
-          '<div style="display:flex;align-items:center;justify-content:space-between;flex-wrap:wrap;gap:0.5rem">' +
           '<div style="display:flex;align-items:center;gap:0.5rem">' +
-          '<span style="font-weight:700;color:' + ceColor + '">' + (cePassed ? 'PASS' : 'WARN') + '</span>' +
+          '<span style="font-weight:700;color:' + ceColor + '">' + (ceh.passed ? 'PASS' : 'WARN') + '</span>' +
           '<span style="font-size:0.85rem;color:var(--text-secondary)">Cross-Engine Health</span>' +
           '<span style="font-size:0.8rem;color:var(--text-muted)">' + (ceh.passed_count || 0) + '/' + (ceh.total_checks || 0) + ' checks</span>' +
-          '</div>' +
-          '<button onclick="this.nextElementSibling.style.display=this.nextElementSibling.style.display===\'none\'?\'block\':\'none\'" ' +
-          'style="background:none;border:1px solid var(--border);border-radius:4px;padding:2px 8px;cursor:pointer;color:var(--text-secondary);font-size:0.75rem">Details</button>' +
-          '<div style="display:none;width:100%;margin-top:0.5rem">';
-        (ceh.checks || []).forEach(function (c) {
-          var icon = c.passed ? '\u2705' : '\u26A0\uFE0F';
-          html += '<div style="font-size:0.8rem;margin:0.25rem 0;color:var(--text-secondary)">' +
-            icon + ' <strong>' + escapeHtml(c.name.replace(/_/g, ' ')) + '</strong>: ' +
-            escapeHtml(c.detail) + '</div>';
-        });
-        html += '</div></div>' + dropLine + '</div>';
+          '</div></div>';
       }
 
       if (reliabilityData && reliabilityData.engines && reliabilityData.engines.length > 0) {
         html += renderEngineReliabilityTable(reliabilityData);
       }
 
-      // --- Header ---
+      // Header
       html += '<div class="card" style="margin-bottom:1.25rem">' +
         '<div class="card-header">' +
         '<div><span class="card-title">Cross-Engine Synthesis</span>' +
@@ -654,63 +691,28 @@
         metricCard(synthesis.portfolio_recommendation ? synthesis.portfolio_recommendation.length : 0, 'Positions', null) +
         '</div></div>';
 
-      // --- Engine Credibility Cards ---
+      // Engine Credibility Cards
       if (credibility && credibility.engines && Object.keys(credibility.engines).length > 0) {
-        html += '<div class="section-header">' +
-          '<div class="section-icon">\uD83C\uDFAF</div>' +
-          '<span class="section-title">Engine Credibility</span></div>';
-
         html += '<div class="engine-grid">';
         Object.keys(credibility.engines).forEach(function (name) {
           var e = credibility.engines[name];
-          var hr = e.hit_rate || 0;
-          var w = e.weight || 1.0;
-          var n = e.resolved_picks || 0;
-          var hrPct = Math.round(hr * 100);
+          var hrPct = Math.round((e.hit_rate || 0) * 100);
           var hrColor = hrPct >= 55 ? 'green' : (hrPct < 45 ? 'red' : 'amber');
-          var displayName = engineDisplayName(name);
-
           html += '<div class="engine-card">' +
-            '<div class="engine-name">' + escapeHtml(displayName) + '</div>' +
+            '<div class="engine-name">' + escapeHtml(engineDisplayName(name)) + '</div>' +
             '<div class="progress-bar"><div class="progress-fill ' + hrColor + '" style="width:' + hrPct + '%"></div></div>' +
             '<div class="engine-stats">' +
               '<div class="engine-stat"><div class="engine-stat-value">' + hrPct + '%</div><div class="engine-stat-label">Hit Rate</div></div>' +
-              '<div class="engine-stat"><div class="engine-stat-value">' + fmt(w, 2) + 'x</div><div class="engine-stat-label">Weight</div></div>' +
-              '<div class="engine-stat"><div class="engine-stat-value">' + n + '</div><div class="engine-stat-label">Picks</div></div>' +
+              '<div class="engine-stat"><div class="engine-stat-value">' + fmt(e.weight || 1.0, 2) + 'x</div><div class="engine-stat-label">Weight</div></div>' +
+              '<div class="engine-stat"><div class="engine-stat-value">' + (e.resolved_picks || 0) + '</div><div class="engine-stat-label">Picks</div></div>' +
             '</div></div>';
         });
         html += '</div>';
       }
 
-      // --- Convergent Picks ---
-      if (synthesis.convergent_tickers && Object.keys(synthesis.convergent_tickers).length > 0) {
-        html += '<div class="section-header">' +
-          '<div class="section-icon">\uD83E\uDD1D</div>' +
-          '<span class="section-title">Convergent Picks</span></div>';
-
-        html += '<div class="card"><div class="convergent-list">';
-        var tickers = synthesis.convergent_tickers;
-        Object.keys(tickers).forEach(function (ticker) {
-          var engines = tickers[ticker];
-          var engineDots = (Array.isArray(engines) ? engines : []).map(function (e) {
-            return '<span class="engine-dot">' + escapeHtml(e) + '</span>';
-          }).join('');
-
-          html += '<div class="convergent-item">' +
-            '<span class="convergent-ticker">' + escapeHtml(ticker) + '</span>' +
-            '<div class="convergent-engines">' + engineDots + '</div>' +
-            '<span class="convergent-score">' + (Array.isArray(engines) ? engines.length : 0) + ' engines</span>' +
-          '</div>';
-        });
-        html += '</div></div>';
-      }
-
-      // --- Portfolio Recommendation ---
+      // Portfolio Recommendation
       if (synthesis.portfolio_recommendation && synthesis.portfolio_recommendation.length > 0) {
-        html += '<div class="section-header">' +
-          '<div class="section-icon">\uD83D\uDCBC</div>' +
-          '<span class="section-title">Portfolio</span></div>';
-
+        html += '<div class="card-title" style="margin-bottom:0.75rem">Portfolio</div>';
         html += '<div class="portfolio-grid">';
         synthesis.portfolio_recommendation.forEach(function (pos) {
           var ticker = pos.ticker || '?';
@@ -719,21 +721,11 @@
           var stop = pos.stop_loss || 0;
           var target = pos.target_price || 0;
           var hold = pos.holding_period_days || 0;
-          var source = pos.source || '';
           var guardianAdj = pos.guardian_adjusted || false;
-
           var riskPct = entry > 0 && stop > 0 ? Math.abs(entry - stop) / entry * 100 : 0;
           var rewardPct = entry > 0 && target > 0 ? Math.abs(target - entry) / entry * 100 : 0;
-
-          var adjTag = guardianAdj
-            ? ' <span class="guardian-adjusted-tag">\u21E9 adj</span>'
-            : '';
-
-          // Strategy tags & signal count
+          var adjTag = guardianAdj ? ' <span class="guardian-adjusted-tag">\u21E9 adj</span>' : '';
           var stratTags = pos.strategy_tags || pos.strategies || [];
-          var effSignals = pos.effective_signal_count || 0;
-          var regimeWt = pos.regime_weight || null;
-
           var stratHtml = '';
           if (Array.isArray(stratTags) && stratTags.length > 0) {
             stratHtml = '<div class="strategy-tags-row">';
@@ -743,197 +735,20 @@
             });
             stratHtml += '</div>';
           }
-
-          var signalInfo = '';
-          if (effSignals > 0) {
-            signalInfo = fmt(effSignals, 1) + ' signals';
-          }
-          var regimeInfo = regimeWt ? ' \u2022 regime ' + fmt(regimeWt, 2) + 'x' : '';
-
           html += '<div class="portfolio-card">' +
             '<div class="portfolio-card-header">' +
               '<span class="portfolio-ticker">' + escapeHtml(ticker) + adjTag + '</span>' +
               '<span class="portfolio-weight">' + fmt(weight, 0) + '%</span>' +
-            '</div>' +
-            stratHtml +
+            '</div>' + stratHtml +
             '<div class="portfolio-detail">' +
               '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Entry</div><div class="portfolio-detail-value">$' + fmt(entry) + '</div></div>' +
               '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Target</div><div class="portfolio-detail-value positive">+' + fmt(rewardPct, 1) + '%</div></div>' +
               '<div class="portfolio-detail-item"><div class="portfolio-detail-label">Risk</div><div class="portfolio-detail-value negative">' + fmt(riskPct, 1) + '%</div></div>' +
             '</div>' +
-            '<div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-muted)">' +
-              (signalInfo ? signalInfo + ' \u2022 ' : '') +
-              'Stop $' + fmt(stop) + ' \u2022 ' + hold + 'd hold' + regimeInfo +
-              (source ? ' \u2022 ' + escapeHtml(source) : '') +
-            '</div>' +
+            '<div style="margin-top:0.5rem;font-size:0.7rem;color:var(--text-muted)">Stop $' + fmt(stop) + ' \u2022 ' + hold + 'd hold</div>' +
           '</div>';
         });
         html += '</div>';
-      }
-
-      // --- Executive Summary ---
-      if (synthesis.executive_summary) {
-        html += '<div class="card" style="margin-top:1rem">' +
-          '<div class="card-title" style="margin-bottom:0.5rem">Executive Summary</div>' +
-          '<p style="font-size:0.85rem;line-height:1.7;color:var(--text-secondary)">' +
-          escapeHtml(synthesis.executive_summary) + '</p></div>';
-      }
-
-      // --- Verifier Notes (5 sub-sections) ---
-      if (synthesis.verifier_notes) {
-        var notes = synthesis.verifier_notes;
-        if (typeof notes === 'object' && notes !== null) {
-          // Section header
-          html += '<div class="section-header">' +
-            '<div class="section-icon">\uD83D\uDD0D</div>' +
-            '<span class="section-title">Verifier Analysis</span></div>';
-
-          // 1) Summary callout
-          if (notes.summary) {
-            html += '<div class="verifier-section vs-summary">' +
-              '<div class="verifier-section-title"><span class="vs-icon">\uD83E\uDDE0</span> Summary</div>' +
-              '<div class="summary-callout">' + escapeHtml(String(notes.summary)) + '</div></div>';
-          }
-
-          // 2) Red Flags — collapsible with count badge
-          if (notes.red_flags && Array.isArray(notes.red_flags) && notes.red_flags.length > 0) {
-            var flags = notes.red_flags;
-            var flagLimit = 3;
-            html += '<div class="verifier-section vs-red-flags">' +
-              '<div class="verifier-section-title"><span class="vs-icon">\u26A0\uFE0F</span> Red Flags ' +
-              '<span class="red-flags-count">' + flags.length + '</span></div>';
-            flags.forEach(function (flag, idx) {
-              var hidden = idx >= flagLimit ? ' style="display:none"' : '';
-              html += '<div class="red-flag-item" data-rf-extra="' + (idx >= flagLimit ? '1' : '0') + '"' + hidden + '>' +
-                '<span class="rf-icon">\u25CF</span>' +
-                '<span>' + escapeHtml(typeof flag === 'object' ? JSON.stringify(flag) : String(flag)) + '</span></div>';
-            });
-            if (flags.length > flagLimit) {
-              html += '<button class="collapse-toggle" onclick="' +
-                "var sec=this.parentElement;var extras=sec.querySelectorAll('[data-rf-extra=\\'1\\']');" +
-                "var show=extras[0].style.display==='none';" +
-                "extras.forEach(function(el){el.style.display=show?'flex':'none'});" +
-                "this.textContent=show?'Show less':'Show " + (flags.length - flagLimit) + " more'" +
-                '">Show ' + (flags.length - flagLimit) + ' more</button>';
-            }
-            html += '</div>';
-          }
-
-          // 3) Verified Picks — notes collapsed by default
-          if (notes.verified_picks && Array.isArray(notes.verified_picks) && notes.verified_picks.length > 0) {
-            html += '<div class="verifier-section vs-picks">' +
-              '<div class="verifier-section-title"><span class="vs-icon">\u2705</span> Verified Picks</div>' +
-              '<div style="display:flex;flex-direction:column;gap:0.5rem">';
-            notes.verified_picks.forEach(function (pick) {
-              if (typeof pick !== 'object' || pick === null) {
-                html += '<div class="verifier-pick-card">' + escapeHtml(String(pick)) + '</div>';
-                return;
-              }
-              var status = (pick.verification_status || '').toLowerCase();
-              var statusClass = status === 'verified' ? 'verified' : status === 'rejected' ? 'rejected' : 'flagged';
-              var rawConf = pick.adjusted_confidence;
-              var conf = rawConf != null ? (typeof rawConf === 'number' ? (rawConf <= 1 ? (rawConf * 100).toFixed(0) : rawConf.toFixed(0)) + '%' : String(rawConf)) : '';
-              html += '<div class="verifier-pick-card pick-' + statusClass + '">';
-              html += '<div class="verifier-pick-header">';
-              html += '<span style="font-weight:700;font-size:0.9rem">' + escapeHtml(pick.ticker || '???') + '</span>';
-              html += '<span class="status-badge status-' + statusClass + '">' + escapeHtml(status || 'unknown') + '</span>';
-              if (conf) html += '<span style="margin-left:auto;font-weight:600;font-size:0.8rem;color:var(--text-secondary)">' + escapeHtml(conf) + '</span>';
-              html += '</div>';
-              if (pick.engines_agreeing && pick.engines_agreeing.length) {
-                html += '<div style="display:flex;flex-wrap:wrap;gap:0.25rem;margin-top:0.35rem">';
-                pick.engines_agreeing.forEach(function (eng) {
-                  html += '<span class="engine-dot">' + escapeHtml(String(eng)) + '</span>';
-                });
-                html += '</div>';
-              }
-              if (pick.notes) {
-                var noteId = 'pn-' + Math.random().toString(36).substr(2, 6);
-                html += '<div class="collapsible-text collapsed" id="' + noteId + '" style="margin-top:0.35rem">' +
-                  escapeHtml(String(pick.notes)) + '</div>' +
-                  '<button class="collapse-toggle" onclick="' +
-                  "var el=document.getElementById('" + noteId + "');" +
-                  "var c=el.classList.toggle('collapsed');" +
-                  "this.textContent=c?'Show more':'Show less'" +
-                  '">Show more</button>';
-              }
-              html += '</div>';
-            });
-            html += '</div></div>';
-          }
-
-          // 4) Weight Adjustments — reasons collapsed by default
-          if (notes.weight_adjustments && typeof notes.weight_adjustments === 'object' && !Array.isArray(notes.weight_adjustments)) {
-            var wa = notes.weight_adjustments;
-            var waKeys = Object.keys(wa);
-            if (waKeys.length > 0) {
-              html += '<div class="verifier-section vs-weights">' +
-                '<div class="verifier-section-title"><span class="vs-icon">\u2696\uFE0F</span> Weight Adjustments</div>' +
-                '<div style="display:flex;flex-direction:column;gap:0.4rem">';
-              waKeys.forEach(function (engine) {
-                var adj = wa[engine];
-                if (typeof adj !== 'object' || adj === null) {
-                  html += '<div class="weight-adj-row"><span>' + escapeHtml(engine) + ': ' + escapeHtml(String(adj)) + '</span></div>';
-                  return;
-                }
-                var mult = adj.weight_multiplier != null ? Number(adj.weight_multiplier) : null;
-                var multText = mult != null ? mult.toFixed(2) + 'x' : '?';
-                var multClass = mult === 0 ? 'mult-zero' : mult != null && mult < 0.5 ? 'mult-low' : mult != null && mult < 1 ? 'mult-mid' : 'mult-full';
-                var engineLabel = engine.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-                html += '<div class="weight-adj-row">';
-                html += '<span class="weight-adj-engine">' + escapeHtml(engineLabel) + '</span>';
-                html += '<span class="weight-adj-mult ' + multClass + '">' + escapeHtml(multText) + '</span>';
-                if (adj.reason) {
-                  var reasonId = 'wr-' + Math.random().toString(36).substr(2, 6);
-                  html += '<span class="collapsible-text collapsed weight-adj-reason" id="' + reasonId + '">' + escapeHtml(String(adj.reason)) + '</span>' +
-                    '<button class="collapse-toggle" onclick="' +
-                    "var el=document.getElementById('" + reasonId + "');" +
-                    "var c=el.classList.toggle('collapsed');" +
-                    "this.textContent=c?'Show more':'Show less'" +
-                    '">Show more</button>';
-                }
-                html += '</div>';
-              });
-              html += '</div></div>';
-            }
-          }
-
-          // 5) Regime Recommendation — styled callout
-          if (notes.regime_recommendation) {
-            html += '<div class="verifier-section vs-regime">' +
-              '<div class="verifier-section-title"><span class="vs-icon">\uD83E\uDDED</span> Regime Recommendation</div>' +
-              '<div class="regime-callout">' + escapeHtml(String(notes.regime_recommendation)) + '</div></div>';
-          }
-
-          // Fallback: any remaining keys not handled above
-          Object.keys(notes).forEach(function (key) {
-            if (['summary', 'red_flags', 'verified_picks', 'weight_adjustments', 'regime_recommendation'].indexOf(key) !== -1) return;
-            var val = notes[key];
-            var label = key.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-            html += '<div class="verifier-section">' +
-              '<div class="verifier-section-title">' + escapeHtml(label) + '</div>' +
-              '<div style="font-size:0.8rem;line-height:1.5;color:var(--text-secondary)">';
-            if (Array.isArray(val)) {
-              val.forEach(function (item) {
-                html += '<div style="margin-bottom:0.25rem">\u2022 ' + escapeHtml(typeof item === 'object' ? JSON.stringify(item) : String(item)) + '</div>';
-              });
-            } else if (typeof val === 'object' && val !== null) {
-              Object.keys(val).forEach(function (k) {
-                var v = val[k];
-                var sub = k.replace(/_/g, ' ').replace(/\b\w/g, function (c) { return c.toUpperCase(); });
-                html += '<div style="margin-bottom:0.25rem"><strong>' + escapeHtml(sub) + ':</strong> ' + escapeHtml(typeof v === 'object' ? JSON.stringify(v) : String(v)) + '</div>';
-              });
-            } else {
-              html += escapeHtml(String(val));
-            }
-            html += '</div></div>';
-          });
-
-        } else {
-          // Plain string fallback
-          html += '<div class="verifier-section vs-summary">' +
-            '<div class="verifier-section-title"><span class="vs-icon">\uD83D\uDD0D</span> Verifier Notes</div>' +
-            '<div class="summary-callout">' + escapeHtml(String(notes)) + '</div></div>';
-        }
       }
 
       view.innerHTML = html;
@@ -946,1210 +761,437 @@
     var rows = data.engines || [];
     var html = '<div class="card" style="margin-bottom:1.25rem">' +
       '<div class="card-title" style="margin-bottom:0.65rem">Engine Reliability</div>' +
-      '<div class="card-subtitle" style="margin-bottom:0.75rem">As of ' + escapeHtml(data.as_of || '') + '</div>' +
       '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-      '<th>Engine</th><th>Status</th><th>Reason</th><th>Last Success</th><th>Streak</th><th>7d</th><th>30d</th>' +
+      '<th>Engine</th><th>Status</th><th>Last Success</th><th>Streak</th><th>7d</th><th>30d</th>' +
       '</tr></thead><tbody>';
-
     rows.forEach(function (r) {
       var status = String(r.latest_status || 'no_data').toLowerCase();
-      var statusLabel = escapeHtml(status);
       var statusColor = status === 'success' ? 'var(--green)' : (status === 'no_data' ? 'var(--text-muted)' : 'var(--amber)');
-      var sr7 = r.success_rate_7d == null ? '—' : fmtPct(r.success_rate_7d * 100);
-      var sr30 = r.success_rate_30d == null ? '—' : fmtPct(r.success_rate_30d * 100);
+      var sr7 = r.success_rate_7d == null ? '\u2014' : fmtPct(r.success_rate_7d * 100);
+      var sr30 = r.success_rate_30d == null ? '\u2014' : fmtPct(r.success_rate_30d * 100);
       html += '<tr>' +
         '<td>' + escapeHtml(engineDisplayName(r.engine_name || '')) + '</td>' +
-        '<td><span style="color:' + statusColor + ';font-weight:600">' + statusLabel + '</span></td>' +
-        '<td>' + escapeHtml(r.latest_reason || '—') + '</td>' +
-        '<td>' + escapeHtml(r.last_success_date || '—') + '</td>' +
-        '<td>' + escapeHtml(String(r.consecutive_failures == null ? '—' : r.consecutive_failures)) + '</td>' +
-        '<td>' + sr7 + '</td>' +
-        '<td>' + sr30 + '</td>' +
-      '</tr>';
+        '<td><span style="color:' + statusColor + ';font-weight:600">' + escapeHtml(status) + '</span></td>' +
+        '<td>' + escapeHtml(r.last_success_date || '\u2014') + '</td>' +
+        '<td>' + (r.consecutive_failures == null ? '\u2014' : r.consecutive_failures) + '</td>' +
+        '<td>' + sr7 + '</td><td>' + sr30 + '</td></tr>';
     });
-
     html += '</tbody></table></div></div>';
     return html;
   }
 
-  // -----------------------------------------------------------------------
-  // Performance Tab
-  // -----------------------------------------------------------------------
-  function loadPerformance() {
-    showSpinner('performance-view');
-    fetchJSON('/api/dashboard/performance').then(function (data) {
-      var view = document.getElementById('performance-view');
-
-      if (!data.total_signals || data.total_signals === 0) {
-        showEmpty('performance-view', 'No closed trades yet.');
-        return;
-      }
-
-      var overall = data.overall || {};
-      var risk = data.risk_metrics || {};
-
-      var html = '<div class="metrics-grid">' +
-        metricCard(data.total_signals, 'Total Trades', null) +
-        metricCard(fmtPct(overall.win_rate * 100), 'Win Rate', overall.win_rate >= 0.5) +
-        metricCard(fmtPct(overall.avg_pnl), 'Avg P&L', overall.avg_pnl > 0) +
-        metricCard(fmt(risk.sharpe_ratio), 'Sharpe', risk.sharpe_ratio > 0) +
-        metricCard(fmt(risk.sortino_ratio), 'Sortino', risk.sortino_ratio > 0) +
-        metricCard(risk.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(risk.max_drawdown_pct)) : '—', 'Max Drawdown', false) +
-        metricCard(fmt(risk.profit_factor), 'Profit Factor', risk.profit_factor > 1) +
-        metricCard(fmt(risk.expectancy), 'Expectancy', risk.expectancy > 0) +
-      '</div>';
-
-      if (data.equity_curve && data.equity_curve.length > 0) {
-        html += '<div class="chart-container">' +
-          '<div class="chart-title">Cumulative P&L (Equity Curve)</div>' +
-          '<div id="equity-chart"></div>' +
-        '</div>';
-      }
-
-      if (data.by_model && Object.keys(data.by_model).length > 0) {
-        html += breakdownTable('By Signal Model', data.by_model);
-      }
-      if (data.by_regime && Object.keys(data.by_regime).length > 0) {
-        html += breakdownTable('By Regime', data.by_regime);
-      }
-
-      view.innerHTML = html;
-
-      if (data.equity_curve && data.equity_curve.length > 0) {
-        renderEquityCurve(data.equity_curve);
-      }
-    }).catch(function () {
-      showEmpty('performance-view', 'Failed to load performance data.');
-    });
-  }
-
-  function metricCard(value, label, isPositive) {
-    var cls = '';
-    if (isPositive === true) cls = ' positive';
-    else if (isPositive === false && value !== '\u2014') cls = ' negative';
-    return '<div class="metric-card">' +
-      '<div class="metric-value' + cls + '">' + value + '</div>' +
-      '<div class="metric-label">' + label + '</div>' +
-    '</div>';
-  }
-
-  function breakdownTable(title, data) {
-    var rows = Object.keys(data).map(function (key) {
-      var d = data[key];
-      var pnlClass = d.avg_pnl > 0 ? 'positive' : (d.avg_pnl < 0 ? 'negative' : '');
-      return '<tr>' +
-        '<td>' + escapeHtml(key) + '</td>' +
-        '<td>' + d.trades + '</td>' +
-        '<td>' + fmtPct(d.win_rate * 100) + '</td>' +
-        '<td class="' + pnlClass + '">' + fmtPct(d.avg_pnl) + '</td>' +
-      '</tr>';
-    }).join('');
-
-    return '<div class="card">' +
-      '<div class="card-title" style="margin-bottom:0.75rem">' + title + '</div>' +
-      '<table class="data-table">' +
-        '<thead><tr><th>Name</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table>' +
-    '</div>';
-  }
-
-  function renderEquityCurve(data) {
-    var el = document.getElementById('equity-chart');
-    if (!el || typeof LightweightCharts === 'undefined') return;
-
-    if (equityChart) { equityChart.remove(); equityChart = null; }
-
-    var c = chartColors();
-    var chart = LightweightCharts.createChart(el, {
-      width: el.clientWidth,
-      height: 350,
-      layout: { background: { color: c.bg }, textColor: c.text },
-      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-      rightPriceScale: { borderColor: c.border },
-      timeScale: {
-        borderColor: c.border,
-        tickMarkFormatter: function(time) {
-          if (typeof time === 'string') {
-            var parts = time.split('-');
-            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            return months[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10);
-          }
-          return time;
-        },
-      },
-    });
-    equityChart = chart;
-
-    var series = chart.addLineSeries({ color: c.teal, lineWidth: 2 });
-    series.setData(data.map(function (p) { return { time: p.time, value: p.value }; }));
-    chart.timeScale().fitContent();
-
-    window.addEventListener('resize', function () {
-      if (equityChart && el.clientWidth > 0) equityChart.applyOptions({ width: el.clientWidth });
-    });
-  }
-
-  // -----------------------------------------------------------------------
-  // Charts Tab
-  // -----------------------------------------------------------------------
-  function loadCharts() {
-    showSpinner('charts-view');
-
-    Promise.all([
-      fetchJSON('/api/dashboard/equity-curve?days=90'),
-      fetchJSON('/api/dashboard/drawdown?days=90'),
-      fetchJSON('/api/dashboard/return-distribution?days=90'),
-      fetchJSON('/api/dashboard/regime-matrix?days=180'),
-      fetchJSON('/api/dashboard/calibration'),
-    ]).then(function (results) {
-      var equity = results[0];
-      var drawdown = results[1];
-      var distribution = results[2];
-      var regimeMatrix = results[3];
-      var calibration = results[4];
-      var view = document.getElementById('charts-view');
-
-      var html = '';
-
-      if (equity.equity_curve && equity.equity_curve.length > 0) {
-        html += '<div class="chart-container">' +
-          '<div class="chart-title">Equity Curve (Cumulative Returns)</div>' +
-          '<div id="charts-equity"></div></div>';
-      } else {
-        html += '<div class="card"><div class="empty-state"><p>No equity curve data yet.</p></div></div>';
-      }
-
-      if (drawdown.drawdown && drawdown.drawdown.length > 0) {
-        html += '<div class="chart-container">' +
-          '<div class="chart-title">Drawdown</div>' +
-          '<div id="charts-drawdown"></div></div>';
-      } else {
-        html += '<div class="card"><div class="empty-state"><p>No drawdown data yet.</p></div></div>';
-      }
-
-      if (distribution.distribution && Object.keys(distribution.distribution).length > 0) {
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.75rem">Return Distribution by Model</div>';
-        Object.keys(distribution.distribution).forEach(function (model) {
-          var d = distribution.distribution[model];
-          var histogram = renderHistogram(d.returns);
-          html += '<div style="margin-bottom:1rem">' +
-            '<div style="font-weight:600;margin-bottom:0.25rem">' + escapeHtml(model) +
-            ' <span style="color:var(--text-muted)">(n=' + d.count + ', mean=' + fmtPct(d.mean) + ', std=' + fmt(d.std) + ')</span></div>' +
-            histogram + '</div>';
-        });
-        html += '</div>';
-      } else {
-        html += '<div class="card"><div class="empty-state"><p>No return distribution data yet.</p></div></div>';
-      }
-
-      if (regimeMatrix.matrix && regimeMatrix.matrix.length > 0) {
-        html += renderRegimeMatrix(regimeMatrix.matrix);
-      } else {
-        html += '<div class="card"><div class="empty-state"><p>No regime matrix data yet.</p></div></div>';
-      }
-
-      if (calibration.calibration && calibration.calibration.length > 0) {
-        html += renderCalibrationTable(calibration.calibration);
-      } else {
-        html += '<div class="card"><div class="empty-state"><p>No calibration data yet.</p></div></div>';
-      }
-
-      view.innerHTML = html;
-
-      if (equity.equity_curve && equity.equity_curve.length > 0) {
-        renderTimeChart('charts-equity', equity.equity_curve, chartColors().teal, 'line');
-      }
-      if (drawdown.drawdown && drawdown.drawdown.length > 0) {
-        renderTimeChart('charts-drawdown', drawdown.drawdown, chartColors().red, 'area');
-      }
-    }).catch(function () {
-      showEmpty('charts-view', 'Failed to load chart data.');
-    });
-  }
-
-  function renderTimeChart(containerId, data, color, type) {
-    var el = document.getElementById(containerId);
-    if (!el || typeof LightweightCharts === 'undefined') return;
-
-    var c = chartColors();
-    var chart = LightweightCharts.createChart(el, {
-      width: el.clientWidth,
-      height: 300,
-      layout: { background: { color: c.bg }, textColor: c.text },
-      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-      rightPriceScale: { borderColor: c.border },
-      timeScale: {
-        borderColor: c.border,
-        tickMarkFormatter: function(time) {
-          if (typeof time === 'string') {
-            var parts = time.split('-');
-            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            return months[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10);
-          }
-          return time;
-        },
-      },
-    });
-
-    var series;
-    if (type === 'area') {
-      series = chart.addAreaSeries({
-        lineColor: color,
-        topColor: color + '80',
-        bottomColor: color + '10',
-        lineWidth: 2,
-      });
-    } else {
-      series = chart.addLineSeries({ color: color, lineWidth: 2 });
-    }
-
-    series.setData(data.map(function (p) { return { time: p.time, value: p.value }; }));
-    chart.timeScale().fitContent();
-
-    window.addEventListener('resize', function () {
-      if (el.clientWidth > 0) chart.applyOptions({ width: el.clientWidth });
-    });
-  }
-
-  function renderHistogram(returns) {
-    if (!returns || returns.length === 0) return '<p style="color:var(--text-muted)">No data</p>';
-    var buckets = {};
-    var step = 1;
-    returns.forEach(function (r) {
-      var bucket = Math.floor(r / step) * step;
-      var key = bucket + '%';
-      buckets[key] = (buckets[key] || 0) + 1;
-    });
-
-    var maxCount = Math.max.apply(null, Object.values(buckets));
-    var rows = Object.keys(buckets).sort(function (a, b) {
-      return parseFloat(a) - parseFloat(b);
-    }).map(function (key) {
-      var count = buckets[key];
-      var width = Math.round(count / maxCount * 100);
-      var color = parseFloat(key) >= 0 ? 'var(--green)' : 'var(--red)';
-      return '<div style="display:flex;align-items:center;gap:0.5rem;margin:2px 0">' +
-        '<span style="min-width:50px;text-align:right;font-size:0.8rem">' + key + '</span>' +
-        '<div style="background:' + color + ';height:16px;width:' + width + '%;border-radius:4px;min-width:2px"></div>' +
-        '<span style="font-size:0.75rem;color:var(--text-muted)">' + count + '</span>' +
-      '</div>';
-    }).join('');
-
-    return '<div style="max-width:400px">' + rows + '</div>';
-  }
-
-  function renderRegimeMatrix(matrix) {
-    var models = {};
-    var regimes = new Set();
-    matrix.forEach(function (m) {
-      if (!models[m.model]) models[m.model] = {};
-      models[m.model][m.regime] = m;
-      regimes.add(m.regime);
-    });
-
-    var regimeList = Array.from(regimes).sort();
-    var headerCells = regimeList.map(function (r) { return '<th>' + escapeHtml(r) + '</th>'; }).join('');
-
-    var rows = Object.keys(models).map(function (model) {
-      var cells = regimeList.map(function (regime) {
-        var cell = models[model][regime];
-        if (!cell) return '<td style="color:var(--text-muted)">\u2014</td>';
-        var wr = cell.win_rate * 100;
-        var bg = wr >= 55 ? 'var(--green-soft)' : (wr < 45 ? 'var(--red-soft)' : 'var(--amber-soft)');
-        return '<td style="background:' + bg + ';border-radius:6px">' +
-          '<div>' + fmtPct(wr) + '</div>' +
-          '<div style="font-size:0.7rem;color:var(--text-muted)">' + cell.trades + (cell.trades === 1 ? ' trade' : ' trades') + '</div>' +
-        '</td>';
-      }).join('');
-      return '<tr><td><b>' + escapeHtml(model) + '</b></td>' + cells + '</tr>';
-    }).join('');
-
-    return '<div class="card">' +
-      '<div class="card-title" style="margin-bottom:0.75rem">Win Rate by Model x Regime</div>' +
-      '<table class="data-table">' +
-        '<thead><tr><th>Model</th>' + headerCells + '</tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
-  }
-
-  function renderCalibrationTable(data) {
-    var rows = data.map(function (b) {
-      var error = b.calibration_error;
-      var errClass = error > 0.15 ? 'negative' : (error < 0.05 ? 'positive' : '');
-      return '<tr>' +
-        '<td>' + escapeHtml(b.bucket) + '</td>' +
-        '<td>' + b.trades + '</td>' +
-        '<td>' + fmtPct(b.expected_win_rate * 100) + '</td>' +
-        '<td>' + fmtPct(b.actual_win_rate * 100) + '</td>' +
-        '<td class="' + errClass + '">' + fmt(error, 4) + '</td>' +
-        '<td>' + fmtPct(b.avg_pnl) + '</td>' +
-      '</tr>';
-    }).join('');
-
-    return '<div class="card">' +
-      '<div class="card-title" style="margin-bottom:0.75rem">Confidence Calibration</div>' +
-      '<table class="data-table">' +
-        '<thead><tr><th>Bucket</th><th>Trades</th><th>Expected WR</th><th>Actual WR</th><th>Cal. Error</th><th>Avg P&L</th></tr></thead>' +
-        '<tbody>' + rows + '</tbody>' +
-      '</table></div>';
-  }
-
-  // -----------------------------------------------------------------------
-  // Compare Tab
-  // -----------------------------------------------------------------------
+  // =======================================================================
+  // PERFORMANCE TAB (merged: Performance + Charts + Compare)
+  // =======================================================================
   var enginePerfChart = null;
 
-  function loadCompare() {
-    showSpinner('compare-view');
+  function loadPerformance() {
+    showSpinner('performance-view');
+
     Promise.all([
-      fetchJSON('/api/dashboard/mode-comparison'),
-      fetchJSON('/api/dashboard/engine-strategy-performance').catch(function () { return null; })
+      fetchJSON('/api/dashboard/performance'),
+      fetchJSON('/api/dashboard/equity-curve?days=90').catch(function () { return { equity_curve: [] }; }),
+      fetchJSON('/api/dashboard/drawdown?days=90').catch(function () { return { drawdown: [] }; }),
+      fetchJSON('/api/dashboard/return-distribution?days=90').catch(function () { return { distribution: {} }; }),
+      fetchJSON('/api/dashboard/regime-matrix?days=180').catch(function () { return { matrix: [] }; }),
+      fetchJSON('/api/dashboard/calibration').catch(function () { return { calibration: [] }; }),
+      fetchJSON('/api/dashboard/mode-comparison').catch(function () { return { comparison: [] }; }),
+      fetchJSON('/api/dashboard/engine-strategy-performance').catch(function () { return null; }),
     ]).then(function (results) {
       var data = results[0];
-      var engData = results[1];
-      var view = document.getElementById('compare-view');
-      var html = '';
+      var equity = results[1];
+      var drawdown = results[2];
+      var distribution = results[3];
+      var regimeMatrix = results[4];
+      var calibration = results[5];
+      var modeData = results[6];
+      var engData = results[7];
+      var view = document.getElementById('performance-view');
 
-      // ── Section 1: Mode Comparison (existing) ──
-      if (data.comparison && data.comparison.length > 0) {
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.5rem">LLM Uplift: Mode Comparison</div>' +
-          '<p class="card-subtitle" style="margin-bottom:1rem">Compare execution mode performance</p>';
+      // Sub-tab bar
+      var html = '<div class="subtab-bar">' +
+        '<button class="subtab-btn subtab-active" data-subtab="perf-overview">Overview</button>' +
+        '<button class="subtab-btn" data-subtab="perf-charts">Charts</button>' +
+        '<button class="subtab-btn" data-subtab="perf-compare">Compare</button>' +
+        '</div>';
 
-        var modeColors = { agentic_full: 'var(--teal-500)', hybrid: '#a855f7', quant_only: 'var(--green)' };
-        var modeDisplay = { agentic_full: 'Agentic Full', hybrid: 'Hybrid', quant_only: 'Quant Only' };
-        function modeName(m) { return modeDisplay[m] || m.replace(/_/g, ' '); }
+      // --- Sub-tab: Overview ---
+      html += '<div class="subtab-content subtab-visible" data-subtab-content="perf-overview">';
+      if (!data.total_signals || data.total_signals === 0) {
+        html += '<div class="empty-state"><h3>No Data</h3><p>No closed trades yet.</p></div>';
+      } else {
+        var overall = data.overall || {};
+        var risk = data.risk_metrics || {};
+        html += '<div class="metrics-grid">' +
+          metricCard(data.total_signals, 'Total Trades', null) +
+          metricCard(fmtPct(overall.win_rate * 100), 'Win Rate', overall.win_rate >= 0.5) +
+          metricCard(fmtPct(overall.avg_pnl), 'Avg P&L', overall.avg_pnl > 0) +
+          metricCard(fmt(risk.sharpe_ratio), 'Sharpe', risk.sharpe_ratio > 0) +
+          metricCard(fmt(risk.sortino_ratio), 'Sortino', risk.sortino_ratio > 0) +
+          metricCard(risk.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(risk.max_drawdown_pct)) : '\u2014', 'Max Drawdown', false) +
+          metricCard(fmt(risk.profit_factor), 'Profit Factor', risk.profit_factor > 1) +
+          metricCard(fmt(risk.expectancy), 'Expectancy', risk.expectancy > 0) +
+        '</div>';
 
-        html += '<div class="metrics-grid">';
-        data.comparison.forEach(function (m) {
-          var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
-          var borderColor = modeColors[m.mode] || 'var(--teal-500)';
-          html += '<div class="metric-card" style="border-top:3px solid ' + borderColor + '">' +
-            '<div class="metric-value">' + escapeHtml(modeName(m.mode || 'unknown')) + '</div>' +
-            '<div class="metric-label">' + m.trades + (m.trades === 1 ? ' trade' : ' trades') + '</div>' +
-            '<div class="metric-label ' + pnlClass + '">WR: ' + fmtPct(m.win_rate * 100) +
-            ' | Avg: ' + fmtPct(m.avg_pnl) +
-            ' | Total: ' + fmtPct(m.total_return) + '</div>' +
-          '</div>';
+        if (data.equity_curve && data.equity_curve.length > 0) {
+          html += '<div class="chart-container"><div class="chart-title">Equity Curve</div><div id="equity-chart"></div></div>';
+        }
+
+        if (data.by_model && Object.keys(data.by_model).length > 0) {
+          html += breakdownTable('By Signal Model', data.by_model);
+        }
+        if (data.by_regime && Object.keys(data.by_regime).length > 0) {
+          html += breakdownTable('By Regime', data.by_regime);
+        }
+      }
+      html += '</div>';
+
+      // --- Sub-tab: Charts ---
+      html += '<div class="subtab-content" data-subtab-content="perf-charts">';
+      if (equity.equity_curve && equity.equity_curve.length > 0) {
+        html += '<div class="chart-container"><div class="chart-title">Equity Curve (90d)</div><div id="charts-equity"></div></div>';
+      }
+      if (drawdown.drawdown && drawdown.drawdown.length > 0) {
+        html += '<div class="chart-container"><div class="chart-title">Drawdown</div><div id="charts-drawdown"></div></div>';
+      }
+      if (distribution.distribution && Object.keys(distribution.distribution).length > 0) {
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Return Distribution</div>';
+        Object.keys(distribution.distribution).forEach(function (model) {
+          var d = distribution.distribution[model];
+          html += '<div style="margin-bottom:1rem"><div style="font-weight:600;margin-bottom:0.25rem">' + escapeHtml(model) +
+            ' <span style="color:var(--text-muted)">(n=' + d.count + ', mean=' + fmtPct(d.mean) + ')</span></div>' +
+            renderHistogram(d.returns) + '</div>';
         });
         html += '</div>';
-
-        var rows = data.comparison.map(function (m) {
-          var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
-          return '<tr>' +
-            '<td><b>' + escapeHtml(modeName(m.mode || '?')) + '</b></td>' +
-            '<td>' + m.trades + '</td>' +
-            '<td>' + fmtPct(m.win_rate * 100) + '</td>' +
-            '<td class="' + pnlClass + '">' + fmtPct(m.avg_pnl) + '</td>' +
-            '<td class="' + pnlClass + '">' + fmtPct(m.total_return) + '</td>' +
-          '</tr>';
-        }).join('');
-
-        html += '<table class="data-table">' +
-          '<thead><tr><th>Mode</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th><th>Total Return</th></tr></thead>' +
-          '<tbody>' + rows + '</tbody>' +
-        '</table></div>';
       }
+      if (regimeMatrix.matrix && regimeMatrix.matrix.length > 0) {
+        html += renderRegimeMatrix(regimeMatrix.matrix);
+      }
+      if (calibration.calibration && calibration.calibration.length > 0) {
+        html += renderCalibrationTable(calibration.calibration);
+      }
+      html += '</div>';
 
-      // ── Section 2: Engine Leaderboard ──
+      // --- Sub-tab: Compare ---
+      html += '<div class="subtab-content" data-subtab-content="perf-compare">';
+      if (modeData.comparison && modeData.comparison.length > 0) {
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Mode Comparison</div>';
+        var modeRows = modeData.comparison.map(function (m) {
+          var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
+          return '<tr><td><b>' + escapeHtml(m.mode || '?') + '</b></td><td>' + m.trades + '</td>' +
+            '<td>' + fmtPct(m.win_rate * 100) + '</td><td class="' + pnlClass + '">' + fmtPct(m.avg_pnl) + '</td></tr>';
+        }).join('');
+        html += '<table class="data-table"><thead><tr><th>Mode</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr></thead>' +
+          '<tbody>' + modeRows + '</tbody></table></div>';
+      }
       if (engData && engData.engines && engData.engines.length > 0) {
-        var engineColors = { koocore_d: 'var(--teal-500)', gemini_stst: '#a855f7', top3_7d: 'var(--amber)' };
         var sorted = engData.engines.slice().sort(function (a, b) { return b.hit_rate - a.hit_rate; });
-
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.5rem">Engine Leaderboard</div>' +
-          '<p class="card-subtitle" style="margin-bottom:1rem">Per-engine performance over the last ' + engData.days + ' days</p>' +
-          '<div class="metrics-grid">';
-
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Engine Leaderboard</div><div class="metrics-grid">';
         sorted.forEach(function (eng, idx) {
-          var borderColor = idx === 0 ? 'var(--teal-500)' : (engineColors[eng.engine_name] || 'var(--slate-400)');
-          var rankClass = idx === 0 ? ' engine-rank-1' : '';
+          var color = idx === 0 ? 'var(--teal-500)' : 'var(--slate-400)';
           var pnlClass = (eng.avg_return_pct || 0) > 0 ? 'positive' : ((eng.avg_return_pct || 0) < 0 ? 'negative' : '');
-
-          // Find best strategy
-          var bestStrat = null;
-          if (eng.strategies && eng.strategies.length > 0) {
-            bestStrat = eng.strategies.slice().sort(function (a, b) { return b.hit_rate - a.hit_rate; })[0];
-          }
-
-          html += '<div class="metric-card' + rankClass + '" style="border-top:3px solid ' + borderColor + ';text-align:left;padding:1.25rem">' +
+          html += '<div class="metric-card" style="border-top:3px solid ' + color + ';text-align:left;padding:1.25rem">' +
             '<div class="metric-value" style="font-size:1.1rem;margin-bottom:0.5rem">' + escapeHtml(engineDisplayName(eng.engine_name)) + '</div>' +
-            '<div style="font-size:1.8rem;font-weight:700;letter-spacing:-0.02em;margin-bottom:0.25rem">' + fmtPct(eng.hit_rate * 100) + '</div>' +
-            '<div class="progress-bar" style="margin:0.4rem 0"><div class="progress-fill" style="width:' + Math.min(eng.hit_rate * 100, 100) + '%;background:' + borderColor + '"></div></div>' +
-            '<div style="display:flex;gap:1rem;margin-top:0.5rem;font-size:0.75rem;color:var(--text-secondary)">' +
-              '<span>Avg <span class="' + pnlClass + '">' + fmtPct(eng.avg_return_pct) + '</span></span>' +
-              '<span>Wt ' + (eng.weight != null ? fmt(eng.weight, 2) : '\u2014') + '</span>' +
-              '<span>' + eng.total_picks + ' picks</span>' +
-            '</div>';
-
-          if (bestStrat) {
-            html += '<div style="margin-top:0.5rem"><span class="badge badge-success" style="font-size:0.6rem">' +
-              escapeHtml(bestStrat.strategy) + ' ' + fmtPct(bestStrat.hit_rate * 100) + '</span></div>';
-          }
-
-          html += '</div>';
+            '<div style="font-size:1.8rem;font-weight:700;margin-bottom:0.25rem">' + fmtPct(eng.hit_rate * 100) + '</div>' +
+            '<div style="font-size:0.75rem;color:var(--text-secondary)">Avg <span class="' + pnlClass + '">' + fmtPct(eng.avg_return_pct) + '</span> \u2022 ' + eng.total_picks + ' picks</div></div>';
         });
-
         html += '</div></div>';
 
-        // ── Section 3: Strategy Matrix ──
         if (engData.all_strategies && engData.all_strategies.length > 0) {
           var engineNames = sorted.map(function (e) { return e.engine_name; });
-          // Build lookup: engine_name -> strategy -> stats
           var lookup = {};
           sorted.forEach(function (eng) {
             lookup[eng.engine_name] = {};
-            (eng.strategies || []).forEach(function (s) {
-              lookup[eng.engine_name][s.strategy] = s;
-            });
+            (eng.strategies || []).forEach(function (s) { lookup[eng.engine_name][s.strategy] = s; });
           });
-
-          html += '<div class="card">' +
-            '<div class="card-title" style="margin-bottom:0.5rem">Strategy Matrix</div>' +
-            '<p class="card-subtitle" style="margin-bottom:1rem">Hit rate by strategy and engine</p>' +
-            '<div style="overflow-x:auto">' +
-            '<table class="data-table strategy-matrix">' +
-            '<thead><tr><th>Strategy</th>';
-
-          engineNames.forEach(function (eng) {
-            var w = null;
-            sorted.forEach(function (e) { if (e.engine_name === eng) w = e.weight; });
-            html += '<th>' + escapeHtml(engineDisplayName(eng)) +
-              (w != null ? '<br><span style="font-weight:400;font-size:0.6rem">wt ' + fmt(w, 2) + '</span>' : '') +
-              '</th>';
-          });
+          html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Strategy Matrix</div>' +
+            '<div style="overflow-x:auto"><table class="data-table strategy-matrix"><thead><tr><th>Strategy</th>';
+          engineNames.forEach(function (eng) { html += '<th>' + escapeHtml(engineDisplayName(eng)) + '</th>'; });
           html += '</tr></thead><tbody>';
-
           engData.all_strategies.forEach(function (strat) {
             html += '<tr><td><b>' + escapeHtml(strat) + '</b></td>';
             engineNames.forEach(function (eng) {
               var s = lookup[eng] && lookup[eng][strat];
               if (s && s.picks > 0) {
                 var cellClass = s.hit_rate >= 0.6 ? 'cell-good' : (s.hit_rate >= 0.4 ? 'cell-warn' : 'cell-poor');
-                html += '<td class="' + cellClass + '">' +
-                  fmtPct(s.hit_rate * 100) + '<br><span style="font-size:0.65rem;color:var(--text-muted)">' + s.picks + ' picks</span></td>';
+                html += '<td class="' + cellClass + '">' + fmtPct(s.hit_rate * 100) + '<br><span style="font-size:0.65rem;color:var(--text-muted)">' + s.picks + ' picks</span></td>';
               } else {
                 html += '<td style="color:var(--text-muted)">\u2014</td>';
               }
             });
             html += '</tr>';
           });
-
           html += '</tbody></table></div></div>';
         }
 
-        // ── Section 4: Performance Trend Chart ──
         if (engData.time_series && engData.time_series.length > 0) {
+          var trendColors = { koocore_d: '#14b8a6', gemini_stst: '#a855f7', top3_7d: '#f59e0b' };
           var trendEngines = {};
           engData.time_series.forEach(function (pt) {
             if (!trendEngines[pt.engine_name]) trendEngines[pt.engine_name] = [];
             trendEngines[pt.engine_name].push(pt);
           });
-
-          var trendNames = Object.keys(trendEngines).sort();
-          var trendColors = { koocore_d: '#14b8a6', gemini_stst: '#a855f7', top3_7d: '#f59e0b' };
-          var fallbackColors = ['#14b8a6', '#a855f7', '#f59e0b', '#3b82f6', '#ef4444'];
-
           var legendHtml = '<div class="chart-legend">';
-          trendNames.forEach(function (name, i) {
-            var color = trendColors[name] || fallbackColors[i % fallbackColors.length];
-            legendHtml += '<div class="chart-legend-item">' +
-              '<span class="chart-legend-swatch" style="background:' + color + '"></span>' +
-              '<span>' + escapeHtml(engineDisplayName(name)) + '</span></div>';
+          Object.keys(trendEngines).sort().forEach(function (name, i) {
+            var color = trendColors[name] || ['#14b8a6', '#a855f7', '#f59e0b'][i % 3];
+            legendHtml += '<div class="chart-legend-item"><span class="chart-legend-swatch" style="background:' + color + '"></span><span>' + escapeHtml(engineDisplayName(name)) + '</span></div>';
           });
           legendHtml += '</div>';
-
-          html += '<div class="card">' +
-            '<div class="card-title" style="margin-bottom:0.5rem">Performance Trend</div>' +
-            '<p class="card-subtitle" style="margin-bottom:1rem">Cumulative return % by engine (weekly)</p>' +
-            legendHtml +
-            '<div id="engine-perf-chart" style="height:300px"></div>' +
-          '</div>';
+          html += '<div class="card"><div class="card-title" style="margin-bottom:0.5rem">Performance Trend</div>' + legendHtml +
+            '<div id="engine-perf-chart" style="height:300px"></div></div>';
         }
-      } else if (!data.comparison || data.comparison.length === 0) {
-        html += '<div class="empty-state"><h3>No Data</h3><p>No mode comparison or engine performance data yet. Run the pipeline first.</p></div>';
-      } else {
-        html += '<div class="card"><div class="empty-state" style="padding:1.5rem"><p>Not enough resolved engine outcomes for engine comparison yet.</p></div></div>';
       }
+      html += '</div>';
 
       view.innerHTML = html;
+      initSubTabs('performance-view');
 
-      // Render chart after DOM is ready
+      // Render charts
+      if (data.equity_curve && data.equity_curve.length > 0) {
+        renderEquityCurve(data.equity_curve);
+      }
+      if (equity.equity_curve && equity.equity_curve.length > 0) {
+        renderTimeChart('charts-equity', equity.equity_curve, chartColors().teal, 'line');
+      }
+      if (drawdown.drawdown && drawdown.drawdown.length > 0) {
+        renderTimeChart('charts-drawdown', drawdown.drawdown, chartColors().red, 'area');
+      }
       if (engData && engData.time_series && engData.time_series.length > 0) {
         renderEnginePerfChart(engData.time_series);
       }
     }).catch(function () {
-      showEmpty('compare-view', 'Failed to load comparison data.');
+      showEmpty('performance-view', 'Failed to load performance data.');
     });
+  }
+
+  function breakdownTable(title, data) {
+    var rows = Object.keys(data).map(function (key) {
+      var d = data[key];
+      var pnlClass = d.avg_pnl > 0 ? 'positive' : (d.avg_pnl < 0 ? 'negative' : '');
+      return '<tr><td>' + escapeHtml(key) + '</td><td>' + d.trades + '</td><td>' + fmtPct(d.win_rate * 100) + '</td><td class="' + pnlClass + '">' + fmtPct(d.avg_pnl) + '</td></tr>';
+    }).join('');
+    return '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">' + title + '</div>' +
+      '<table class="data-table"><thead><tr><th>Name</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function renderEquityCurve(data) {
+    var el = document.getElementById('equity-chart');
+    if (!el || typeof LightweightCharts === 'undefined') return;
+    if (equityChart) { equityChart.remove(); equityChart = null; }
+    var c = chartColors();
+    var chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth, height: 350,
+      layout: { background: { color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+    equityChart = chart;
+    var series = chart.addLineSeries({ color: c.teal, lineWidth: 2 });
+    series.setData(data.map(function (p) { return { time: p.time, value: p.value }; }));
+    chart.timeScale().fitContent();
+    window.addEventListener('resize', function () { if (equityChart && el.clientWidth > 0) equityChart.applyOptions({ width: el.clientWidth }); });
+  }
+
+  function renderTimeChart(containerId, data, color, type) {
+    var el = document.getElementById(containerId);
+    if (!el || typeof LightweightCharts === 'undefined') return;
+    var c = chartColors();
+    var chart = LightweightCharts.createChart(el, {
+      width: el.clientWidth, height: 300,
+      layout: { background: { color: c.bg }, textColor: c.text },
+      grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
+      rightPriceScale: { borderColor: c.border },
+      timeScale: { borderColor: c.border },
+    });
+    var series;
+    if (type === 'area') {
+      series = chart.addAreaSeries({ lineColor: color, topColor: color + '80', bottomColor: color + '10', lineWidth: 2 });
+    } else {
+      series = chart.addLineSeries({ color: color, lineWidth: 2 });
+    }
+    series.setData(data.map(function (p) { return { time: p.time, value: p.value }; }));
+    chart.timeScale().fitContent();
+    window.addEventListener('resize', function () { if (el.clientWidth > 0) chart.applyOptions({ width: el.clientWidth }); });
+  }
+
+  function renderHistogram(returns) {
+    if (!returns || returns.length === 0) return '<p style="color:var(--text-muted)">No data</p>';
+    var buckets = {};
+    returns.forEach(function (r) { var k = Math.floor(r) + '%'; buckets[k] = (buckets[k] || 0) + 1; });
+    var maxCount = Math.max.apply(null, Object.values(buckets));
+    return '<div style="max-width:400px">' + Object.keys(buckets).sort(function (a, b) { return parseFloat(a) - parseFloat(b); }).map(function (key) {
+      var count = buckets[key];
+      var width = Math.round(count / maxCount * 100);
+      var color = parseFloat(key) >= 0 ? 'var(--green)' : 'var(--red)';
+      return '<div style="display:flex;align-items:center;gap:0.5rem;margin:2px 0">' +
+        '<span style="min-width:50px;text-align:right;font-size:0.8rem">' + key + '</span>' +
+        '<div style="background:' + color + ';height:16px;width:' + width + '%;border-radius:4px;min-width:2px"></div>' +
+        '<span style="font-size:0.75rem;color:var(--text-muted)">' + count + '</span></div>';
+    }).join('') + '</div>';
+  }
+
+  function renderRegimeMatrix(matrix) {
+    var models = {};
+    var regimes = new Set();
+    matrix.forEach(function (m) { if (!models[m.model]) models[m.model] = {}; models[m.model][m.regime] = m; regimes.add(m.regime); });
+    var regimeList = Array.from(regimes).sort();
+    var headerCells = regimeList.map(function (r) { return '<th>' + escapeHtml(r) + '</th>'; }).join('');
+    var rows = Object.keys(models).map(function (model) {
+      return '<tr><td><b>' + escapeHtml(model) + '</b></td>' + regimeList.map(function (regime) {
+        var cell = models[model][regime];
+        if (!cell) return '<td>\u2014</td>';
+        var wr = cell.win_rate * 100;
+        var bg = wr >= 55 ? 'var(--green-soft)' : (wr < 45 ? 'var(--red-soft)' : 'var(--amber-soft)');
+        return '<td style="background:' + bg + ';border-radius:6px">' + fmtPct(wr) + '<div style="font-size:0.7rem;color:var(--text-muted)">' + cell.trades + ' trades</div></td>';
+      }).join('') + '</tr>';
+    }).join('');
+    return '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Win Rate by Model x Regime</div>' +
+      '<table class="data-table"><thead><tr><th>Model</th>' + headerCells + '</tr></thead><tbody>' + rows + '</tbody></table></div>';
+  }
+
+  function renderCalibrationTable(data) {
+    var rows = data.map(function (b) {
+      var errClass = b.calibration_error > 0.15 ? 'negative' : (b.calibration_error < 0.05 ? 'positive' : '');
+      return '<tr><td>' + escapeHtml(b.bucket) + '</td><td>' + b.trades + '</td><td>' + fmtPct(b.expected_win_rate * 100) + '</td>' +
+        '<td>' + fmtPct(b.actual_win_rate * 100) + '</td><td class="' + errClass + '">' + fmt(b.calibration_error, 4) + '</td></tr>';
+    }).join('');
+    return '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Confidence Calibration</div>' +
+      '<table class="data-table"><thead><tr><th>Bucket</th><th>Trades</th><th>Expected WR</th><th>Actual WR</th><th>Cal. Error</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   function renderEnginePerfChart(timeSeries) {
     var el = document.getElementById('engine-perf-chart');
     if (!el || typeof LightweightCharts === 'undefined') return;
-
     if (enginePerfChart) { enginePerfChart.remove(); enginePerfChart = null; }
-
     var c = chartColors();
     var chart = LightweightCharts.createChart(el, {
-      width: el.clientWidth,
-      height: 300,
+      width: el.clientWidth, height: 300,
       layout: { background: { color: c.bg }, textColor: c.text },
       grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
       rightPriceScale: { borderColor: c.border },
-      timeScale: {
-        borderColor: c.border,
-        tickMarkFormatter: function(time) {
-          if (typeof time === 'string') {
-            var parts = time.split('-');
-            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            return months[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10);
-          }
-          return time;
-        },
-      },
+      timeScale: { borderColor: c.border },
     });
     enginePerfChart = chart;
-
     var trendColors = { koocore_d: '#14b8a6', gemini_stst: '#a855f7', top3_7d: '#f59e0b' };
-    var fallbackColors = ['#14b8a6', '#a855f7', '#f59e0b', '#3b82f6', '#ef4444'];
-
-    // Group by engine
     var byEngine = {};
-    timeSeries.forEach(function (pt) {
-      if (!byEngine[pt.engine_name]) byEngine[pt.engine_name] = [];
-      byEngine[pt.engine_name].push(pt);
-    });
-
-    var names = Object.keys(byEngine).sort();
-    names.forEach(function (name, i) {
-      var color = trendColors[name] || fallbackColors[i % fallbackColors.length];
+    timeSeries.forEach(function (pt) { if (!byEngine[pt.engine_name]) byEngine[pt.engine_name] = []; byEngine[pt.engine_name].push(pt); });
+    Object.keys(byEngine).sort().forEach(function (name, i) {
+      var color = trendColors[name] || ['#14b8a6', '#a855f7', '#f59e0b'][i % 3];
       var series = chart.addLineSeries({ color: color, lineWidth: 2, title: engineDisplayName(name) });
-      var pts = byEngine[name].map(function (p) {
-        return { time: p.week, value: p.cum_return_pct };
-      });
-      series.setData(pts);
+      series.setData(byEngine[name].map(function (p) { return { time: p.week, value: p.cum_return_pct }; }));
     });
-
     chart.timeScale().fitContent();
-    window.addEventListener('resize', function () {
-      if (enginePerfChart && el.clientWidth > 0) enginePerfChart.applyOptions({ width: el.clientWidth });
-    });
+    window.addEventListener('resize', function () { if (enginePerfChart && el.clientWidth > 0) enginePerfChart.applyOptions({ width: el.clientWidth }); });
   }
 
-  // -----------------------------------------------------------------------
-  // Pipeline Tab
-  // -----------------------------------------------------------------------
-  function loadPipeline() {
-    showSpinner('pipeline-view');
-    fetchJSON('/api/runs?limit=30').then(function (runs) {
-      var view = document.getElementById('pipeline-view');
-
-      if (!runs || runs.length === 0) {
-        showEmpty('pipeline-view', 'No pipeline runs recorded yet.');
-        return;
-      }
-
-      var rows = runs.map(function (r) {
-        return '<tr>' +
-          '<td>' + escapeHtml(r.run_date) + '</td>' +
-          '<td>' + regimeBadge(r.regime) + '</td>' +
-          '<td>' + (r.universe_size || '\u2014') + '</td>' +
-          '<td>' + (r.candidates_scored || '\u2014') + '</td>' +
-          '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '\u2014') + '</td>' +
-        '</tr>';
-      }).join('');
-
-      view.innerHTML = '<div class="card">' +
-        '<div class="card-title" style="margin-bottom:0.75rem">Pipeline Runs</div>' +
-        '<table class="data-table">' +
-          '<thead><tr><th>Date</th><th>Regime</th><th>Universe</th><th>Scored</th><th>Duration</th></tr></thead>' +
-          '<tbody>' + rows + '</tbody>' +
-        '</table></div>' +
-        '<div id="run-detail"></div>';
-    }).catch(function () {
-      showEmpty('pipeline-view', 'Failed to load pipeline runs.');
-    });
-  }
-
-  // -----------------------------------------------------------------------
-  // Histories Tab
-  // -----------------------------------------------------------------------
-  function loadHistories() {
-    showSpinner('histories-view');
-    fetchJSON('/api/runs?limit=100').then(function (runs) {
-      var view = document.getElementById('histories-view');
-
-      if (!runs || runs.length === 0) {
-        showEmpty('histories-view', 'No historical runs recorded yet.');
-        return;
-      }
-
-      var rows = runs.map(function (r) {
-        var reportUrl = '/report/' + encodeURIComponent(r.run_date);
-        return '<tr>' +
-          '<td><a class="report-link" href="' + reportUrl + '">' + escapeHtml(r.run_date) + '</a></td>' +
-          '<td>' + regimeBadge(r.regime) + '</td>' +
-          '<td>' + (r.candidates_scored || '\u2014') + '</td>' +
-          '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '\u2014') + '</td>' +
-        '</tr>';
-      }).join('');
-
-      view.innerHTML = '<div class="card">' +
-        '<div class="card-title" style="margin-bottom:0.5rem">Run History</div>' +
-        '<p class="card-subtitle" style="margin-bottom:1rem">Open any date to view its full daily report.</p>' +
-        '<table class="data-table">' +
-          '<thead><tr><th>Date</th><th>Regime</th><th>Scored</th><th>Duration</th></tr></thead>' +
-          '<tbody>' + rows + '</tbody>' +
-        '</table>' +
-      '</div>';
-    }).catch(function () {
-      showEmpty('histories-view', 'Failed to load historical runs.');
-    });
-  }
-
-  // -----------------------------------------------------------------------
-  // Costs Tab
-  // -----------------------------------------------------------------------
-  function loadCosts() {
-    showSpinner('costs-view');
-
-    Promise.all([
-      fetchJSON('/api/costs?days=30'),
-      fetchJSON('/api/cache-stats').catch(function () {
-        return { hit_rate: 0, hits: 0, misses: 0, total_entries: 0, evictions: 0 };
-      }),
-    ]).then(function (results) {
-      var costs = results[0];
-      var cache = results[1];
-      var view = document.getElementById('costs-view');
-
-      var html = '<div class="metrics-grid">' +
-        metricCard('$' + fmt(costs.total_cost_usd, 4), 'Total Cost (30d)', null) +
-        metricCard(numberFormat(costs.total_tokens_in), 'Tokens In', null) +
-        metricCard(numberFormat(costs.total_tokens_out), 'Tokens Out', null) +
-        metricCard(cache.hits === 0 && cache.misses === 0 ? 'N/A' : fmtPct(cache.hit_rate * 100), 'Cache Hit Rate', cache.hit_rate > 0.5) +
-        metricCard(cache.hits, 'Cache Hits', null) +
-        metricCard(cache.misses, 'Cache Misses', null) +
-        metricCard(cache.total_entries, 'Cached Entries', null) +
-        metricCard(cache.evictions, 'Evictions', null) +
-      '</div>';
-
-      var nonZeroAgents = costs.by_agent ? Object.keys(costs.by_agent).filter(function (a) { return costs.by_agent[a] > 0; }) : [];
-      if (nonZeroAgents.length > 0) {
-        var agentRows = nonZeroAgents.map(function (agent) {
-          return '<tr><td>' + escapeHtml(agent) + '</td><td>$' + fmt(costs.by_agent[agent], 4) + '</td></tr>';
-        }).join('');
-
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.75rem">Cost by Agent</div>' +
-          '<table class="data-table">' +
-            '<thead><tr><th>Agent</th><th>Cost (USD)</th></tr></thead>' +
-            '<tbody>' + agentRows + '</tbody>' +
-          '</table></div>';
-      }
-
-      if (costs.by_date && Object.keys(costs.by_date).length > 0) {
-        var dateRows = Object.keys(costs.by_date).sort().reverse().map(function (d) {
-          return '<tr><td>' + escapeHtml(d) + '</td><td>$' + fmt(costs.by_date[d], 4) + '</td></tr>';
-        }).join('');
-
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.75rem">Cost by Date</div>' +
-          '<table class="data-table">' +
-            '<thead><tr><th>Date</th><th>Cost (USD)</th></tr></thead>' +
-            '<tbody>' + dateRows + '</tbody>' +
-          '</table></div>';
-      }
-
-      view.innerHTML = html;
-    }).catch(function () {
-      showEmpty('costs-view', 'Failed to load cost data.');
-    });
-  }
-
-  function numberFormat(n) {
-    if (n == null) return '\u2014';
-    return Number(n).toLocaleString();
-  }
-
-  // -----------------------------------------------------------------------
-  // Backtest Tab
-  // -----------------------------------------------------------------------
-  var backtestChart = null;
-  var backtestRuns = [];
-  var backtestCompareMode = false;
-
-  function loadBacktest() {
-    showSpinner('backtest-view');
-    fetchJSON('/api/dashboard/backtest/runs').then(function (data) {
-      var view = document.getElementById('backtest-view');
-      backtestRuns = data.runs || [];
-
-      if (backtestRuns.length === 0) {
-        showEmpty('backtest-view', 'No backtest results found. Run a multi-engine backtest first.');
-        return;
-      }
-
-      var options = backtestRuns.map(function (r, idx) {
-        var range = r.date_range ? (r.date_range.start + ' to ' + r.date_range.end) : '';
-        var t = r.total_trades_all_tracks || 0;
-        var runId = r.filename ? r.filename.replace(/\.json$/, '').slice(-8) : String(idx + 1);
-        var label = range + ' | ' + (r.trading_days || 0) + ' days | ' +
-          t + (t === 1 ? ' trade' : ' trades') + ' (#' + runId + ')';
-        return '<option value="' + escapeHtml(r.filename) + '">' + escapeHtml(label) + '</option>';
-      }).join('');
-
-      var html = '<select class="backtest-select" id="backtest-run-select">' +
-        '<option value="">Select a backtest run...</option>' + options + '</select>' +
-        '<div id="backtest-compare-controls" style="display:none;margin-bottom:1rem">' +
-          '<select class="backtest-select" id="backtest-compare-select">' +
-            '<option value="">Select run to compare...</option>' + options + '</select>' +
-        '</div>' +
-        '<div style="margin-bottom:1rem">' +
-          '<button id="backtest-compare-toggle" style="background:none;border:1px solid var(--card-border);' +
-          'border-radius:8px;padding:0.4rem 0.8rem;cursor:pointer;color:var(--text-secondary);' +
-          'font-size:0.8rem;font-family:inherit">Compare Runs</button>' +
-        '</div>' +
-        '<div id="backtest-detail"></div>';
-
-      view.innerHTML = html;
-
-      document.getElementById('backtest-run-select').addEventListener('change', function () {
-        var fname = this.value;
-        if (!fname) { document.getElementById('backtest-detail').innerHTML = ''; return; }
-        loadBacktestDetail(fname);
-      });
-
-      // Attach compare-select listener once (outside toggle) to avoid accumulation
-      document.getElementById('backtest-compare-select').addEventListener('change', function () {
-        var mainFile = document.getElementById('backtest-run-select').value;
-        var compareFile = this.value;
-        if (mainFile && compareFile && mainFile !== compareFile) {
-          loadBacktestCompare(mainFile, compareFile);
-        }
-      });
-
-      document.getElementById('backtest-compare-toggle').addEventListener('click', function () {
-        backtestCompareMode = !backtestCompareMode;
-        var ctrl = document.getElementById('backtest-compare-controls');
-        ctrl.style.display = backtestCompareMode ? 'block' : 'none';
-        this.textContent = backtestCompareMode ? 'Hide Compare' : 'Compare Runs';
-      });
-    }).catch(function () {
-      showEmpty('backtest-view', 'Failed to load backtest runs.');
-    });
-  }
-
-  function loadBacktestDetail(filename) {
-    var detail = document.getElementById('backtest-detail');
-    detail.innerHTML = '<div class="spinner">Loading...</div>';
-
-    fetchJSON('/api/dashboard/backtest/' + encodeURIComponent(filename)).then(function (data) {
-      var html = '';
-
-      // Header card
-      var range = data.date_range ? (data.date_range.start + ' to ' + data.date_range.end) : '';
-      var elapsed = data.elapsed_s ? fmt(data.elapsed_s, 1) + 's' : '\u2014';
-      var engines = (data.engines || []).join(', ');
-      html += '<div class="card" style="margin-bottom:1.25rem">' +
-        '<div class="card-header"><div>' +
-          '<span class="card-title">Backtest Results</span>' +
-          '<div class="card-subtitle">' + escapeHtml(range) + '</div>' +
-        '</div></div>' +
-        '<div class="metrics-grid" style="margin-bottom:0">' +
-          metricCard(escapeHtml(data.run_date || ''), 'Run Date', null) +
-          metricCard(data.trading_days || 0, 'Trading Days', null) +
-          metricCard(elapsed, 'Elapsed', null) +
-          metricCard(escapeHtml(engines), 'Engines', null) +
-        '</div></div>';
-
-      // Synthesis metrics — prefer credibility_weight, fallback to equal_weight
-      var synthTrack = (data.synthesis || {}).credibility_weight || (data.synthesis || {}).equal_weight;
-      var synthName = (data.synthesis || {}).credibility_weight ? 'credibility_weight' : 'equal_weight';
-      if (synthTrack && synthTrack.summary) {
-        var s = synthTrack.summary;
-        html += '<div class="section-header">' +
-          '<div class="section-icon">\uD83D\uDCC8</div>' +
-          '<span class="section-title">Synthesis Metrics (' + synthName.replace(/_/g, ' ') + ')</span></div>';
-        html += '<div class="card" style="margin-bottom:1rem;background:rgba(245,158,11,0.06);border-left:3px solid rgba(245,158,11,0.5)">' +
-          '<div style="font-size:0.82rem;color:var(--text-secondary)">Backtest totals/drawdowns are shown as cumulative trade PnL points (sum of trade % returns), not capital-equity % returns.</div>' +
-          '</div>';
-        html += '<div class="metrics-grid">' +
-          metricCard(s.total_trades || 0, 'Total Trades', null) +
-          metricCard(fmtPct((s.win_rate || 0) * 100), 'Win Rate', s.win_rate >= 0.5) +
-          metricCard(fmtPct(s.avg_return_pct), 'Avg Return', s.avg_return_pct > 0) +
-          metricCard(fmt(s.sharpe_ratio), 'Sharpe', s.sharpe_ratio > 0) +
-          metricCard(fmt(s.sortino_ratio), 'Sortino', s.sortino_ratio > 0) +
-          metricCard(s.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(s.max_drawdown_pct)) : '—', 'Trade DD (Pts)', false) +
-          metricCard(fmt(s.profit_factor), 'Profit Factor', s.profit_factor > 1) +
-          metricCard(fmt(s.expectancy), 'Expectancy', s.expectancy > 0) +
-        '</div>';
-      }
-
-      // Per-engine summary table
-      var perEngine = data.per_engine || {};
-      var engineNames = Object.keys(perEngine);
-      if (engineNames.length > 0) {
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.75rem">Per-Engine Summary</div>' +
-          '<div style="overflow-x:auto"><table class="data-table">' +
-          '<thead><tr><th>Engine</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th>' +
-          '<th>Sharpe</th><th>Profit Factor</th><th>Expectancy</th><th>Trade DD (Pts)</th></tr></thead><tbody>';
-        engineNames.forEach(function (name) {
-          var es = perEngine[name].summary || {};
-          var pnlClass = (es.avg_return_pct || 0) > 0 ? 'positive' : ((es.avg_return_pct || 0) < 0 ? 'negative' : '');
-          html += '<tr>' +
-            '<td><b>' + escapeHtml(engineDisplayName(name)) + '</b></td>' +
-            '<td>' + (es.total_trades || 0) + '</td>' +
-            '<td>' + fmtPct((es.win_rate || 0) * 100) + '</td>' +
-            '<td class="' + pnlClass + '">' + fmtPct(es.avg_return_pct) + '</td>' +
-            '<td>' + fmt(es.sharpe_ratio) + '</td>' +
-            '<td>' + fmt(es.profit_factor) + '</td>' +
-            '<td>' + fmt(es.expectancy) + '</td>' +
-            '<td class="negative">' + (es.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(es.max_drawdown_pct)) : '—') + '</td>' +
-          '</tr>';
-        });
-        html += '</tbody></table></div></div>';
-      }
-
-      // Synthesis tracks table
-      var synthTracks = data.synthesis || {};
-      var trackNames = Object.keys(synthTracks);
-      if (trackNames.length > 0) {
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.75rem">Synthesis Tracks</div>' +
-          '<div style="overflow-x:auto"><table class="data-table">' +
-          '<thead><tr><th>Track</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th>' +
-          '<th>Sharpe</th><th>Profit Factor</th><th>Expectancy</th><th>Trade DD (Pts)</th></tr></thead><tbody>';
-        trackNames.forEach(function (name) {
-          var ts = synthTracks[name].summary || {};
-          var pnlClass = (ts.avg_return_pct || 0) > 0 ? 'positive' : ((ts.avg_return_pct || 0) < 0 ? 'negative' : '');
-          html += '<tr>' +
-            '<td><b>' + escapeHtml(name.replace(/_/g, ' ')) + '</b></td>' +
-            '<td>' + (ts.total_trades || 0) + '</td>' +
-            '<td>' + fmtPct((ts.win_rate || 0) * 100) + '</td>' +
-            '<td class="' + pnlClass + '">' + fmtPct(ts.avg_return_pct) + '</td>' +
-            '<td>' + fmt(ts.sharpe_ratio) + '</td>' +
-            '<td>' + fmt(ts.profit_factor) + '</td>' +
-            '<td>' + fmt(ts.expectancy) + '</td>' +
-            '<td class="negative">' + (ts.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(ts.max_drawdown_pct)) : '—') + '</td>' +
-          '</tr>';
-        });
-        html += '</tbody></table></div></div>';
-      }
-
-      // By-regime breakdown (from synthesis credibility_weight)
-      if (synthTrack && synthTrack.by_regime) {
-        var regimes = synthTrack.by_regime;
-        var regimeKeys = Object.keys(regimes);
-        if (regimeKeys.length > 0) {
-          html += '<div class="card">' +
-            '<div class="card-title" style="margin-bottom:0.75rem">By Regime (' + synthName.replace(/_/g, ' ') + ')</div>' +
-            '<table class="data-table">' +
-            '<thead><tr><th>Regime</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th></tr></thead><tbody>';
-          regimeKeys.forEach(function (regime) {
-            var rd = regimes[regime];
-            var pnlClass = (rd.avg_return_pct || 0) > 0 ? 'positive' : ((rd.avg_return_pct || 0) < 0 ? 'negative' : '');
-            html += '<tr>' +
-              '<td>' + regimeBadge(regime) + '</td>' +
-              '<td>' + (rd.trades || 0) + '</td>' +
-              '<td>' + fmtPct((rd.win_rate || 0) * 100) + '</td>' +
-              '<td class="' + pnlClass + '">' + fmtPct(rd.avg_return_pct) + '</td>' +
-            '</tr>';
-          });
-          html += '</tbody></table></div>';
-        }
-      }
-
-      // By-strategy breakdown (across engines)
-      var stratRows = [];
-      engineNames.forEach(function (engName) {
-        var byStrat = (perEngine[engName] || {}).by_strategy || {};
-        Object.keys(byStrat).forEach(function (strat) {
-          var sd = byStrat[strat];
-          stratRows.push({ engine: engName, strategy: strat, data: sd });
-        });
-      });
-      if (stratRows.length > 0) {
-        html += '<div class="card">' +
-          '<div class="card-title" style="margin-bottom:0.75rem">By Strategy (per Engine)</div>' +
-          '<table class="data-table">' +
-          '<thead><tr><th>Engine</th><th>Strategy</th><th>Trades</th><th>Win Rate</th><th>Avg Return</th></tr></thead><tbody>';
-        stratRows.forEach(function (row) {
-          var sd = row.data;
-          var pnlClass = (sd.avg_return_pct || 0) > 0 ? 'positive' : ((sd.avg_return_pct || 0) < 0 ? 'negative' : '');
-          html += '<tr>' +
-            '<td>' + escapeHtml(row.engine) + '</td>' +
-            '<td>' + escapeHtml(row.strategy) + '</td>' +
-            '<td>' + (sd.trades || 0) + '</td>' +
-            '<td>' + fmtPct((sd.win_rate || 0) * 100) + '</td>' +
-            '<td class="' + pnlClass + '">' + fmtPct(sd.avg_return_pct) + '</td>' +
-          '</tr>';
-        });
-        html += '</tbody></table></div>';
-      }
-
-      // Equity curves button
-      html += '<div style="margin-top:1rem">' +
-        '<button id="backtest-equity-btn" style="background:var(--gradient-brand);color:#fff;border:none;' +
-        'border-radius:10px;padding:0.6rem 1.2rem;cursor:pointer;font-size:0.85rem;font-family:inherit;font-weight:600">' +
-        'Show Equity Curves</button></div>' +
-        '<div id="backtest-equity-area" style="margin-top:1rem"></div>';
-
-      detail.innerHTML = html;
-
-      document.getElementById('backtest-equity-btn').addEventListener('click', function () {
-        this.disabled = true;
-        this.textContent = 'Loading...';
-        loadBacktestEquity(filename);
-      });
-    }).catch(function () {
-      detail.innerHTML = '<div class="empty-state"><p>Failed to load backtest detail.</p></div>';
-    });
-  }
-
-  function loadBacktestEquity(filename) {
-    var area = document.getElementById('backtest-equity-area');
-    area.innerHTML = '<div class="spinner">Loading equity curves...</div>';
-
-    fetchJSON('/api/dashboard/backtest/' + encodeURIComponent(filename) + '/equity').then(function (data) {
-      var curves = data.curves || {};
-      var curveNames = Object.keys(curves);
-      if (curveNames.length === 0) {
-        area.innerHTML = '<div class="empty-state"><p>No equity curve data.</p></div>';
-        return;
-      }
-
-      var lineColors = ['#14b8a6', '#a855f7', '#f59e0b', '#22c55e', '#3b82f6', '#ef4444', '#ec4899', '#6366f1'];
-
-      // Legend
-      var legendHtml = '<div class="chart-legend">';
-      curveNames.forEach(function (name, i) {
-        var color = lineColors[i % lineColors.length];
-        legendHtml += '<div class="chart-legend-item">' +
-          '<span class="chart-legend-swatch" style="background:' + color + '"></span>' +
-          '<span>' + escapeHtml(name.replace(/_/g, ' ')) + '</span></div>';
-      });
-      legendHtml += '</div>';
-
-      area.innerHTML = legendHtml + '<div class="chart-container"><div id="backtest-equity-chart" style="height:400px"></div></div>';
-
-      var el = document.getElementById('backtest-equity-chart');
-      if (!el || typeof LightweightCharts === 'undefined') return;
-
-      if (backtestChart) { backtestChart.remove(); backtestChart = null; }
-
-      var c = chartColors();
-      var chart = LightweightCharts.createChart(el, {
-        width: el.clientWidth,
-        height: 400,
-        layout: { background: { color: c.bg }, textColor: c.text },
-        grid: { vertLines: { color: c.grid }, horzLines: { color: c.grid } },
-        rightPriceScale: { borderColor: c.border },
-        timeScale: {
-        borderColor: c.border,
-        tickMarkFormatter: function(time) {
-          if (typeof time === 'string') {
-            var parts = time.split('-');
-            var months = ['Jan','Feb','Mar','Apr','May','Jun','Jul','Aug','Sep','Oct','Nov','Dec'];
-            return months[parseInt(parts[1], 10) - 1] + ' ' + parseInt(parts[2], 10);
-          }
-          return time;
-        },
-      },
-      });
-      backtestChart = chart;
-
-      curveNames.forEach(function (name, i) {
-        var color = lineColors[i % lineColors.length];
-        var series = chart.addLineSeries({ color: color, lineWidth: 2, title: name });
-        var pts = (curves[name] || []).map(function (p) {
-          return { time: p.date, value: p.cumulative_pnl_pct };
-        });
-        series.setData(pts);
-      });
-
-      chart.timeScale().fitContent();
-      window.addEventListener('resize', function () {
-        if (backtestChart && el.clientWidth > 0) backtestChart.applyOptions({ width: el.clientWidth });
-      });
-
-      var btn = document.getElementById('backtest-equity-btn');
-      if (btn) { btn.textContent = 'Show Equity Curves'; btn.disabled = false; }
-    }).catch(function () {
-      area.innerHTML = '<div class="empty-state"><p>Failed to load equity curves.</p></div>';
-      var btn = document.getElementById('backtest-equity-btn');
-      if (btn) { btn.textContent = 'Show Equity Curves'; btn.disabled = false; }
-    });
-  }
-
-  function loadBacktestCompare(file1, file2) {
-    var detail = document.getElementById('backtest-detail');
-    detail.innerHTML = '<div class="spinner">Comparing runs...</div>';
-
-    fetchJSON('/api/dashboard/backtest/compare?files=' + encodeURIComponent(file1 + ',' + file2)).then(function (data) {
-      var cmp = data.comparison || [];
-      if (cmp.length < 2) {
-        detail.innerHTML = '<div class="empty-state"><p>Need 2 valid runs to compare.</p></div>';
-        return;
-      }
-
-      var r1 = cmp[0], r2 = cmp[1];
-      var html = '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Run Comparison</div>' +
-        '<div style="font-size:0.8rem;color:var(--text-secondary);margin-bottom:0.75rem">Totals/drawdowns below are cumulative trade PnL points (not capital-equity %).</div>' +
-        '<div style="overflow-x:auto"><table class="data-table"><thead><tr>' +
-        '<th>Metric</th>' +
-        '<th>' + escapeHtml((r1.date_range || {}).start || '') + ' to ' + escapeHtml((r1.date_range || {}).end || '') + '</th>' +
-        '<th>' + escapeHtml((r2.date_range || {}).start || '') + ' to ' + escapeHtml((r2.date_range || {}).end || '') + '</th>' +
-        '<th>Delta</th></tr></thead><tbody>';
-
-      // Compare synthesis credibility_weight (or equal_weight)
-      var s1 = (r1.synthesis || {}).credibility_weight || (r1.synthesis || {}).equal_weight || {};
-      var s2 = (r2.synthesis || {}).credibility_weight || (r2.synthesis || {}).equal_weight || {};
-
-      var compareMetrics = [
-        { key: 'total_trades', label: 'Total Trades', fmt: function (v) { return v || 0; }, pct: false },
-        { key: 'win_rate', label: 'Win Rate', fmt: function (v) { return fmtPct((v || 0) * 100); }, pct: true, mul: 100 },
-        { key: 'avg_return_pct', label: 'Avg Return', fmt: function (v) { return fmtPct(v); }, pct: true },
-        { key: 'sharpe_ratio', label: 'Sharpe', fmt: function (v) { return fmt(v); }, pct: false },
-        { key: 'sortino_ratio', label: 'Sortino', fmt: function (v) { return fmt(v); }, pct: false },
-        { key: 'max_drawdown_pct', label: 'Trade DD (Pts)', fmt: function (v) { return fmtPct(v); }, pct: true },
-        { key: 'profit_factor', label: 'Profit Factor', fmt: function (v) { return fmt(v); }, pct: false },
-        { key: 'expectancy', label: 'Expectancy', fmt: function (v) { return fmt(v); }, pct: false },
-      ];
-
-      compareMetrics.forEach(function (m) {
-        var v1 = s1[m.key] || 0;
-        var v2 = s2[m.key] || 0;
-        var diff = v2 - v1;
-        if (m.mul) { diff = diff * m.mul; }
-        var deltaClass = diff > 0 ? 'positive' : (diff < 0 ? 'negative' : '');
-        // For max drawdown, less negative is better so invert
-        if (m.key === 'max_drawdown_pct') deltaClass = diff < 0 ? 'positive' : (diff > 0 ? 'negative' : '');
-        var deltaStr = m.pct ? fmtPct(diff) : fmt(diff);
-        html += '<tr><td><b>' + m.label + '</b></td>' +
-          '<td>' + m.fmt(v1) + '</td>' +
-          '<td>' + m.fmt(v2) + '</td>' +
-          '<td class="' + deltaClass + '">' + deltaStr + '</td></tr>';
-      });
-
-      html += '</tbody></table></div></div>';
-
-      // Per-engine comparison
-      var allEngines = {};
-      Object.keys(r1.per_engine || {}).forEach(function (e) { allEngines[e] = true; });
-      Object.keys(r2.per_engine || {}).forEach(function (e) { allEngines[e] = true; });
-      var engineList = Object.keys(allEngines);
-
-      if (engineList.length > 0) {
-        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Per-Engine Comparison (Win Rate / Avg Return)</div>' +
-          '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Engine</th>' +
-          '<th>Run 1 WR</th><th>Run 2 WR</th><th>WR Delta</th>' +
-          '<th>Run 1 Avg</th><th>Run 2 Avg</th><th>Avg Delta</th></tr></thead><tbody>';
-        engineList.forEach(function (eng) {
-          var e1 = (r1.per_engine || {})[eng] || {};
-          var e2 = (r2.per_engine || {})[eng] || {};
-          var wr1 = (e1.win_rate || 0) * 100, wr2 = (e2.win_rate || 0) * 100;
-          var wrDelta = wr2 - wr1;
-          var wrDeltaClass = wrDelta > 0 ? 'positive' : (wrDelta < 0 ? 'negative' : '');
-          var avg1 = e1.avg_return_pct || 0, avg2 = e2.avg_return_pct || 0;
-          var avgDelta = avg2 - avg1;
-          var avgDeltaClass = avgDelta > 0 ? 'positive' : (avgDelta < 0 ? 'negative' : '');
-          html += '<tr><td><b>' + escapeHtml(eng) + '</b></td>' +
-            '<td>' + fmtPct(wr1) + '</td><td>' + fmtPct(wr2) + '</td>' +
-            '<td class="' + wrDeltaClass + '">' + fmtPct(wrDelta) + '</td>' +
-            '<td>' + fmtPct(avg1) + '</td><td>' + fmtPct(avg2) + '</td>' +
-            '<td class="' + avgDeltaClass + '">' + fmtPct(avgDelta) + '</td></tr>';
-        });
-        html += '</tbody></table></div></div>';
-      }
-
-      detail.innerHTML = html;
-    }).catch(function () {
-      detail.innerHTML = '<div class="empty-state"><p>Failed to load comparison.</p></div>';
-    });
-  }
-
-  // -----------------------------------------------------------------------
-  // Tracks Tab — Shadow Track Leaderboard + Equity Curves
-  // -----------------------------------------------------------------------
+  // =======================================================================
+  // TRACKS TAB (merged: Tracks + Backtest)
+  // =======================================================================
   var tracksDaysSelect = 14;
   var tracksEquityChart = null;
   var tracksStatusFilter = 'all';
   var tracksSortCol = 'composite_score';
   var tracksSortAsc = false;
-  var tracksData = null;  // cached for re-sorting/filtering
+  var tracksData = null;
+  var backtestChart = null;
+  var backtestRuns = [];
 
   function loadTracks() {
     showSpinner('tracks-view');
-    fetchJSON('/api/tracks/leaderboard?days=' + tracksDaysSelect).then(function (data) {
+
+    Promise.all([
+      fetchJSON('/api/tracks/leaderboard?days=' + tracksDaysSelect).catch(function () { return { tracks: [] }; }),
+      fetchJSON('/api/dashboard/backtest/runs').catch(function () { return { runs: [] }; }),
+    ]).then(function (results) {
+      var trackData = results[0];
+      var btData = results[1];
       var view = document.getElementById('tracks-view');
-      if (!data.tracks || data.tracks.length === 0) {
-        showEmpty('tracks-view', 'No shadow tracks configured. Enable with SHADOW_TRACKS_ENABLED=true and add tracks to configs/tracks.yaml.');
-        return;
+
+      tracksData = trackData;
+      backtestRuns = btData.runs || [];
+
+      // Sub-tab bar
+      var html = '<div class="subtab-bar">' +
+        '<button class="subtab-btn subtab-active" data-subtab="tracks-leaderboard">Shadow Tracks</button>' +
+        '<button class="subtab-btn" data-subtab="tracks-backtest">Backtest</button>' +
+        '</div>';
+
+      // --- Sub-tab: Shadow Tracks ---
+      html += '<div class="subtab-content subtab-visible" data-subtab-content="tracks-leaderboard">';
+      if (!trackData.tracks || trackData.tracks.length === 0) {
+        html += '<div class="empty-state"><p>No shadow tracks configured. Enable with SHADOW_TRACKS_ENABLED=true.</p></div>';
+      } else {
+        html += renderTracksContent(trackData);
+      }
+      html += '</div>';
+
+      // --- Sub-tab: Backtest ---
+      html += '<div class="subtab-content" data-subtab-content="tracks-backtest">';
+      if (backtestRuns.length === 0) {
+        html += '<div class="empty-state"><p>No backtest results found.</p></div>';
+      } else {
+        var options = backtestRuns.map(function (r) {
+          var range = r.date_range ? (r.date_range.start + ' to ' + r.date_range.end) : '';
+          var t = r.total_trades_all_tracks || 0;
+          return '<option value="' + escapeHtml(r.filename) + '">' + escapeHtml(range + ' | ' + t + ' trades') + '</option>';
+        }).join('');
+        html += '<select class="backtest-select" id="backtest-run-select"><option value="">Select a backtest run...</option>' + options + '</select>';
+        html += '<div id="backtest-detail"></div>';
+      }
+      html += '</div>';
+
+      view.innerHTML = html;
+      initSubTabs('tracks-view');
+
+      // Bind track events
+      if (trackData.tracks && trackData.tracks.length > 0) {
+        bindTrackEvents(view, trackData);
       }
 
-      tracksData = data;
-      renderTracksView(view, data);
-    }).catch(function (err) {
-      document.getElementById('tracks-view').innerHTML =
-        '<div class="empty-state"><p>Failed to load tracks: ' + err.message + '</p></div>';
+      // Bind backtest select
+      var btSelect = document.getElementById('backtest-run-select');
+      if (btSelect) {
+        btSelect.addEventListener('change', function () {
+          if (this.value) loadBacktestDetail(this.value);
+          else document.getElementById('backtest-detail').innerHTML = '';
+        });
+      }
+    }).catch(function () {
+      showEmpty('tracks-view', 'Failed to load tracks data.');
     });
   }
 
-  function renderTracksView(view, data) {
+  function renderTracksContent(data) {
     var tracks = filterAndSortTracks(data.tracks);
-
-    // Count by status for filter pills
     var counts = { all: data.tracks.length, active: 0, eliminated: 0, promoted: 0 };
     data.tracks.forEach(function (t) { if (counts[t.status] !== undefined) counts[t.status]++; });
 
-    var html = '<div class="section-header">'
-      + '<h2>Shadow Tracks</h2>'
-      + '<p style="color:var(--text-secondary);font-size:0.85rem;margin-top:4px;">'
-      + 'Parallel parameter experiments — evolutionary optimization</p></div>';
-
-    // Controls bar: status filters + lookback selector
-    html += '<div class="tracks-controls">'
-      + '<div class="tracks-filters">';
+    var html = '<div class="tracks-controls"><div class="tracks-filters">';
     ['all', 'active', 'eliminated', 'promoted'].forEach(function (s) {
       if (s !== 'all' && counts[s] === 0) return;
       var active = tracksStatusFilter === s ? ' tracks-filter-active' : '';
-      var label = s.charAt(0).toUpperCase() + s.slice(1);
-      html += '<button class="tracks-filter-btn' + active + '" data-filter="' + s + '">'
-        + label + ' <span class="tracks-filter-count">' + counts[s] + '</span></button>';
+      html += '<button class="tracks-filter-btn' + active + '" data-filter="' + s + '">' +
+        s.charAt(0).toUpperCase() + s.slice(1) + ' <span class="tracks-filter-count">' + counts[s] + '</span></button>';
     });
-    html += '</div>'
-      + '<select id="tracks-days-select" class="tracks-select">'
-      + '<option value="7"' + (tracksDaysSelect === 7 ? ' selected' : '') + '>7 days</option>'
-      + '<option value="14"' + (tracksDaysSelect === 14 ? ' selected' : '') + '>14 days</option>'
-      + '<option value="30"' + (tracksDaysSelect === 30 ? ' selected' : '') + '>30 days</option>'
-      + '</select></div>';
+    html += '</div><select id="tracks-days-select" class="tracks-select">' +
+      '<option value="7"' + (tracksDaysSelect === 7 ? ' selected' : '') + '>7 days</option>' +
+      '<option value="14"' + (tracksDaysSelect === 14 ? ' selected' : '') + '>14 days</option>' +
+      '<option value="30"' + (tracksDaysSelect === 30 ? ' selected' : '') + '>30 days</option>' +
+      '</select></div>';
 
     // Leaderboard table
     var cols = [
-      { key: 'rank', label: '#', sortable: false },
-      { key: 'name', label: 'Track', sortable: true },
-      { key: 'generation', label: 'Gen', sortable: true },
-      { key: 'status', label: 'Status', sortable: false },
-      { key: 'total_picks', label: 'Picks', sortable: true },
-      { key: 'resolved_picks', label: 'Resolved', sortable: true },
-      { key: 'win_rate', label: 'Win Rate', sortable: true },
-      { key: 'avg_return_pct', label: 'Avg Ret', sortable: true },
-      { key: 'sharpe_ratio', label: 'Sharpe', sortable: true },
-      { key: 'deflated_sharpe', label: 'DSR', sortable: true },
-      { key: 'profit_factor', label: 'PF', sortable: true },
-      { key: 'max_drawdown_pct', label: 'Max DD', sortable: true },
-      { key: 'composite_score', label: 'Composite', sortable: true },
-      { key: 'delta_sharpe', label: '\u0394 Sharpe', sortable: true },
-      { key: 'delta_win_rate', label: '\u0394 WR', sortable: true },
+      { key: 'rank', label: '#' }, { key: 'name', label: 'Track', s: true }, { key: 'status', label: 'Status' },
+      { key: 'resolved_picks', label: 'Resolved', s: true }, { key: 'win_rate', label: 'WR', s: true },
+      { key: 'avg_return_pct', label: 'Avg Ret', s: true }, { key: 'sharpe_ratio', label: 'Sharpe', s: true },
+      { key: 'profit_factor', label: 'PF', s: true }, { key: 'composite_score', label: 'Composite', s: true },
+      { key: 'delta_sharpe', label: '\u0394 Sharpe', s: true },
     ];
 
     html += '<div class="card tracks-table-wrap"><table class="data-table tracks-table"><thead><tr>';
     cols.forEach(function (c) {
-      if (c.sortable) {
+      if (c.s) {
         var arrow = tracksSortCol === c.key ? (tracksSortAsc ? ' \u25B2' : ' \u25BC') : '';
         html += '<th class="sortable-th" data-sort="' + c.key + '">' + c.label + arrow + '</th>';
       } else {
@@ -2159,73 +1201,38 @@
     html += '</tr></thead><tbody>';
 
     tracks.forEach(function (t, i) {
-      var statusBadge = t.status === 'active' ? '<span class="badge badge-success">active</span>'
-        : t.status === 'eliminated' ? '<span class="badge badge-failed">eliminated</span>'
-        : t.status === 'promoted' ? '<span class="badge badge-bull">promoted</span>'
-        : '<span class="badge badge-unknown">' + t.status + '</span>';
-
+      var statusBadge = t.status === 'active' ? '<span class="badge badge-success">active</span>' :
+        t.status === 'eliminated' ? '<span class="badge badge-failed">elim</span>' :
+        t.status === 'promoted' ? '<span class="badge badge-bull">promoted</span>' :
+        '<span class="badge badge-unknown">' + t.status + '</span>';
       var rowClass = t.has_sufficient_data ? '' : ' class="tracks-insufficient"';
-      var genBadge = '<span class="tracks-gen-badge">G' + t.generation + '</span>';
-
-      // DSR indicator
-      var dsrHtml;
-      var dsr = t.deflated_sharpe || 0;
-      if (!t.has_sufficient_data) {
-        dsrHtml = '<span class="tracks-dsr tracks-dsr-na" title="Insufficient data">--</span>';
-      } else if (dsr >= 0.95) {
-        dsrHtml = '<span class="tracks-dsr tracks-dsr-strong" title="DSR ' + dsr.toFixed(2) + '">' + dsr.toFixed(2) + '</span>';
-      } else if (dsr >= 0.50) {
-        dsrHtml = '<span class="tracks-dsr tracks-dsr-ok" title="DSR ' + dsr.toFixed(2) + '">' + dsr.toFixed(2) + '</span>';
-      } else {
-        dsrHtml = '<span class="tracks-dsr tracks-dsr-weak" title="DSR ' + dsr.toFixed(2) + ' — likely noise">' + dsr.toFixed(2) + '</span>';
-      }
-
-      // Composite score with color gradient
       var composite = t.composite_score || 0;
       var compositeColor = compositeScoreColor(composite, tracks);
 
-      html += '<tr' + rowClass + '>'
-        + '<td>' + (i + 1) + '</td>'
-        + '<td><a href="#" class="track-detail-link" data-track="' + t.name + '">' + t.name + '</a></td>'
-        + '<td>' + genBadge + '</td>'
-        + '<td>' + statusBadge + '</td>'
-        + '<td>' + t.total_picks + '</td>'
-        + '<td>' + t.resolved_picks + '</td>'
-        + '<td>' + fmtPctSafe(t.win_rate) + '</td>'
-        + '<td class="' + posNegClass(t.avg_return_pct) + '">'
-        + signedPct(t.avg_return_pct) + '</td>'
-        + '<td>' + fmtNum(t.sharpe_ratio) + '</td>'
-        + '<td>' + dsrHtml + '</td>'
-        + '<td>' + fmtNum(t.profit_factor) + '</td>'
-        + '<td class="negative">' + fmtNum(t.max_drawdown_pct) + '%</td>'
-        + '<td><span class="tracks-composite" style="background:' + compositeColor + ';">'
-        + composite.toFixed(3) + '</span></td>'
-        + tracksDeltaCell(t.delta_sharpe)
-        + tracksDeltaCell(t.delta_win_rate)
-        + '</tr>';
+      html += '<tr' + rowClass + '>' +
+        '<td>' + (i + 1) + '</td>' +
+        '<td><a href="#" class="track-detail-link" data-track="' + t.name + '">' + t.name + '</a></td>' +
+        '<td>' + statusBadge + '</td>' +
+        '<td>' + t.resolved_picks + '</td>' +
+        '<td>' + fmtPctSafe(t.win_rate) + '</td>' +
+        '<td class="' + posNegClass(t.avg_return_pct) + '">' + signedPct(t.avg_return_pct) + '</td>' +
+        '<td>' + fmtNum(t.sharpe_ratio) + '</td>' +
+        '<td>' + fmtNum(t.profit_factor) + '</td>' +
+        '<td><span class="tracks-composite" style="background:' + compositeColor + '">' + composite.toFixed(3) + '</span></td>' +
+        tracksDeltaCell(t.delta_sharpe) +
+        '</tr>';
     });
 
     html += '</tbody></table></div>';
+    html += '<div class="card" style="margin-top:16px"><h3 style="margin-bottom:8px">Equity Curves</h3><div id="tracks-equity-chart" style="height:350px"></div></div>';
+    html += '<div id="track-detail-panel" class="card tracks-detail-panel"><div class="tracks-detail-header"><h3 id="track-detail-title">Track Config</h3>' +
+      '<button id="track-detail-close" class="tracks-detail-close">&times;</button></div>' +
+      '<pre id="track-detail-config" class="tracks-config-pre"></pre><div id="track-detail-picks"></div></div>';
 
-    // Equity curve chart container
-    html += '<div class="card" style="margin-top:16px;">'
-      + '<h3 style="margin-bottom:8px;">Equity Curves</h3>'
-      + '<div id="tracks-equity-chart" style="height:350px;"></div>'
-      + '</div>';
+    return html;
+  }
 
-    // Config viewer / detail panel
-    html += '<div id="track-detail-panel" class="card tracks-detail-panel">'
-      + '<div class="tracks-detail-header">'
-      + '<h3 id="track-detail-title">Track Config</h3>'
-      + '<button id="track-detail-close" class="tracks-detail-close">&times;</button>'
-      + '</div>'
-      + '<pre id="track-detail-config" class="tracks-config-pre"></pre>'
-      + '<div id="track-detail-picks"></div>'
-      + '</div>';
-
-    view.innerHTML = html;
-
-    // Bind lookback selector
+  function bindTrackEvents(view, data) {
     var sel = document.getElementById('tracks-days-select');
     if (sel) {
       sel.addEventListener('change', function () {
@@ -2234,69 +1241,51 @@
         loadTracks();
       });
     }
-
-    // Bind status filter buttons
     view.querySelectorAll('.tracks-filter-btn').forEach(function (btn) {
       btn.addEventListener('click', function () {
         tracksStatusFilter = btn.dataset.filter;
-        renderTracksView(view, tracksData);
+        // Re-render just tracks content
+        var content = view.querySelector('[data-subtab-content="tracks-leaderboard"]');
+        if (content) {
+          content.innerHTML = renderTracksContent(tracksData);
+          bindTrackEvents(view, tracksData);
+        }
       });
     });
-
-    // Bind sortable headers
     view.querySelectorAll('.sortable-th').forEach(function (th) {
       th.addEventListener('click', function () {
         var col = th.dataset.sort;
-        if (tracksSortCol === col) {
-          tracksSortAsc = !tracksSortAsc;
-        } else {
-          tracksSortCol = col;
-          tracksSortAsc = false;
+        if (tracksSortCol === col) tracksSortAsc = !tracksSortAsc;
+        else { tracksSortCol = col; tracksSortAsc = false; }
+        var content = view.querySelector('[data-subtab-content="tracks-leaderboard"]');
+        if (content) {
+          content.innerHTML = renderTracksContent(tracksData);
+          bindTrackEvents(view, tracksData);
         }
-        renderTracksView(view, tracksData);
       });
     });
-
-    // Bind track detail links
     view.querySelectorAll('.track-detail-link').forEach(function (link) {
       link.addEventListener('click', function (e) {
         e.preventDefault();
         showTrackDetail(link.dataset.track, data.tracks);
       });
     });
-
-    // Bind detail close button
     var closeBtn = document.getElementById('track-detail-close');
-    if (closeBtn) {
-      closeBtn.addEventListener('click', function () {
-        document.getElementById('track-detail-panel').style.display = 'none';
-      });
-    }
-
-    // Build equity curves
+    if (closeBtn) closeBtn.addEventListener('click', function () { document.getElementById('track-detail-panel').style.display = 'none'; });
     loadTracksEquityCurves(data.tracks);
   }
 
   function filterAndSortTracks(tracks) {
-    var filtered = tracks;
-    if (tracksStatusFilter !== 'all') {
-      filtered = tracks.filter(function (t) { return t.status === tracksStatusFilter; });
-    }
-    var col = tracksSortCol;
-    var asc = tracksSortAsc;
-    filtered = filtered.slice().sort(function (a, b) {
-      var va = a[col], vb = b[col];
-      if (typeof va === 'string') {
-        return asc ? va.localeCompare(vb) : vb.localeCompare(va);
-      }
+    var filtered = tracksStatusFilter === 'all' ? tracks : tracks.filter(function (t) { return t.status === tracksStatusFilter; });
+    return filtered.slice().sort(function (a, b) {
+      var va = a[tracksSortCol], vb = b[tracksSortCol];
+      if (typeof va === 'string') return tracksSortAsc ? va.localeCompare(vb) : vb.localeCompare(va);
       va = va || 0; vb = vb || 0;
-      return asc ? va - vb : vb - va;
+      return tracksSortAsc ? va - vb : vb - va;
     });
-    return filtered;
   }
 
   function compositeScoreColor(score, tracks) {
-    // Color gradient: red (0) -> amber (0.3) -> green (0.7+)
     var maxScore = 0;
     tracks.forEach(function (t) { if (t.composite_score > maxScore) maxScore = t.composite_score; });
     if (maxScore === 0) return 'rgba(100,100,100,0.15)';
@@ -2310,8 +1299,7 @@
   function tracksDeltaCell(val) {
     if (val == null) return '<td class="tracks-delta">--</td>';
     var cls = val > 0 ? 'positive' : val < 0 ? 'negative' : '';
-    var sign = val > 0 ? '+' : '';
-    return '<td class="tracks-delta ' + cls + '">' + sign + fmtNum(val) + '</td>';
+    return '<td class="tracks-delta ' + cls + '">' + (val > 0 ? '+' : '') + fmtNum(val) + '</td>';
   }
 
   function posNegClass(val) { return val > 0 ? 'positive' : val < 0 ? 'negative' : ''; }
@@ -2322,135 +1310,215 @@
   function loadTracksEquityCurves(tracks) {
     var container = document.getElementById('tracks-equity-chart');
     if (!container || typeof LightweightCharts === 'undefined') return;
-
-    if (tracksEquityChart) {
-      tracksEquityChart.remove();
-      tracksEquityChart = null;
-    }
-
+    if (tracksEquityChart) { tracksEquityChart.remove(); tracksEquityChart = null; }
     var colors = chartColors();
     tracksEquityChart = LightweightCharts.createChart(container, {
-      width: container.clientWidth,
-      height: 350,
+      width: container.clientWidth, height: 350,
       layout: { background: { type: 'solid', color: colors.bg }, textColor: colors.text },
       grid: { vertLines: { color: colors.grid }, horzLines: { color: colors.grid } },
       rightPriceScale: { borderColor: colors.border },
       timeScale: { borderColor: colors.border },
     });
-
     var lineColors = ['#14b8a6', '#3b82f6', '#f59e0b', '#ef4444', '#8b5cf6', '#ec4899', '#22c55e', '#06b6d4'];
     var activeNames = tracks.filter(function (t) { return t.status === 'active'; }).map(function (t) { return t.name; });
-
-    // Fetch equity data for each active track
-    var promises = activeNames.map(function (name) {
+    Promise.all(activeNames.map(function (name) {
       return fetchJSON('/api/tracks/' + encodeURIComponent(name) + '/equity').catch(function () { return { snapshots: [] }; });
-    });
-
-    Promise.all(promises).then(function (results) {
+    })).then(function (results) {
       var hasData = false;
       results.forEach(function (eq, i) {
         if (!eq.snapshots || eq.snapshots.length === 0) return;
         hasData = true;
-        var series = tracksEquityChart.addLineSeries({
-          color: lineColors[i % lineColors.length],
-          lineWidth: 2,
-          title: activeNames[i],
-        });
-        var chartData = eq.snapshots.map(function (s) {
-          return { time: s.date, value: s.total_return || 0 };
-        });
-        series.setData(chartData);
+        var series = tracksEquityChart.addLineSeries({ color: lineColors[i % lineColors.length], lineWidth: 2, title: activeNames[i] });
+        series.setData(eq.snapshots.map(function (s) { return { time: s.date, value: s.total_return || 0 }; }));
       });
       if (!hasData) {
-        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem;">No equity data yet — picks need to resolve first.</p>';
+        container.innerHTML = '<p style="color:var(--text-muted);text-align:center;padding:2rem">No equity data yet.</p>';
       } else {
         tracksEquityChart.timeScale().fitContent();
       }
     });
-
-    // Resize handler
-    new ResizeObserver(function () {
-      if (tracksEquityChart) tracksEquityChart.applyOptions({ width: container.clientWidth });
-    }).observe(container);
+    new ResizeObserver(function () { if (tracksEquityChart) tracksEquityChart.applyOptions({ width: container.clientWidth }); }).observe(container);
   }
 
   function showTrackDetail(trackName, allTracks) {
     var panel = document.getElementById('track-detail-panel');
-    var title = document.getElementById('track-detail-title');
-    var configEl = document.getElementById('track-detail-config');
-    var picksEl = document.getElementById('track-detail-picks');
-
     if (!panel) return;
     panel.style.display = 'block';
     panel.scrollIntoView({ behavior: 'smooth', block: 'nearest' });
-
     var track = allTracks.find(function (t) { return t.name === trackName; });
-    title.textContent = trackName + (track ? ' (Gen ' + track.generation + ')' : '');
-
-    // Format config with syntax highlighting
-    var configJson = track ? JSON.stringify(track.config, null, 2) : '{}';
-    configEl.textContent = configJson;
-
-    // Description
+    document.getElementById('track-detail-title').textContent = trackName + (track ? ' (Gen ' + track.generation + ')' : '');
+    document.getElementById('track-detail-config').textContent = track ? JSON.stringify(track.config, null, 2) : '{}';
+    var picksEl = document.getElementById('track-detail-picks');
     var descHtml = '';
-    if (track && track.description) {
-      descHtml = '<p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px;">' + track.description + '</p>';
-    }
-
-    // Scorecard summary
+    if (track && track.description) descHtml = '<p style="color:var(--text-secondary);font-size:0.85rem;margin-bottom:12px">' + track.description + '</p>';
     if (track) {
-      descHtml += '<div class="tracks-scorecard-row">'
-        + scorecardPill('Win Rate', fmtPctSafe(track.win_rate))
-        + scorecardPill('Sharpe', fmtNum(track.sharpe_ratio))
-        + scorecardPill('DSR', fmtNum(track.deflated_sharpe))
-        + scorecardPill('Profit Factor', fmtNum(track.profit_factor))
-        + scorecardPill('Composite', (track.composite_score || 0).toFixed(3))
-        + '</div>';
+      descHtml += '<div class="tracks-scorecard-row">' +
+        scorecardPill('Win Rate', fmtPctSafe(track.win_rate)) +
+        scorecardPill('Sharpe', fmtNum(track.sharpe_ratio)) +
+        scorecardPill('PF', fmtNum(track.profit_factor)) +
+        scorecardPill('Composite', (track.composite_score || 0).toFixed(3)) +
+        '</div>';
     }
-
-    // Load recent picks
-    picksEl.innerHTML = descHtml + '<div class="spinner" style="margin-top:12px;">Loading picks...</div>';
+    picksEl.innerHTML = descHtml + '<div class="spinner" style="margin-top:12px">Loading picks...</div>';
     fetchJSON('/api/tracks/' + encodeURIComponent(trackName) + '/picks?limit=20').then(function (data) {
-      var picksHtml = descHtml;
-      if (!data.picks || data.picks.length === 0) {
-        picksHtml += '<p style="color:var(--text-muted);margin-top:12px;">No picks yet.</p>';
-        picksEl.innerHTML = picksHtml;
-        return;
-      }
-
-      picksHtml += '<h4 style="margin-top:16px;margin-bottom:8px;">Recent Picks</h4>'
-        + '<div style="overflow-x:auto;"><table class="data-table" style="width:100%;"><thead><tr>'
-        + '<th>Date</th><th>Ticker</th><th>Strategy</th><th>Conf</th><th>Weight</th>'
-        + '<th>Return</th><th>Exit</th></tr></thead><tbody>';
-
+      var h = descHtml;
+      if (!data.picks || data.picks.length === 0) { picksEl.innerHTML = h + '<p style="color:var(--text-muted)">No picks yet.</p>'; return; }
+      h += '<h4 style="margin-top:16px;margin-bottom:8px">Recent Picks</h4>' +
+        '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Date</th><th>Ticker</th><th>Strategy</th><th>Conf</th><th>Return</th></tr></thead><tbody>';
       data.picks.forEach(function (p) {
         var retClass = p.actual_return > 0 ? 'positive' : p.actual_return < 0 ? 'negative' : '';
-        picksHtml += '<tr>'
-          + '<td>' + p.run_date + '</td>'
-          + '<td><strong>' + p.ticker + '</strong></td>'
-          + '<td>' + p.strategy + '</td>'
-          + '<td>' + (p.confidence || 0).toFixed(1) + '</td>'
-          + '<td>' + (p.weight_pct || 0).toFixed(1) + '%</td>'
-          + '<td class="' + retClass + '">' + (p.outcome_resolved ? (p.actual_return > 0 ? '+' : '') + p.actual_return.toFixed(2) + '%' : '--') + '</td>'
-          + '<td>' + (p.exit_reason || '--') + '</td>'
-          + '</tr>';
+        h += '<tr><td>' + p.run_date + '</td><td><strong>' + p.ticker + '</strong></td><td>' + p.strategy + '</td>' +
+          '<td>' + (p.confidence || 0).toFixed(1) + '</td><td class="' + retClass + '">' + (p.outcome_resolved ? (p.actual_return > 0 ? '+' : '') + p.actual_return.toFixed(2) + '%' : '--') + '</td></tr>';
       });
-
-      picksHtml += '</tbody></table></div>';
-      picksEl.innerHTML = picksHtml;
-    }).catch(function () {
-      picksEl.innerHTML = descHtml + '<p style="color:var(--text-muted);">Failed to load picks.</p>';
-    });
+      h += '</tbody></table></div>';
+      picksEl.innerHTML = h;
+    }).catch(function () { picksEl.innerHTML = descHtml + '<p style="color:var(--text-muted)">Failed to load picks.</p>'; });
   }
 
   function scorecardPill(label, value) {
-    return '<div class="tracks-pill"><span class="tracks-pill-label">' + label + '</span>'
-      + '<span class="tracks-pill-value">' + value + '</span></div>';
+    return '<div class="tracks-pill"><span class="tracks-pill-label">' + label + '</span><span class="tracks-pill-value">' + value + '</span></div>';
+  }
+
+  // Backtest detail (within tracks tab)
+  function loadBacktestDetail(filename) {
+    var detail = document.getElementById('backtest-detail');
+    detail.innerHTML = '<div class="spinner">Loading...</div>';
+    fetchJSON('/api/dashboard/backtest/' + encodeURIComponent(filename)).then(function (data) {
+      var html = '';
+      var range = data.date_range ? (data.date_range.start + ' to ' + data.date_range.end) : '';
+      html += '<div class="card" style="margin-bottom:1.25rem"><div class="card-header"><div>' +
+        '<span class="card-title">Backtest Results</span><div class="card-subtitle">' + escapeHtml(range) + '</div></div></div>' +
+        '<div class="metrics-grid" style="margin-bottom:0">' +
+        metricCard(data.trading_days || 0, 'Trading Days', null) +
+        metricCard(data.elapsed_s ? fmt(data.elapsed_s, 1) + 's' : '\u2014', 'Elapsed', null) +
+        metricCard((data.engines || []).join(', '), 'Engines', null) +
+        '</div></div>';
+
+      var synthTrack = (data.synthesis || {}).credibility_weight || (data.synthesis || {}).equal_weight;
+      if (synthTrack && synthTrack.summary) {
+        var s = synthTrack.summary;
+        html += '<div class="metrics-grid">' +
+          metricCard(s.total_trades || 0, 'Trades', null) +
+          metricCard(fmtPct((s.win_rate || 0) * 100), 'Win Rate', s.win_rate >= 0.5) +
+          metricCard(fmt(s.sharpe_ratio), 'Sharpe', s.sharpe_ratio > 0) +
+          metricCard(fmt(s.profit_factor), 'PF', s.profit_factor > 1) +
+          metricCard(fmt(s.expectancy), 'Expectancy', s.expectancy > 0) +
+          metricCard(s.max_drawdown_pct != null ? '-' + fmtPct(Math.abs(s.max_drawdown_pct)) : '\u2014', 'Max DD', false) +
+          '</div>';
+      }
+
+      var perEngine = data.per_engine || {};
+      var engineNames = Object.keys(perEngine);
+      if (engineNames.length > 0) {
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Per-Engine Summary</div>' +
+          '<div style="overflow-x:auto"><table class="data-table"><thead><tr><th>Engine</th><th>Trades</th><th>WR</th><th>Avg Ret</th><th>Sharpe</th><th>PF</th></tr></thead><tbody>';
+        engineNames.forEach(function (name) {
+          var es = perEngine[name].summary || {};
+          var pnlClass = (es.avg_return_pct || 0) > 0 ? 'positive' : ((es.avg_return_pct || 0) < 0 ? 'negative' : '');
+          html += '<tr><td><b>' + escapeHtml(engineDisplayName(name)) + '</b></td><td>' + (es.total_trades || 0) + '</td>' +
+            '<td>' + fmtPct((es.win_rate || 0) * 100) + '</td><td class="' + pnlClass + '">' + fmtPct(es.avg_return_pct) + '</td>' +
+            '<td>' + fmt(es.sharpe_ratio) + '</td><td>' + fmt(es.profit_factor) + '</td></tr>';
+        });
+        html += '</tbody></table></div></div>';
+      }
+
+      detail.innerHTML = html;
+    }).catch(function () { detail.innerHTML = '<div class="empty-state"><p>Failed to load backtest.</p></div>'; });
+  }
+
+  // =======================================================================
+  // SYSTEM TAB (merged: Pipeline + Costs + Histories)
+  // =======================================================================
+  function loadSystem() {
+    showSpinner('system-view');
+
+    Promise.all([
+      fetchJSON('/api/runs?limit=30'),
+      fetchJSON('/api/costs?days=30').catch(function () { return { total_cost_usd: 0, by_agent: {}, by_date: {} }; }),
+      fetchJSON('/api/cache-stats').catch(function () { return { hit_rate: 0, hits: 0, misses: 0, total_entries: 0 }; }),
+    ]).then(function (results) {
+      var runs = results[0] || [];
+      var costs = results[1];
+      var cache = results[2];
+      var view = document.getElementById('system-view');
+
+      var html = '<div class="subtab-bar">' +
+        '<button class="subtab-btn subtab-active" data-subtab="sys-pipeline">Pipeline</button>' +
+        '<button class="subtab-btn" data-subtab="sys-history">History</button>' +
+        '<button class="subtab-btn" data-subtab="sys-costs">Costs</button>' +
+        '</div>';
+
+      // --- Pipeline ---
+      html += '<div class="subtab-content subtab-visible" data-subtab-content="sys-pipeline">';
+      if (runs.length === 0) {
+        html += '<div class="empty-state"><p>No pipeline runs recorded yet.</p></div>';
+      } else {
+        var pRows = runs.map(function (r) {
+          return '<tr><td>' + escapeHtml(r.run_date) + '</td><td>' + regimeBadge(r.regime) + '</td>' +
+            '<td>' + (r.universe_size || '\u2014') + '</td><td>' + (r.candidates_scored || '\u2014') + '</td>' +
+            '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '\u2014') + '</td></tr>';
+        }).join('');
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Recent Runs</div>' +
+          '<table class="data-table"><thead><tr><th>Date</th><th>Regime</th><th>Universe</th><th>Scored</th><th>Duration</th></tr></thead>' +
+          '<tbody>' + pRows + '</tbody></table></div>';
+      }
+      html += '</div>';
+
+      // --- History ---
+      html += '<div class="subtab-content" data-subtab-content="sys-history">';
+      if (runs.length === 0) {
+        html += '<div class="empty-state"><p>No historical runs.</p></div>';
+      } else {
+        var hRows = runs.map(function (r) {
+          var reportUrl = '/report/' + encodeURIComponent(r.run_date);
+          return '<tr><td><a class="report-link" href="' + reportUrl + '">' + escapeHtml(r.run_date) + '</a></td>' +
+            '<td>' + regimeBadge(r.regime) + '</td><td>' + (r.candidates_scored || '\u2014') + '</td>' +
+            '<td>' + (r.pipeline_duration_s != null ? fmt(r.pipeline_duration_s, 1) + 's' : '\u2014') + '</td></tr>';
+        }).join('');
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Run History</div>' +
+          '<p class="card-subtitle" style="margin-bottom:1rem">Click any date to view its full report.</p>' +
+          '<table class="data-table"><thead><tr><th>Date</th><th>Regime</th><th>Scored</th><th>Duration</th></tr></thead>' +
+          '<tbody>' + hRows + '</tbody></table></div>';
+      }
+      html += '</div>';
+
+      // --- Costs ---
+      html += '<div class="subtab-content" data-subtab-content="sys-costs">';
+      html += '<div class="metrics-grid">' +
+        metricCard('$' + fmt(costs.total_cost_usd, 4), 'Total Cost (30d)', null) +
+        metricCard(numberFormat(costs.total_tokens_in), 'Tokens In', null) +
+        metricCard(numberFormat(costs.total_tokens_out), 'Tokens Out', null) +
+        metricCard(cache.hits === 0 && cache.misses === 0 ? 'N/A' : fmtPct(cache.hit_rate * 100), 'Cache Hit Rate', cache.hit_rate > 0.5) +
+        '</div>';
+
+      var nonZeroAgents = costs.by_agent ? Object.keys(costs.by_agent).filter(function (a) { return costs.by_agent[a] > 0; }) : [];
+      if (nonZeroAgents.length > 0) {
+        var agentRows = nonZeroAgents.map(function (a) {
+          return '<tr><td>' + escapeHtml(a) + '</td><td>$' + fmt(costs.by_agent[a], 4) + '</td></tr>';
+        }).join('');
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Cost by Agent</div>' +
+          '<table class="data-table"><thead><tr><th>Agent</th><th>Cost</th></tr></thead><tbody>' + agentRows + '</tbody></table></div>';
+      }
+
+      if (costs.by_date && Object.keys(costs.by_date).length > 0) {
+        var dateRows = Object.keys(costs.by_date).sort().reverse().map(function (d) {
+          return '<tr><td>' + escapeHtml(d) + '</td><td>$' + fmt(costs.by_date[d], 4) + '</td></tr>';
+        }).join('');
+        html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Cost by Date</div>' +
+          '<table class="data-table"><thead><tr><th>Date</th><th>Cost</th></tr></thead><tbody>' + dateRows + '</tbody></table></div>';
+      }
+      html += '</div>';
+
+      view.innerHTML = html;
+      initSubTabs('system-view');
+    }).catch(function () {
+      showEmpty('system-view', 'Failed to load system data.');
+    });
   }
 
   // -----------------------------------------------------------------------
   // Boot: load default tab
   // -----------------------------------------------------------------------
-  switchTab('signals');
+  switchTab('overview');
 
 })();
