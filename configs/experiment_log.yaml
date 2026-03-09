@@ -234,6 +234,85 @@ experiments:
       weak signals cut losses faster. No trade count impact.
       Promoted to production default on 2026-03-09.
 
+  - id: "p2b_003"
+    name: "Sniper A/B shadow — Max 3 (stability control)"
+    hypothesis: "3-slot sniper sleeve provides stable compounding with controlled DD"
+    start_date: "2026-03-09"
+    config:
+      sniper_enabled: true
+      sniper_max_positions: 3
+      sniper_min_score: 70
+      sniper_atr_pct_floor: 5.0
+      sniper_stop_atr_mult: 1.5
+      sniper_target_atr_mult: 3.0
+      sniper_holding_period: 7
+      sniper_time_stop_days: 1
+      sniper_hard_veto_only: true
+    backtest_1y:
+      trades_taken: 84
+      win_rate: 0.857
+      avg_sized_return: 0.79
+      sleeve_total_return: 92.25
+      sleeve_max_dd: 3.77
+      sharpe: 10.50
+      profit_factor: 5.19
+      guardian_halts: 0
+    backtest_3y:
+      trades_taken: 137
+      win_rate: 0.810
+      avg_sized_return: 0.52
+      sleeve_total_return: 101.02
+      sleeve_max_dd: 7.47
+      sharpe: 5.43
+      profit_factor: 2.54
+      guardian_halts: 2
+    verdict: "shadow_active"
+    notes: >
+      Stability baseline. All 10 hybrid gates pass on 1Y and 3Y.
+      Lower velocity but tighter DD (3.77% 1Y, 7.47% 3Y).
+      14-day forward shadow started 2026-03-09.
+
+  - id: "p2b_004"
+    name: "Sniper A/B shadow — Max 2 (velocity challenger)"
+    hypothesis: "2-slot concentration increases per-trade impact, hitting 7-10% goal more often"
+    start_date: "2026-03-09"
+    config:
+      sniper_enabled: true
+      sniper_max_positions: 2
+      sniper_min_score: 70
+      sniper_atr_pct_floor: 5.0
+      sniper_stop_atr_mult: 1.5
+      sniper_target_atr_mult: 3.0
+      sniper_holding_period: 7
+      sniper_time_stop_days: 1
+      sniper_hard_veto_only: true
+    backtest_1y:
+      trades_taken: 67
+      win_rate: 0.836
+      avg_sized_return: 1.22
+      sleeve_total_return: 122.41
+      sleeve_max_dd: 6.46
+      sharpe: 10.09
+      profit_factor: 4.61
+      guardian_halts: 1
+    backtest_3y:
+      trades_taken: 58
+      win_rate: 0.845
+      avg_sized_return: 1.34
+      sleeve_total_return: 111.69
+      sleeve_max_dd: 9.00
+      sharpe: 7.91
+      profit_factor: 3.86
+      guardian_halts: 1
+    verdict: "shadow_active"
+    notes: >
+      Velocity variant. All 10 hybrid gates pass on 1Y and 3Y.
+      +30pp total return (1Y), +46% Sharpe (3Y) vs Max 3.
+      DD penalty modest: +2.7pp (1Y), +1.5pp (3Y).
+      Higher elitism: 91% of signals skipped on 3Y, but taken trades
+      have higher WR (84.5% vs 81.0%) due to forced score selection.
+      14-day forward shadow started 2026-03-09.
+
   - id: "p2b_002"
     name: "Adaptive day-1 MFE exit (without trailing stop)"
     hypothesis: "Exit at close when MFE exceeds threshold instead of trailing"

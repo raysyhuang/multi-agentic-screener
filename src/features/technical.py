@@ -56,6 +56,16 @@ def compute_all_technical_features(df: pd.DataFrame) -> pd.DataFrame:
     if bb is not None and not bb.empty:
         df = pd.concat([df, bb], axis=1)
 
+    # BB width percentile (60-bar) for squeeze detection (sniper track)
+    if "BBB_20_2.0" in df.columns:
+        df["bb_width_pctile_60"] = df["BBB_20_2.0"].rolling(60).rank(pct=True)
+
+    # Volume slope (5-bar regression) for compression detection (sniper track)
+    if len(df) >= 5:
+        df["vol_slope_5"] = df["volume"].rolling(5).apply(
+            lambda x: np.polyfit(np.arange(len(x)), x, 1)[0], raw=False
+        )
+
     # --- Volume ---
     df["vol_sma_20"] = ta.sma(df["volume"], length=20)
     df["rvol"] = df["volume"] / df["vol_sma_20"].replace(0, pd.NA)  # relative volume

@@ -18,23 +18,25 @@ from src.features.regime import Regime, get_regime_allowed_models
 from src.signals.breakout import BreakoutSignal
 from src.signals.mean_reversion import MeanReversionSignal
 from src.signals.catalyst import CatalystSignal
+from src.signals.sniper import SniperSignal
 
 logger = logging.getLogger(__name__)
 
 # Type alias for any signal
-AnySignal = BreakoutSignal | MeanReversionSignal | CatalystSignal
+AnySignal = BreakoutSignal | MeanReversionSignal | CatalystSignal | SniperSignal
 
 MODEL_MAP = {
     BreakoutSignal: "breakout",
     MeanReversionSignal: "mean_reversion",
     CatalystSignal: "catalyst",
+    SniperSignal: "sniper",
 }
 
 # Regime multipliers: boost signals that work well in current regime
 REGIME_MULTIPLIERS = {
-    Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0},
-    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7},
-    Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1},
+    Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0, "sniper": 1.3},
+    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7, "sniper": 0.4},
+    Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1, "sniper": 0.6},
 }
 
 # Regime target multipliers: scale stop/target distances in adverse regimes

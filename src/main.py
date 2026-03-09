@@ -1118,6 +1118,20 @@ async def _run_pipeline_core(
             if mean_rev:
                 all_signals.append(mean_rev)
 
+        # Sniper track (BB squeeze + vol compression + relative strength)
+        if settings.sniper_enabled:
+            from src.signals.sniper import score_sniper
+            sniper_sig = score_sniper(
+                ticker, df, feat,
+                regime=regime_assessment.regime.value,
+                atr_pct_floor=settings.sniper_atr_pct_floor,
+                stop_atr_mult=settings.sniper_stop_atr_mult,
+                target_atr_mult=settings.sniper_target_atr_mult,
+                holding_period=settings.sniper_holding_period,
+            )
+            if sniper_sig:
+                all_signals.append(sniper_sig)
+
         # Catalyst model — disabled: depends on sparse earnings calendar data
         # (days_to_earnings is None for most tickers → timing_score=0 → filtered).
         # Cannot be backtested without historical earnings dates.
