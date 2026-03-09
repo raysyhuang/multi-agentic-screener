@@ -266,11 +266,14 @@ experiments:
       sharpe: 5.43
       profit_factor: 2.54
       guardian_halts: 2
-    verdict: "shadow_active"
+    verdict: "cancelled"
     notes: >
-      Stability baseline. All 10 hybrid gates pass on 1Y and 3Y.
-      Lower velocity but tighter DD (3.77% 1Y, 7.47% 3Y).
-      14-day forward shadow started 2026-03-09.
+      Shadow track approach abandoned — engine-shadow system only re-runs
+      engine synthesis (Steps 12-13), not Step 5 signal generation.
+      sniper_max_positions override had no effect in shadow runner.
+      Sniper now runs directly in Step 5 with sniper_enabled=True.
+      Performance tracked via DB outcomes (signal_model='sniper').
+      Max3 vs Max2 sizing evaluated offline via sleeve simulator.
 
   - id: "p2b_004"
     name: "Sniper A/B shadow — Max 2 (velocity challenger)"
@@ -304,14 +307,12 @@ experiments:
       sharpe: 7.91
       profit_factor: 3.86
       guardian_halts: 1
-    verdict: "shadow_active"
+    verdict: "cancelled"
     notes: >
-      Velocity variant. All 10 hybrid gates pass on 1Y and 3Y.
-      +30pp total return (1Y), +46% Sharpe (3Y) vs Max 3.
-      DD penalty modest: +2.7pp (1Y), +1.5pp (3Y).
-      Higher elitism: 91% of signals skipped on 3Y, but taken trades
-      have higher WR (84.5% vs 81.0%) due to forced score selection.
-      14-day forward shadow started 2026-03-09.
+      Shadow track approach abandoned — same reason as p2b_003.
+      Backtest data preserved for offline sleeve simulation.
+      Max2 remains the velocity candidate for future evaluation
+      once enough live sniper trades accumulate in the DB.
 
   - id: "p2b_002"
     name: "Adaptive day-1 MFE exit (without trailing stop)"
