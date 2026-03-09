@@ -33,6 +33,7 @@ from src.features.technical import (
 )
 from src.signals.breakout import BreakoutSignal, score_breakout
 from src.signals.mean_reversion import MeanReversionSignal, score_mean_reversion
+from src.signals.sniper import SniperSignal, score_sniper
 
 logger = logging.getLogger(__name__)
 
@@ -125,8 +126,10 @@ def fetch_ohlcv(tickers: list[str], years: float = 2, no_cache: bool = False) ->
 
 
 def get_sp500_tickers() -> list[str]:
-    """Fetch current S&P 500 constituents from Wikipedia."""
+    """Fetch current S&P 500 constituents from Wikipedia, with hardcoded fallback."""
     import urllib.request
+
+    from src.research.sp500_tickers import SP500_TICKERS
 
     url = "https://en.wikipedia.org/wiki/List_of_S%26P_500_companies"
     try:
@@ -136,8 +139,8 @@ def get_sp500_tickers() -> list[str]:
         table = pd.read_html(html)[0]
         return sorted(table["Symbol"].str.replace(".", "-", regex=False).tolist())
     except Exception as e:
-        print(f"Failed to fetch S&P 500 list: {e}")
-        return []
+        print(f"Wikipedia fetch failed: {e} — using hardcoded S&P 500 list ({len(SP500_TICKERS)} tickers)")
+        return SP500_TICKERS
 
 
 # ── Trade simulation (from walk_forward.py, simplified) ──────────────────────
@@ -493,6 +496,57 @@ def scan_mean_reversion(
     return signals
 
 
+def scan_sniper(
+    ticker: str,
+    df: pd.DataFrame,
+    spy_df: pd.DataFrame | None = None,
+    min_score: float = 60.0,
+    atr_pct_floor: float = 3.5,
+    stop_atr_mult: float = 2.0,
+    target_atr_mult: float = 3.0,
+    holding_period: int = 7,
+) -> list[tuple[date, SniperSignal]]:
+    """Scan every trading day for sniper (BB squeeze + vol compression) signals."""
+    if len(df) < MIN_HISTORY_BARS:
+        return []
+
+    enriched = compute_all_technical_features(df)
+    signals = []
+
+    for i in range(MIN_HISTORY_BARS, len(enriched)):
+        window = enriched.iloc[:i + 1].copy()
+        feat = latest_features(window)
+        feat["close"] = float(window["close"].iloc[-1])
+
+        # Build spy window aligned to same dates if available
+        spy_window = None
+        if spy_df is not None and not spy_df.empty:
+            signal_date = window["date"].iloc[-1]
+            spy_window = spy_df[spy_df["date"] <= signal_date]
+
+        # Classify regime at each bar for accurate bear-blocking
+        window_regime = classify_regime(window)
+
+        sig = score_sniper(
+            ticker, window, feat,
+            regime=window_regime,
+            spy_df=spy_window,
+            atr_pct_floor=atr_pct_floor,
+            stop_atr_mult=stop_atr_mult,
+            target_atr_mult=target_atr_mult,
+            holding_period=holding_period,
+        )
+        if sig is None:
+            continue
+        if sig.score < min_score:
+            continue
+
+        signal_date = window["date"].iloc[-1]
+        signals.append((signal_date, sig))
+
+    return signals
+
+
 # ── Backtest runner ──────────────────────────────────────────────────────────
 
 @dataclass
@@ -541,6 +595,18 @@ def run_model_backtest(
                 stop_atr_mult=params.get("stop_atr_mult", 1.0),
                 target_atr_mult=params.get("target_atr_mult", 1.0),
                 holding_period=params.get("holding_period", 3),
+            )
+        elif model == "sniper":
+            # Fetch SPY data for relative strength — use price_data if available
+            spy_df = price_data.get("SPY")
+            raw_signals = scan_sniper(
+                ticker, df,
+                spy_df=spy_df,
+                min_score=params.get("min_score", 60.0),
+                atr_pct_floor=params.get("atr_pct_floor", 3.5),
+                stop_atr_mult=params.get("stop_atr_mult", 2.0),
+                target_atr_mult=params.get("target_atr_mult", 3.0),
+                holding_period=params.get("holding_period", 7),
             )
         else:
             raise ValueError(f"Unknown model: {model}")

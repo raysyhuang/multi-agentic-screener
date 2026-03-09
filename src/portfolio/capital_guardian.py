@@ -70,14 +70,24 @@ class GuardianVerdict:
     heat_factor: float = 1.0
 
 
-async def compute_portfolio_risk_state(lookback_days: int = 90) -> PortfolioRiskState:
-    """Query recent outcomes and compute current portfolio risk state."""
+async def compute_portfolio_risk_state(
+    lookback_days: int = 90,
+    signal_model_filter: str | None = None,
+) -> PortfolioRiskState:
+    """Query recent outcomes and compute current portfolio risk state.
+
+    Args:
+        lookback_days: How many days of history to consider.
+        signal_model_filter: If set, only include outcomes for this signal model
+            (e.g. "sniper" or "mean_reversion"). Enables independent risk states
+            per track.
+    """
     state = PortfolioRiskState()
     cutoff = date.today() - timedelta(days=lookback_days)
 
     async with get_session() as session:
         # Closed trades (ordered by exit date for equity curve)
-        closed_result = await session.execute(
+        closed_query = (
             select(Outcome).where(
                 and_(
                     Outcome.still_open == False,  # noqa: E712
@@ -85,14 +95,22 @@ async def compute_portfolio_risk_state(lookback_days: int = 90) -> PortfolioRisk
                 )
             ).order_by(Outcome.exit_date.asc())
         )
+        if signal_model_filter:
+            closed_query = closed_query.join(Signal, Outcome.signal_id == Signal.id).where(
+                Signal.signal_model == signal_model_filter
+            )
+        closed_result = await session.execute(closed_query)
         closed = closed_result.scalars().all()
 
         # Open positions
-        open_result = await session.execute(
+        open_query = (
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
             .where(Outcome.still_open == True)  # noqa: E712
         )
+        if signal_model_filter:
+            open_query = open_query.where(Signal.signal_model == signal_model_filter)
+        open_result = await session.execute(open_query)
         open_positions = open_result.all()
 
     state.total_closed_trades = len(closed)

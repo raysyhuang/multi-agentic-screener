@@ -60,6 +60,16 @@ FLAT_OVERRIDE_KEYS = {
     "shock_killswitch_atr_mult",
     "blocked_entry_weekdays",
     "early_exit_mfe_pct",
+    # Sniper Track keys
+    "sniper_enabled",
+    "sniper_min_score",
+    "sniper_atr_pct_floor",
+    "sniper_stop_atr_mult",
+    "sniper_target_atr_mult",
+    "sniper_holding_period",
+    "sniper_max_positions",
+    "sniper_time_stop_days",
+    "sniper_hard_veto_only",
 }
 
 # Special-cased nested keys

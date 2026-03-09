@@ -410,6 +410,17 @@ async def _evaluate_position(
             "still_open": False,
             "pnl_pct": round(weighted_pnl, 4),
         })
+    # Sniper time stop: force exit if held N+ days with non-positive P&L
+    elif (getattr(signal, "signal_model", None) == "sniper"
+          and days_held >= settings.sniper_time_stop_days
+          and pnl_pct <= 0):
+        update.update({
+            "exit_price": current_price,
+            "exit_date": to_date,
+            "exit_reason": "time_stop",
+            "still_open": False,
+            "pnl_pct": round(pnl_pct, 4),
+        })
     elif days_held >= signal.holding_period_days:
         leg2_pnl = pnl_pct
         if outcome.partial_exit_price is not None and settings.partial_tp_enabled:

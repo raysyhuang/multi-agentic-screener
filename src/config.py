@@ -233,6 +233,17 @@ class Settings(BaseSettings):
     # --- Production Profile ---
     production_profile: str = "balanced"  # "balanced" (default) or future challenger profiles
 
+    # --- Sniper Track ---
+    sniper_enabled: bool = False
+    sniper_min_score: int = 70
+    sniper_atr_pct_floor: float = 5.0
+    sniper_stop_atr_mult: float = 1.5
+    sniper_target_atr_mult: float = 3.0
+    sniper_holding_period: int = 7
+    sniper_max_positions: int = 3
+    sniper_time_stop_days: int = 1
+    sniper_hard_veto_only: bool = True
+
     # --- Shadow Tracks (parallel parameter experiments) ---
     shadow_tracks_enabled: bool = False
 

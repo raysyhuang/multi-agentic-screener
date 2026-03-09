@@ -155,6 +155,49 @@ def _apply_veto_board(
     return weighted_picks
 
 
+def _apply_hard_veto_only(weighted_picks: list[dict]) -> list[dict]:
+    """Hard veto mode for sniper track: only block on critical issues.
+
+    Blocks: earnings blackout, volume < 200K, gap DOWN > 2×ATR.
+    Gap UP is NOT vetoed — for sniper, a gap-up on volume is an ignition
+    signal (gap-and-go), not a veto condition. Only gap-down (distribution)
+    is blocked.
+    Skips soft 'screened_but_rejected' penalties entirely.
+    """
+    filtered = []
+    for wp in weighted_picks:
+        metadata = wp.get("metadata", {}) or {}
+
+        # Hard veto: volume too low
+        avg_vol = metadata.get("vol_sma_20") or metadata.get("avg_volume")
+        if avg_vol is not None and float(avg_vol) < 200_000:
+            logger.info("Hard veto: %s blocked (avg_vol=%.0f < 200K)", wp["ticker"], float(avg_vol))
+            continue
+
+        # Hard veto: earnings blackout
+        dte = metadata.get("days_to_earnings")
+        if dte is not None and float(dte) <= 2:
+            logger.info("Hard veto: %s blocked (earnings in %s days)", wp["ticker"], dte)
+            continue
+
+        # Hard veto: gap DOWN > 2×ATR (distribution signal)
+        # Gap UP is allowed — ignition gap is bullish for sniper breakouts
+        gap_pct = metadata.get("gap_pct")
+        atr_pct = metadata.get("atr_pct")
+        if gap_pct is not None and atr_pct is not None:
+            gap_val = float(gap_pct)
+            if gap_val < 0 and abs(gap_val) > 2 * float(atr_pct):
+                logger.info("Hard veto: %s blocked (gap_down=%.1f%% > 2×ATR=%.1f%%)",
+                            wp["ticker"], gap_val, float(atr_pct))
+                continue
+
+        filtered.append(wp)
+
+    if len(filtered) < len(weighted_picks):
+        logger.info("Hard veto filter: %d → %d picks", len(weighted_picks), len(filtered))
+    return filtered
+
+
 def synthesize_deterministic(
     weighted_picks: list[dict],
     regime: str,
@@ -170,8 +213,13 @@ def synthesize_deterministic(
     3. Fill portfolio: convergent first, then unique, up to _MAX_PORTFOLIO
     4. Assign equal weights (Capital Guardian adjusts later)
     """
-    # Veto board step
-    weighted_picks = _apply_veto_board(weighted_picks, engine_results)
+    # Veto board step — sniper hard_veto_only skips soft penalties
+    from src.config import get_settings
+    settings = get_settings()
+    if settings.sniper_hard_veto_only:
+        weighted_picks = _apply_hard_veto_only(weighted_picks)
+    else:
+        weighted_picks = _apply_veto_board(weighted_picks, engine_results)
 
     convergent = []
     unique = []
