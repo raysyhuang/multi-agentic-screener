@@ -134,6 +134,63 @@ def test_format_daily_alert_escapes_html():
     assert ">" not in stripped
 
 
+_SAMPLE_SCORECARD = {
+    "mean_reversion": {"trades": 17, "win_rate": 0.53, "avg_pnl": 0.28, "profit_factor": 1.2, "open_positions": 5},
+    "sniper": {"trades": 0, "status": "waiting for bull/choppy regime", "open_positions": 0},
+}
+
+
+def test_scorecard_shown_on_validation_failure():
+    """Model scorecard must appear even when validation gate blocks all picks."""
+    msg = format_daily_alert(
+        picks=[],
+        regime="bear",
+        run_date="2025-03-15",
+        validation_failed=True,
+        failed_checks=["slippage_sensitivity_check"],
+        model_scorecard=_SAMPLE_SCORECARD,
+    )
+    assert "Validation FAILED" in msg
+    assert "Model Scorecard (30d)" in msg
+    assert "mean_reversion" in msg
+    assert "17 trades" in msg
+    assert "sniper" in msg
+
+
+def test_scorecard_shown_on_no_picks():
+    """Model scorecard must appear when there are zero picks."""
+    msg = format_daily_alert(
+        picks=[],
+        regime="choppy",
+        run_date="2025-03-15",
+        model_scorecard=_SAMPLE_SCORECARD,
+    )
+    assert "No high-conviction picks" in msg
+    assert "Model Scorecard (30d)" in msg
+    assert "mean_reversion" in msg
+
+
+def test_scorecard_shown_on_normal_picks():
+    """Model scorecard must appear on normal alerts with picks."""
+    picks = [
+        {
+            "ticker": "AAPL", "direction": "LONG", "entry_price": 195.0,
+            "stop_loss": 190.0, "target_1": 210.0, "confidence": 70,
+            "signal_model": "mean_reversion", "thesis": "Test", "holding_period": 3,
+        },
+    ]
+    msg = format_daily_alert(
+        picks=picks,
+        regime="bull",
+        run_date="2025-03-15",
+        model_scorecard=_SAMPLE_SCORECARD,
+    )
+    assert "AAPL" in msg
+    assert "Model Scorecard (30d)" in msg
+    assert "17 trades" in msg
+    assert "sniper" in msg
+
+
 def test_format_outcome_alert_escapes_html():
     """Outcome alerts must escape ticker and exit reason."""
     outcomes = [
