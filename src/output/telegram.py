@@ -164,6 +164,41 @@ async def _log_to_db(
         logger.debug("Failed to log telegram message to DB: %s", e)
 
 
+def _render_scorecard(model_scorecard: dict[str, dict]) -> list[str]:
+    """Render model scorecard lines (reused in multiple alert paths)."""
+    lines: list[str] = []
+    lines.append(_section_line())
+    lines.append("\U0001f4ca <b>Model Scorecard (30d)</b>")
+    for model_name, stats in model_scorecard.items():
+        trades = stats.get("trades", 0)
+        status = stats.get("status")
+        if trades == 0:
+            label = status or "no closed trades"
+            open_pos = stats.get("open_positions", 0)
+            if open_pos > 0:
+                label = f"{open_pos} open, no closed trades"
+            lines.append(f"   <b>{_esc(model_name)}</b>: {_esc(label)}")
+            continue
+        wr = stats.get("win_rate", 0)
+        avg_pnl = stats.get("avg_pnl", 0)
+        pf = stats.get("profit_factor")
+        open_pos = stats.get("open_positions", 0)
+
+        parts = [
+            f"{trades} trades",
+            f"{wr:.0%} WR",
+            f"{avg_pnl:+.2f}% avg",
+        ]
+        if pf is not None:
+            parts.append(f"PF {pf:.1f}")
+        if open_pos > 0:
+            parts.append(f"{open_pos} open")
+
+        lines.append(f"   <b>{_esc(model_name)}</b>: {' | '.join(parts)}")
+    lines.append("")
+    return lines
+
+
 # ---------------------------------------------------------------------------
 # Daily Screener Alert
 # ---------------------------------------------------------------------------
@@ -197,20 +232,31 @@ def format_daily_alert(
             for risk in key_risks:
                 lines.append(f"   \u26a0\ufe0f {risk}")
         lines.extend(["", "<i>All picks blocked by validation gate.</i>"])
+
+        if model_scorecard:
+            lines.append("")
+            lines.extend(_render_scorecard(model_scorecard))
+
         return "\n".join(lines)
 
     if not picks:
         mode_line = ""
         if execution_mode and execution_mode != "agentic_full":
             mode_line = f"   Mode: {execution_mode.upper()}\n"
-        return (
-            f"<b>[MAS] \U0001f4ca Daily Screener \u2014 {run_date}</b>\n"
-            f"\n"
-            f"{regime_dot} Regime: <b>{regime.upper()}</b>\n"
-            f"{mode_line}"
-            f"\n"
-            f"No high-conviction picks today."
-        )
+        lines = [
+            f"<b>[MAS] \U0001f4ca Daily Screener \u2014 {run_date}</b>",
+            "",
+            f"{regime_dot} Regime: <b>{regime.upper()}</b>",
+        ]
+        if mode_line:
+            lines.append(mode_line.rstrip())
+        lines.extend(["", "No high-conviction picks today."])
+
+        if model_scorecard:
+            lines.append("")
+            lines.extend(_render_scorecard(model_scorecard))
+
+        return "\n".join(lines)
 
     mode_tag = ""
     if execution_mode and execution_mode != "agentic_full":
@@ -261,35 +307,7 @@ def format_daily_alert(
 
     # Model scorecard (appended if provided)
     if model_scorecard:
-        lines.append(_section_line())
-        lines.append("\U0001f4ca <b>Model Scorecard (30d)</b>")
-        for model_name, stats in model_scorecard.items():
-            trades = stats.get("trades", 0)
-            status = stats.get("status")
-            if trades == 0:
-                label = status or "no closed trades"
-                open_pos = stats.get("open_positions", 0)
-                if open_pos > 0:
-                    label = f"{open_pos} open, no closed trades"
-                lines.append(f"   <b>{_esc(model_name)}</b>: {_esc(label)}")
-                continue
-            wr = stats.get("win_rate", 0)
-            avg_pnl = stats.get("avg_pnl", 0)
-            pf = stats.get("profit_factor")
-            open_pos = stats.get("open_positions", 0)
-
-            parts = [
-                f"{trades} trades",
-                f"{wr:.0%} WR",
-                f"{avg_pnl:+.2f}% avg",
-            ]
-            if pf is not None:
-                parts.append(f"PF {pf:.1f}")
-            if open_pos > 0:
-                parts.append(f"{open_pos} open")
-
-            lines.append(f"   <b>{_esc(model_name)}</b>: {' | '.join(parts)}")
-        lines.append("")
+        lines.extend(_render_scorecard(model_scorecard))
 
     return "\n".join(lines)
 
