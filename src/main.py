@@ -1730,6 +1730,15 @@ async def _run_pipeline_core(
 
     validation_failed = validation_result.validation_status == "fail"
     failed_checks = [k for k, v in validation_result.checks.items() if v == "fail"] if validation_failed else None
+
+    # Build model scorecard (30-day DB query, best-effort)
+    model_scorecard = {}
+    try:
+        from src.output.telegram import get_model_scorecard
+        model_scorecard = await get_model_scorecard(days=30)
+    except Exception as e:
+        logger.warning("Model scorecard failed (non-fatal): %s", e)
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -1738,6 +1747,7 @@ async def _run_pipeline_core(
         failed_checks=failed_checks,
         key_risks=validation_result.key_risks or None,
         execution_mode=execution_mode.value,
+        model_scorecard=model_scorecard or None,
     )
     try:
         await send_alert(alert_msg)
