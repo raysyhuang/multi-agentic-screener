@@ -234,7 +234,7 @@ class Settings(BaseSettings):
     production_profile: str = "balanced"  # "balanced" (default) or future challenger profiles
 
     # --- Sniper Track ---
-    sniper_enabled: bool = False
+    sniper_enabled: bool = True
     sniper_min_score: int = 70
     sniper_atr_pct_floor: float = 5.0
     sniper_stop_atr_mult: float = 1.5

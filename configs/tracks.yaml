@@ -174,19 +174,7 @@ tracks:
     overrides:
       score_tiered_stops_enabled: true
 
-  # ── Sniper Track — A/B Shadow (14-day experiment) ─────────────
-  - name: sniper_v1_max3
-    description: "Sniper stability control: 3 slots × 16.7% each. V3 params frozen."
-    overrides:
-      sniper_enabled: true
-      sniper_max_positions: 3
-      sniper_time_stop_days: 1
-      sniper_hard_veto_only: true
-
-  - name: sniper_v1_max2
-    description: "Sniper velocity challenger: 2 slots × 25% each. V3 params frozen."
-    overrides:
-      sniper_enabled: true
-      sniper_max_positions: 2
-      sniper_time_stop_days: 1
-      sniper_hard_veto_only: true
+  # ── Sniper Track ──────────────────────────────────────────────
+  # Sniper signals run directly in Step 5 (not via shadow tracks).
+  # Performance tracked via DB: signal_model='sniper' in signals/outcomes.
+  # Max3 vs Max2 sizing evaluated offline via scripts/simulate_sniper_sleeve.py.
