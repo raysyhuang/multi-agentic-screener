@@ -596,12 +596,16 @@ async def get_performance_summary(
 
         def _summary(pnls: list[float]) -> dict:
             if not pnls:
-                return {"trades": 0, "win_rate": 0, "avg_pnl": 0}
+                return {"trades": 0, "win_rate": 0, "avg_pnl": 0, "profit_factor": None}
             wins = sum(1 for p in pnls if p > 0)
+            gross_profit = sum(p for p in pnls if p > 0)
+            gross_loss = abs(sum(p for p in pnls if p < 0))
+            pf = round(gross_profit / gross_loss, 2) if gross_loss > 0 else None
             return {
                 "trades": len(pnls),
                 "win_rate": round(wins / len(pnls), 4),
                 "avg_pnl": round(sum(pnls) / len(pnls), 4),
+                "profit_factor": pf,
             }
 
         # Compute full metrics for overall

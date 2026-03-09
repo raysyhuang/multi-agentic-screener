@@ -8,8 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import logging
+from datetime import date, timedelta
 from html import escape as _html_escape
 
+import sqlalchemy
 from telegram import Bot
 from telegram.constants import ParseMode
 
@@ -174,6 +176,7 @@ def format_daily_alert(
     failed_checks: list[str] | None = None,
     key_risks: list[str] | None = None,
     execution_mode: str | None = None,
+    model_scorecard: dict[str, dict] | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message."""
     regime_dot = _regime_emoji(regime)
@@ -256,7 +259,127 @@ def format_daily_alert(
             lines.append(f"   \u2022 {risk}")
         lines.append("")
 
+    # Model scorecard (appended if provided)
+    if model_scorecard:
+        lines.append(_section_line())
+        lines.append("\U0001f4ca <b>Model Scorecard (30d)</b>")
+        for model_name, stats in model_scorecard.items():
+            trades = stats.get("trades", 0)
+            status = stats.get("status")
+            if trades == 0:
+                label = status or "no closed trades"
+                open_pos = stats.get("open_positions", 0)
+                if open_pos > 0:
+                    label = f"{open_pos} open, no closed trades"
+                lines.append(f"   <b>{_esc(model_name)}</b>: {_esc(label)}")
+                continue
+            wr = stats.get("win_rate", 0)
+            avg_pnl = stats.get("avg_pnl", 0)
+            pf = stats.get("profit_factor")
+            open_pos = stats.get("open_positions", 0)
+
+            parts = [
+                f"{trades} trades",
+                f"{wr:.0%} WR",
+                f"{avg_pnl:+.2f}% avg",
+            ]
+            if pf is not None:
+                parts.append(f"PF {pf:.1f}")
+            if open_pos > 0:
+                parts.append(f"{open_pos} open")
+
+            lines.append(f"   <b>{_esc(model_name)}</b>: {' | '.join(parts)}")
+        lines.append("")
+
     return "\n".join(lines)
+
+
+# ---------------------------------------------------------------------------
+# Model Scorecard (30-day DB query)
+# ---------------------------------------------------------------------------
+
+async def get_model_scorecard(days: int = 30) -> dict[str, dict]:
+    """Query DB for closed outcomes by signal_model over the last N days.
+
+    Returns dict like: {"mean_reversion": {"trades": 12, "win_rate": 0.71, ...}, ...}
+    """
+    try:
+        from src.db.session import get_session
+        from src.db.models import Outcome, Signal
+        from sqlalchemy import select, and_, func
+
+        cutoff = date.today() - timedelta(days=days)
+
+        async with get_session() as session:
+            # Closed outcomes with their signal model
+            result = await session.execute(
+                select(
+                    Signal.signal_model,
+                    func.count().label("trades"),
+                    func.avg(Outcome.pnl_pct).label("avg_pnl"),
+                    func.sum(
+                        func.cast(Outcome.pnl_pct > 0, sqlalchemy.Integer)
+                    ).label("wins"),
+                )
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    and_(
+                        Outcome.still_open == False,  # noqa: E712
+                        Signal.run_date >= cutoff,
+                    )
+                )
+                .group_by(Signal.signal_model)
+            )
+            rows = result.all()
+
+            # Open positions count by model
+            open_result = await session.execute(
+                select(Signal.signal_model, func.count().label("open_count"))
+                .join(Outcome, Outcome.signal_id == Signal.id)
+                .where(Outcome.still_open == True)  # noqa: E712
+                .group_by(Signal.signal_model)
+            )
+            open_rows = {r.signal_model: r.open_count for r in open_result.all()}
+
+        scorecard: dict[str, dict] = {}
+        for row in rows:
+            model = row.signal_model or "unknown"
+            trades = row.trades
+            wins = row.wins or 0
+            avg_pnl = float(row.avg_pnl or 0)
+            wr = wins / trades if trades > 0 else 0
+
+            scorecard[model] = {
+                "trades": trades,
+                "win_rate": round(wr, 4),
+                "avg_pnl": round(avg_pnl, 4),
+                "open_positions": open_rows.get(model, 0),
+            }
+
+        # Add models with only open positions (no closed trades yet)
+        for model, count in open_rows.items():
+            if model not in scorecard:
+                scorecard[model] = {
+                    "trades": 0,
+                    "win_rate": 0,
+                    "avg_pnl": 0,
+                    "open_positions": count,
+                }
+
+        # Ensure sniper always appears (even if no trades yet)
+        if "sniper" not in scorecard:
+            scorecard["sniper"] = {
+                "trades": 0,
+                "win_rate": 0,
+                "avg_pnl": 0,
+                "open_positions": 0,
+                "status": "waiting for bull/choppy regime",
+            }
+
+        return scorecard
+    except Exception as e:
+        logger.warning("Failed to build model scorecard: %s", e)
+        return {}
 
 
 # ---------------------------------------------------------------------------

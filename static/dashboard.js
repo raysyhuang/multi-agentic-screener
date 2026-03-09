@@ -195,10 +195,12 @@
       fetchJSON('/api/dashboard/overview').catch(function () { return {}; }),
       fetchJSON('/api/dashboard/signals').catch(function () { return { signals: [] }; }),
       fetchJSON('/api/dashboard/engine-reliability').catch(function () { return { engines: [] }; }),
+      fetchJSON('/api/dashboard/performance').catch(function () { return {}; }),
     ]).then(function (results) {
       var ov = results[0];
       var sigData = results[1];
       var relData = results[2];
+      var perfData = results[3];
       var view = document.getElementById('overview-view');
       var html = '';
 
@@ -305,6 +307,34 @@
       html += '<div><div style="font-size:0.7rem;color:var(--text-muted);text-transform:uppercase">PF</div><div style="font-weight:700">' + (ov.profit_factor != null ? fmt(ov.profit_factor) : '--') + '</div></div>';
       html += '</div>';
       html += '</div>';
+
+      // Model Scorecard card
+      if (perfData && perfData.by_model && Object.keys(perfData.by_model).length > 0) {
+        html += '<div class="overview-quick-card" onclick="switchTab(\'performance\')">';
+        html += '<div class="overview-quick-card-header"><span class="overview-quick-card-title">Model Scorecard</span><span class="overview-quick-card-arrow">&rarr;</span></div>';
+        html += '<div style="margin-top:0.25rem;display:flex;flex-direction:column;gap:0.5rem">';
+        var models = Object.keys(perfData.by_model);
+        models.forEach(function (model) {
+          var m = perfData.by_model[model];
+          var wrClass = m.win_rate >= 0.5 ? 'positive' : 'negative';
+          var pnlClass = m.avg_pnl > 0 ? 'positive' : (m.avg_pnl < 0 ? 'negative' : '');
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;border-bottom:1px solid var(--border)">';
+          html += '<span style="font-weight:700;font-size:0.85rem">' + escapeHtml(model) + '</span>';
+          html += '<span style="font-size:0.8rem">' + m.trades + ' trades</span>';
+          html += '<span class="' + wrClass + '" style="font-size:0.8rem;font-weight:600">' + fmtPct(m.win_rate * 100) + ' WR</span>';
+          html += '<span class="' + pnlClass + '" style="font-size:0.8rem;font-weight:600">' + fmtPct(m.avg_pnl) + '</span>';
+          html += '</div>';
+        });
+        // Show sniper status if not in by_model
+        if (!perfData.by_model['sniper']) {
+          html += '<div style="display:flex;justify-content:space-between;align-items:center;padding:0.4rem 0;color:var(--text-muted);font-size:0.8rem">';
+          html += '<span style="font-weight:700">sniper</span>';
+          html += '<span>waiting for bull/choppy regime</span>';
+          html += '</div>';
+        }
+        html += '</div>';
+        html += '</div>';
+      }
 
       html += '</div>'; // close quick-grid
 
@@ -968,10 +998,12 @@
     var rows = Object.keys(data).map(function (key) {
       var d = data[key];
       var pnlClass = d.avg_pnl > 0 ? 'positive' : (d.avg_pnl < 0 ? 'negative' : '');
-      return '<tr><td>' + escapeHtml(key) + '</td><td>' + d.trades + '</td><td>' + fmtPct(d.win_rate * 100) + '</td><td class="' + pnlClass + '">' + fmtPct(d.avg_pnl) + '</td></tr>';
+      var pfVal = d.profit_factor != null ? fmt(d.profit_factor) : '\u2014';
+      var pfClass = d.profit_factor != null && d.profit_factor > 1 ? 'positive' : '';
+      return '<tr><td>' + escapeHtml(key) + '</td><td>' + d.trades + '</td><td>' + fmtPct(d.win_rate * 100) + '</td><td class="' + pnlClass + '">' + fmtPct(d.avg_pnl) + '</td><td class="' + pfClass + '">' + pfVal + '</td></tr>';
     }).join('');
     return '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">' + title + '</div>' +
-      '<table class="data-table"><thead><tr><th>Name</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
+      '<table class="data-table"><thead><tr><th>Name</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th><th>Profit Factor</th></tr></thead><tbody>' + rows + '</tbody></table></div>';
   }
 
   function renderEquityCurve(data) {
