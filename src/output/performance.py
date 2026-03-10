@@ -976,8 +976,18 @@ async def get_divergence_stats(days: int = 30) -> dict | None:
     }
 
 
-async def get_equity_curve(days: int = 90) -> list[dict]:
-    """Build equity curve from closed outcomes (daily cumulative returns)."""
+async def get_equity_curve(
+    days: int = 90,
+    execution_mode: str | None = None,
+) -> list[dict]:
+    """Build equity curve from closed outcomes (daily cumulative returns).
+
+    Args:
+        days: Lookback window in days.
+        execution_mode: Filter to a specific execution mode (e.g. "quant_only").
+    """
+    from src.db.models import DailyRun
+
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
         result = await session.execute(
@@ -987,6 +997,25 @@ async def get_equity_curve(days: int = 90) -> list[dict]:
             ).order_by(Outcome.exit_date.asc())
         )
         closed = result.scalars().all()
+
+        if execution_mode and closed:
+            signal_ids = [o.signal_id for o in closed]
+            sig_result = await session.execute(
+                select(Signal).where(Signal.id.in_(signal_ids))
+            )
+            signals = {s.id: s for s in sig_result.scalars().all()}
+            run_result = await session.execute(
+                select(DailyRun.run_date).where(
+                    DailyRun.execution_mode == execution_mode,
+                    DailyRun.run_date >= cutoff,
+                )
+            )
+            valid_dates = {r.run_date for r in run_result.all()}
+            closed = [
+                o for o in closed
+                if signals.get(o.signal_id)
+                and signals[o.signal_id].run_date in valid_dates
+            ]
 
     # Aggregate by day so chart points have unique timestamps.
     # Multiple closes on the same day should roll into one daily P&L.
@@ -1009,9 +1038,9 @@ async def get_equity_curve(days: int = 90) -> list[dict]:
     return curve
 
 
-async def get_drawdown_curve(days: int = 90) -> list[dict]:
+async def get_drawdown_curve(days: int = 90, execution_mode: str | None = None) -> list[dict]:
     """Build drawdown series from equity curve."""
-    curve = await get_equity_curve(days)
+    curve = await get_equity_curve(days, execution_mode=execution_mode)
     if not curve:
         return []
 
@@ -1025,6 +1054,73 @@ async def get_drawdown_curve(days: int = 90) -> list[dict]:
             "value": round(dd, 4),
         })
     return drawdown
+
+
+
+async def get_trades_list(
+    days: int = 90,
+    execution_mode: str | None = None,
+    include_open: bool = True,
+) -> list[dict]:
+    """Return individual trade records with signal and outcome details.
+
+    Args:
+        days: Lookback window in days.
+        execution_mode: Filter to a specific execution mode (e.g. "quant_only").
+        include_open: Whether to include still-open positions.
+    """
+    from src.db.models import DailyRun
+
+    async with get_session() as session:
+        cutoff = date.today() - timedelta(days=days)
+
+        # Fetch outcomes with their signals
+        query = (
+            select(Outcome, Signal)
+            .join(Signal, Outcome.signal_id == Signal.id)
+            .where(Signal.run_date >= cutoff)
+        )
+        if not include_open:
+            query = query.where(Outcome.still_open == False)
+        query = query.order_by(Signal.run_date.desc())
+
+        result = await session.execute(query)
+        rows = result.all()
+
+        # Filter by execution_mode if requested
+        if execution_mode and rows:
+            run_result = await session.execute(
+                select(DailyRun.run_date).where(
+                    DailyRun.execution_mode == execution_mode,
+                    DailyRun.run_date >= cutoff,
+                )
+            )
+            valid_dates = {r.run_date for r in run_result.all()}
+            rows = [(o, s) for o, s in rows if s.run_date in valid_dates]
+
+    trades = []
+    for outcome, signal in rows:
+        trades.append({
+            "run_date": str(signal.run_date),
+            "ticker": signal.ticker,
+            "direction": signal.direction,
+            "signal_model": signal.signal_model,
+            "confidence": signal.confidence,
+            "regime": signal.regime,
+            "entry_price": outcome.entry_price,
+            "entry_date": str(outcome.entry_date) if outcome.entry_date else None,
+            "exit_price": outcome.exit_price,
+            "exit_date": str(outcome.exit_date) if outcome.exit_date else None,
+            "pnl_pct": round(outcome.pnl_pct, 4) if outcome.pnl_pct is not None else None,
+            "exit_reason": outcome.exit_reason,
+            "still_open": outcome.still_open,
+            "max_favorable": outcome.max_favorable,
+            "max_adverse": outcome.max_adverse,
+            "stop_loss": signal.stop_loss,
+            "target_1": signal.target_1,
+            "holding_period_days": signal.holding_period_days,
+        })
+    return trades
 
 
 async def get_return_distribution(days: int = 90) -> dict:

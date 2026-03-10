@@ -394,7 +394,7 @@ async def dashboard_performance(mode: str | None = "quant_only"):
 
     # Reuse the daily-aggregated equity curve (avoids duplicate timestamps)
     from src.output.performance import get_equity_curve
-    data["equity_curve"] = await get_equity_curve(days=90)
+    data["equity_curve"] = await get_equity_curve(days=90, execution_mode=mode)
     return data
 
 
@@ -403,17 +403,28 @@ async def dashboard_performance(mode: str | None = "quant_only"):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dashboard/equity-curve")
-async def dashboard_equity_curve(days: int = Query(default=90, le=365)):
+async def dashboard_equity_curve(days: int = Query(default=90, le=365), mode: str | None = "quant_only"):
     """Cumulative walk-forward returns (equity curve)."""
     from src.output.performance import get_equity_curve
-    return {"equity_curve": await get_equity_curve(days)}
+    return {"equity_curve": await get_equity_curve(days, execution_mode=mode)}
 
 
 @app.get("/api/dashboard/drawdown")
-async def dashboard_drawdown(days: int = Query(default=90, le=365)):
+async def dashboard_drawdown(days: int = Query(default=90, le=365), mode: str | None = "quant_only"):
     """Drawdown curve (area series, red)."""
     from src.output.performance import get_drawdown_curve
-    return {"drawdown": await get_drawdown_curve(days)}
+    return {"drawdown": await get_drawdown_curve(days, execution_mode=mode)}
+
+
+@app.get("/api/dashboard/trades")
+async def dashboard_trades(
+    days: int = Query(default=90, le=365),
+    mode: str | None = "quant_only",
+    include_open: bool = Query(default=True),
+):
+    """Individual trade history with signal and outcome details."""
+    from src.output.performance import get_trades_list
+    return {"trades": await get_trades_list(days, execution_mode=mode, include_open=include_open)}
 
 
 @app.get("/api/dashboard/return-distribution")
