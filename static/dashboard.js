@@ -36,6 +36,17 @@
     tracks: false, system: false
   };
   var equityChart = null;
+  var featureFlags = { cross_engine_enabled: true };  // default true until fetched
+
+  // Fetch feature flags on page load and hide engine UI if disabled
+  fetchJSON('/api/config/features').then(function (flags) {
+    featureFlags = flags;
+    if (!flags.cross_engine_enabled) {
+      // Hide Engines tab button
+      var engineTab = document.querySelector('[data-tab="crossengine"]');
+      if (engineTab) engineTab.style.display = 'none';
+    }
+  }).catch(function () { /* keep defaults */ });
 
   // -----------------------------------------------------------------------
   // Mobile Hamburger Menu
@@ -272,28 +283,30 @@
       }
       html += '</div>';
 
-      // Engine health card
-      var engines = relData.engines || [];
-      html += '<div class="overview-quick-card" onclick="switchTab(\'crossengine\')">';
-      html += '<div class="overview-quick-card-header"><span class="overview-quick-card-title">Engine Health</span><span class="overview-quick-card-arrow">&rarr;</span></div>';
-      var healthyCount = engines.filter(function (e) { return e.latest_status === 'success'; }).length;
-      html += '<div class="overview-quick-card-value">' + healthyCount + '/' + engines.length + '</div>';
-      html += '<div class="overview-quick-card-detail">engines reporting</div>';
-      if (engines.length > 0) {
-        html += '<div style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.35rem">';
-        engines.forEach(function (e) {
-          var status = (e.latest_status || 'no_data').toLowerCase();
-          var dotClass = status === 'success' ? 'dot-green' : status === 'no_data' ? 'dot-amber' : 'dot-red';
-          var sr7 = e.success_rate_7d != null ? (e.success_rate_7d * 100).toFixed(0) + '%' : '--';
-          html += '<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem">';
-          html += '<span class="overview-status-dot ' + dotClass + '"></span>';
-          html += '<span style="font-weight:600;min-width:100px">' + escapeHtml(engineDisplayName(e.engine_name || '')) + '</span>';
-          html += '<span style="color:var(--text-muted)">' + sr7 + ' (7d)</span>';
+      // Engine health card (hidden when cross_engine_enabled=false)
+      if (featureFlags.cross_engine_enabled) {
+        var engines = relData.engines || [];
+        html += '<div class="overview-quick-card" onclick="switchTab(\'crossengine\')">';
+        html += '<div class="overview-quick-card-header"><span class="overview-quick-card-title">Engine Health</span><span class="overview-quick-card-arrow">&rarr;</span></div>';
+        var healthyCount = engines.filter(function (e) { return e.latest_status === 'success'; }).length;
+        html += '<div class="overview-quick-card-value">' + healthyCount + '/' + engines.length + '</div>';
+        html += '<div class="overview-quick-card-detail">engines reporting</div>';
+        if (engines.length > 0) {
+          html += '<div style="margin-top:0.75rem;display:flex;flex-direction:column;gap:0.35rem">';
+          engines.forEach(function (e) {
+            var status = (e.latest_status || 'no_data').toLowerCase();
+            var dotClass = status === 'success' ? 'dot-green' : status === 'no_data' ? 'dot-amber' : 'dot-red';
+            var sr7 = e.success_rate_7d != null ? (e.success_rate_7d * 100).toFixed(0) + '%' : '--';
+            html += '<div style="display:flex;align-items:center;gap:0.5rem;font-size:0.8rem">';
+            html += '<span class="overview-status-dot ' + dotClass + '"></span>';
+            html += '<span style="font-weight:600;min-width:100px">' + escapeHtml(engineDisplayName(e.engine_name || '')) + '</span>';
+            html += '<span style="color:var(--text-muted)">' + sr7 + ' (7d)</span>';
+            html += '</div>';
+          });
           html += '</div>';
-        });
+        }
         html += '</div>';
       }
-      html += '</div>';
 
       // Performance card
       html += '<div class="overview-quick-card" onclick="switchTab(\'performance\')">';
@@ -914,7 +927,7 @@
         html += '<table class="data-table"><thead><tr><th>Mode</th><th>Trades</th><th>Win Rate</th><th>Avg P&L</th></tr></thead>' +
           '<tbody>' + modeRows + '</tbody></table></div>';
       }
-      if (engData && engData.engines && engData.engines.length > 0) {
+      if (featureFlags.cross_engine_enabled && engData && engData.engines && engData.engines.length > 0) {
         var sorted = engData.engines.slice().sort(function (a, b) { return b.hit_rate - a.hit_rate; });
         html += '<div class="card"><div class="card-title" style="margin-bottom:0.75rem">Engine Leaderboard</div><div class="metrics-grid">';
         sorted.forEach(function (eng, idx) {
@@ -986,7 +999,7 @@
       if (drawdown.drawdown && drawdown.drawdown.length > 0) {
         renderTimeChart('charts-drawdown', drawdown.drawdown, chartColors().red, 'area');
       }
-      if (engData && engData.time_series && engData.time_series.length > 0) {
+      if (featureFlags.cross_engine_enabled && engData && engData.time_series && engData.time_series.length > 0) {
         renderEnginePerfChart(engData.time_series);
       }
     }).catch(function () {
