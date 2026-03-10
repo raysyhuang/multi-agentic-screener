@@ -217,14 +217,21 @@ def format_daily_alert(
     regime_dot = _regime_emoji(regime)
 
     if validation_failed:
+        mode_line = ""
+        if execution_mode and execution_mode != "agentic_full":
+            mode_line = f"   Mode: {execution_mode.upper()}\n"
         lines = [
             f"<b>[MAS] \U0001f6d1 Daily Screener \u2014 {run_date}</b>",
             "",
             f"{regime_dot} Regime: <b>{regime.upper()}</b>",
+        ]
+        if mode_line:
+            lines.append(mode_line.rstrip())
+        lines.extend([
             "",
             "\u274c <b>Validation FAILED</b>",
             "",
-        ]
+        ])
         for check in (failed_checks or []):
             lines.append(f"   \u2022 {check}")
         if key_risks:
@@ -316,21 +323,24 @@ def format_daily_alert(
 # Model Scorecard (30-day DB query)
 # ---------------------------------------------------------------------------
 
-async def get_model_scorecard(days: int = 30) -> dict[str, dict]:
+async def get_model_scorecard(
+    days: int = 30,
+    execution_mode: str | None = None,
+) -> dict[str, dict]:
     """Query DB for closed outcomes by signal_model over the last N days.
 
     Returns dict like: {"mean_reversion": {"trades": 12, "win_rate": 0.71, ...}, ...}
     """
     try:
         from src.db.session import get_session
-        from src.db.models import Outcome, Signal
+        from src.db.models import DailyRun, Outcome, Signal
         from sqlalchemy import select, and_, func
 
         cutoff = date.today() - timedelta(days=days)
 
         async with get_session() as session:
             # Closed outcomes with their signal model
-            result = await session.execute(
+            closed_query = (
                 select(
                     Signal.signal_model,
                     func.count().label("trades"),
@@ -348,15 +358,30 @@ async def get_model_scorecard(days: int = 30) -> dict[str, dict]:
                 )
                 .group_by(Signal.signal_model)
             )
-            rows = result.all()
-
-            # Open positions count by model
-            open_result = await session.execute(
+            open_query = (
                 select(Signal.signal_model, func.count().label("open_count"))
                 .join(Outcome, Outcome.signal_id == Signal.id)
                 .where(Outcome.still_open == True)  # noqa: E712
                 .group_by(Signal.signal_model)
             )
+
+            if execution_mode:
+                closed_query = (
+                    closed_query
+                    .join(DailyRun, DailyRun.run_date == Signal.run_date)
+                    .where(DailyRun.execution_mode == execution_mode)
+                )
+                open_query = (
+                    open_query
+                    .join(DailyRun, DailyRun.run_date == Signal.run_date)
+                    .where(DailyRun.execution_mode == execution_mode)
+                )
+
+            result = await session.execute(closed_query)
+            rows = result.all()
+
+            # Open positions count by model
+            open_result = await session.execute(open_query)
             open_rows = {r.signal_model: r.open_count for r in open_result.all()}
 
         scorecard: dict[str, dict] = {}
