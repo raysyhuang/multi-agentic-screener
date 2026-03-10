@@ -408,7 +408,7 @@ class TestV12Metrics:
 
     def test_performance_metrics_has_v12_fields(self):
         """PerformanceMetrics should include foregone_profit and expiry_mfe_gt_2pct."""
-        from src.backtest.metrics import PerformanceMetrics, compute_metrics
+        from src.backtest.metrics import compute_metrics
 
         m = compute_metrics([1.0, -0.5, 2.0, -1.0, 0.5])
         assert hasattr(m, "foregone_profit")
