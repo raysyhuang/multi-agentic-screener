@@ -283,7 +283,7 @@ async def dashboard_overview():
         perf = {}
         try:
             from src.output.performance import get_performance_summary
-            perf = await get_performance_summary(days=90) or {}
+            perf = await get_performance_summary(days=90, execution_mode="quant_only") or {}
         except Exception:
             pass
 
