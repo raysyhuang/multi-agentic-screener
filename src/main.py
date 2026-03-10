@@ -3087,20 +3087,23 @@ def start_scheduler() -> None:
 
     # Evening cross-engine collection (9:30 PM ET Mon-Fri)
     # Runs AFTER all external engines finish (latest by ~8:15 PM ET)
-    scheduler.add_job(
-        run_evening_collection,
-        CronTrigger(
-            hour=21,
-            minute=30,
-            day_of_week="mon-fri",
-            timezone="US/Eastern",
-        ),
-        id="evening_collection",
-        name="Evening Cross-Engine Collection",
-        max_instances=1,
-        misfire_grace_time=300,
-        coalesce=True,
-    )
+    if settings.cross_engine_enabled:
+        scheduler.add_job(
+            run_evening_collection,
+            CronTrigger(
+                hour=21,
+                minute=30,
+                day_of_week="mon-fri",
+                timezone="US/Eastern",
+            ),
+            id="evening_collection",
+            name="Evening Cross-Engine Collection",
+            max_instances=1,
+            misfire_grace_time=300,
+            coalesce=True,
+        )
+    else:
+        logger.info("Evening cross-engine collection disabled (cross_engine_enabled=False)")
 
     # Weekly meta-analyst review (Sunday 7 PM ET)
     scheduler.add_job(
@@ -3119,10 +3122,12 @@ def start_scheduler() -> None:
     )
 
     scheduler.start()
+    evening_msg = ", evening=21:30" if settings.cross_engine_enabled else ""
     logger.info(
-        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d, evening=21:30, weekly=Sun 19:00 (all ET, Mon-Fri)",
+        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d%s, weekly=Sun 19:00 (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
+        evening_msg,
     )
     return scheduler
 

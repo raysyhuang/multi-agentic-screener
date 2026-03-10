@@ -597,6 +597,17 @@ async def dashboard_dataset_health():
     }
 
 
+@app.get("/api/config/features")
+async def config_features():
+    """Return feature flags for the frontend."""
+    settings = get_settings()
+    return {
+        "cross_engine_enabled": settings.cross_engine_enabled,
+        "shadow_tracks_enabled": settings.shadow_tracks_enabled,
+        "sniper_enabled": settings.sniper_enabled,
+    }
+
+
 @app.get("/api/dashboard/pipeline-health")
 async def dashboard_pipeline_health():
     """Return the latest pipeline health report from the most recent DailyRun."""
