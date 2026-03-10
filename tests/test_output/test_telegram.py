@@ -1,7 +1,13 @@
 """Tests for Telegram alert formatting."""
 
+from contextlib import asynccontextmanager
 import re
+from types import SimpleNamespace
+from unittest.mock import MagicMock
 
+import pytest
+
+import src.output.telegram as telegram
 from src.output.telegram import format_daily_alert, format_outcome_alert
 
 
@@ -199,3 +205,69 @@ def test_format_outcome_alert_escapes_html():
     msg = format_outcome_alert(outcomes)
     assert "X&amp;Y" in msg
     assert "target&lt;1&gt;" in msg
+
+
+@pytest.mark.asyncio
+async def test_get_model_scorecard_filters_by_execution_mode(monkeypatch):
+    """Scorecard should exclude stale rows from other execution modes."""
+    from src.db import session as db_session
+
+    captured: dict[str, list[str]] = {"joins": [], "wheres": []}
+    execute_calls = 0
+
+    closed_result = MagicMock()
+    closed_result.all.return_value = [
+        SimpleNamespace(
+            signal_model="mean_reversion",
+            trades=4,
+            wins=3,
+            avg_pnl=1.4049,
+        ),
+    ]
+
+    open_result = MagicMock()
+    open_result.all.return_value = [
+        SimpleNamespace(signal_model="mean_reversion", open_count=2),
+    ]
+
+    class _FakeSession:
+        async def execute(self, statement):
+            nonlocal execute_calls
+            execute_calls += 1
+            captured["joins"].append(str(statement).lower())
+            captured["wheres"].append(str(statement.whereclause).lower())
+            return closed_result if execute_calls == 1 else open_result
+
+    @asynccontextmanager
+    async def _fake_get_session():
+        yield _FakeSession()
+
+    monkeypatch.setattr(db_session, "get_session", _fake_get_session)
+
+    scorecard = await telegram.get_model_scorecard(days=30, execution_mode="quant_only")
+
+    assert "breakout" not in scorecard
+    assert scorecard["mean_reversion"] == {
+        "trades": 4,
+        "win_rate": 0.75,
+        "avg_pnl": 1.4049,
+        "open_positions": 2,
+    }
+    assert scorecard["sniper"]["status"] == "waiting for bull/choppy regime"
+    assert any("daily_runs" in join for join in captured["joins"])
+    assert any("execution_mode" in where for where in captured["wheres"])
+
+
+def test_format_daily_alert_validation_failed_shows_execution_mode():
+    """Validation-failed alerts should still show the run mode."""
+    msg = format_daily_alert(
+        picks=[],
+        regime="bear",
+        run_date="2026-03-10",
+        validation_failed=True,
+        failed_checks=["slippage_sensitivity_check"],
+        execution_mode="quant_only",
+        model_scorecard=_SAMPLE_SCORECARD,
+    )
+
+    assert "Mode: QUANT_ONLY" in msg

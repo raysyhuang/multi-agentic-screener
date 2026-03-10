@@ -1735,7 +1735,10 @@ async def _run_pipeline_core(
     model_scorecard = {}
     try:
         from src.output.telegram import get_model_scorecard
-        model_scorecard = await get_model_scorecard(days=30)
+        model_scorecard = await get_model_scorecard(
+            days=30,
+            execution_mode=execution_mode.value,
+        )
     except Exception as e:
         logger.warning("Model scorecard failed (non-fatal): %s", e)
 
