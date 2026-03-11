@@ -92,6 +92,38 @@ from src.governance.divergence_ledger import (
 )
 from src.engines.collector import EngineFailure
 
+
+def _get_rss_mb() -> float | None:
+    """Return current process RSS in MB, or None if unavailable.
+
+    Reads VmRSS from /proc/self/status on Linux (Heroku), which reports
+    *current* RSS — not peak.  Falls back to psutil if available.
+    """
+    # Linux: read current RSS from procfs
+    try:
+        with open("/proc/self/status") as f:
+            for line in f:
+                if line.startswith("VmRSS:"):
+                    # Format: "VmRSS:   123456 kB"
+                    return int(line.split()[1]) / 1024  # kB → MB
+    except (FileNotFoundError, OSError):
+        pass
+    # Fallback: psutil (available locally, not on Heroku by default)
+    try:
+        import psutil
+        return psutil.Process().memory_info().rss / (1024 * 1024)
+    except Exception:
+        pass
+    return None
+
+
+def _log_memory(label: str) -> None:
+    """Log RSS at a pipeline checkpoint (best-effort, non-fatal)."""
+    rss = _get_rss_mb()
+    if rss is not None:
+        logger.info("Memory [%s]: RSS=%.0f MB", label, rss)
+
+
 def _setup_logging() -> None:
     """Configure logging — text or JSON format based on LOG_FORMAT env var."""
     settings = get_settings()
@@ -468,6 +500,17 @@ async def run_morning_pipeline() -> None:
             logger.error("Failed to send fail-closed Telegram alert")
     finally:
         logging.getLogger().removeFilter(run_id_filter)
+        # Guarantee aggregator cleanup even on exception paths
+        agg = _state.get("aggregator")
+        if agg is not None:
+            try:
+                agg.close()
+            except Exception:
+                pass
+            _state["aggregator"] = None
+        import gc
+        gc.collect()
+        _log_memory("run_morning_pipeline_exit")
 
 
 async def _check_paper_gate(settings) -> bool:
@@ -740,6 +783,8 @@ async def _run_pipeline_core(
     _state: dict | None = None,
 ) -> None:
     """Inner pipeline logic — extracted so fail-closed wrapper can catch errors."""
+    import gc
+
     stage_envelopes: list[StageEnvelope] = []
 
     # Enforce 30-day paper trading gate
@@ -749,6 +794,8 @@ async def _run_pipeline_core(
         logger.info("PAPER MODE — all picks are recommendations only, not live trades")
 
     aggregator = DataAggregator()
+    if _state is not None:
+        _state["aggregator"] = aggregator
 
     # --- Governance context (audit trail for this run) ---
     gov = GovernanceContext(run_id=run_id, run_date=str(today))
@@ -870,6 +917,7 @@ async def _run_pipeline_core(
     ))
 
     # --- Step 3: Fetch OHLCV for filtered universe ---
+    _log_memory("before_ohlcv")
     logger.info("Step 3: Fetching OHLCV for %d tickers...", len(filtered))
     tickers = select_ohlcv_tickers(
         filtered_universe=filtered,
@@ -1050,6 +1098,16 @@ async def _run_pipeline_core(
         fmp_endpoint_status.get("endpoints", {}),
     )
 
+    # Release news data and aggregator — no longer needed after Step 4
+    del news_by_ticker
+    news_by_ticker = None
+    aggregator.close()
+    del aggregator
+    aggregator = None
+    if _state is not None:
+        _state["aggregator"] = None  # prevent double-close in finally
+    _log_memory("after_step4_cleanup")
+
     # Feature envelope
     feature_envelope = StageEnvelope(
         run_id=run_id,
@@ -1216,6 +1274,12 @@ async def _run_pipeline_core(
     ranked = filter_correlated_picks(ranked, price_data)
     logger.info("Top %d candidates after correlation filter", len(ranked))
 
+    # Release OHLCV data — largest memory consumer, no longer needed
+    del price_data
+    price_data = None
+    gc.collect()
+    _log_memory("after_ohlcv_release")
+
     # Update regime envelope with gated candidates
     regime_envelope.payload.gated_candidates = [c.ticker for c in ranked]
 
@@ -1317,6 +1381,8 @@ async def _run_pipeline_core(
     # --- Step 7b: Validation Gate (NoSilentPass) ---
     logger.info("Step 7b: Running validation gate...")
     feature_cols = list(features_by_ticker[next(iter(features_by_ticker))].keys()) if features_by_ticker else []
+    del features_by_ticker
+    features_by_ticker = None
     next_business_day = today + timedelta(days=1)
 
     # Build validation card from historical outcomes (None if < 10 closed trades)
@@ -1776,6 +1842,10 @@ async def _run_pipeline_core(
         "Pipeline complete in %.1fs: %d picks, %d stage envelopes, run_id=%s",
         elapsed, len(pipeline_result.approved), len(stage_envelopes), run_id,
     )
+
+    # Final cleanup and memory telemetry
+    gc.collect()
+    _log_memory("pipeline_complete")
 
 
 async def _get_recent_signals(days: int = 7) -> list[dict]:

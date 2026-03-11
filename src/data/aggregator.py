@@ -573,6 +573,17 @@ class DataAggregator:
         """Return cache performance statistics."""
         return self._cache.get_stats()
 
+    def close(self) -> None:
+        """Release resources held by the aggregator (cache connection, executors)."""
+        try:
+            self._cache.close()
+        except Exception:
+            pass
+        try:
+            self.yfinance.close()
+        except Exception:
+            pass
+
     def get_fmp_budget_status(self) -> dict:
         """Expose FMP call-budget usage for runtime monitoring."""
         return self.fmp.get_budget_status()

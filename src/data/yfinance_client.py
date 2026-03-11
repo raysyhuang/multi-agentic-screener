@@ -61,3 +61,7 @@ class YFinanceClient:
             str(from_date),
             str(to_date),
         )
+
+    def close(self) -> None:
+        """Shut down the thread pool executor."""
+        self._executor.shutdown(wait=False)
