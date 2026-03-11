@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from datetime import date
-from unittest.mock import AsyncMock, patch
+from unittest.mock import AsyncMock, MagicMock, patch
 
 import pandas as pd
 import pytest
@@ -98,3 +98,43 @@ async def test_get_ticker_fundamentals_aggregates(aggregator):
     assert "profile" in result
     assert "analyst_estimates" in result
     assert "ratios" in result
+
+
+def test_close_calls_cache_and_yfinance(aggregator):
+    """close() shuts down cache connection and yfinance executor."""
+    mock_cache = MagicMock()
+    mock_yfinance = MagicMock()
+    aggregator._cache = mock_cache
+    aggregator.yfinance = mock_yfinance
+
+    aggregator.close()
+
+    mock_cache.close.assert_called_once()
+    mock_yfinance.close.assert_called_once()
+
+
+def test_close_is_safe_to_call_twice(aggregator):
+    """Calling close() twice must not raise."""
+    mock_cache = MagicMock()
+    mock_yfinance = MagicMock()
+    aggregator._cache = mock_cache
+    aggregator.yfinance = mock_yfinance
+
+    aggregator.close()
+    # Second call — cache/yfinance may raise if already closed
+    mock_cache.close.side_effect = Exception("already closed")
+    mock_yfinance.close.side_effect = Exception("already closed")
+    aggregator.close()  # should not raise
+
+
+def test_close_tolerates_cache_failure(aggregator):
+    """close() continues to yfinance cleanup even if cache close fails."""
+    mock_cache = MagicMock()
+    mock_cache.close.side_effect = RuntimeError("cache boom")
+    mock_yfinance = MagicMock()
+    aggregator._cache = mock_cache
+    aggregator.yfinance = mock_yfinance
+
+    aggregator.close()
+
+    mock_yfinance.close.assert_called_once()
