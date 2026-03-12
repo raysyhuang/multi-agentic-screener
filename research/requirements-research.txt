@@ -1,7 +1,0 @@
-# Research-only dependencies — NOT installed in production.
-# Install: pip install -r research/requirements-research.txt
-qlib>=0.9
-lightgbm>=4.0
-jupyter>=1.0
-yfinance>=0.2
-matplotlib>=3.8

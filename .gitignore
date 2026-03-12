@@ -36,20 +36,16 @@ htmlcov/
 # Claude Code
 .claude/
 
-# Sub-engine data (regenerated at runtime)
-KooCore-D/data/
-KooCore-D/.git/
-# NOTE: KooCore-D/outputs/ is tracked so Heroku has fallback data
-Gemini STST/venv/
-
 # Screenshots & temp images
 *.png
 
-# Playwright MCP logs
-.playwright-mcp/
-
 # Backtest result cache
 backtest_results/
+
+# One-off utility scripts (not part of pipeline)
+scripts/query_trades.py
+scripts/telegram_remote_cli.py
+scripts/test_bot_one_off.py
 
 # OHLCV data cache (parquet files, regenerated on demand)
 data/cache/
