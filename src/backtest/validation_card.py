@@ -260,12 +260,13 @@ def run_validation_checks(
 
     # ── Check 4: slippage_sensitivity_check ──
     # Signal must survive +50% slippage increase.
-    if validation_card and validation_card.total_trades > 0:
+    # Requires >= 20 trades for statistical significance (aligned with regime_survival).
+    if validation_card and validation_card.total_trades >= 20:
         slippage_ok = validation_card.slippage_sensitivity < 0.5
         slippage_sens = validation_card.slippage_sensitivity
     else:
-        slippage_ok = True  # no data to check → pass by default
-        slippage_sens = 0.0
+        slippage_ok = True  # insufficient data → pass by default
+        slippage_sens = validation_card.slippage_sensitivity if validation_card and validation_card.total_trades > 0 else 0.0
     checks["slippage_sensitivity_check"] = _PASS if slippage_ok else _FAIL
     if not slippage_ok:
         key_risks.append(f"Slippage sensitivity too high ({slippage_sens:.2f})")
