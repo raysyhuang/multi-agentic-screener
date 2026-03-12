@@ -474,45 +474,63 @@ async def record_new_signals(pipeline_results: list[dict]) -> None:
             session.add(outcome)
 
 
-async def build_validation_card_from_history(days: int = 90):
-    """Build a ValidationCard from recent closed outcomes for live validation.
+async def build_validation_card_from_history(
+    days: int = 90,
+    execution_mode: str = "quant_only",
+) -> dict[str, "ValidationCard | None"]:
+    """Build per-model ValidationCards from recent closed outcomes.
 
-    Returns None if insufficient data (< 10 closed trades).
+    Returns a dict keyed by signal_model. Models with < 10 closed trades
+    get None (fragility checks auto-pass for those models).
+
+    Only includes outcomes from runs matching ``execution_mode`` so that
+    stale agentic_full history cannot contaminate quant_only validation.
     """
-    from src.backtest.validation_card import generate_validation_card
+    from src.backtest.validation_card import ValidationCard, generate_validation_card
+    from src.db.models import DailyRun
 
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
         result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.exit_date >= cutoff)
+            .join(DailyRun, Signal.run_date == DailyRun.run_date)
+            .where(
+                Outcome.still_open == False,
+                Outcome.exit_date >= cutoff,
+                DailyRun.execution_mode == execution_mode,
+            )
         )
         rows = result.all()
 
-    if len(rows) < 10:
-        return None
-
-    trade_returns: list[float] = []
-    by_regime: dict[str, list[float]] = {}
-    signal_models: set[str] = set()
-
+    # Group by signal_model
+    by_model: dict[str, list[tuple]] = {}
     for outcome, signal in rows:
-        pnl = outcome.pnl_pct or 0.0
-        trade_returns.append(pnl)
-        by_regime.setdefault(signal.regime.lower(), []).append(pnl)
-        signal_models.add(signal.signal_model)
+        by_model.setdefault(signal.signal_model, []).append((outcome, signal))
 
-    # Approximate slippage returns: reduce each return by 0.10% (10 bps round-trip)
-    slippage_returns = [r - 0.10 for r in trade_returns]
+    cards: dict[str, ValidationCard | None] = {}
+    for model, model_rows in by_model.items():
+        if len(model_rows) < 10:
+            cards[model] = None
+            continue
 
-    return generate_validation_card(
-        signal_model="aggregate",
-        trade_returns=trade_returns,
-        trade_returns_by_regime=by_regime,
-        slippage_returns=slippage_returns,
-        variants_tested=max(1, len(signal_models)),
-    )
+        trade_returns: list[float] = []
+        by_regime: dict[str, list[float]] = {}
+        for outcome, signal in model_rows:
+            pnl = outcome.pnl_pct or 0.0
+            trade_returns.append(pnl)
+            by_regime.setdefault(signal.regime.lower(), []).append(pnl)
+
+        slippage_returns = [r - 0.10 for r in trade_returns]
+        cards[model] = generate_validation_card(
+            signal_model=model,
+            trade_returns=trade_returns,
+            trade_returns_by_regime=by_regime,
+            slippage_returns=slippage_returns,
+            variants_tested=1,
+        )
+
+    return cards
 
 
 async def get_performance_summary(

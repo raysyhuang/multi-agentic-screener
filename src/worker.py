@@ -73,7 +73,7 @@ async def start_worker() -> None:
 
     scheduler.add_listener(_job_error_handler, EVENT_JOB_ERROR)
 
-    # Morning pipeline
+    # Morning pipeline — 1h grace so R14 restarts don't silently skip the run
     scheduler.add_job(
         run_morning_pipeline,
         CronTrigger(
@@ -85,7 +85,7 @@ async def start_worker() -> None:
         id="morning_pipeline",
         name="Daily Morning Pipeline",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
@@ -101,7 +101,7 @@ async def start_worker() -> None:
         id="afternoon_check",
         name="Afternoon Position Check",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
@@ -118,7 +118,7 @@ async def start_worker() -> None:
         id="evening_collection",
         name="Evening Cross-Engine Collection",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
@@ -134,11 +134,16 @@ async def start_worker() -> None:
         id="weekly_meta_review",
         name="Weekly Meta-Analyst Review",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
     scheduler.start()
+
+    # Log next scheduled run times for operational visibility
+    for job in scheduler.get_jobs():
+        logger.info("Scheduled job '%s' — next run: %s", job.name, job.next_run_time)
+
     logger.info(
         "Worker started: morning=%02d:%02d, afternoon=%02d:%02d, evening=21:30, weekly=Sun 19:00 (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,

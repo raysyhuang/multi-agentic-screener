@@ -778,6 +778,16 @@ async def _run_hybrid_pipeline(
     )
 
 
+async def _load_validation_history_cards(execution_mode: str) -> dict:
+    """Load validation history scoped to the active execution mode."""
+    from src.output.performance import build_validation_card_from_history
+
+    return await build_validation_card_from_history(
+        days=90,
+        execution_mode=execution_mode,
+    )
+
+
 async def _run_pipeline_core(
     today: date, settings, run_id: str, start_time: float,
     _state: dict | None = None,
@@ -1385,18 +1395,22 @@ async def _run_pipeline_core(
     features_by_ticker = None
     next_business_day = today + timedelta(days=1)
 
-    # Build validation card from historical outcomes (None if < 10 closed trades)
-    from src.output.performance import build_validation_card_from_history
-    hist_card = await build_validation_card_from_history(days=90)
-    if hist_card:
-        logger.info(
-            "Validation card from history: %d trades, fragility=%.1f, robust=%s",
-            hist_card.total_trades, hist_card.fragility_score, hist_card.is_robust,
-        )
-    else:
-        logger.info("No historical validation card (< 10 closed trades) — structural checks only")
+    # Build per-model validation cards from historical outcomes.
+    # Cards are keyed by signal_model; models with < 10 trades get None (auto-pass).
+    hist_cards = await _load_validation_history_cards(execution_mode.value)
+    for model_name, card in hist_cards.items():
+        if card:
+            logger.info(
+                "Validation card [%s]: %d trades, fragility=%.1f, robust=%s",
+                model_name, card.total_trades, card.fragility_score, card.is_robust,
+            )
+        else:
+            logger.info("Validation card [%s]: < 10 trades — fragility checks auto-pass", model_name)
+    if not hist_cards:
+        logger.info("No historical validation cards (no closed quant_only trades) — structural checks only")
 
-    # Current-run per-pick reward:risk ratios (used by NoSilentPass gate).
+    # --- Structural validation (shared across all picks) ---
+    # Checks: timestamp integrity, next-bar execution, future-data guard, risk:reward floor.
     rr_values: list[float] = []
     for p in pipeline_result.approved:
         ep = float(getattr(p, "entry_price", 0) or 0)
@@ -1417,15 +1431,61 @@ async def _run_pipeline_core(
 
         rr_values.append((reward / risk) if risk > 0 and reward > 0 else 0.0)
 
-    validation_result = run_validation_checks(
+    # Run structural checks once (no validation_card → fragility checks auto-pass).
+    structural_result = run_validation_checks(
         run_date=today,
         signal_dates=[today] * len(pipeline_result.approved),
         execution_dates=[next_business_day] * len(pipeline_result.approved),
         feature_columns=feature_cols,
-        validation_card=hist_card,
+        validation_card=None,
         risk_reward_ratios=rr_values,
         min_risk_reward=1.0,
     )
+
+    # --- Per-model fragility validation ---
+    # Each approved pick is validated against its own model's historical card.
+    # A model with no card (< 10 trades) auto-passes fragility checks.
+    failed_models: set[str] = set()
+    per_model_results: dict[str, object] = {}
+    for p in pipeline_result.approved:
+        model = getattr(p, "signal_model", "unknown")
+        if model in per_model_results:
+            continue  # already checked this model
+        model_card = hist_cards.get(model)
+        model_result = run_validation_checks(
+            run_date=today,
+            signal_dates=[today],
+            execution_dates=[next_business_day],
+            feature_columns=[],  # structural checks already done above
+            validation_card=model_card,
+            risk_reward_ratios=[],
+            min_risk_reward=1.0,
+        )
+        per_model_results[model] = model_result
+        if model_result.validation_status == "fail":
+            failed_checks = [k for k, v in model_result.checks.items() if v == "fail"]
+            logger.warning(
+                "FRAGILITY GATE FAILED for model '%s': %s", model, failed_checks,
+            )
+            failed_models.add(model)
+
+    # Merge: use structural_result as the overall validation envelope.
+    # If any structural check failed OR all models failed fragility, block everything.
+    structural_failed = structural_result.validation_status == "fail"
+    # Only block picks whose specific model failed fragility checks.
+    if failed_models:
+        before_count = len(pipeline_result.approved)
+        pipeline_result.approved = [
+            p for p in pipeline_result.approved
+            if getattr(p, "signal_model", "unknown") not in failed_models
+        ]
+        logger.info(
+            "Per-model fragility filter: %d → %d picks (blocked models: %s)",
+            before_count, len(pipeline_result.approved), sorted(failed_models),
+        )
+
+    # Use structural_result as the validation envelope for downstream logging.
+    validation_result = structural_result
 
     validation_envelope = StageEnvelope(
         run_id=run_id,
@@ -1434,13 +1494,12 @@ async def _run_pipeline_core(
     )
     stage_envelopes.append(validation_envelope)
 
-    if validation_result.validation_status == "fail":
+    if structural_failed:
         logger.warning(
-            "VALIDATION GATE FAILED — NoSilentPass blocks all picks. "
+            "STRUCTURAL VALIDATION FAILED — NoSilentPass blocks all picks. "
             "Failed checks: %s",
             [k for k, v in validation_result.checks.items() if v == "fail"],
         )
-        # Override approved picks — emit NoTrade
         pipeline_result.approved.clear()
 
     # Final output envelope
@@ -3138,7 +3197,7 @@ def start_scheduler() -> None:
         id="morning_pipeline",
         name="Daily Morning Pipeline",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
@@ -3154,7 +3213,7 @@ def start_scheduler() -> None:
         id="afternoon_check",
         name="Afternoon Position Check",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
@@ -3172,7 +3231,7 @@ def start_scheduler() -> None:
             id="evening_collection",
             name="Evening Cross-Engine Collection",
             max_instances=1,
-            misfire_grace_time=300,
+            misfire_grace_time=3600,
             coalesce=True,
         )
     else:
@@ -3190,11 +3249,13 @@ def start_scheduler() -> None:
         id="weekly_meta_review",
         name="Weekly Meta-Analyst Review",
         max_instances=1,
-        misfire_grace_time=300,
+        misfire_grace_time=3600,
         coalesce=True,
     )
 
     scheduler.start()
+    for job in scheduler.get_jobs():
+        logger.info("Scheduled job '%s' — next run: %s", job.name, job.next_run_time)
     evening_msg = ", evening=21:30" if settings.cross_engine_enabled else ""
     logger.info(
         "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d%s, weekly=Sun 19:00 (all ET, Mon-Fri)",
