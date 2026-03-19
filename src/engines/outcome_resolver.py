@@ -303,10 +303,6 @@ def _compute_pick_outcome(
             "max_adverse_pct": 0.0,
         }
 
-    # Compute returns
-    exit_price = hold_prices[-1]["close"]
-    actual_return_pct = ((exit_price - entry_price) / entry_price) * 100
-
     # Compute MFE/MAE
     max_high = max(p["high"] for p in hold_prices)
     min_low = min(p["low"] for p in hold_prices)
@@ -320,17 +316,26 @@ def _compute_pick_outcome(
     elif target_price and target_price < entry_price:
         hit_target = min_low <= target_price
 
-    # Determine exit reason using actual stop_loss from the pick
+    # Did it hit stop?
     stop_return_threshold = -10.0  # default fallback
     if stop_loss and stop_loss > 0:
         stop_return_threshold = ((stop_loss - entry_price) / entry_price) * 100
+    hit_stop = max_adverse_pct <= stop_return_threshold
 
+    # Determine exit price and reason — model limit orders at target/stop
+    # This matches the backtest simulator (signal_backtest.py) which exits
+    # intraday at target/stop rather than holding to expiry close.
     if hit_target:
         exit_reason = "target"
-    elif max_adverse_pct <= stop_return_threshold:
+        exit_price = target_price
+    elif hit_stop:
         exit_reason = "stop"
+        exit_price = stop_loss if stop_loss and stop_loss > 0 else hold_prices[-1]["close"]
     else:
         exit_reason = "expiry"
+        exit_price = hold_prices[-1]["close"]
+
+    actual_return_pct = ((exit_price - entry_price) / entry_price) * 100
 
     return {
         "actual_return_pct": round(actual_return_pct, 2),
