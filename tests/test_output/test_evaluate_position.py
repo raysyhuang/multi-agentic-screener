@@ -57,6 +57,7 @@ def _make_outcome(
     ticker: str = "TEST",
     entry_date: date = date(2026, 3, 10),
     entry_price: float = 100.0,
+    daily_prices: dict | None = None,
 ) -> SimpleNamespace:
     return SimpleNamespace(
         signal_id=signal_id,
@@ -67,6 +68,7 @@ def _make_outcome(
         partial_exit_price=None,
         partial_exit_date=None,
         skip_reason=None,
+        daily_prices=daily_prices,
     )
 
 
@@ -363,8 +365,11 @@ async def test_confidence_used_for_score_tiered_stops(monkeypatch):
 async def test_fill_stamping_is_idempotent(monkeypatch):
     """Re-evaluation should NOT re-derive entry_price if already stamped."""
     signal = _make_signal(entry_price=100.0, target_1=110.0, stop_loss=90.0)
-    # Simulate already-filled outcome: entry_price differs from signal.entry_price
-    outcome = _make_outcome(entry_price=100.5)  # previously stamped at T+1 open
+    # Simulate already-filled outcome: daily_prices is set (from prior evaluation)
+    outcome = _make_outcome(
+        entry_price=100.5,  # previously stamped at T+1 open
+        daily_prices={"2026-03-10": {"open": 100.5, "high": 101.0, "low": 100.0, "close": 100.5}},
+    )
     bars = _flat_bars(2, price=101.0)
     df = _make_ohlcv_bars(bars, start_date=outcome.entry_date)
 
@@ -376,6 +381,29 @@ async def test_fill_stamping_is_idempotent(monkeypatch):
     assert update is not None
     # entry_price should NOT appear in update (already stamped)
     assert "entry_price" not in update
+
+
+@pytest.mark.asyncio
+async def test_fill_stamping_when_open_equals_planned(monkeypatch):
+    """Fill should still stamp correctly even if T+1 open == signal close."""
+    signal = _make_signal(entry_price=100.0, target_1=110.0, stop_loss=90.0)
+    # Fresh outcome: daily_prices is None (never evaluated)
+    outcome = _make_outcome(entry_price=100.0)
+    # T+1 open is exactly the signal close — would break price-comparison heuristic
+    bars = [{"open": 100.0, "high": 101.0, "low": 99.5, "close": 100.5}]
+    bars += _flat_bars(1, price=100.5)
+    df = _make_ohlcv_bars(bars, start_date=outcome.entry_date)
+
+    settings = _default_settings(slippage_pct=0.0)  # zero slippage — fill == planned
+    aggregator = _patch_deps(monkeypatch, signal, df, settings)
+
+    update, _ = await perf._evaluate_position(outcome, aggregator)
+
+    assert update is not None
+    # Should still stamp entry_price (first evaluation, daily_prices was None)
+    assert "entry_price" in update
+    # With zero slippage and open=100.0, fill should be 100.0
+    assert update["entry_price"] == 100.0
 
 
 @pytest.mark.asyncio
