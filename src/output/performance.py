@@ -385,9 +385,10 @@ async def _evaluate_position(
         return None, None
 
     # --- Entry fill resolution (idempotent) ---
-    # Only stamp the actual fill once. If outcome.entry_price already differs
-    # from signal.entry_price, a previous run already stamped the T+1 open fill.
-    already_filled = abs(outcome.entry_price - signal.entry_price) > 0.001
+    # Only stamp the actual fill once. We detect "already evaluated" by checking
+    # daily_prices — it's always written at the end of each evaluation pass, and
+    # is None on fresh Outcome rows created by the morning pipeline.
+    already_filled = outcome.daily_prices is not None
     first_bar = since_entry.iloc[0]
 
     if already_filled:
