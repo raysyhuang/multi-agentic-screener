@@ -91,6 +91,7 @@ async def compute_portfolio_risk_state(
             select(Outcome).where(
                 and_(
                     Outcome.still_open == False,  # noqa: E712
+                    Outcome.skip_reason.is_(None),
                     Outcome.entry_date >= cutoff,
                 )
             ).order_by(Outcome.exit_date.asc())
