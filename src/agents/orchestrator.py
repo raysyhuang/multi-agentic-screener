@@ -61,6 +61,7 @@ class PipelineResult:
     debate: DebateResult
     risk_gate: RiskGateOutput
     features: dict
+    max_entry_price: float | None = None
 
 
 @dataclass
@@ -610,6 +611,7 @@ async def _execute_pipeline_inner(
                     debate=debate,
                     risk_gate=gate_result,
                     features=candidate.features,
+                    max_entry_price=candidate.max_entry_price,
                 ))
                 memory_service.working.record_approval(candidate.ticker)
             else:

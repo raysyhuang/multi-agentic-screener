@@ -89,6 +89,7 @@ class Signal(Base):
 
     regime: Mapped[str] = mapped_column(String(20), nullable=False)
     features: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    max_entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -112,6 +113,7 @@ class Outcome(Base):
     max_favorable: Mapped[float | None] = mapped_column(Float, nullable=True)
     max_adverse: Mapped[float | None] = mapped_column(Float, nullable=True)
     still_open: Mapped[bool] = mapped_column(Boolean, default=True)
+    skip_reason: Mapped[str | None] = mapped_column(String(30), nullable=True)
     daily_prices: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
 
     # Two-leg trade tracking (V1.2)

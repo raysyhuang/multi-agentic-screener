@@ -672,6 +672,7 @@ def _build_quant_only_result(
             debate=stub_debate,
             risk_gate=stub_gate,
             features=candidate.features,
+            max_entry_price=candidate.max_entry_price,
         ))
 
     return PipelineRun(
@@ -763,6 +764,7 @@ async def _run_hybrid_pipeline(
             debate=stub_debate,
             risk_gate=stub_gate,
             features=candidate.features,
+            max_entry_price=candidate.max_entry_price,
         ))
 
     return PipelineRun(
@@ -1676,6 +1678,7 @@ async def _run_pipeline_core(
                 risk_gate_reasoning=pick.risk_gate.reasoning,
                 regime=regime_assessment.regime.value,
                 features=_json_safe(pick.features),
+                max_entry_price=pick.max_entry_price,
             )
             session.add(signal)
             new_signals.append(signal)
