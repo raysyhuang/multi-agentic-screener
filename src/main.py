@@ -561,7 +561,7 @@ async def _check_paper_gate(settings) -> bool:
                 func.count(Outcome.id),
                 func.min(Outcome.entry_date),
                 func.max(Outcome.entry_date),
-            ).where(Outcome.still_open == False)
+            ).where(Outcome.still_open == False, Outcome.skip_reason.is_(None))
         )
         row = result.one()
         total_closed, earliest, latest = row
@@ -585,7 +585,7 @@ async def _check_paper_gate(settings) -> bool:
 
         # Check profit factor
         pnl_result = await session.execute(
-            select(Outcome.pnl_pct).where(Outcome.still_open == False)
+            select(Outcome.pnl_pct).where(Outcome.still_open == False, Outcome.skip_reason.is_(None))
         )
         pnls = [r[0] or 0.0 for r in pnl_result.all()]
 
@@ -1933,6 +1933,7 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
             result = await session.execute(
                 select(Outcome).where(
                     Outcome.still_open == False,
+                    Outcome.skip_reason.is_(None),
                     Outcome.entry_date >= cutoff_recent,
                 )
             )
@@ -1943,6 +1944,7 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
             result = await session.execute(
                 select(Outcome).where(
                     Outcome.still_open == False,
+                    Outcome.skip_reason.is_(None),
                     Outcome.entry_date >= cutoff_baseline,
                     Outcome.entry_date < cutoff_recent,
                 )

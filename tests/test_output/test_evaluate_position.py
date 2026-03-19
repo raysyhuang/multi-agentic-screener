@@ -357,3 +357,57 @@ async def test_confidence_used_for_score_tiered_stops(monkeypatch):
     update, _ = await perf._evaluate_position(outcome, aggregator)
     assert update is not None
     assert "entry_price" in update
+
+
+@pytest.mark.asyncio
+async def test_fill_stamping_is_idempotent(monkeypatch):
+    """Re-evaluation should NOT re-derive entry_price if already stamped."""
+    signal = _make_signal(entry_price=100.0, target_1=110.0, stop_loss=90.0)
+    # Simulate already-filled outcome: entry_price differs from signal.entry_price
+    outcome = _make_outcome(entry_price=100.5)  # previously stamped at T+1 open
+    bars = _flat_bars(2, price=101.0)
+    df = _make_ohlcv_bars(bars, start_date=outcome.entry_date)
+
+    settings = _default_settings(slippage_pct=0.05)  # extreme slippage to detect re-stamping
+    aggregator = _patch_deps(monkeypatch, signal, df, settings)
+
+    update, _ = await perf._evaluate_position(outcome, aggregator)
+
+    assert update is not None
+    # entry_price should NOT appear in update (already stamped)
+    assert "entry_price" not in update
+
+
+@pytest.mark.asyncio
+async def test_same_pass_leg1_leg2_exit(monkeypatch):
+    """If leg1 fills and leg2 exits in the same evaluation, weighted PnL should be correct."""
+    signal = _make_signal(entry_price=100.0, stop_loss=95.0, target_1=110.0)
+    outcome = _make_outcome()
+    # ATR reverse-engineered from stop: (100 - 95) / 0.75 = 6.67
+    # partial_target = entry + 1.0 * 6.67 ≈ 106.67
+    bars = [
+        # Entry bar: normal
+        {"open": 100.0, "high": 100.5, "low": 99.5, "close": 100.2},
+        # Day 2: rallies to 108 (fills leg1 at ~106.67), then closes at 107
+        {"open": 101.0, "high": 108.0, "low": 100.5, "close": 107.0},
+        # Day 3: crashes through stop at 95
+        {"open": 96.0, "high": 97.0, "low": 94.0, "close": 94.5},
+    ]
+    df = _make_ohlcv_bars(bars, start_date=outcome.entry_date)
+
+    settings = _default_settings(
+        partial_tp_enabled=True,
+        partial_tp_atr_multiple=1.0,
+        partial_tp_fraction=0.5,
+        breakeven_after_partial=True,
+    )
+    aggregator = _patch_deps(monkeypatch, signal, df, settings)
+
+    update, _ = await perf._evaluate_position(outcome, aggregator)
+
+    assert update is not None
+    assert update["still_open"] is False
+    # Leg1 should have filled (partial_exit_price set)
+    assert "partial_exit_price" in update
+    # Weighted PnL should blend leg1 and leg2, not just leg2
+    assert update.get("leg2_exit_reason") is not None

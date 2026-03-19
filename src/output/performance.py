@@ -304,8 +304,10 @@ def _build_exit_update(
     """Build the update dict for a closed position."""
     leg2_pnl = (exit_price - entry_price) / entry_price * 100
 
-    if use_two_leg and leg1_filled and outcome.partial_exit_price is not None:
-        leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
+    # Check both the persisted partial fill (outcome) and any fresh fill from this pass (update)
+    partial_price = update.get("partial_exit_price") or getattr(outcome, "partial_exit_price", None)
+    if use_two_leg and leg1_filled and partial_price is not None:
+        leg1_pnl = (partial_price - entry_price) / entry_price * 100
         weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
         update["leg2_exit_reason"] = exit_reason
     else:
@@ -382,25 +384,32 @@ async def _evaluate_position(
     if since_entry.empty:
         return None, None
 
-    # --- Entry fill resolution ---
-    # The first bar on entry_date is the execution bar (T+1 open)
+    # --- Entry fill resolution (idempotent) ---
+    # Only stamp the actual fill once. If outcome.entry_price already differs
+    # from signal.entry_price, a previous run already stamped the T+1 open fill.
+    already_filled = abs(outcome.entry_price - signal.entry_price) > 0.001
     first_bar = since_entry.iloc[0]
-    bar_open = float(first_bar["open"])
 
-    # Gap rejection: if T+1 open exceeds max_entry_price, skip this trade
-    max_entry = getattr(signal, "max_entry_price", None)
-    if max_entry is not None and bar_open > max_entry:
-        return {
-            "skip_reason": "gap_above_limit",
-            "still_open": False,
-            "exit_reason": "skipped",
-            "exit_date": outcome.entry_date,
-        }, df
+    if already_filled:
+        # Use the previously stamped fill price — don't re-derive from open
+        entry_price = outcome.entry_price
+        update: dict = {}
+    else:
+        bar_open = float(first_bar["open"])
 
-    # Fill at T+1 open + slippage (long entry pays the ask)
-    entry_price = round(bar_open * (1 + slippage), 4)
-    # Update outcome.entry_price to reflect actual fill
-    update: dict = {"entry_price": entry_price}
+        # Gap rejection: if T+1 open exceeds max_entry_price, skip this trade
+        max_entry = getattr(signal, "max_entry_price", None)
+        if max_entry is not None and bar_open > max_entry:
+            return {
+                "skip_reason": "gap_above_limit",
+                "still_open": False,
+                "exit_reason": "skipped",
+                "exit_date": outcome.entry_date,
+            }, df
+
+        # Fill at T+1 open + slippage (long entry pays the ask)
+        entry_price = round(bar_open * (1 + slippage), 4)
+        update = {"entry_price": entry_price}
 
     # --- Compute score-tiered base stop ---
     base_stop = signal.stop_loss
@@ -612,6 +621,7 @@ async def build_validation_card_from_history(
             .join(DailyRun, Signal.run_date == DailyRun.run_date)
             .where(
                 Outcome.still_open == False,
+                Outcome.skip_reason.is_(None),
                 Outcome.exit_date >= cutoff,
                 DailyRun.execution_mode == execution_mode,
             )
@@ -669,6 +679,7 @@ async def get_performance_summary(
         result = await session.execute(
             select(Outcome).where(
                 Outcome.still_open == False,
+                Outcome.skip_reason.is_(None),
                 Outcome.exit_date >= cutoff,
             )
         )
@@ -1126,6 +1137,7 @@ async def get_equity_curve(
         result = await session.execute(
             select(Outcome).where(
                 Outcome.still_open == False,
+                Outcome.skip_reason.is_(None),
                 Outcome.exit_date >= cutoff,
             ).order_by(Outcome.exit_date.asc())
         )
@@ -1211,7 +1223,7 @@ async def get_trades_list(
         query = (
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Signal.run_date >= cutoff)
+            .where(Signal.run_date >= cutoff, Outcome.skip_reason.is_(None))
         )
         if not include_open:
             query = query.where(Outcome.still_open == False)
@@ -1263,7 +1275,7 @@ async def get_return_distribution(days: int = 90) -> dict:
         result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.exit_date >= cutoff)
+            .where(Outcome.still_open == False, Outcome.skip_reason.is_(None), Outcome.exit_date >= cutoff)
         )
         rows = result.all()
 
@@ -1292,7 +1304,7 @@ async def get_regime_matrix(days: int = 180) -> list[dict]:
         result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.exit_date >= cutoff)
+            .where(Outcome.still_open == False, Outcome.skip_reason.is_(None), Outcome.exit_date >= cutoff)
         )
         rows = result.all()
 
@@ -1331,7 +1343,7 @@ async def get_mode_comparison() -> list[dict]:
         all_outcomes_result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False)
+            .where(Outcome.still_open == False, Outcome.skip_reason.is_(None))
         )
         all_rows = all_outcomes_result.all()
 
