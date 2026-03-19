@@ -65,6 +65,7 @@ async def check_open_positions() -> tuple[
 
         # Evaluate P&L and collect OHLCV DataFrames for reuse
         position_dfs: dict[int, pd.DataFrame] = {}
+        eval_failures = 0
         for outcome in open_outcomes:
             try:
                 update_data, df = await _evaluate_position(outcome, aggregator)
@@ -80,7 +81,26 @@ async def check_open_positions() -> tuple[
                         "still_open": update_data.get("still_open", True),
                     })
             except Exception as e:
+                eval_failures += 1
                 logger.error("Failed to evaluate %s: %s", outcome.ticker, e)
+
+        # Guardrail: alert if ALL position evaluations failed — likely a code bug
+        if eval_failures > 0 and eval_failures == len(open_outcomes):
+            logger.critical(
+                "GUARDRAIL: All %d open position evaluations failed! "
+                "Likely a code bug in _evaluate_position(). No positions were updated.",
+                eval_failures,
+            )
+            try:
+                from src.output.telegram import send_alert
+                await send_alert(
+                    f"\u26a0\ufe0f <b>Afternoon Check BROKEN</b>\n\n"
+                    f"All {eval_failures} position evaluations failed.\n"
+                    f"No stops/targets/expiries are being processed.\n"
+                    f"Check logs for: <code>'Signal' object has no attribute</code>"
+                )
+            except Exception:
+                pass  # Best effort — don't mask the real error
 
     # Health card loop — each position gets its own session to prevent
     # one failure from cascading and poisoning the transaction for others.
@@ -334,11 +354,11 @@ async def _evaluate_position(
 
     # --- Score-tiered stop: override stop_loss based on signal score ---
     base_stop = signal.stop_loss
-    if settings.score_tiered_stops_enabled and signal.score is not None:
+    if settings.score_tiered_stops_enabled and signal.confidence is not None:
         # Compute ATR from stop distance (reverse-engineer from 0.75×ATR default)
         tier_atr = abs(entry_price - signal.stop_loss) / 0.75 if signal.stop_loss else 0
         if tier_atr > 0:
-            score = float(signal.score)
+            score = float(signal.confidence)
             if score >= 85:
                 base_stop = round(entry_price - 1.25 * tier_atr, 2)
             elif score >= 70:
