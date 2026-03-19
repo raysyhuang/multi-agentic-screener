@@ -53,9 +53,12 @@ async def check_open_positions() -> tuple[
         logger.warning("Regime fetch failed (non-fatal): %s", e)
 
     async with get_session() as session:
-        # Get all open outcomes
+        # Get all open outcomes (exclude skipped trades)
         result = await session.execute(
-            select(Outcome).where(Outcome.still_open == True)
+            select(Outcome).where(
+                Outcome.still_open == True,  # noqa: E712
+                Outcome.skip_reason.is_(None),
+            )
         )
         open_outcomes = result.scalars().all()
 
@@ -285,10 +288,57 @@ async def _persist_exit_event(session, card: PositionHealthCard, outcome: Outcom
     ))
 
 
+def _build_exit_update(
+    update: dict,
+    entry_price: float,
+    exit_price: float,
+    exit_reason: str,
+    exit_date: date,
+    mfe: float,
+    mae: float,
+    outcome,
+    settings,
+    leg1_filled: bool,
+    use_two_leg: bool,
+) -> dict:
+    """Build the update dict for a closed position."""
+    leg2_pnl = (exit_price - entry_price) / entry_price * 100
+
+    if use_two_leg and leg1_filled and outcome.partial_exit_price is not None:
+        leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
+        weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
+        update["leg2_exit_reason"] = exit_reason
+    else:
+        weighted_pnl = leg2_pnl
+
+    def _clean(v: float) -> float | None:
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return v
+
+    update.update({
+        "exit_price": exit_price,
+        "exit_date": exit_date,
+        "exit_reason": exit_reason,
+        "still_open": False,
+        "pnl_pct": _clean(round(weighted_pnl, 4)),
+        "max_favorable": _clean(round(mfe, 4)),
+        "max_adverse": _clean(round(mae, 4)),
+    })
+    return update
+
+
 async def _evaluate_position(
     outcome: Outcome, aggregator: DataAggregator
 ) -> tuple[dict | None, pd.DataFrame | None]:
-    """Evaluate a single open position against current market data.
+    """Evaluate a single open position via bar-by-bar walk.
+
+    Matches the research backtester's execution model:
+    - Entry at T+1 open (+ slippage), not prior close
+    - Gap rejection if open > max_entry_price
+    - Intraday stop/target checks using high/low (not just close)
+    - Trailing stop ratcheted incrementally per bar
+    - Expiry at close after holding period
 
     Returns (update_dict, ohlcv_dataframe) so the caller can reuse the
     DataFrame for health card computation without a second API call.
@@ -317,46 +367,45 @@ async def _evaluate_position(
     if df.empty:
         return None, None
 
-    latest = df.iloc[-1]
-    current_price = float(latest["close"])
-    entry_price = outcome.entry_price
+    from src.config import get_settings
+    settings = get_settings()
+    slippage = settings.slippage_pct
 
-    # Track high/low since entry (normalize date type to Timestamp for comparison)
+    # Extract bars from entry_date onwards
     if "date" in df.columns:
         entry_ts = pd.Timestamp(outcome.entry_date)
         date_series = pd.to_datetime(df["date"])
-        since_entry = df[date_series >= entry_ts]
+        since_entry = df[date_series >= entry_ts].copy()
     else:
-        since_entry = df
-    max_price = float(since_entry["high"].max())
-    min_price = float(since_entry["low"].min())
+        since_entry = df.copy()
 
-    pnl_pct = (current_price - entry_price) / entry_price * 100
-    max_favorable = (max_price - entry_price) / entry_price * 100
-    max_adverse = (min_price - entry_price) / entry_price * 100
+    if since_entry.empty:
+        return None, None
 
-    def _clean(v: float) -> float | None:
-        if math.isnan(v) or math.isinf(v):
-            return None
-        return v
+    # --- Entry fill resolution ---
+    # The first bar on entry_date is the execution bar (T+1 open)
+    first_bar = since_entry.iloc[0]
+    bar_open = float(first_bar["open"])
 
-    from src.utils.trading_calendar import trading_days_between
-    from src.config import get_settings
-    settings = get_settings()
+    # Gap rejection: if T+1 open exceeds max_entry_price, skip this trade
+    max_entry = getattr(signal, "max_entry_price", None)
+    if max_entry is not None and bar_open > max_entry:
+        return {
+            "skip_reason": "gap_above_limit",
+            "still_open": False,
+            "exit_reason": "skipped",
+            "exit_date": outcome.entry_date,
+        }, df
 
-    days_held = trading_days_between(outcome.entry_date, to_date)
+    # Fill at T+1 open + slippage (long entry pays the ask)
+    entry_price = round(bar_open * (1 + slippage), 4)
+    # Update outcome.entry_price to reflect actual fill
+    update: dict = {"entry_price": entry_price}
 
-    update = {
-        "pnl_pct": _clean(round(pnl_pct, 4)),
-        "max_favorable": _clean(round(max_favorable, 4)),
-        "max_adverse": _clean(round(max_adverse, 4)),
-    }
-
-    # --- Score-tiered stop: override stop_loss based on signal score ---
+    # --- Compute score-tiered base stop ---
     base_stop = signal.stop_loss
     if settings.score_tiered_stops_enabled and signal.confidence is not None:
-        # Compute ATR from stop distance (reverse-engineer from 0.75×ATR default)
-        tier_atr = abs(entry_price - signal.stop_loss) / 0.75 if signal.stop_loss else 0
+        tier_atr = abs(signal.entry_price - signal.stop_loss) / 0.75 if signal.stop_loss else 0
         if tier_atr > 0:
             score = float(signal.confidence)
             if score >= 85:
@@ -366,97 +415,143 @@ async def _evaluate_position(
             else:
                 base_stop = round(entry_price - 0.50 * tier_atr, 2)
 
-    # --- Trailing stop ---
-    high_watermark = max_price
-    gain_pct = (high_watermark - entry_price) / entry_price * 100
-    trailing_active = gain_pct >= settings.trail_activate_pct
-    effective_stop = base_stop
-    if trailing_active and settings.trail_activate_pct > 0:
-        trail_stop = high_watermark * (1 - settings.trail_distance_pct / 100)
-        effective_stop = max(base_stop, trail_stop)
+    # Recalculate target relative to actual fill if different from planned
+    # Keep the same dollar distance from the original signal
+    target = signal.target_1
 
-    # --- Two-leg: partial TP check ---
-    if settings.partial_tp_enabled:
-        # Compute ATR from signal features or approximate from stop distance
-        atr = 0.0
+    # --- Two-leg setup ---
+    use_two_leg = settings.partial_tp_enabled
+    atr = 0.0
+    partial_target = 0.0
+    leg1_filled = outcome.partial_exit_price is not None
+    if use_two_leg:
         if signal.features and isinstance(signal.features, dict):
             atr = signal.features.get("atr_14", 0.0) or 0.0
         if atr <= 0:
-            atr = abs(entry_price - signal.stop_loss) / 0.75  # reverse from 0.75×ATR stop
-
+            atr = abs(signal.entry_price - signal.stop_loss) / 0.75
         partial_target = entry_price + settings.partial_tp_atr_multiple * atr
-        partial_taken = outcome.partial_exit_price is not None
 
-        if not partial_taken and current_price >= partial_target:
+    # --- Bar-by-bar walk ---
+    high_watermark = entry_price
+    trailing_active = False
+    use_trailing = settings.trail_activate_pct > 0 and settings.trail_distance_pct > 0
+    mfe = 0.0
+    mae = 0.0
+    days_traded = 0
+
+    for i in range(len(since_entry)):
+        row = since_entry.iloc[i]
+        bar_open = float(row["open"])
+        bar_high = float(row["high"])
+        bar_low = float(row["low"])
+        bar_close = float(row["close"])
+        bar_date = row["date"] if "date" in row.index else outcome.entry_date + timedelta(days=i)
+        if hasattr(bar_date, "date"):
+            bar_date = bar_date.date()
+
+        days_traded += 1
+
+        # Update high watermark
+        high_watermark = max(high_watermark, bar_high)
+
+        # Update MFE/MAE
+        bar_mfe = (bar_high - entry_price) / entry_price * 100
+        bar_mae = (bar_low - entry_price) / entry_price * 100
+        mfe = max(mfe, bar_mfe)
+        mae = min(mae, bar_mae)
+
+        # Activate trailing stop
+        if use_trailing and not trailing_active:
+            gain_pct = (high_watermark - entry_price) / entry_price * 100
+            if gain_pct >= settings.trail_activate_pct:
+                trailing_active = True
+
+        # Compute effective stop for this bar
+        effective_stop = base_stop
+        if trailing_active:
+            trail_stop = high_watermark * (1 - settings.trail_distance_pct / 100)
+            effective_stop = max(base_stop, trail_stop)
+
+        # Breakeven pivot after leg1
+        if leg1_filled:
+            effective_stop = max(effective_stop, entry_price)
+
+        # Check leg1 partial TP
+        if use_two_leg and not leg1_filled and bar_high >= partial_target:
+            leg1_filled = True
             update["partial_exit_price"] = round(partial_target, 4)
-            update["partial_exit_date"] = to_date
-            effective_stop = max(effective_stop, entry_price)  # breakeven pivot
-        elif partial_taken and settings.breakeven_after_partial:
-            effective_stop = max(effective_stop, entry_price)  # keep breakeven
+            update["partial_exit_date"] = bar_date
+            effective_stop = max(effective_stop, entry_price)
 
-    # Check exit conditions
-    if current_price <= effective_stop:
-        exit_reason = "trail_stop" if trailing_active and effective_stop > base_stop else "stop"
+        # --- Exit checks (stop before target — conservative) ---
 
-        # Two-leg weighted PnL
-        leg2_pnl = (effective_stop - entry_price) / entry_price * 100
-        if outcome.partial_exit_price is not None and settings.partial_tp_enabled:
-            leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
-            weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
-            update["leg2_exit_reason"] = exit_reason
-        else:
-            weighted_pnl = leg2_pnl
+        # Gap-through-stop: open below stop
+        if bar_open <= effective_stop:
+            exit_price = round(bar_open * (1 - slippage), 4)
+            exit_reason = "trail_stop" if trailing_active and effective_stop > base_stop else "stop"
+            return _build_exit_update(
+                update, entry_price, exit_price, exit_reason, bar_date,
+                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
+            ), df
 
-        update.update({
-            "exit_price": effective_stop,
-            "exit_date": to_date,
-            "exit_reason": exit_reason,
-            "still_open": False,
-            "pnl_pct": round(weighted_pnl, 4),
-        })
-    elif current_price >= signal.target_1:
-        leg2_pnl = (signal.target_1 - entry_price) / entry_price * 100
-        if outcome.partial_exit_price is not None and settings.partial_tp_enabled:
-            leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
-            weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
-            update["leg2_exit_reason"] = "target"
-        else:
-            weighted_pnl = leg2_pnl
+        # Intraday stop: low breaches stop
+        if bar_low <= effective_stop:
+            exit_price = round(effective_stop * (1 - slippage), 4)
+            exit_reason = "trail_stop" if trailing_active and effective_stop > base_stop else "stop"
+            return _build_exit_update(
+                update, entry_price, exit_price, exit_reason, bar_date,
+                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
+            ), df
 
-        update.update({
-            "exit_price": signal.target_1,
-            "exit_date": to_date,
-            "exit_reason": "target",
-            "still_open": False,
-            "pnl_pct": round(weighted_pnl, 4),
-        })
-    # Sniper time stop: force exit if held N+ days with non-positive P&L
-    elif (getattr(signal, "signal_model", None) == "sniper"
-          and days_held >= settings.sniper_time_stop_days
-          and pnl_pct <= 0):
-        update.update({
-            "exit_price": current_price,
-            "exit_date": to_date,
-            "exit_reason": "time_stop",
-            "still_open": False,
-            "pnl_pct": round(pnl_pct, 4),
-        })
-    elif days_held >= signal.holding_period_days:
-        leg2_pnl = pnl_pct
-        if outcome.partial_exit_price is not None and settings.partial_tp_enabled:
-            leg1_pnl = (outcome.partial_exit_price - entry_price) / entry_price * 100
-            weighted_pnl = settings.partial_tp_fraction * leg1_pnl + (1 - settings.partial_tp_fraction) * leg2_pnl
-            update["leg2_exit_reason"] = "expiry"
-        else:
-            weighted_pnl = leg2_pnl
+        # Gap-through-target: open above target
+        if bar_open >= target:
+            exit_price = round(bar_open * (1 - slippage), 4)
+            return _build_exit_update(
+                update, entry_price, exit_price, "target", bar_date,
+                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
+            ), df
 
-        update.update({
-            "exit_price": current_price,
-            "exit_date": to_date,
-            "exit_reason": "expiry",
-            "still_open": False,
-            "pnl_pct": round(weighted_pnl, 4),
-        })
+        # Intraday target: high reaches target
+        if bar_high >= target:
+            exit_price = round(target * (1 - slippage), 4)
+            return _build_exit_update(
+                update, entry_price, exit_price, "target", bar_date,
+                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
+            ), df
+
+        # Sniper time stop
+        if (getattr(signal, "signal_model", None) == "sniper"
+                and days_traded >= settings.sniper_time_stop_days
+                and bar_close <= entry_price):
+            exit_price = round(bar_close * (1 - slippage), 4)
+            return _build_exit_update(
+                update, entry_price, exit_price, "time_stop", bar_date,
+                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
+            ), df
+
+        # Expiry: held past holding period
+        if days_traded >= signal.holding_period_days:
+            exit_price = round(bar_close * (1 - slippage), 4)
+            return _build_exit_update(
+                update, entry_price, exit_price, "expiry", bar_date,
+                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
+            ), df
+
+    # No exit triggered yet — position still open, update live stats
+    latest = since_entry.iloc[-1]
+    current_price = float(latest["close"])
+    pnl_pct = (current_price - entry_price) / entry_price * 100
+
+    def _clean(v: float) -> float | None:
+        if math.isnan(v) or math.isinf(v):
+            return None
+        return v
+
+    update.update({
+        "pnl_pct": _clean(round(pnl_pct, 4)),
+        "max_favorable": _clean(round(mfe, 4)),
+        "max_adverse": _clean(round(mae, 4)),
+    })
 
     # Store daily prices for tracking
     daily_prices = {}

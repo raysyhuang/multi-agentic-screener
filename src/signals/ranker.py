@@ -68,6 +68,7 @@ class RankedCandidate:
     holding_period: int
     components: dict
     features: dict
+    max_entry_price: float | None = None
 
 
 def rank_candidates(
@@ -152,6 +153,7 @@ def rank_candidates(
             holding_period=signal.holding_period,
             components=signal.components,
             features=features,
+            max_entry_price=getattr(signal, "max_entry_price", None),
         ))
 
     # Sort by regime-adjusted score

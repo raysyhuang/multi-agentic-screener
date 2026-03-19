@@ -353,6 +353,7 @@ async def get_model_scorecard(
                 .where(
                     and_(
                         Outcome.still_open == False,  # noqa: E712
+                        Outcome.skip_reason.is_(None),
                         Signal.run_date >= cutoff,
                     )
                 )
@@ -361,7 +362,12 @@ async def get_model_scorecard(
             open_query = (
                 select(Signal.signal_model, func.count().label("open_count"))
                 .join(Outcome, Outcome.signal_id == Signal.id)
-                .where(Outcome.still_open == True)  # noqa: E712
+                .where(
+                    and_(
+                        Outcome.still_open == True,  # noqa: E712
+                        Outcome.skip_reason.is_(None),
+                    )
+                )
                 .group_by(Signal.signal_model)
             )
 
