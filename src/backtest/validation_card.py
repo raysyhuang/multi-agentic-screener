@@ -260,8 +260,8 @@ def run_validation_checks(
 
     # ── Check 4: slippage_sensitivity_check ──
     # Signal must survive +50% slippage increase.
-    # Requires >= 20 trades for statistical significance (aligned with regime_survival).
-    if validation_card and validation_card.total_trades >= 20:
+    # Requires >= 30 trades for statistical significance.
+    if validation_card and validation_card.total_trades >= 30:
         slippage_ok = validation_card.slippage_sensitivity < 0.5
         slippage_sens = validation_card.slippage_sensitivity
     else:
@@ -303,7 +303,7 @@ def run_validation_checks(
 
     # ── Check 7: regime_survival_check ──
     # Signal model must show positive expectancy in >= 2 of 3 regime types.
-    if validation_card and validation_card.total_trades >= 20:
+    if validation_card and validation_card.total_trades >= 30:
         regimes_positive = sum(
             1 for wr in [validation_card.bull_win_rate, validation_card.bear_win_rate, validation_card.choppy_win_rate]
             if wr > 0.5

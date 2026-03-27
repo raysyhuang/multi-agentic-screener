@@ -3,7 +3,7 @@
 Verifies that:
 - Per-model cards are isolated (sniper can't block MR)
 - Models with < 10 trades auto-pass fragility checks
-- Slippage sensitivity requires >= 20 trades to block
+- Slippage sensitivity requires >= 30 trades to block
 - execution_mode filtering excludes stale agentic_full trades
 """
 
@@ -52,7 +52,7 @@ def _make_card(
 
 
 def test_slippage_high_but_few_trades_passes():
-    """With < 20 trades, slippage_sensitivity_check auto-passes even if value is high."""
+    """With < 30 trades, slippage_sensitivity_check auto-passes even if value is high."""
     today = date(2025, 3, 15)
     card = _make_card(total_trades=15, slippage_sensitivity=1.5)
     result = run_validation_checks(
@@ -66,9 +66,9 @@ def test_slippage_high_but_few_trades_passes():
 
 
 def test_slippage_high_with_enough_trades_fails():
-    """With >= 20 trades, high slippage sensitivity correctly fails."""
+    """With >= 30 trades, high slippage sensitivity correctly fails."""
     today = date(2025, 3, 15)
-    card = _make_card(total_trades=25, slippage_sensitivity=0.8)
+    card = _make_card(total_trades=30, slippage_sensitivity=0.8)
     result = run_validation_checks(
         run_date=today,
         signal_dates=[today],
