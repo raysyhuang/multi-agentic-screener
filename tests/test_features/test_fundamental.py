@@ -1,5 +1,7 @@
 """Tests for fundamental feature engineering."""
 
+from datetime import date, timedelta
+
 from src.features.fundamental import (
     score_earnings_surprise,
     score_insider_activity,
@@ -37,9 +39,20 @@ def test_earnings_surprise_empty():
 
 
 def test_insider_activity_buying():
+    today = date.today()
     txns = [
-        {"transactionType": "P-Purchase", "securitiesTransacted": 1000, "price": 50, "transactionDate": "2026-02-01"},
-        {"transactionType": "P-Purchase", "securitiesTransacted": 500, "price": 48, "transactionDate": "2026-01-15"},
+        {
+            "transactionType": "P-Purchase",
+            "securitiesTransacted": 1000,
+            "price": 50,
+            "transactionDate": str(today - timedelta(days=20)),
+        },
+        {
+            "transactionType": "P-Purchase",
+            "securitiesTransacted": 500,
+            "price": 48,
+            "transactionDate": str(today - timedelta(days=45)),
+        },
     ]
     result = score_insider_activity(txns, lookback_days=60)
     assert result["insider_buy_count"] == 2
@@ -54,7 +67,6 @@ def test_insider_activity_empty():
 
 
 def test_days_to_next_earnings():
-    from datetime import date, timedelta
     future = date.today() + timedelta(days=10)
     calendar = [{"symbol": "AAPL", "date": str(future)}]
     result = days_to_next_earnings(calendar, "AAPL")
