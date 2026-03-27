@@ -672,7 +672,7 @@ def _build_quant_only_result(
             debate=stub_debate,
             risk_gate=stub_gate,
             features=candidate.features,
-            max_entry_price=candidate.max_entry_price,
+            max_entry_price=getattr(candidate, "max_entry_price", None),
         ))
 
     return PipelineRun(
@@ -764,7 +764,7 @@ async def _run_hybrid_pipeline(
             debate=stub_debate,
             risk_gate=stub_gate,
             features=candidate.features,
-            max_entry_price=candidate.max_entry_price,
+            max_entry_price=getattr(candidate, "max_entry_price", None),
         ))
 
     return PipelineRun(
