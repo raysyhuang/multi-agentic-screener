@@ -288,7 +288,7 @@ def test_regime_survival_fails_single_regime():
 
 
 def test_regime_survival_passes_insufficient_data():
-    """With < 20 trades, regime check passes by default."""
+    """With < 30 trades, regime check passes by default."""
     today = date(2025, 3, 15)
     card = _make_card(total_trades=15)
     result = run_validation_checks(
