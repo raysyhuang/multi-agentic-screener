@@ -215,15 +215,20 @@ def _simulate_trade(
             # Update high watermark
             high_watermark = max(high_watermark, high)
 
-            # Activate trailing stop once MFE threshold reached
+            # Activate trailing stop once MFE threshold reached. A trail that
+            # arms on THIS bar must not enforce on the same bar — daily OHLC
+            # cannot prove the high came before the low. Already-active trails
+            # ratchet same-bar (preserved behavior).
+            trail_just_activated = False
             if use_trailing and not trailing_active:
                 gain_pct = (high_watermark - entry_price) / entry_price * 100
                 if gain_pct >= trail_activate_pct:
                     trailing_active = True
+                    trail_just_activated = True
 
             # Compute effective stop
             effective_stop = stop_loss
-            if trailing_active:
+            if trailing_active and not trail_just_activated:
                 trail_stop = high_watermark * (1 - trail_distance_pct / 100)
                 effective_stop = max(stop_loss, trail_stop)
 
@@ -231,7 +236,7 @@ def _simulate_trade(
             if low <= effective_stop:
                 exit_price = effective_stop * (1 - slippage_pct)
                 exit_date = row["date"]
-                exit_reason = "trail_stop" if trailing_active and effective_stop > stop_loss else "stop"
+                exit_reason = "trail_stop" if trailing_active and not trail_just_activated and effective_stop > stop_loss else "stop"
                 break
 
             # Check target (hit during the day)

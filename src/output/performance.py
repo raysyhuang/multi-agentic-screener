@@ -472,28 +472,41 @@ async def _evaluate_position(
         mfe = max(mfe, bar_mfe)
         mae = min(mae, bar_mae)
 
-        # Activate trailing stop
+        # Activate trailing stop. If it activates on THIS bar, flag it so we
+        # don't enforce the newly-computed trail level on this same bar — daily
+        # OHLC cannot prove the high came before the low, so a trail derived
+        # from today's high cannot legitimately clip today's open/low. The trail
+        # starts enforcing on the NEXT bar. Ratcheting of an already-active
+        # trail still happens on the same bar (preserved old behavior).
+        trail_just_activated = False
         if use_trailing and not trailing_active:
             gain_pct = (high_watermark - entry_price) / entry_price * 100
             if gain_pct >= settings.trail_activate_pct:
                 trailing_active = True
+                trail_just_activated = True
 
         # Compute effective stop for this bar
         effective_stop = base_stop
-        if trailing_active:
+        if trailing_active and not trail_just_activated:
             trail_stop = high_watermark * (1 - settings.trail_distance_pct / 100)
             effective_stop = max(base_stop, trail_stop)
 
-        # Breakeven pivot after leg1
+        # Breakeven pivot: only apply if leg1 was filled BEFORE this bar (either
+        # loaded from outcome.partial_exit_price or filled in a prior loop
+        # iteration). A leg1 that fills on THIS bar must not raise the floor
+        # for this same bar — daily OHLC cannot prove the partial_target high
+        # came before the intraday low. The floor starts enforcing next bar.
         if leg1_filled:
             effective_stop = max(effective_stop, entry_price)
 
-        # Check leg1 partial TP
+        # Check leg1 partial TP (still keyed to current bar high). Note: the
+        # breakeven floor raise is intentionally NOT applied here — see comment
+        # above. leg1_filled flipping true during this bar only affects bars
+        # that come after.
         if use_two_leg and not leg1_filled and bar_high >= partial_target:
             leg1_filled = True
             update["partial_exit_price"] = round(partial_target, 4)
             update["partial_exit_date"] = bar_date
-            effective_stop = max(effective_stop, entry_price)
 
         # --- Exit checks (stop before target — conservative) ---
 
