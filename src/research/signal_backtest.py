@@ -263,35 +263,43 @@ def simulate_trade(
         # Update high watermark (intraday)
         high_watermark = max(high_watermark, high)
 
-        # Activate trailing stop once MFE threshold reached
+        # Activate trailing stop once MFE threshold reached. A trail that
+        # arms on THIS bar must not enforce on the same bar — daily OHLC
+        # cannot prove the high came before the low. Already-active trails
+        # ratchet same-bar (preserved behavior).
+        trail_just_activated = False
         if use_trailing and not trailing_active:
             gain_pct = (high_watermark - entry_price) / entry_price * 100
             if gain_pct >= trail_activate_pct:
                 trailing_active = True
+                trail_just_activated = True
 
         # Compute effective stop: max of fixed stop and trailing stop
         effective_stop = stop_loss
-        if trailing_active:
+        if trailing_active and not trail_just_activated:
             trail_stop = high_watermark * (1 - trail_distance_pct / 100)
             effective_stop = max(stop_loss, trail_stop)
 
-        # Breakeven pivot: after Leg 1 fills, stop floor = entry price
+        # Breakeven pivot: only apply if leg1 was filled BEFORE this bar. A
+        # leg1 that fills on THIS bar must not raise the floor for this same
+        # bar — daily OHLC cannot prove the partial_target high came before
+        # the intraday low. The floor starts enforcing next bar.
         if leg1_filled:
             effective_stop = max(effective_stop, entry_price)
 
-        # Check Leg 1 partial TP (before stop/target checks)
+        # Check Leg 1 partial TP (before stop/target checks). Breakeven floor
+        # raise is intentionally NOT applied here; leg1_filled flipping true
+        # during this bar only affects bars that come after.
         if use_two_leg and not leg1_filled and high >= partial_target:
             leg1_filled = True
             leg1_pnl = (partial_target * (1 - slippage) - entry_price) / entry_price * 100
             leg1_exit_date = row["date"]
-            # After leg1, floor stop at entry (breakeven pivot)
-            effective_stop = max(effective_stop, entry_price)
 
         # Check stop (fixed or trailing)
         if low <= effective_stop:
             exit_price = effective_stop * (1 - slippage)
             leg2_pnl = (exit_price - entry_price) / entry_price * 100
-            exit_reason = "trail_stop" if trailing_active and effective_stop > stop_loss else "stop"
+            exit_reason = "trail_stop" if trailing_active and not trail_just_activated and effective_stop > stop_loss else "stop"
 
             if use_two_leg and leg1_filled:
                 weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl

@@ -104,6 +104,111 @@ class TestSimulateTrade:
         # With trailing, should either exit via trail_stop or still expire
         assert result_with_trail["exit_reason"] in ("trail_stop", "expiry", "target")
 
+    def test_leg1_fill_does_not_raise_breakeven_same_bar(self):
+        """Regression for the leg1 same-bar breakeven phantom: when leg1
+        partial TP fills on a bar, the newly-created breakeven floor at
+        entry_price must NOT participate in that same bar's stop check.
+        Daily OHLC cannot prove the partial_target high came before the
+        intraday low, so a same-bar breakeven exit would be path-dependent.
+
+        Mirrors the equivalent regression in test_evaluate_position.py for
+        the production _evaluate_position path. Kept here to lock down the
+        research simulator directly against future drift.
+        """
+        # Main uses hardcoded T+1 entry: signal_date is the day the signal
+        # fires, entry happens at the next bar's open, and the exit loop
+        # evaluates bars starting from the one AFTER entry. slippage=0 for
+        # clean arithmetic.
+        #
+        # entry_price = 100 (day 1 open, no slippage).
+        # partial_target = 100 + 1.0 * 5.0 = 105.
+        # base stop = 95.
+        df = pd.DataFrame({
+            "date": [
+                date(2024, 1, 2),  # day 0 — signal bar (dummy, not used)
+                date(2024, 1, 3),  # day 1 — entry bar (open=100)
+                date(2024, 1, 4),  # day 2 — fills leg1 AND dips below entry
+                date(2024, 1, 5),  # day 3 — flat above entry
+                date(2024, 1, 6),  # day 4 — flat
+                date(2024, 1, 7),  # day 5 — flat
+                date(2024, 1, 8),  # day 6 — expiry close
+            ],
+            "open":  [100.0, 100.0, 100.2, 100.5, 100.4, 100.3, 100.4],
+            # Day 2 high 106 fills leg1 (>= 105); day 2 low 99.5 is below entry
+            # (100) but above base stop (95). Under the fix this must NOT
+            # produce a same-bar breakeven exit — the trade should survive
+            # day 2 and exit later (expiry, in this scenario).
+            "high":  [100.5, 100.5, 106.0, 100.8, 100.7, 100.6, 100.5],
+            "low":   [ 99.5,  99.5,  99.5, 100.2, 100.2, 100.1, 100.2],
+            "close": [100.3, 100.3, 100.3, 100.5, 100.4, 100.3, 100.4],
+            "volume": [1_000_000] * 7,
+        })
+
+        result = simulate_trade(
+            df,
+            signal_date=date(2024, 1, 2),
+            stop_loss=95.0,
+            target=150.0,
+            max_hold=5,
+            slippage=0.0,
+            partial_tp_atr_mult=1.0,
+            atr_value=5.0,
+        )
+
+        assert result is not None
+        # Leg1 should have filled on day 2
+        assert result.get("leg1_pnl") is not None
+        assert abs(result["leg1_pnl"] - 5.0) < 0.01  # (105 - 100)/100 * 100 = 5%
+        # Must NOT have same-bar exit on day 2 via phantom breakeven stop.
+        # Under the fix, the position survives day 2 and reaches expiry.
+        assert result["exit_reason"] == "expiry", (
+            f"Expected expiry after leg1 fill; got {result['exit_reason']} "
+            f"on {result['exit_date']}"
+        )
+
+    def test_leg1_filled_prior_bar_enforces_breakeven_next_bar(self):
+        """After leg1 fills on a prior bar, the breakeven floor must enforce
+        normally on subsequent bars — the deferral rule applies only to the
+        bar leg1 fills on."""
+        # T+1 entry: day 0 is signal, day 1 is entry bar, exit loop starts
+        # walking day 2 onward. Day 2 fills leg1 cleanly (low stays above
+        # entry). Day 3 dips below entry and must exit via breakeven.
+        df = pd.DataFrame({
+            "date": [
+                date(2024, 1, 2),  # day 0 — signal (dummy)
+                date(2024, 1, 3),  # day 1 — entry bar (open=100)
+                date(2024, 1, 4),  # day 2 — fills leg1 cleanly (low stays above entry)
+                date(2024, 1, 5),  # day 3 — low dips below entry; breakeven enforces
+                date(2024, 1, 6),
+                date(2024, 1, 7),
+            ],
+            "open":  [100.0, 100.0, 100.5, 101.0, 100.0, 100.0],
+            "high":  [100.5, 100.5, 106.0, 101.5, 100.5, 100.5],
+            "low":   [ 99.5,  99.5, 100.3,  99.5, 100.0, 100.0],
+            "close": [100.3, 100.3, 105.5, 100.0, 100.2, 100.2],
+            "volume": [1_000_000] * 6,
+        })
+
+        result = simulate_trade(
+            df,
+            signal_date=date(2024, 1, 2),
+            stop_loss=95.0,
+            target=150.0,
+            max_hold=5,
+            slippage=0.0,
+            partial_tp_atr_mult=1.0,
+            atr_value=5.0,
+        )
+
+        assert result is not None
+        assert result.get("leg1_pnl") is not None
+        # Day 3 must exit via breakeven — labeled "stop" (trail not armed).
+        assert result["exit_reason"] == "stop"
+        assert result["exit_date"] == date(2024, 1, 5)
+        # Exit at ~entry_price (100.0 - slippage=0), leg2_pnl ≈ 0.
+        # Weighted pnl = 0.5 * 5.0 + 0.5 * 0 = 2.5%.
+        assert abs(result["pnl_pct"] - 2.5) < 0.1
+
     def test_trailing_stop_disabled_when_zero(self):
         """Setting trail params to 0 should behave identically to no trailing."""
         df = _make_ohlcv()
