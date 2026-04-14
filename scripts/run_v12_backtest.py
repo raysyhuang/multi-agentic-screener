@@ -67,7 +67,7 @@ HORIZON_LABELS = {1.0: "1Y", 3.0: "3Y", 5.0: "5Y"}
 def _load_baseline(years: float) -> dict | None:
     """Load frozen baseline for a given horizon."""
     label = HORIZON_LABELS.get(years, f"{years}Y")
-    path = Path(f"outputs/research/baseline_frozen_20260308_{label}.json")
+    path = Path(f"outputs/research/baseline_{label}_2026-04-14.json")
     if path.exists():
         return json.loads(path.read_text())
     return None
