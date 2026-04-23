@@ -26,6 +26,10 @@ def _esc(text: str | None) -> str:
         return ""
     return _html_escape(str(text), quote=False)
 
+
+def _prefix() -> str:
+    return f"[{get_settings().telegram_alert_prefix}]"
+
 # Engine display names — avoids .title() mangling acronyms
 _ENGINE_DISPLAY = {"gemini_stst": "Gemini STST", "koocore_d": "KooCore-D", "mas_quant_screener": "MAS-Quant-Screener"}
 
@@ -120,7 +124,7 @@ async def send_alert(message: str) -> bool:
                 # Log to DB (best-effort, don't fail the send)
                 msg_id = result.message_id if result else None
                 await _log_to_db(
-                    "mas", chunk, settings.telegram_chat_id, msg_id,
+                    settings.telegram_source_id, chunk, settings.telegram_chat_id, msg_id,
                 )
                 break
             except Exception as e:
@@ -221,7 +225,7 @@ def format_daily_alert(
         if execution_mode and execution_mode != "agentic_full":
             mode_line = f"   Mode: {execution_mode.upper()}\n"
         lines = [
-            f"<b>[MAS] \U0001f6d1 Daily Screener \u2014 {run_date}</b>",
+            f"<b>{_prefix()} \U0001f6d1 Daily Screener \u2014 {run_date}</b>",
             "",
             f"{regime_dot} Regime: <b>{regime.upper()}</b>",
         ]
@@ -251,7 +255,7 @@ def format_daily_alert(
         if execution_mode and execution_mode != "agentic_full":
             mode_line = f"   Mode: {execution_mode.upper()}\n"
         lines = [
-            f"<b>[MAS] \U0001f4ca Daily Screener \u2014 {run_date}</b>",
+            f"<b>{_prefix()} \U0001f4ca Daily Screener \u2014 {run_date}</b>",
             "",
             f"{regime_dot} Regime: <b>{regime.upper()}</b>",
         ]
@@ -270,7 +274,7 @@ def format_daily_alert(
         mode_tag = f"   Mode: {execution_mode.upper()}\n"
 
     lines = [
-        f"<b>[MAS] \U0001f4ca Daily Screener \u2014 {run_date}</b>",
+        f"<b>{_prefix()} \U0001f4ca Daily Screener \u2014 {run_date}</b>",
         "",
         f"{regime_dot} Regime: <b>{regime.upper()}</b>   |   Picks: <b>{len(picks)}</b>",
     ]
@@ -499,7 +503,7 @@ def format_cross_engine_alert(synthesis: dict, credibility: dict) -> str:
     regime_dot = _regime_emoji(regime)
     engine_bar = _bar(engines_count, 2, 2)
 
-    header = "<b>[MAS] \U0001f501 Cross-Engine Update</b>" if is_update else "<b>[MAS] \U0001f517 Cross-Engine Synthesis</b>"
+    header = f"<b>{_prefix()} \U0001f501 Cross-Engine Update</b>" if is_update else f"<b>{_prefix()} \U0001f517 Cross-Engine Synthesis</b>"
     lines = [
         header,
         "",
@@ -609,7 +613,7 @@ def format_health_alert(state_changes: list) -> str:
         "exit": "\U0001f6a8",
     }
 
-    lines = ["<b>[MAS] \U0001f3e5 Position Health</b>", ""]
+    lines = [f"<b>{_prefix()} \U0001f3e5 Position Health</b>", ""]
 
     for card in state_changes:
         prev = card.previous_state.value if card.previous_state else "new"
@@ -667,7 +671,7 @@ def format_near_miss_resolution_alert(resolved: list[dict]) -> str:
     wr_bar = _bar(win_rate * 100, 100, 8)
 
     lines = [
-        "<b>[MAS] \U0001f50d Near-Miss Counterfactual</b>",
+        f"<b>{_prefix()} \U0001f50d Near-Miss Counterfactual</b>",
         "",
         f"   Resolved: <b>{total}</b>   WR: {wr_bar} <b>{win_rate:.0%}</b>   "
         f"Avg: <b>{avg_return:+.2f}%</b>",
@@ -706,7 +710,7 @@ def format_outcome_alert(outcomes: list[dict]) -> str:
     wins = sum(1 for o in outcomes if (o.get("pnl_pct", 0) or 0) > 0)
 
     lines = [
-        "<b>[MAS] \U0001f4c8 Daily Outcomes</b>",
+        f"<b>{_prefix()} \U0001f4c8 Daily Outcomes</b>",
         "",
         f"   Positions: <b>{len(outcomes)}</b>   "
         f"Wins: <b>{wins}/{len(outcomes)}</b>   "

@@ -45,6 +45,8 @@ class Settings(BaseSettings):
     # --- Telegram ---
     telegram_bot_token: str = ""
     telegram_chat_id: str = ""
+    telegram_alert_prefix: str = "MAS"  # Label shown in alert headers, e.g. [MAS] or [IBKR]
+    telegram_source_id: str = "mas"  # Source tag written to telegram_log rows
 
     # --- Database ---
     database_url: str = ""

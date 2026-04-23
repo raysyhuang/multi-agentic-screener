@@ -271,3 +271,25 @@ def test_format_daily_alert_validation_failed_shows_execution_mode():
     )
 
     assert "Mode: QUANT_ONLY" in msg
+
+
+def test_alert_prefix_defaults_to_mas(monkeypatch):
+    monkeypatch.setattr(
+        telegram,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_alert_prefix="MAS", telegram_source_id="mas"),
+    )
+    msg = format_daily_alert([], "bull", "2026-04-23")
+    assert "[MAS]" in msg
+    assert "[IBKR]" not in msg
+
+
+def test_alert_prefix_respects_ibkr_override(monkeypatch):
+    monkeypatch.setattr(
+        telegram,
+        "get_settings",
+        lambda: SimpleNamespace(telegram_alert_prefix="IBKR", telegram_source_id="ibkr"),
+    )
+    msg = format_daily_alert([], "bull", "2026-04-23")
+    assert "[IBKR]" in msg
+    assert "[MAS]" not in msg
