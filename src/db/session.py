@@ -31,11 +31,18 @@ def _get_async_url() -> str:
 def get_engine():
     global _engine
     if _engine is None:
+        url = _get_async_url()
+        connect_args: dict = {}
+        # asyncpg ignores sslmode in the URL; force SSL for remote Heroku Postgres.
+        if "amazonaws.com" in url:
+            connect_args["ssl"] = "require"
         _engine = create_async_engine(
-            _get_async_url(),
+            url,
             echo=False,
             pool_size=5,
             max_overflow=10,
+            pool_pre_ping=True,
+            connect_args=connect_args,
         )
     return _engine
 
