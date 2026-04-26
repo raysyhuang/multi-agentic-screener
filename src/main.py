@@ -1341,6 +1341,14 @@ async def _run_pipeline_core(
 
     mr_manual_ranked = []
     if mr_manual_signals:
+        # Re-tag sleeve signals: when an MR signal also won cross-model dedup,
+        # the MAS annotation above clobbered its sleeve source on the shared
+        # object reference. Re-apply right before sleeve ranking snapshots it.
+        _annotate_signal_stream(
+            mr_manual_signals,
+            signal_source="mr_manual_sleeve",
+            suppressed_by_ticker=mr_suppression_by_ticker,
+        )
         mr_manual_ranked = rank_candidates(
             mr_manual_signals,
             regime=regime_assessment.regime,

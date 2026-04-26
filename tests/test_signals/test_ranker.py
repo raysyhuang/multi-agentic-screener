@@ -191,3 +191,27 @@ def test_cooldown_string_dates():
     ]
     result = apply_cooldown(signals, recent_signals=recent, cooldown_days=5)
     assert len(result) == 0
+
+
+def test_rank_candidates_snapshots_signal_source():
+    """RankedCandidate must capture the signal_source set on the signal at
+    rank time. Regression test for the MR Manual Sleeve bug where the same
+    MR signal object lived in both the MAS list and the sleeve list, and
+    later setattr calls on the shared reference clobbered the source for
+    one of the streams.
+    """
+    mr = _make_mean_rev("XOM", 80)
+    # Tag as sleeve, rank — RankedCandidate should snapshot 'mr_manual_sleeve'.
+    mr.signal_source = "mr_manual_sleeve"
+    sleeve_ranked = rank_candidates([mr], Regime.BULL, {}, top_n=10)
+    assert len(sleeve_ranked) == 1
+    assert sleeve_ranked[0].signal_source == "mr_manual_sleeve"
+
+    # Now overwrite the source on the underlying object (simulating MAS
+    # annotation clobbering the sleeve source on a shared reference).
+    mr.signal_source = "mas_official"
+    # The previously-built RankedCandidate must NOT change — it has its own copy.
+    assert sleeve_ranked[0].signal_source == "mr_manual_sleeve"
+    # And re-ranking now snapshots the new value.
+    mas_ranked = rank_candidates([mr], Regime.BULL, {}, top_n=10)
+    assert mas_ranked[0].signal_source == "mas_official"
