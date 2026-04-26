@@ -69,6 +69,7 @@ from src.signals.mean_reversion import score_mean_reversion
 from src.signals.ranker import (
     rank_candidates,
     deduplicate_signals,
+    best_signal_by_ticker,
     filter_correlated_picks,
     detect_confluence,
     apply_confluence_bonus,
@@ -158,6 +159,23 @@ def _setup_logging() -> None:
 _setup_logging()
 logger = logging.getLogger(__name__)
 _EASTERN_TZ = ZoneInfo("America/New_York")
+
+
+def _annotate_signal_stream(
+    signals: list,
+    *,
+    signal_source: str,
+    suppressed_by_ticker: dict[str, bool] | None = None,
+) -> None:
+    """Attach stream metadata to raw signal objects before ranking."""
+    for signal in signals:
+        setattr(signal, "signal_source", signal_source)
+        setattr(signal, "also_in_mas", False)
+        setattr(
+            signal,
+            "suppressed_by_cross_model_ranking",
+            bool((suppressed_by_ticker or {}).get(signal.ticker, False)),
+        )
 
 
 class RunIDFilter(logging.Filter):
@@ -661,6 +679,7 @@ def _build_quant_only_result(
         approved.append(PipelineResult(
             ticker=candidate.ticker,
             signal_model=candidate.signal_model,
+            signal_source=getattr(candidate, "signal_source", "mas_official"),
             direction=candidate.direction,
             entry_price=candidate.entry_price,
             stop_loss=candidate.stop_loss,
@@ -673,6 +692,10 @@ def _build_quant_only_result(
             risk_gate=stub_gate,
             features=candidate.features,
             max_entry_price=getattr(candidate, "max_entry_price", None),
+            also_in_mas=getattr(candidate, "also_in_mas", False),
+            suppressed_by_cross_model_ranking=getattr(
+                candidate, "suppressed_by_cross_model_ranking", False,
+            ),
         ))
 
     return PipelineRun(
@@ -753,6 +776,7 @@ async def _run_hybrid_pipeline(
         approved.append(PipelineResult(
             ticker=candidate.ticker,
             signal_model=candidate.signal_model,
+            signal_source=getattr(candidate, "signal_source", "mas_official"),
             direction=candidate.direction,
             entry_price=candidate.entry_price,
             stop_loss=interp.suggested_stop or candidate.stop_loss,
@@ -765,6 +789,10 @@ async def _run_hybrid_pipeline(
             risk_gate=stub_gate,
             features=candidate.features,
             max_entry_price=getattr(candidate, "max_entry_price", None),
+            also_in_mas=getattr(candidate, "also_in_mas", False),
+            suppressed_by_cross_model_ranking=getattr(
+                candidate, "suppressed_by_cross_model_ranking", False,
+            ),
         ))
 
     return PipelineRun(
@@ -1240,9 +1268,34 @@ async def _run_pipeline_core(
     # Signal cooldown: suppress recently-fired tickers
     recent_signals = await _get_recent_signals(days=7)
     all_signals = apply_cooldown(all_signals, recent_signals)
+    post_cooldown_signals = list(all_signals)
+
+    # Preserve a separate mean-reversion manual sleeve before cross-model dedup
+    mr_manual_signals = [
+        signal
+        for signal in post_cooldown_signals
+        if MODEL_MAP.get(type(signal), "unknown") == "mean_reversion"
+    ]
+    if mr_manual_signals:
+        best_post_cooldown = best_signal_by_ticker(post_cooldown_signals)
+        mr_suppression_by_ticker = {}
+        for signal in mr_manual_signals:
+            winner = best_post_cooldown.get(signal.ticker)
+            winner_model = MODEL_MAP.get(type(winner), "unknown") if winner else "unknown"
+            mr_suppression_by_ticker[signal.ticker] = (
+                winner is not None
+                and winner is not signal
+                and winner_model != "mean_reversion"
+            )
+        _annotate_signal_stream(
+            mr_manual_signals,
+            signal_source="mr_manual_sleeve",
+            suppressed_by_ticker=mr_suppression_by_ticker,
+        )
 
     # Deduplicate (keep best per ticker)
     all_signals = deduplicate_signals(all_signals)
+    _annotate_signal_stream(all_signals, signal_source="mas_official")
 
     # Signal prefilter envelope
     signal_envelope = StageEnvelope(
@@ -1286,6 +1339,22 @@ async def _run_pipeline_core(
     ranked = filter_correlated_picks(ranked, price_data)
     logger.info("Top %d candidates after correlation filter", len(ranked))
 
+    mr_manual_ranked = []
+    if mr_manual_signals:
+        mr_manual_ranked = rank_candidates(
+            mr_manual_signals,
+            regime=regime_assessment.regime,
+            features_by_ticker=features_by_ticker,
+            top_n=max(settings.top_n_for_interpretation, settings.max_final_picks),
+        )
+        mr_manual_ranked = apply_confluence_bonus(mr_manual_ranked, confluence_map)
+        mr_manual_ranked = filter_correlated_picks(mr_manual_ranked, price_data)
+        mr_manual_ranked = mr_manual_ranked[: settings.max_final_picks]
+        logger.info(
+            "MR manual sleeve selected %d candidates after correlation filter",
+            len(mr_manual_ranked),
+        )
+
     # Release OHLCV data — largest memory consumer, no longer needed
     del price_data
     price_data = None
@@ -1305,6 +1374,7 @@ async def _run_pipeline_core(
     # --- Step 7: Agent Pipeline (mode-dependent) ---
     execution_mode = ExecutionMode(settings.execution_mode)
     logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
+    mr_manual_result = None
 
     if execution_mode == ExecutionMode.QUANT_ONLY:
         pipeline_result = _build_quant_only_result(
@@ -1322,6 +1392,16 @@ async def _run_pipeline_core(
             regime_context=regime_context,
             run_id=run_id,
         )
+
+    if mr_manual_ranked:
+        mr_manual_result = _build_quant_only_result(
+            mr_manual_ranked,
+            regime_context,
+            max_picks=settings.max_final_picks,
+        )
+        official_tickers = {pick.ticker for pick in pipeline_result.approved}
+        for pick in mr_manual_result.approved:
+            pick.also_in_mas = pick.ticker in official_tickers
 
     # --- Step 7a: Divergence Ledger — freeze quant baseline and compute divergences ---
     divergence_records = []
@@ -1658,14 +1738,19 @@ async def _run_pipeline_core(
                 features=_json_safe(c.features),
             ))
 
-        # Save approved signals and create outcome records for tracking
+        # Save official MAS picks plus the parallel MR manual sleeve
         new_signals: list[Signal] = []
-        for pick in pipeline_result.approved:
+        picks_to_persist = list(pipeline_result.approved)
+        if mr_manual_result:
+            picks_to_persist.extend(mr_manual_result.approved)
+
+        for pick in picks_to_persist:
             signal = Signal(
                 run_date=today,
                 ticker=pick.ticker,
                 direction=pick.direction,
                 signal_model=pick.signal_model,
+                signal_source=pick.signal_source,
                 entry_price=pick.entry_price,
                 stop_loss=pick.stop_loss,
                 target_1=pick.target_1,
@@ -1679,6 +1764,8 @@ async def _run_pipeline_core(
                 regime=regime_assessment.regime.value,
                 features=_json_safe(pick.features),
                 max_entry_price=pick.max_entry_price,
+                also_in_mas=pick.also_in_mas,
+                suppressed_by_cross_model_ranking=pick.suppressed_by_cross_model_ranking,
             )
             session.add(signal)
             new_signals.append(signal)
@@ -1870,6 +1957,23 @@ async def _run_pipeline_core(
     except Exception as e:
         logger.warning("Model scorecard failed (non-fatal): %s", e)
 
+    sleeve_picks_for_alert: list[dict] | None = None
+    if mr_manual_result is not None:
+        sleeve_picks_for_alert = [
+            {
+                "ticker": pick.ticker,
+                "direction": pick.direction,
+                "entry_price": pick.entry_price,
+                "stop_loss": pick.stop_loss,
+                "target_1": pick.target_1,
+                "confidence": pick.confidence,
+                "holding_period": pick.holding_period,
+                "also_in_mas": pick.also_in_mas,
+                "suppressed_by_cross_model_ranking": pick.suppressed_by_cross_model_ranking,
+            }
+            for pick in mr_manual_result.approved
+        ]
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -1879,6 +1983,7 @@ async def _run_pipeline_core(
         key_risks=validation_result.key_risks or None,
         execution_mode=execution_mode.value,
         model_scorecard=model_scorecard or None,
+        manual_sleeve_picks=sleeve_picks_for_alert,
     )
     try:
         await send_alert(alert_msg)

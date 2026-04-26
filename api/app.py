@@ -311,9 +311,22 @@ async def dashboard_overview():
         }
 
 
+def _resolve_source(source: str | None) -> str | None:
+    """Translate the dashboard ``source`` query param to a DB filter value.
+
+    ``mas_official`` (default) and ``mr_manual_sleeve`` map to themselves.
+    ``all`` (or empty) returns ``None`` so the helper skips the filter.
+    """
+    if source is None or source == "" or source.lower() == "all":
+        return None
+    return source
+
+
 @app.get("/api/dashboard/signals")
-async def dashboard_signals():
+async def dashboard_signals(source: str | None = "mas_official"):
     """Return the latest run + approved signals shaped for the dashboard."""
+    source_filter = _resolve_source(source)
+
     async with get_session() as session:
         run_result = await session.execute(
             select(DailyRun).order_by(DailyRun.run_date.desc()).limit(1)
@@ -327,13 +340,15 @@ async def dashboard_signals():
                 "meta": {
                     "total_signals": 0,
                     "approved_signals": 0,
+                    "signal_source": source_filter or "all",
                 },
                 "empty_reason": "No completed pipeline runs yet.",
             }
 
-        sig_result = await session.execute(
-            select(Signal).where(Signal.run_date == run.run_date)
-        )
+        sig_query = select(Signal).where(Signal.run_date == run.run_date)
+        if source_filter is not None:
+            sig_query = sig_query.where(Signal.signal_source == source_filter)
+        sig_result = await session.execute(sig_query)
         signals = sig_result.scalars().all()
 
     approved = [
@@ -341,6 +356,9 @@ async def dashboard_signals():
             "ticker": s.ticker,
             "direction": s.direction,
             "signal_model": s.signal_model,
+            "signal_source": s.signal_source,
+            "also_in_mas": s.also_in_mas,
+            "suppressed_by_cross_model_ranking": s.suppressed_by_cross_model_ranking,
             "entry_price": s.entry_price,
             "stop_loss": s.stop_loss,
             "target_1": s.target_1,
@@ -360,8 +378,9 @@ async def dashboard_signals():
 
     empty_reason = None
     if total_signals == 0:
+        scope = source_filter or "all sources"
         empty_reason = (
-            "No signal records were saved for the latest run yet. "
+            f"No signal records were saved for the latest run yet ({scope}). "
             "If a run is in progress, refresh after completion."
         )
     elif approved_signals == 0:
@@ -379,22 +398,31 @@ async def dashboard_signals():
             "total_signals": total_signals,
             "approved_signals": approved_signals,
             "decision_breakdown": decision_breakdown,
+            "signal_source": source_filter or "all",
         },
         "empty_reason": empty_reason,
     }
 
 
 @app.get("/api/dashboard/performance")
-async def dashboard_performance(mode: str | None = "quant_only"):
+async def dashboard_performance(
+    mode: str | None = "quant_only",
+    source: str | None = "mas_official",
+):
     """Return performance data with an equity curve for charting."""
-    data = await get_performance_summary(days=90, execution_mode=mode)
+    source_filter = _resolve_source(source)
+    data = await get_performance_summary(
+        days=90, execution_mode=mode, signal_source=source_filter,
+    )
 
     if data.get("total_signals", 0) == 0:
         return data
 
     # Reuse the daily-aggregated equity curve (avoids duplicate timestamps)
     from src.output.performance import get_equity_curve
-    data["equity_curve"] = await get_equity_curve(days=90, execution_mode=mode)
+    data["equity_curve"] = await get_equity_curve(
+        days=90, execution_mode=mode, signal_source=source_filter,
+    )
     return data
 
 
@@ -403,17 +431,33 @@ async def dashboard_performance(mode: str | None = "quant_only"):
 # ---------------------------------------------------------------------------
 
 @app.get("/api/dashboard/equity-curve")
-async def dashboard_equity_curve(days: int = Query(default=90, le=365), mode: str | None = "quant_only"):
+async def dashboard_equity_curve(
+    days: int = Query(default=90, le=365),
+    mode: str | None = "quant_only",
+    source: str | None = "mas_official",
+):
     """Cumulative walk-forward returns (equity curve)."""
     from src.output.performance import get_equity_curve
-    return {"equity_curve": await get_equity_curve(days, execution_mode=mode)}
+    return {
+        "equity_curve": await get_equity_curve(
+            days, execution_mode=mode, signal_source=_resolve_source(source),
+        )
+    }
 
 
 @app.get("/api/dashboard/drawdown")
-async def dashboard_drawdown(days: int = Query(default=90, le=365), mode: str | None = "quant_only"):
+async def dashboard_drawdown(
+    days: int = Query(default=90, le=365),
+    mode: str | None = "quant_only",
+    source: str | None = "mas_official",
+):
     """Drawdown curve (area series, red)."""
     from src.output.performance import get_drawdown_curve
-    return {"drawdown": await get_drawdown_curve(days, execution_mode=mode)}
+    return {
+        "drawdown": await get_drawdown_curve(
+            days, execution_mode=mode, signal_source=_resolve_source(source),
+        )
+    }
 
 
 @app.get("/api/dashboard/trades")
@@ -421,30 +465,57 @@ async def dashboard_trades(
     days: int = Query(default=90, le=365),
     mode: str | None = "quant_only",
     include_open: bool = Query(default=True),
+    source: str | None = "mas_official",
 ):
     """Individual trade history with signal and outcome details."""
     from src.output.performance import get_trades_list
-    return {"trades": await get_trades_list(days, execution_mode=mode, include_open=include_open)}
+    return {
+        "trades": await get_trades_list(
+            days,
+            execution_mode=mode,
+            include_open=include_open,
+            signal_source=_resolve_source(source),
+        )
+    }
 
 
 @app.get("/api/dashboard/return-distribution")
-async def dashboard_return_distribution(days: int = Query(default=90, le=365)):
+async def dashboard_return_distribution(
+    days: int = Query(default=90, le=365),
+    source: str | None = "mas_official",
+):
     """Return distribution by signal model."""
     from src.output.performance import get_return_distribution
-    return {"distribution": await get_return_distribution(days)}
+    return {
+        "distribution": await get_return_distribution(
+            days, signal_source=_resolve_source(source),
+        )
+    }
 
 
 @app.get("/api/dashboard/regime-matrix")
-async def dashboard_regime_matrix(days: int = Query(default=180, le=365)):
+async def dashboard_regime_matrix(
+    days: int = Query(default=180, le=365),
+    source: str | None = "mas_official",
+):
     """Win rate x model x regime matrix."""
     from src.output.performance import get_regime_matrix
-    return {"matrix": await get_regime_matrix(days)}
+    return {
+        "matrix": await get_regime_matrix(
+            days, signal_source=_resolve_source(source),
+        )
+    }
 
 
 @app.get("/api/dashboard/calibration")
-async def dashboard_calibration(mode: str | None = "quant_only"):
+async def dashboard_calibration(
+    mode: str | None = "quant_only",
+    source: str | None = "mas_official",
+):
     """Confidence calibration curve (confidence vs actual hit rate)."""
-    data = await get_performance_summary(days=90, execution_mode=mode)
+    data = await get_performance_summary(
+        days=90, execution_mode=mode, signal_source=_resolve_source(source),
+    )
     return {"calibration": data.get("confidence_calibration", [])}
 
 

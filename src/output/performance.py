@@ -17,6 +17,8 @@ from src.data.aggregator import DataAggregator
 
 logger = logging.getLogger(__name__)
 
+DEFAULT_SIGNAL_SOURCE = "mas_official"
+
 
 async def check_open_positions() -> tuple[
     list[dict], list[PositionHealthCard], list[PositionHealthCard], list[dict]
@@ -602,6 +604,7 @@ async def record_new_signals(pipeline_results: list[dict]) -> None:
 async def build_validation_card_from_history(
     days: int = 90,
     execution_mode: str = "quant_only",
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
 ) -> dict[str, "ValidationCard | None"]:
     """Build per-model ValidationCards from recent closed outcomes.
 
@@ -610,13 +613,15 @@ async def build_validation_card_from_history(
 
     Only includes outcomes from runs matching ``execution_mode`` so that
     stale agentic_full history cannot contaminate quant_only validation.
+    Defaults to ``mas_official`` so the validation gate is never inflated
+    by parallel sleeve outcomes.
     """
     from src.backtest.validation_card import ValidationCard, generate_validation_card
     from src.db.models import DailyRun
 
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
-        result = await session.execute(
+        query = (
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
             .join(DailyRun, Signal.run_date == DailyRun.run_date)
@@ -627,6 +632,9 @@ async def build_validation_card_from_history(
                 DailyRun.execution_mode == execution_mode,
             )
         )
+        if signal_source is not None:
+            query = query.where(Signal.signal_source == signal_source)
+        result = await session.execute(query)
         rows = result.all()
 
     # Group by signal_model
@@ -662,6 +670,7 @@ async def build_validation_card_from_history(
 async def get_performance_summary(
     days: int = 30,
     execution_mode: str | None = None,
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
 ) -> dict:
     """Get aggregate performance data for the meta-analyst.
 
@@ -669,6 +678,8 @@ async def get_performance_summary(
         days: Lookback window in days.
         execution_mode: Filter to a specific execution mode (e.g. "quant_only").
             If None, includes all modes (legacy behavior).
+        signal_source: Filter to a specific signal source (default
+            ``mas_official``). Pass ``None`` to include all sources.
     """
     from src.db.models import DailyRun
 
@@ -695,6 +706,19 @@ async def get_performance_summary(
             select(Signal).where(Signal.id.in_(signal_ids))
         )
         signals = {s.id: s for s in sig_result.scalars().all()}
+
+        if signal_source is not None:
+            closed = [
+                o for o in closed
+                if signals.get(o.signal_id)
+                and signals[o.signal_id].signal_source == signal_source
+            ]
+            if not closed:
+                return {
+                    "total_signals": 0,
+                    "message": f"No closed trades in period for source={signal_source}",
+                    "signal_source": signal_source,
+                }
 
         # Filter by execution_mode if requested
         if execution_mode:
@@ -788,6 +812,8 @@ async def get_performance_summary(
         }
         if execution_mode:
             result_dict["execution_mode"] = execution_mode
+        if signal_source is not None:
+            result_dict["signal_source"] = signal_source
         return result_dict
 
 
@@ -1124,44 +1150,59 @@ async def get_divergence_stats(days: int = 30) -> dict | None:
 async def get_equity_curve(
     days: int = 90,
     execution_mode: str | None = None,
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
 ) -> list[dict]:
     """Build equity curve from closed outcomes (daily cumulative returns).
 
     Args:
         days: Lookback window in days.
         execution_mode: Filter to a specific execution mode (e.g. "quant_only").
+        signal_source: Filter to a specific signal source (default
+            ``mas_official``). Pass ``None`` to include all sources.
     """
     from src.db.models import DailyRun
 
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
-        result = await session.execute(
-            select(Outcome).where(
-                Outcome.still_open == False,
-                Outcome.skip_reason.is_(None),
-                Outcome.exit_date >= cutoff,
-            ).order_by(Outcome.exit_date.asc())
-        )
+        query = select(Outcome).where(
+            Outcome.still_open == False,
+            Outcome.skip_reason.is_(None),
+            Outcome.exit_date >= cutoff,
+        ).order_by(Outcome.exit_date.asc())
+
+        result = await session.execute(query)
         closed = result.scalars().all()
 
-        if execution_mode and closed:
-            signal_ids = [o.signal_id for o in closed]
-            sig_result = await session.execute(
-                select(Signal).where(Signal.id.in_(signal_ids))
-            )
-            signals = {s.id: s for s in sig_result.scalars().all()}
-            run_result = await session.execute(
-                select(DailyRun.run_date).where(
-                    DailyRun.execution_mode == execution_mode,
-                    DailyRun.run_date >= cutoff,
-                )
-            )
-            valid_dates = {r.run_date for r in run_result.all()}
-            closed = [
-                o for o in closed
-                if signals.get(o.signal_id)
-                and signals[o.signal_id].run_date in valid_dates
+        if (execution_mode or signal_source is not None) and closed:
+            signal_ids = [
+                o.signal_id for o in closed if hasattr(o, "signal_id")
             ]
+            if signal_ids:
+                sig_result = await session.execute(
+                    select(Signal).where(Signal.id.in_(signal_ids))
+                )
+                signals = {s.id: s for s in sig_result.scalars().all()}
+
+                if execution_mode:
+                    run_result = await session.execute(
+                        select(DailyRun.run_date).where(
+                            DailyRun.execution_mode == execution_mode,
+                            DailyRun.run_date >= cutoff,
+                        )
+                    )
+                    valid_dates = {r.run_date for r in run_result.all()}
+                    closed = [
+                        o for o in closed
+                        if signals.get(o.signal_id)
+                        and signals[o.signal_id].run_date in valid_dates
+                    ]
+
+                if signal_source is not None:
+                    closed = [
+                        o for o in closed
+                        if signals.get(o.signal_id)
+                        and signals[o.signal_id].signal_source == signal_source
+                    ]
 
     # Aggregate by day so chart points have unique timestamps.
     # Multiple closes on the same day should roll into one daily P&L.
@@ -1184,9 +1225,15 @@ async def get_equity_curve(
     return curve
 
 
-async def get_drawdown_curve(days: int = 90, execution_mode: str | None = None) -> list[dict]:
+async def get_drawdown_curve(
+    days: int = 90,
+    execution_mode: str | None = None,
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
+) -> list[dict]:
     """Build drawdown series from equity curve."""
-    curve = await get_equity_curve(days, execution_mode=execution_mode)
+    curve = await get_equity_curve(
+        days, execution_mode=execution_mode, signal_source=signal_source,
+    )
     if not curve:
         return []
 
@@ -1207,6 +1254,7 @@ async def get_trades_list(
     days: int = 90,
     execution_mode: str | None = None,
     include_open: bool = True,
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
 ) -> list[dict]:
     """Return individual trade records with signal and outcome details.
 
@@ -1214,6 +1262,8 @@ async def get_trades_list(
         days: Lookback window in days.
         execution_mode: Filter to a specific execution mode (e.g. "quant_only").
         include_open: Whether to include still-open positions.
+        signal_source: Filter to a specific signal source (default
+            ``mas_official``). Pass ``None`` to include all sources.
     """
     from src.db.models import DailyRun
 
@@ -1228,6 +1278,8 @@ async def get_trades_list(
         )
         if not include_open:
             query = query.where(Outcome.still_open == False)
+        if signal_source is not None:
+            query = query.where(Signal.signal_source == signal_source)
         query = query.order_by(Signal.run_date.desc())
 
         result = await session.execute(query)
@@ -1251,6 +1303,9 @@ async def get_trades_list(
             "ticker": signal.ticker,
             "direction": signal.direction,
             "signal_model": signal.signal_model,
+            "signal_source": signal.signal_source,
+            "also_in_mas": signal.also_in_mas,
+            "suppressed_by_cross_model_ranking": signal.suppressed_by_cross_model_ranking,
             "confidence": signal.confidence,
             "regime": signal.regime,
             "entry_price": outcome.entry_price,
@@ -1265,19 +1320,31 @@ async def get_trades_list(
             "stop_loss": signal.stop_loss,
             "target_1": signal.target_1,
             "holding_period_days": signal.holding_period_days,
+            "manual_status": outcome.manual_status,
+            "manual_entry_price": outcome.manual_entry_price,
+            "manual_exit_price": outcome.manual_exit_price,
+            "manual_pnl_pct": outcome.manual_pnl_pct,
+            "entry_slippage_pct": outcome.entry_slippage_pct,
+            "exit_slippage_pct": outcome.exit_slippage_pct,
         })
     return trades
 
 
-async def get_return_distribution(days: int = 90) -> dict:
+async def get_return_distribution(
+    days: int = 90,
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
+) -> dict:
     """Return distribution of trade P&L by signal model."""
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
-        result = await session.execute(
+        query = (
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
             .where(Outcome.still_open == False, Outcome.skip_reason.is_(None), Outcome.exit_date >= cutoff)
         )
+        if signal_source is not None:
+            query = query.where(Signal.signal_source == signal_source)
+        result = await session.execute(query)
         rows = result.all()
 
     by_model: dict[str, list[float]] = {}
@@ -1298,15 +1365,21 @@ async def get_return_distribution(days: int = 90) -> dict:
     return distribution
 
 
-async def get_regime_matrix(days: int = 180) -> list[dict]:
+async def get_regime_matrix(
+    days: int = 180,
+    signal_source: str | None = DEFAULT_SIGNAL_SOURCE,
+) -> list[dict]:
     """Win rate matrix: model x regime, color-coded."""
     async with get_session() as session:
         cutoff = date.today() - timedelta(days=days)
-        result = await session.execute(
+        query = (
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
             .where(Outcome.still_open == False, Outcome.skip_reason.is_(None), Outcome.exit_date >= cutoff)
         )
+        if signal_source is not None:
+            query = query.where(Signal.signal_source == signal_source)
+        result = await session.execute(query)
         rows = result.all()
 
     # Build nested dict: model -> regime -> [pnls]

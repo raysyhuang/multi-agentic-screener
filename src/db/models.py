@@ -74,6 +74,9 @@ class Signal(Base):
     ticker: Mapped[str] = mapped_column(String(10), nullable=False, index=True)
     direction: Mapped[str] = mapped_column(String(10), nullable=False)  # LONG / SHORT
     signal_model: Mapped[str] = mapped_column(String(30), nullable=False)
+    signal_source: Mapped[str] = mapped_column(
+        String(30), nullable=False, default="mas_official", index=True
+    )
     entry_price: Mapped[float] = mapped_column(Float, nullable=False)
     stop_loss: Mapped[float] = mapped_column(Float, nullable=False)
     target_1: Mapped[float] = mapped_column(Float, nullable=False)
@@ -90,6 +93,10 @@ class Signal(Base):
     regime: Mapped[str] = mapped_column(String(20), nullable=False)
     features: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
     max_entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    also_in_mas: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    suppressed_by_cross_model_ranking: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, default=False
+    )
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )
@@ -120,6 +127,19 @@ class Outcome(Base):
     partial_exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
     partial_exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
     leg2_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+
+    # Manual sleeve execution tracking
+    manual_status: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    manual_entry_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    manual_entry_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    manual_exit_date: Mapped[date | None] = mapped_column(Date, nullable=True)
+    manual_exit_price: Mapped[float | None] = mapped_column(Float, nullable=True)
+    manual_exit_reason: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    manual_pnl_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    manual_pnl_dollars: Mapped[float | None] = mapped_column(Float, nullable=True)
+    entry_slippage_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    exit_slippage_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    manual_notes: Mapped[str | None] = mapped_column(Text, nullable=True)
 
     updated_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now(), onupdate=func.now()

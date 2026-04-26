@@ -68,7 +68,10 @@ class RankedCandidate:
     holding_period: int
     components: dict
     features: dict
+    signal_source: str = "mas_official"
     max_entry_price: float | None = None
+    also_in_mas: bool = False
+    suppressed_by_cross_model_ranking: bool = False
 
 
 def rank_candidates(
@@ -143,6 +146,7 @@ def rank_candidates(
         candidates.append(RankedCandidate(
             ticker=signal.ticker,
             signal_model=model_name,
+            signal_source=getattr(signal, "signal_source", "mas_official"),
             raw_score=signal.score,
             regime_adjusted_score=round(adjusted_score, 2),
             direction=signal.direction,
@@ -151,9 +155,13 @@ def rank_candidates(
             target_1=adj_t1,
             target_2=adj_t2,
             holding_period=signal.holding_period,
-            components=signal.components,
+            components=dict(signal.components),
             features=features,
             max_entry_price=getattr(signal, "max_entry_price", None),
+            also_in_mas=bool(getattr(signal, "also_in_mas", False)),
+            suppressed_by_cross_model_ranking=bool(
+                getattr(signal, "suppressed_by_cross_model_ranking", False)
+            ),
         ))
 
     # Sort by regime-adjusted score
@@ -235,12 +243,17 @@ def filter_correlated_picks(
 
 def deduplicate_signals(signals: list[AnySignal]) -> list[AnySignal]:
     """If multiple models flag the same ticker, keep the highest scoring one."""
+    return list(best_signal_by_ticker(signals).values())
+
+
+def best_signal_by_ticker(signals: list[AnySignal]) -> dict[str, AnySignal]:
+    """Return the highest-scoring signal per ticker."""
     best_by_ticker: dict[str, AnySignal] = {}
     for signal in signals:
         ticker = signal.ticker
         if ticker not in best_by_ticker or signal.score > best_by_ticker[ticker].score:
             best_by_ticker[ticker] = signal
-    return list(best_by_ticker.values())
+    return best_by_ticker
 
 
 # --- Confluence Detection ---

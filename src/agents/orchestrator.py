@@ -61,7 +61,10 @@ class PipelineResult:
     debate: DebateResult
     risk_gate: RiskGateOutput
     features: dict
+    signal_source: str = "mas_official"
     max_entry_price: float | None = None
+    also_in_mas: bool = False
+    suppressed_by_cross_model_ranking: bool = False
 
 
 @dataclass
@@ -600,6 +603,7 @@ async def _execute_pipeline_inner(
                 approved.append(PipelineResult(
                     ticker=candidate.ticker,
                     signal_model=candidate.signal_model,
+                    signal_source=getattr(candidate, "signal_source", "mas_official"),
                     direction=candidate.direction,
                     entry_price=candidate.entry_price,
                     stop_loss=stop,
@@ -611,7 +615,11 @@ async def _execute_pipeline_inner(
                     debate=debate,
                     risk_gate=gate_result,
                     features=candidate.features,
-                    max_entry_price=candidate.max_entry_price,
+                    max_entry_price=getattr(candidate, "max_entry_price", None),
+                    also_in_mas=getattr(candidate, "also_in_mas", False),
+                    suppressed_by_cross_model_ranking=getattr(
+                        candidate, "suppressed_by_cross_model_ranking", False,
+                    ),
                 ))
                 memory_service.working.record_approval(candidate.ticker)
             else:

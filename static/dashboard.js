@@ -363,10 +363,41 @@
   // =======================================================================
   // SIGNALS TAB
   // =======================================================================
+  var signalsSourceFilter = 'mas_official';
+
+  function setSignalsSource(source) {
+    signalsSourceFilter = source || 'mas_official';
+    loadSignals();
+  }
+  window.setSignalsSource = setSignalsSource;
+
+  function renderSignalsSourceSelector(active) {
+    var options = [
+      { value: 'mas_official', label: 'MAS Official' },
+      { value: 'mr_manual_sleeve', label: 'MR Manual Sleeve' },
+      { value: 'all', label: 'All sources' },
+    ];
+    var buttons = options.map(function (opt) {
+      var isActive = opt.value === active;
+      var bg = isActive ? 'var(--accent, #3b82f6)' : 'transparent';
+      var color = isActive ? '#fff' : 'var(--text-secondary)';
+      var border = isActive ? 'var(--accent, #3b82f6)' : 'var(--border)';
+      return '<button onclick="setSignalsSource(\'' + opt.value + '\')" ' +
+        'style="background:' + bg + ';color:' + color + ';border:1px solid ' + border +
+        ';border-radius:4px;padding:0.25rem 0.7rem;cursor:pointer;font-size:0.8rem">' +
+        opt.label + '</button>';
+    }).join('');
+    return '<div class="card" style="margin-bottom:1rem;display:flex;align-items:center;gap:0.5rem;flex-wrap:wrap">' +
+      '<span style="font-size:0.8rem;color:var(--text-muted)">Stream:</span>' +
+      buttons +
+      '</div>';
+  }
+
   function loadSignals() {
     showSpinner('signals-view');
+    var src = encodeURIComponent(signalsSourceFilter);
     Promise.all([
-      fetchJSON('/api/dashboard/signals'),
+      fetchJSON('/api/dashboard/signals?source=' + src),
       fetchJSON('/api/dashboard/dataset-health').catch(function () { return null; }),
       fetchJSON('/api/dashboard/pipeline-health').catch(function () { return null; }),
     ]).then(function (results) {
@@ -398,9 +429,13 @@
         );
       }
 
+      var sourceSelector = renderSignalsSourceSelector(signalsSourceFilter);
+      var streamLabel = signalsSourceFilter === 'mr_manual_sleeve'
+        ? 'MR Manual Sleeve'
+        : (signalsSourceFilter === 'all' ? 'All Streams' : 'MAS Official');
       var header = '<div class="card" style="margin-bottom:1.25rem">' +
         '<div class="card-header">' +
-        '<div><span class="card-title">Latest Signals</span>' +
+        '<div><span class="card-title">Latest Signals — ' + streamLabel + '</span>' +
         '<div class="card-subtitle">' + (data.run_date || '') + '</div></div>' +
         regimeBadge(data.regime || '') +
         '</div></div>';
@@ -412,13 +447,15 @@
           metaText = '<p>Total: ' + data.meta.total_signals +
             ' | Approved: ' + (data.meta.approved_signals || 0) + '</p>';
         }
-        view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner + header +
+        view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner +
+          sourceSelector + header +
           '<div class="empty-state"><h3>No Signals</h3><p>' + escapeHtml(reason) + '</p>' + metaText + '</div>';
         return;
       }
 
       var cards = data.signals.map(renderSignalCard).join('');
-      view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner + header + '<div class="signals-grid">' + cards + '</div>';
+      view.innerHTML = pipelineBanner + fmpBadge + healthBanner + checklistBanner +
+        sourceSelector + header + '<div class="signals-grid">' + cards + '</div>';
     }).catch(function () {
       showEmpty('signals-view', 'Failed to load signals.');
     });
@@ -653,6 +690,21 @@
       '</div>';
   }
 
+  function renderSourceBadges(s) {
+    var badges = [];
+    if (s.signal_source === 'mr_manual_sleeve') {
+      badges.push('<span style="font-size:0.7rem;background:rgba(168,85,247,0.15);color:#a855f7;border:1px solid #a855f7;border-radius:4px;padding:0.1rem 0.4rem;margin-left:0.35rem">MR Sleeve</span>');
+      if (s.also_in_mas) {
+        badges.push('<span style="font-size:0.7rem;color:var(--text-muted);margin-left:0.3rem">also in MAS</span>');
+      } else if (s.suppressed_by_cross_model_ranking) {
+        badges.push('<span style="font-size:0.7rem;color:var(--amber, #f59e0b);margin-left:0.3rem">suppressed by cross-model rank</span>');
+      } else {
+        badges.push('<span style="font-size:0.7rem;color:var(--text-muted);margin-left:0.3rem">sleeve-only</span>');
+      }
+    }
+    return badges.join('');
+  }
+
   function renderSignalCard(s) {
     var dirClass = (s.direction || '').toLowerCase() === 'long' ? 'direction-long' : 'direction-short';
     var conf = s.confidence || 0;
@@ -661,6 +713,7 @@
         '<span class="signal-ticker">' + escapeHtml(s.ticker) + '</span>' +
         '<span class="direction-badge ' + dirClass + '">' + escapeHtml(s.direction) + '</span>' +
         '<span class="signal-model">' + escapeHtml(s.signal_model || '') + '</span>' +
+        renderSourceBadges(s) +
       '</div></div>' +
       '<div class="confidence-label">Confidence: ' + fmt(conf, 0) + '/100</div>' +
       '<div class="confidence-meter"><div class="confidence-fill" style="width:' + conf + '%;background:' + confidenceColor(conf) + '"></div></div>' +

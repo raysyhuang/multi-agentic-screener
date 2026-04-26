@@ -207,6 +207,68 @@ def _render_scorecard(model_scorecard: dict[str, dict]) -> list[str]:
 # Daily Screener Alert
 # ---------------------------------------------------------------------------
 
+def _render_manual_sleeve_section(
+    sleeve_picks: list[dict],
+) -> list[str]:
+    """Render the MR Manual Sleeve section appended to the daily alert.
+
+    Each pick mirrors the MAS layout but adds an overlap tag so it's clear
+    whether the sleeve duplicates an MAS pick or surfaces one that
+    cross-model ranking suppressed.
+    """
+    lines: list[str] = []
+    lines.append(_section_line())
+    lines.append(
+        f"\U0001f9ea <b>MR Manual Sleeve</b> ({len(sleeve_picks)} pick"
+        f"{'' if len(sleeve_picks) == 1 else 's'})"
+    )
+    lines.append(
+        "<i>Daily mean-reversion sleeve for manual trading. "
+        "Tracked separately from MAS.</i>"
+    )
+    lines.append("")
+
+    if not sleeve_picks:
+        lines.append("   No qualified MR picks today.")
+        lines.append("")
+        return lines
+
+    for pick in sleeve_picks:
+        ticker = pick.get("ticker", "???")
+        direction = pick.get("direction", "LONG")
+        entry = pick.get("entry_price", 0)
+        stop = pick.get("stop_loss", 0)
+        target = pick.get("target_1", 0)
+        confidence = pick.get("confidence", 0)
+        holding = pick.get("holding_period", 3)
+        also_in_mas = pick.get("also_in_mas", False)
+        suppressed = pick.get("suppressed_by_cross_model_ranking", False)
+
+        if also_in_mas:
+            overlap_tag = "\U0001f501 also in MAS today"
+        elif suppressed:
+            overlap_tag = "⚡ surfaced by sleeve (suppressed by cross-model rank)"
+        else:
+            overlap_tag = "\U0001f4cd sleeve-only"
+
+        risk_pct = abs(entry - stop) / entry * 100 if entry > 0 else 0
+        reward_pct = abs(target - entry) / entry * 100 if entry > 0 else 0
+        rr = reward_pct / risk_pct if risk_pct > 0 else 0
+        dir_arrow = "▲" if direction == "LONG" else "▼"
+        conf_bar = _bar(confidence, 100, 10)
+
+        lines.extend([
+            f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>mean_reversion</code>",
+            f"   {overlap_tag}",
+            f"   {conf_bar} {confidence:.0f}/100",
+            f"   Entry <b>${entry:.2f}</b>  →  Target <b>${target:.2f}</b> (+{reward_pct:.1f}%)",
+            f"   Stop  <b>${stop:.2f}</b>  ({risk_pct:.1f}% risk)   R:R <b>{rr:.1f}:1</b>   {holding}d",
+        ])
+        lines.append("")
+
+    return lines
+
+
 def format_daily_alert(
     picks: list[dict],
     regime: str,
@@ -216,8 +278,14 @@ def format_daily_alert(
     key_risks: list[str] | None = None,
     execution_mode: str | None = None,
     model_scorecard: dict[str, dict] | None = None,
+    manual_sleeve_picks: list[dict] | None = None,
 ) -> str:
-    """Format the daily picks into a clean, scannable Telegram message."""
+    """Format the daily picks into a clean, scannable Telegram message.
+
+    ``manual_sleeve_picks`` is the parallel MR Manual Sleeve stream. It is
+    rendered in its own labeled section after the MAS picks (or directly
+    after the validation/empty-state body) so MAS tracking stays clean.
+    """
     regime_dot = _regime_emoji(regime)
 
     if validation_failed:
@@ -244,6 +312,10 @@ def format_daily_alert(
                 lines.append(f"   \u26a0\ufe0f {risk}")
         lines.extend(["", "<i>All picks blocked by validation gate.</i>"])
 
+        if manual_sleeve_picks is not None:
+            lines.append("")
+            lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
+
         if model_scorecard:
             lines.append("")
             lines.extend(_render_scorecard(model_scorecard))
@@ -262,6 +334,10 @@ def format_daily_alert(
         if mode_line:
             lines.append(mode_line.rstrip())
         lines.extend(["", "No high-conviction picks today."])
+
+        if manual_sleeve_picks is not None:
+            lines.append("")
+            lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
 
         if model_scorecard:
             lines.append("")
@@ -316,6 +392,9 @@ def format_daily_alert(
             lines.append(f"   \u2022 {risk}")
         lines.append("")
 
+    if manual_sleeve_picks is not None:
+        lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
+
     # Model scorecard (appended if provided)
     if model_scorecard:
         lines.extend(_render_scorecard(model_scorecard))
@@ -330,10 +409,15 @@ def format_daily_alert(
 async def get_model_scorecard(
     days: int = 30,
     execution_mode: str | None = None,
+    signal_source: str | None = "mas_official",
 ) -> dict[str, dict]:
     """Query DB for closed outcomes by signal_model over the last N days.
 
     Returns dict like: {"mean_reversion": {"trades": 12, "win_rate": 0.71, ...}, ...}
+
+    ``signal_source`` defaults to ``mas_official`` so the headline scorecard
+    is never inflated by parallel sleeve outcomes. Pass ``None`` to include
+    every source.
     """
     try:
         from src.db.session import get_session
@@ -374,6 +458,10 @@ async def get_model_scorecard(
                 )
                 .group_by(Signal.signal_model)
             )
+
+            if signal_source is not None:
+                closed_query = closed_query.where(Signal.signal_source == signal_source)
+                open_query = open_query.where(Signal.signal_source == signal_source)
 
             if execution_mode:
                 closed_query = (
