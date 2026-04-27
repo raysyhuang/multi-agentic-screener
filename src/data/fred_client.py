@@ -2,16 +2,81 @@
 
 from __future__ import annotations
 
+import asyncio
+import logging
+import random
 from datetime import date, timedelta
 
 import httpx
 import pandas as pd
+
+logger = logging.getLogger(__name__)
 
 # FRED data is free, no key needed for basic series via yfinance / public endpoints.
 # We use yfinance for VIX (^VIX) and treasury yields since FRED API requires registration.
 # For broader macro data we hit the FRED public JSON endpoint.
 
 FRED_BASE = "https://api.stlouisfed.org/fred/series/observations"
+
+# Bounded retry config for transient FRED failures (5xx + network errors).
+# Worst-case added latency before final fail-closed: ~3s with jitter.
+_FRED_RETRY_MAX_ATTEMPTS = 3
+_FRED_RETRY_BASE_DELAY = 0.5
+_FRED_RETRY_BACKOFF_FACTOR = 2.0
+_FRED_RETRY_JITTER = 0.25
+_FRED_TIMEOUT_S = 30
+
+
+async def _fetch_fred_observations(
+    url: str, params: dict, series_id: str
+) -> httpx.Response:
+    """GET FRED observations with bounded retries.
+
+    Retries on httpx.TransportError (incl. ConnectError, ReadError,
+    NetworkError) and httpx.TimeoutException, plus HTTP 5xx responses.
+    Never retries 4xx — those are real client errors. Final attempt
+    raises the underlying exception so callers' fail-closed semantics
+    are preserved.
+    """
+    for attempt in range(1, _FRED_RETRY_MAX_ATTEMPTS + 1):
+        is_last = attempt == _FRED_RETRY_MAX_ATTEMPTS
+        try:
+            async with httpx.AsyncClient(timeout=_FRED_TIMEOUT_S) as client:
+                resp = await client.get(url, params=params)
+
+            if 500 <= resp.status_code < 600 and not is_last:
+                logger.warning(
+                    "FRED %s attempt %d/%d got HTTP %d — retrying",
+                    series_id, attempt, _FRED_RETRY_MAX_ATTEMPTS, resp.status_code,
+                )
+            else:
+                # 2xx success, 4xx (no retry), or final-attempt 5xx (raise).
+                resp.raise_for_status()
+                if attempt > 1:
+                    logger.info(
+                        "FRED %s succeeded on attempt %d/%d",
+                        series_id, attempt, _FRED_RETRY_MAX_ATTEMPTS,
+                    )
+                return resp
+        except (httpx.TransportError, httpx.TimeoutException) as e:
+            if is_last:
+                logger.error(
+                    "FRED %s exhausted %d attempts (%s: %s)",
+                    series_id, _FRED_RETRY_MAX_ATTEMPTS, type(e).__name__, e,
+                )
+                raise
+            logger.warning(
+                "FRED %s attempt %d/%d %s: %s — retrying",
+                series_id, attempt, _FRED_RETRY_MAX_ATTEMPTS, type(e).__name__, e,
+            )
+
+        # Reached only when retrying. Exponential backoff with jitter.
+        delay = _FRED_RETRY_BASE_DELAY * (_FRED_RETRY_BACKOFF_FACTOR ** (attempt - 1))
+        delay = max(0.0, delay + random.uniform(-_FRED_RETRY_JITTER, _FRED_RETRY_JITTER))
+        await asyncio.sleep(delay)
+
+    # Unreachable: the loop either returns on success or raises on exhaustion.
+    raise RuntimeError("FRED retry loop exited unexpectedly")
 
 # Key series IDs
 SERIES = {
@@ -50,10 +115,8 @@ class FREDClient:
             "observation_start": str(from_date),
             "observation_end": str(to_date),
         }
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await client.get(FRED_BASE, params=params)
-            resp.raise_for_status()
-            data = resp.json()
+        resp = await _fetch_fred_observations(FRED_BASE, params, series_id)
+        data = resp.json()
 
         observations = data.get("observations", [])
         if not observations:
@@ -71,7 +134,6 @@ class FREDClient:
         """Use yfinance for VIX when no FRED key available."""
         import yfinance as yf
         from concurrent.futures import ThreadPoolExecutor
-        import asyncio
 
         yf_map = {
             "VIXCLS": "^VIX",
