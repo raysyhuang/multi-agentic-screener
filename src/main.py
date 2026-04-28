@@ -647,7 +647,10 @@ def _build_quant_only_result(
         stub_interp = SignalInterpretation(
             ticker=candidate.ticker,
             thesis=f"Quant-only pick: {candidate.signal_model} score={candidate.raw_score:.2f}",
-            confidence=min(candidate.regime_adjusted_score * 100, 99.0),
+            # regime_adjusted_score is already 0-100 (sniper composite), so
+            # don't multiply by 100. Clamp to 99.0 so 100 stays reserved for
+            # the post-LLM-confidence path.
+            confidence=min(candidate.regime_adjusted_score, 99.0),
             key_drivers=list(candidate.components.keys())[:3] if candidate.components else ["score"],
             risk_flags=[],
             suggested_entry=candidate.entry_price,
@@ -690,7 +693,7 @@ def _build_quant_only_result(
             interpretation=stub_interp,
             debate=stub_debate,
             risk_gate=stub_gate,
-            features=candidate.features,
+            features=candidate.persisted_features(),
             max_entry_price=getattr(candidate, "max_entry_price", None),
             also_in_mas=getattr(candidate, "also_in_mas", False),
             suppressed_by_cross_model_ranking=getattr(
@@ -787,7 +790,7 @@ async def _run_hybrid_pipeline(
             interpretation=interp,
             debate=stub_debate,
             risk_gate=stub_gate,
-            features=candidate.features,
+            features=candidate.persisted_features(),
             max_entry_price=getattr(candidate, "max_entry_price", None),
             also_in_mas=getattr(candidate, "also_in_mas", False),
             suppressed_by_cross_model_ranking=getattr(

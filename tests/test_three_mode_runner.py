@@ -30,6 +30,16 @@ class FakeCandidate:
     components: dict = field(default_factory=lambda: {"momentum": 0.9, "volume": 0.7})
     features: dict = field(default_factory=lambda: {"rsi_14": 55.0, "atr_pct": 2.1})
 
+    def persisted_features(self) -> dict:
+        # Mirror RankedCandidate.persisted_features(); enough surface for the
+        # pipeline tests to exercise the persistence path.
+        out = dict(self.features)
+        out["model_raw_score"] = self.raw_score
+        out["model_adjusted_score"] = self.regime_adjusted_score
+        out["model_components"] = dict(self.components)
+        out["score_source"] = f"score_{self.signal_model}"
+        return out
+
 
 # ---------------------------------------------------------------------------
 # PR1.1 — ExecutionMode enum validates correctly

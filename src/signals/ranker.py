@@ -73,6 +73,27 @@ class RankedCandidate:
     also_in_mas: bool = False
     suppressed_by_cross_model_ranking: bool = False
 
+    def persisted_features(self) -> dict:
+        """Build the features payload that should be stored on Signal.features.
+
+        Merges the OHLCV/indicator features dict with the model scoring
+        metadata (raw + regime-adjusted score, component breakdown, source
+        function) so DB diagnostics can answer 'why did this pick score X?'
+        without reconstructing alert-time logic.
+        """
+        score_source_map = {
+            "sniper": "score_sniper",
+            "mean_reversion": "score_mean_reversion",
+            "breakout": "score_breakout",
+            "catalyst": "score_catalyst",
+        }
+        enriched = dict(self.features) if self.features else {}
+        enriched["model_raw_score"] = self.raw_score
+        enriched["model_adjusted_score"] = self.regime_adjusted_score
+        enriched["model_components"] = dict(self.components) if self.components else {}
+        enriched["score_source"] = score_source_map.get(self.signal_model, self.signal_model)
+        return enriched
+
 
 def rank_candidates(
     signals: list[AnySignal],
