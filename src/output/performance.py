@@ -71,6 +71,9 @@ async def check_open_positions() -> tuple[
         # Evaluate P&L and collect OHLCV DataFrames for reuse
         position_dfs: dict[int, pd.DataFrame] = {}
         eval_failures = 0
+        # Track outcomes that transitioned open → closed in this pass so the
+        # invariant alarms can inspect them with the joined Signal row.
+        just_closed_ids: list[int] = []
         for outcome in open_outcomes:
             try:
                 update_data, df = await _evaluate_position(outcome, aggregator)
@@ -85,6 +88,8 @@ async def check_open_positions() -> tuple[
                         "exit_reason": update_data.get("exit_reason", "open"),
                         "still_open": update_data.get("still_open", True),
                     })
+                    if update_data.get("still_open") is False:
+                        just_closed_ids.append(outcome.id)
             except Exception as e:
                 eval_failures += 1
                 logger.error("Failed to evaluate %s: %s", outcome.ticker, e)
@@ -106,6 +111,36 @@ async def check_open_positions() -> tuple[
                 )
             except Exception:
                 pass  # Best effort — don't mask the real error
+
+        # Sniper invariant alarms — alert-only, never mutate. Guards against
+        # phantom-exit regressions returning to live data. See src/output/invariants.py.
+        try:
+            from src.output.invariants import format_alert_message, run_invariants
+
+            just_closed_pairs: list[tuple[Outcome, Signal]] = []
+            if just_closed_ids:
+                jc_result = await session.execute(
+                    select(Outcome, Signal)
+                    .join(Signal, Signal.id == Outcome.signal_id)
+                    .where(Outcome.id.in_(just_closed_ids))
+                )
+                just_closed_pairs = list(jc_result.all())
+
+            alerts = await run_invariants(session, just_closed_pairs)
+            if alerts:
+                logger.warning(
+                    "Invariant alarm fired: %d alert(s) — %s",
+                    len(alerts),
+                    [a.pattern_id for a in alerts],
+                )
+                try:
+                    from src.output.telegram import send_alert
+                    await send_alert(format_alert_message(alerts))
+                except Exception as e:
+                    logger.error("Invariant Telegram alert failed (non-fatal): %s", e)
+        except Exception as e:
+            # Invariants must never break the afternoon check.
+            logger.error("Invariant detector failed (non-fatal): %s", e)
 
     # Health card loop — each position gets its own session to prevent
     # one failure from cascading and poisoning the transaction for others.
