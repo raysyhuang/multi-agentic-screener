@@ -46,6 +46,12 @@ PHANTOM_PNL_TOLERANCE = 0.05  # so [-0.25, -0.15] all match
 PHANTOM_PNL_LOWER = -0.30
 PHANTOM_PNL_UPPER = -0.10
 
+# Deploy breakpoint: outcomes that closed before this date were produced by
+# the buggy simulator and don't represent the fixed system's behavior. The
+# cluster detector (P3) excludes them so a backlog of historical contamination
+# doesn't trigger a spurious alarm under the new code.
+CLEAN_SINCE = date(2026, 4, 28)
+
 
 @dataclass(frozen=True)
 class Alert:
@@ -124,12 +130,19 @@ async def detect_zero_real_exits(
     *,
     lookback_days: int = 14,
     min_sample: int = 10,
+    clean_since: date | None = None,
 ) -> Alert | None:
     """P3: cluster check — over the last `min_sample`+ sniper closes within
     `lookback_days`, zero exited via `target` or non-trail `stop`. That
     distribution suggests phantom trails/time_stops are dominating.
+
+    If `clean_since` is provided, only outcomes with exit_date >= clean_since
+    are counted. This excludes outcomes produced by the pre-fix simulator
+    so a backlog of contaminated history doesn't trigger a spurious alarm.
     """
     cutoff = date.today() - timedelta(days=lookback_days)
+    if clean_since is not None and clean_since > cutoff:
+        cutoff = clean_since
     result = await session.execute(
         select(Outcome, Signal)
         .join(Signal, Signal.id == Outcome.signal_id)
@@ -185,7 +198,7 @@ async def run_invariants(
             if alert is not None:
                 alerts.append(alert)
 
-    cluster_alert = await detect_zero_real_exits(session)
+    cluster_alert = await detect_zero_real_exits(session, clean_since=CLEAN_SINCE)
     if cluster_alert is not None:
         alerts.append(cluster_alert)
 

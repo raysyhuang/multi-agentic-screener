@@ -188,6 +188,42 @@ async def test_p3_treats_time_stop_as_non_real_exit():
     assert a is not None
 
 
+@pytest.mark.asyncio
+async def test_p3_clean_since_filter_excludes_pre_fix_rows():
+    """When clean_since is set, the SQL cutoff moves forward to that date so
+    the contaminated historical window isn't counted toward the cluster.
+    """
+    session = _mock_session_with_rows([])
+    await detect_zero_real_exits(
+        session, lookback_days=30, min_sample=10, clean_since=date(2026, 4, 28)
+    )
+    # Inspect the predicate compiled into the query
+    call_args = session.execute.call_args
+    stmt = call_args.args[0]
+    # The compiled WHERE clause should reference 2026-04-28 (the clean_since)
+    # rather than `today() - 30d`.
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    assert "2026-04-28" in compiled
+
+
+@pytest.mark.asyncio
+async def test_p3_clean_since_ignored_when_lookback_is_more_recent():
+    """If lookback_days produces a cutoff later than clean_since, lookback wins
+    (we never want to look further back than clean_since allows, but we do want
+    the more-recent of the two)."""
+    session = _mock_session_with_rows([])
+    # lookback_days=1 means cutoff = today - 1, which is more recent than
+    # clean_since=2020-01-01.
+    await detect_zero_real_exits(
+        session, lookback_days=1, min_sample=10, clean_since=date(2020, 1, 1)
+    )
+    call_args = session.execute.call_args
+    stmt = call_args.args[0]
+    compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
+    # 2020 should NOT appear — lookback (today - 1d) is later
+    assert "2020-01-01" not in compiled
+
+
 # ---------------------------------------------------------------------------
 # Composite runner
 # ---------------------------------------------------------------------------
