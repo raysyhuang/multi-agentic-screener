@@ -143,7 +143,7 @@ def recompute_exit(ctx: TradeContext, bars: list[dict[str, Any]]) -> RecomputeRe
     mae = 0.0
     days_traded = 0
 
-    for bar in bars:
+    for bar_index, bar in enumerate(bars):
         bar_date = bar["date"]
         bar_open = float(bar["open"])
         bar_high = float(bar["high"])
@@ -206,9 +206,11 @@ def recompute_exit(ctx: TradeContext, bars: list[dict[str, Any]]) -> RecomputeRe
             pnl = (exit_price - ctx.entry_price) / ctx.entry_price * 100
             return RecomputeResult("target", exit_price, bar_date, round(pnl, 4), round(mfe, 4), round(mae, 4))
 
-        # Sniper time stop
+        # Sniper time stop. Mirrors the production guard: never fire on the
+        # entry bar (bar_index == 0) — see src/output/performance.py.
         if (
-            ctx.signal_model == "sniper"
+            bar_index > 0
+            and ctx.signal_model == "sniper"
             and days_traded >= SNIPER_TIME_STOP_DAYS
             and bar_close <= ctx.entry_price
         ):
