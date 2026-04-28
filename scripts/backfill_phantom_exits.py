@@ -397,7 +397,7 @@ async def apply_updates(session, diffs: list[dict[str, Any]], *, snapshot_path: 
             {
                 "exit_reason": d["new"]["exit_reason"],
                 "exit_price": d["new"]["exit_price"],
-                "exit_date": d["new"]["exit_date"],
+                "exit_date": date.fromisoformat(d["new"]["exit_date"]),
                 "pnl_pct": d["new"]["pnl_pct"],
                 "outcome_id": d["outcome_id"],
             },
