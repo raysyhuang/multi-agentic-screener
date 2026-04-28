@@ -454,6 +454,78 @@ async def test_expiry_at_close_after_hold_period(monkeypatch):
 
 
 @pytest.mark.asyncio
+async def test_sniper_time_stop_does_not_fire_on_entry_bar(monkeypatch):
+    """Regression: sniper time_stop must not fire on the entry bar (i==0).
+
+    Previously, days_traded incremented at the top of the loop, so on bar 0
+    `days_traded >= sniper_time_stop_days (=1)` was already True. Any sniper
+    pick whose entry bar closed at or below entry got time-stopped same-day,
+    producing exits with entry_date == exit_date and large negative pnl.
+    """
+    signal = _make_signal(
+        entry_price=100.0,
+        stop_loss=90.0,
+        target_1=115.0,
+        holding_period_days=7,
+        signal_model="sniper",
+    )
+    outcome = _make_outcome()
+    # Entry bar closes red below entry — old code time-stopped here.
+    # Subsequent bars rally so the trade should remain open / exit via target.
+    bars = [
+        {"open": 100.0, "high": 100.4, "low": 99.5, "close": 99.6},
+        {"open": 99.8, "high": 100.5, "low": 99.7, "close": 100.4},
+        {"open": 100.5, "high": 101.0, "low": 100.3, "close": 100.8},
+    ]
+    df = _make_ohlcv_bars(bars, start_date=outcome.entry_date)
+
+    settings = _default_settings(sniper_time_stop_days=1)
+    aggregator = _patch_deps(monkeypatch, signal, df, settings)
+
+    update, _ = await perf._evaluate_position(outcome, aggregator)
+
+    # Either still open or exited via something other than entry-day time_stop.
+    assert update is not None
+    if update.get("exit_reason") == "time_stop":
+        assert update["exit_date"] != outcome.entry_date, (
+            "time_stop must not fire on the entry bar"
+        )
+
+
+@pytest.mark.asyncio
+async def test_sniper_time_stop_fires_on_next_eligible_bar(monkeypatch):
+    """Sniper time_stop semantics preserved from bar 1 onward: if held the
+    configured minimum and the bar closes at or below entry with no prior
+    stop/target/expiry, exit via time_stop."""
+    signal = _make_signal(
+        entry_price=100.0,
+        stop_loss=90.0,
+        target_1=115.0,
+        holding_period_days=7,
+        signal_model="sniper",
+    )
+    outcome = _make_outcome()
+    # Entry bar closes red — must NOT time_stop (i==0 guard).
+    # Bar 1 also closes red — should time_stop here.
+    bars = [
+        {"open": 100.0, "high": 100.4, "low": 99.5, "close": 99.6},
+        {"open": 99.6, "high": 100.0, "low": 99.0, "close": 99.2},
+    ]
+    df = _make_ohlcv_bars(bars, start_date=outcome.entry_date)
+
+    settings = _default_settings(sniper_time_stop_days=1)
+    aggregator = _patch_deps(monkeypatch, signal, df, settings)
+
+    update, _ = await perf._evaluate_position(outcome, aggregator)
+
+    assert update is not None
+    assert update["exit_reason"] == "time_stop"
+    assert update["still_open"] is False
+    # Exit must be on bar 1, not bar 0.
+    assert update["exit_date"] != outcome.entry_date
+
+
+@pytest.mark.asyncio
 async def test_confidence_used_for_score_tiered_stops(monkeypatch):
     """Score-tiered stops must use signal.confidence, not signal.score."""
     signal = _make_signal(confidence=90.0, entry_price=100.0, stop_loss=98.5, target_1=110.0)

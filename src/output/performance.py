@@ -544,8 +544,13 @@ async def _evaluate_position(
                 mfe, mae, outcome, settings, leg1_filled, use_two_leg,
             ), df
 
-        # Sniper time stop
-        if (getattr(signal, "signal_model", None) == "sniper"
+        # Sniper time stop. Never fires on the entry bar (i == 0): the trade has
+        # not been "held" for any period yet, regardless of where days_traded
+        # lands after the top-of-loop increment. From bar i==1 onward, preserve
+        # original semantics: exit if held the configured minimum and the bar
+        # closed at or below entry.
+        if (i > 0
+                and getattr(signal, "signal_model", None) == "sniper"
                 and days_traded >= settings.sniper_time_stop_days
                 and bar_close <= entry_price):
             exit_price = round(bar_close * (1 - slippage), 4)
