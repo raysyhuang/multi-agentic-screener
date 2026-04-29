@@ -15,6 +15,8 @@ from src.research.signal_backtest import (
     scan_mean_reversion,
     simulate_trade,
 )
+from src.research import signal_backtest as sb
+from src.signals.breakout import BreakoutSignal
 
 
 def _make_ohlcv(days: int = 120, start_price: float = 100.0, trend: float = 0.001) -> pd.DataFrame:
@@ -292,6 +294,44 @@ class TestRunModelBacktest:
         data = {"TEST": _make_ohlcv(days=20)}
         result = run_model_backtest("breakout", data)
         assert result.metrics.total_trades == 0
+
+    def test_buckets_trades_by_signal_date_regime(self, monkeypatch):
+        df = _make_ohlcv(days=120, trend=0.004)
+        signal_date = df["date"].iloc[70]
+
+        def fake_scan_breakout(*args, **kwargs):
+            return [
+                (
+                    signal_date,
+                    BreakoutSignal(
+                        ticker="TEST",
+                        score=80,
+                        direction="LONG",
+                        entry_price=100,
+                        stop_loss=1,
+                        target_1=1_000_000,
+                        target_2=1_000_000,
+                        holding_period=3,
+                        components={},
+                    ),
+                )
+            ]
+
+        monkeypatch.setattr(sb, "scan_breakout", fake_scan_breakout)
+
+        result = run_model_backtest(
+            "breakout",
+            {"TEST": df},
+            signal_regime_by_date={signal_date: "bear"},
+        )
+
+        assert result.metrics.total_trades == 1
+        trade = result.trades[0]
+        assert trade.signal_date_regime == "bear"
+        assert trade.regime == "bear"
+        assert trade.ticker_regime in {"bull", "bear", "choppy", "unknown"}
+        assert "bear" in result.by_regime
+        assert "bull" not in result.by_regime
 
 
 class TestFormatReport:

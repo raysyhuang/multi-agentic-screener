@@ -61,6 +61,16 @@ ACCEPTANCE_GATES = {
 
 HORIZONS = [1.0, 3.0, 5.0]
 HORIZON_LABELS = {1.0: "1Y", 3.0: "3Y", 5.0: "5Y"}
+MARKET_REFERENCE_TICKERS = ["SPY", "QQQ", "^VIX", "^TNX", "^IRX"]
+
+
+def _with_market_reference_tickers(tickers: list[str]) -> list[str]:
+    """Add market series needed for signal-date regime classification."""
+    out = list(tickers)
+    for ticker in reversed(MARKET_REFERENCE_TICKERS):
+        if ticker not in out:
+            out.insert(0, ticker)
+    return out
 
 
 def _check_gates(metrics: dict, years: float) -> dict:
@@ -117,9 +127,7 @@ def run_backtest(
     if tickers is None:
         tickers = list(SP500_TICKERS)
 
-    # Ensure SPY is in the ticker list for relative strength calculation
-    if "SPY" not in tickers:
-        tickers = ["SPY"] + tickers
+    tickers = _with_market_reference_tickers(tickers)
 
     price_data = fetch_ohlcv(tickers, years=years, no_cache=no_cache)
     if not price_data:
@@ -175,9 +183,7 @@ def main():
     horizons = [args.years] if args.years else HORIZONS
     tickers = list(SP500_TICKERS)
 
-    # Ensure SPY for RS calculation
-    if "SPY" not in tickers:
-        tickers = ["SPY"] + tickers
+    tickers = _with_market_reference_tickers(tickers)
 
     all_results = {}
 

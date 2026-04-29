@@ -26,6 +26,7 @@ import pandas as pd
 import yfinance as yf
 
 from src.backtest.metrics import PerformanceMetrics, compute_metrics, deflated_sharpe_ratio
+from src.features.regime import classify_regime as classify_market_regime
 from src.features.technical import (
     compute_all_technical_features,
     compute_rsi2_features,
@@ -42,6 +43,7 @@ logger = logging.getLogger(__name__)
 DEFAULT_SLIPPAGE_PCT = 0.001
 DEFAULT_COMMISSION = 1.0
 MIN_HISTORY_BARS = 60  # need at least this many bars for features
+MARKET_DATA_ONLY_TICKERS = {"QQQ", "^VIX", "VIX", "^TNX", "^IRX", "T10Y2Y", "DGS10", "DGS2"}
 
 
 # ── Data fetching ─────────────────────────────────────────────────────────────
@@ -160,6 +162,8 @@ class Trade:
     mfe_pct: float
     mae_pct: float
     score: float
+    signal_date_regime: str
+    ticker_regime: str
     regime: str
 
 
@@ -415,6 +419,125 @@ def classify_regime(df: pd.DataFrame) -> str:
     return "choppy"
 
 
+def _coerce_date(value) -> date:
+    """Normalize pandas/native date values to a Python date."""
+    return pd.Timestamp(value).date()
+
+
+def _normalized_dates(df: pd.DataFrame) -> pd.DataFrame:
+    """Return a copy with a private normalized date column for lookups."""
+    out = df.copy()
+    out["_regime_date"] = pd.to_datetime(out["date"]).dt.date
+    return out.sort_values("_regime_date")
+
+
+def _window_on_or_before(df: pd.DataFrame | None, as_of: date) -> pd.DataFrame:
+    if df is None or df.empty:
+        return pd.DataFrame()
+    normalized = df if "_regime_date" in df.columns else _normalized_dates(df)
+    return normalized[normalized["_regime_date"] <= as_of].drop(columns=["_regime_date"], errors="ignore")
+
+
+def _latest_value_on_or_before(df: pd.DataFrame | None, as_of: date) -> float | None:
+    window = _window_on_or_before(df, as_of)
+    if window.empty:
+        return None
+    value_col = "close" if "close" in window.columns else "value" if "value" in window.columns else None
+    if value_col is None:
+        return None
+    value = pd.to_numeric(window[value_col], errors="coerce").dropna()
+    if value.empty:
+        return None
+    return float(value.iloc[-1])
+
+
+def _daily_breadth(price_data: dict[str, pd.DataFrame], as_of: date) -> float | None:
+    """Compute breadth as of a historical date using the same 20-day SMA idea."""
+    above = 0
+    total = 0
+    for ticker, df in price_data.items():
+        if ticker in MARKET_DATA_ONLY_TICKERS:
+            continue
+        window = _window_on_or_before(df, as_of)
+        if len(window) < 20 or "close" not in window.columns:
+            continue
+        close = pd.to_numeric(window["close"], errors="coerce").dropna()
+        if len(close) < 20:
+            continue
+        sma20 = close.rolling(20).mean().iloc[-1]
+        if pd.isna(sma20):
+            continue
+        total += 1
+        if close.iloc[-1] > sma20:
+            above += 1
+    if total < 10:
+        return None
+    return round(above / total, 4)
+
+
+def _yield_spread_on_or_before(price_data: dict[str, pd.DataFrame], as_of: date) -> float | None:
+    explicit = _latest_value_on_or_before(price_data.get("T10Y2Y"), as_of)
+    if explicit is not None:
+        return explicit
+
+    ten_year_df = price_data.get("^TNX")
+    if ten_year_df is None:
+        ten_year_df = price_data.get("DGS10")
+    two_year_df = price_data.get("^IRX")
+    if two_year_df is None:
+        two_year_df = price_data.get("DGS2")
+
+    ten_year = _latest_value_on_or_before(ten_year_df, as_of)
+    two_year = _latest_value_on_or_before(two_year_df, as_of)
+    if ten_year is None or two_year is None:
+        return None
+    return round(ten_year - two_year, 4)
+
+
+def build_signal_date_regime_map(price_data: dict[str, pd.DataFrame]) -> dict[date, str]:
+    """Build historical market regime labels keyed by signal date.
+
+    This uses the production market-regime classifier with SPY, QQQ, optional
+    VIX, optional yield spread, and historical breadth. If SPY/QQQ are absent,
+    callers fall back to per-ticker regime only for ad-hoc local tests.
+    """
+    spy_df = price_data.get("SPY")
+    qqq_df = price_data.get("QQQ")
+    if spy_df is None or qqq_df is None or spy_df.empty or qqq_df.empty:
+        logger.warning("SPY/QQQ unavailable; signal-date market regime map not built")
+        return {}
+
+    spy_norm = _normalized_dates(spy_df)
+    qqq_norm = _normalized_dates(qqq_df)
+    common_dates = sorted(set(spy_norm["_regime_date"]).intersection(set(qqq_norm["_regime_date"])))
+    regime_by_date: dict[date, str] = {}
+
+    vix_df = price_data.get("^VIX")
+    if vix_df is None:
+        vix_df = price_data.get("VIX")
+    for current_date in common_dates:
+        spy_window = _window_on_or_before(spy_norm, current_date)
+        qqq_window = _window_on_or_before(qqq_norm, current_date)
+        if len(spy_window) < 20 or len(qqq_window) < 20:
+            continue
+
+        assessment = classify_market_regime(
+            spy_window,
+            qqq_window,
+            vix=_latest_value_on_or_before(vix_df, current_date),
+            yield_spread=_yield_spread_on_or_before(price_data, current_date),
+            breadth_score=_daily_breadth(price_data, current_date),
+        )
+        regime_by_date[current_date] = assessment.regime.value
+
+    return regime_by_date
+
+
+def _ticker_regime_as_of(df: pd.DataFrame, as_of: date) -> str:
+    window = _window_on_or_before(df, as_of)
+    return classify_regime(window) if not window.empty else "unknown"
+
+
 def scan_breakout(
     ticker: str,
     df: pd.DataFrame,
@@ -508,6 +631,7 @@ def scan_sniper(
     ticker: str,
     df: pd.DataFrame,
     spy_df: pd.DataFrame | None = None,
+    signal_regime_by_date: dict[date, str] | None = None,
     min_score: float = 60.0,
     atr_pct_floor: float = 3.5,
     stop_atr_mult: float = 2.0,
@@ -528,12 +652,18 @@ def scan_sniper(
 
         # Build spy window aligned to same dates if available
         spy_window = None
+        signal_date = _coerce_date(window["date"].iloc[-1])
         if spy_df is not None and not spy_df.empty:
-            signal_date = window["date"].iloc[-1]
             spy_window = spy_df[spy_df["date"] <= signal_date]
 
-        # Classify regime at each bar for accurate bear-blocking
-        window_regime = classify_regime(window)
+        # Classify market regime at each signal date for accurate bear-blocking.
+        window_regime = (
+            signal_regime_by_date.get(signal_date)
+            if signal_regime_by_date is not None
+            else None
+        )
+        if window_regime is None:
+            window_regime = classify_regime(window)
 
         sig = score_sniper(
             ticker, window, feat,
@@ -549,7 +679,6 @@ def scan_sniper(
         if sig.score < min_score:
             continue
 
-        signal_date = window["date"].iloc[-1]
         signals.append((signal_date, sig))
 
     return signals
@@ -574,17 +703,25 @@ def run_model_backtest(
     model: str,
     price_data: dict[str, pd.DataFrame],
     params: dict | None = None,
+    signal_regime_by_date: dict[date, str] | None = None,
 ) -> ModelResult:
     """Run a single model across all tickers and return results."""
     params = params or {}
     all_trades: list[Trade] = []
+    market_regime_by_date = (
+        signal_regime_by_date
+        if signal_regime_by_date is not None
+        else build_signal_date_regime_map(price_data)
+    )
 
     for ticker, df in price_data.items():
+        if ticker in MARKET_DATA_ONLY_TICKERS:
+            continue
         if len(df) < MIN_HISTORY_BARS:
             continue
 
-        # Classify regime from full history
-        regime = classify_regime(df)
+        # Keep the old full-history ticker regime for diagnostics only.
+        ticker_regime = classify_regime(df)
 
         # Scan for signals
         if model == "breakout":
@@ -610,6 +747,7 @@ def run_model_backtest(
             raw_signals = scan_sniper(
                 ticker, df,
                 spy_df=spy_df,
+                signal_regime_by_date=market_regime_by_date,
                 min_score=params.get("min_score", 60.0),
                 atr_pct_floor=params.get("atr_pct_floor", 3.5),
                 stop_atr_mult=params.get("stop_atr_mult", 2.0),
@@ -631,6 +769,11 @@ def run_model_backtest(
         score_stop_tiers = params.get("score_stop_tiers", None)
         base_stop_mult = params.get("stop_atr_mult", 0.75)
         for signal_date, sig in raw_signals:
+            signal_date = _coerce_date(signal_date)
+            signal_date_regime = market_regime_by_date.get(signal_date)
+            if signal_date_regime is None:
+                signal_date_regime = _ticker_regime_as_of(df, signal_date)
+
             # Compute ATR at signal date for two-leg and gap filter
             sig_atr = getattr(sig, "_atr_value", 0.0)
             if sig_atr == 0 and hasattr(sig, "entry_price") and hasattr(sig, "stop_loss"):
@@ -672,7 +815,9 @@ def run_model_backtest(
                 model=model,
                 signal_date=signal_date,
                 score=sig.score,
-                regime=regime,
+                signal_date_regime=signal_date_regime,
+                ticker_regime=ticker_regime,
+                regime=signal_date_regime,
                 **{k: v for k, v in result.items()
                    if k in Trade.__dataclass_fields__},
             ))
@@ -684,7 +829,7 @@ def run_model_backtest(
     # By regime
     by_regime: dict[str, PerformanceMetrics] = {}
     for regime_name in ["bull", "bear", "choppy", "unknown"]:
-        regime_returns = [t.pnl_pct for t in all_trades if t.regime == regime_name]
+        regime_returns = [t.pnl_pct for t in all_trades if t.signal_date_regime == regime_name]
         if regime_returns:
             by_regime[regime_name] = compute_metrics(regime_returns)
 
@@ -868,7 +1013,10 @@ def save_trades_csv(trades: list[Trade], path: Path) -> None:
             "exit_date": t.exit_date, "exit_price": t.exit_price,
             "exit_reason": t.exit_reason, "holding_days": t.holding_days,
             "pnl_pct": t.pnl_pct, "mfe_pct": t.mfe_pct, "mae_pct": t.mae_pct,
-            "score": t.score, "regime": t.regime,
+            "score": t.score,
+            "signal_date_regime": t.signal_date_regime,
+            "ticker_regime": t.ticker_regime,
+            "regime": t.regime,
         }
         for t in trades
     ]
