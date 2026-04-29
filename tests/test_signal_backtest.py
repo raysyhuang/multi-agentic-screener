@@ -13,6 +13,7 @@ from src.research.signal_backtest import (
     run_model_backtest,
     scan_breakout,
     scan_mean_reversion,
+    scan_sniper,
     simulate_trade,
 )
 from src.research import signal_backtest as sb
@@ -332,6 +333,48 @@ class TestRunModelBacktest:
         assert trade.ticker_regime in {"bull", "bear", "choppy", "unknown"}
         assert "bear" in result.by_regime
         assert "bull" not in result.by_regime
+
+    def test_missing_signal_date_regime_tags_trade_unknown(self, monkeypatch):
+        df = _make_ohlcv(days=120, trend=0.004)
+        signal_date = df["date"].iloc[70]
+
+        def fake_scan_breakout(*args, **kwargs):
+            return [
+                (
+                    signal_date,
+                    BreakoutSignal(
+                        ticker="TEST",
+                        score=80,
+                        direction="LONG",
+                        entry_price=100,
+                        stop_loss=1,
+                        target_1=1_000_000,
+                        target_2=1_000_000,
+                        holding_period=3,
+                        components={},
+                    ),
+                )
+            ]
+
+        monkeypatch.setattr(sb, "scan_breakout", fake_scan_breakout)
+
+        result = run_model_backtest("breakout", {"TEST": df}, signal_regime_by_date={})
+
+        assert result.metrics.total_trades == 1
+        trade = result.trades[0]
+        assert trade.signal_date_regime == "unknown"
+        assert trade.regime == "unknown"
+        assert trade.ticker_regime in {"bull", "bear", "choppy", "unknown"}
+        for regime in ("bull", "bear", "choppy"):
+            assert regime not in result.by_regime
+
+    def test_scan_sniper_skips_signal_when_map_lacks_signal_date(self):
+        df = _make_ohlcv(days=200, trend=0.004)
+        spy_df = _make_ohlcv(days=200, trend=0.004)
+
+        signals = scan_sniper("TEST", df, spy_df=spy_df, signal_regime_by_date={})
+
+        assert signals == []
 
 
 class TestFormatReport:

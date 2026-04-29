@@ -657,12 +657,12 @@ def scan_sniper(
             spy_window = spy_df[spy_df["date"] <= signal_date]
 
         # Classify market regime at each signal date for accurate bear-blocking.
-        window_regime = (
-            signal_regime_by_date.get(signal_date)
-            if signal_regime_by_date is not None
-            else None
-        )
-        if window_regime is None:
+        if signal_regime_by_date is not None:
+            window_regime = signal_regime_by_date.get(signal_date)
+            if window_regime is None:
+                logger.warning("No market regime for %s on %s; sniper signal skipped", ticker, signal_date)
+                continue
+        else:
             window_regime = classify_regime(window)
 
         sig = score_sniper(
@@ -772,7 +772,12 @@ def run_model_backtest(
             signal_date = _coerce_date(signal_date)
             signal_date_regime = market_regime_by_date.get(signal_date)
             if signal_date_regime is None:
-                signal_date_regime = _ticker_regime_as_of(df, signal_date)
+                logger.warning(
+                    "No market regime for %s on %s; trade tagged 'unknown' and excluded from regime buckets",
+                    ticker,
+                    signal_date,
+                )
+                signal_date_regime = "unknown"
 
             # Compute ATR at signal date for two-leg and gap filter
             sig_atr = getattr(sig, "_atr_value", 0.0)
