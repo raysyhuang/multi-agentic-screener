@@ -287,6 +287,30 @@ def test_regime_survival_fails_single_regime():
     assert any("regimes" in r.lower() for r in result.key_risks)
 
 
+def test_regime_survival_ignores_untraded_disallowed_regimes():
+    """Sniper should not fail because it has no bear trades by design."""
+    today = date(2025, 3, 15)
+    card = ValidationCard(
+        signal_model="sniper", total_trades=50, win_rate=0.62,
+        avg_pnl_pct=1.0, performance_dispersion=0.1,
+        slippage_sensitivity=0.1, threshold_sensitivity=0.1,
+        variants_tested=1, multiple_testing_penalty=0.0,
+        bull_win_rate=0.62, bear_win_rate=0.0, choppy_win_rate=0.0,
+        deflated_sharpe=0.95, is_robust=True, fragility_score=20.0,
+        notes=["test"], bull_trades=50, bear_trades=0, choppy_trades=0,
+    )
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=card,
+        allowed_regimes={"bull", "choppy"},
+    )
+    assert result.checks["regime_survival_check"] == "pass"
+    assert result.validation_status == "pass"
+
+
 def test_regime_survival_passes_insufficient_data():
     """With < 30 trades, regime check passes by default."""
     today = date(2025, 3, 15)
