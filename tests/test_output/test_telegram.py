@@ -42,6 +42,18 @@ def test_format_daily_alert_no_picks():
     assert "CHOPPY" in msg
 
 
+def test_format_daily_alert_no_picks_shows_blocking_reasons():
+    msg = format_daily_alert(
+        [],
+        "bull",
+        "2025-03-15",
+        key_risks=["sniper: Positive in only 0/2 evaluated regimes (need 2)"],
+    )
+    assert "No high-conviction picks" in msg
+    assert "Why official picks were blocked" in msg
+    assert "sniper:" in msg
+
+
 def test_format_daily_alert_risk_reward():
     picks = [
         {

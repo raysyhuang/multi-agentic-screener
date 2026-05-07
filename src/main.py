@@ -125,6 +125,18 @@ def _log_memory(label: str) -> None:
         logger.info("Memory [%s]: RSS=%.0f MB", label, rss)
 
 
+def _validation_allowed_regimes_for_model(signal_model: str) -> set[str] | None:
+    """Return regimes where a signal model is intentionally allowed to trade."""
+    model = (signal_model or "").lower()
+    if model == "sniper":
+        # Sniper is hard-disabled in bear markets and down-weighted in choppy
+        # markets, so the validation gate must not require bear survival.
+        return {"bull", "choppy"}
+    if model in {"mean_reversion", "mr"}:
+        return {"bull", "bear", "choppy"}
+    return None
+
+
 def _setup_logging() -> None:
     """Configure logging — text or JSON format based on LOG_FORMAT env var."""
     settings = get_settings()
@@ -1539,6 +1551,7 @@ async def _run_pipeline_core(
     # Each approved pick is validated against its own model's historical card.
     # A model with no card (< 10 trades) auto-passes fragility checks.
     failed_models: set[str] = set()
+    per_model_key_risks: list[str] = []
     per_model_results: dict[str, object] = {}
     for p in pipeline_result.approved:
         model = getattr(p, "signal_model", "unknown")
@@ -1553,6 +1566,7 @@ async def _run_pipeline_core(
             validation_card=model_card,
             risk_reward_ratios=[],
             min_risk_reward=1.0,
+            allowed_regimes=_validation_allowed_regimes_for_model(model),
         )
         per_model_results[model] = model_result
         if model_result.validation_status == "fail":
@@ -1560,6 +1574,8 @@ async def _run_pipeline_core(
             logger.warning(
                 "FRAGILITY GATE FAILED for model '%s': %s", model, failed_checks,
             )
+            for risk in model_result.key_risks:
+                per_model_key_risks.append(f"{model}: {risk}")
             failed_models.add(model)
 
     # Merge: use structural_result as the overall validation envelope.
@@ -1579,6 +1595,8 @@ async def _run_pipeline_core(
 
     # Use structural_result as the validation envelope for downstream logging.
     validation_result = structural_result
+    if per_model_key_risks:
+        validation_result.key_risks.extend(per_model_key_risks)
 
     validation_envelope = StageEnvelope(
         run_id=run_id,
@@ -1616,7 +1634,12 @@ async def _run_pipeline_core(
             ),
         )
     else:
-        no_trade_reason = "Validation gate failed" if validation_result.validation_status == "fail" else "No candidates survived pipeline"
+        if validation_result.validation_status == "fail":
+            no_trade_reason = "Validation gate failed"
+        elif failed_models:
+            no_trade_reason = f"Model fragility gate blocked official picks: {', '.join(sorted(failed_models))}"
+        else:
+            no_trade_reason = "No candidates survived pipeline"
         final_envelope = StageEnvelope(
             run_id=run_id,
             stage=StageName.FINAL_OUTPUT,

@@ -54,6 +54,12 @@ class ValidationCard:
     fragility_score: float  # 0-100, lower = more robust
     notes: list[str]
 
+    # Optional regime sample counts. Older tests/cards may leave these at 0; the
+    # validation gate falls back to the legacy win-rate-only behavior then.
+    bull_trades: int = 0
+    bear_trades: int = 0
+    choppy_trades: int = 0
+
 
 def generate_validation_card(
     signal_model: str,
@@ -106,6 +112,9 @@ def generate_validation_card(
     bull_wr = _regime_wr("bull")
     bear_wr = _regime_wr("bear")
     choppy_wr = _regime_wr("choppy")
+    bull_trades = len(trade_returns_by_regime.get("bull", []))
+    bear_trades = len(trade_returns_by_regime.get("bear", []))
+    choppy_trades = len(trade_returns_by_regime.get("choppy", []))
 
     # --- Fragility score ---
     # Lower is better (more robust)
@@ -174,6 +183,9 @@ def generate_validation_card(
         is_robust=is_robust,
         fragility_score=round(fragility, 2),
         notes=notes,
+        bull_trades=bull_trades,
+        bear_trades=bear_trades,
+        choppy_trades=choppy_trades,
     )
 
 
@@ -202,6 +214,7 @@ def run_validation_checks(
     slippage_bps: float = 10.0,
     risk_reward_ratios: list[float] | None = None,
     min_risk_reward: float = 1.0,
+    allowed_regimes: set[str] | None = None,
 ) -> ValidationPayload:
     """Run validation checks from docs/validation_contract.md.
 
@@ -217,6 +230,8 @@ def run_validation_checks(
         slippage_bps: Slippage assumption in basis points.
         risk_reward_ratios: Optional per-pick reward/risk values from current run.
         min_risk_reward: Minimum acceptable reward/risk floor for new picks.
+        allowed_regimes: Optional regime set where the model is designed to trade.
+            Regime survival only evaluates observed samples inside this set.
     """
     checks: dict[str, str] = {}
     key_risks: list[str] = []
@@ -261,7 +276,8 @@ def run_validation_checks(
     # ── Check 4: slippage_sensitivity_check ──
     # Signal must survive +50% slippage increase.
     # Requires >= 30 trades for statistical significance.
-    if validation_card and validation_card.total_trades >= 30:
+    min_stat_trades = 30
+    if validation_card and validation_card.total_trades >= min_stat_trades:
         slippage_ok = validation_card.slippage_sensitivity < 0.5
         slippage_sens = validation_card.slippage_sensitivity
     else:
@@ -274,7 +290,7 @@ def run_validation_checks(
     # ── Check 5: threshold_sensitivity_check ──
     # Score threshold +/- 10% should not flip >30% of signals.
     # Requires minimum 30 trades for statistical significance (same as checks 6-7).
-    if validation_card and validation_card.total_trades >= 30:
+    if validation_card and validation_card.total_trades >= min_stat_trades:
         threshold_ok = validation_card.threshold_sensitivity < 0.3
         threshold_sens = validation_card.threshold_sensitivity
     else:
@@ -287,7 +303,7 @@ def run_validation_checks(
     # ── Check 6: confidence_calibration_check ──
     # High-confidence predictions must have higher win rate than low-confidence.
     # When no card data, pass by default (first run).
-    if validation_card and validation_card.total_trades >= 30:
+    if validation_card and validation_card.total_trades >= min_stat_trades:
         cal_ok = validation_card.win_rate > 0.45  # minimum bar
         cal_bucket = (
             "high" if validation_card.win_rate > 0.6
@@ -302,19 +318,44 @@ def run_validation_checks(
         key_risks.append(f"Win rate below calibration minimum ({validation_card.win_rate:.2%})")
 
     # ── Check 7: regime_survival_check ──
-    # Signal model must show positive expectancy in >= 2 of 3 regime types.
-    if validation_card and validation_card.total_trades >= 30:
-        regimes_positive = sum(
-            1 for wr in [validation_card.bull_win_rate, validation_card.bear_win_rate, validation_card.choppy_win_rate]
-            if wr > 0.5
-        )
-        regime_survival_ok = regimes_positive >= 2
+    # Signal model must survive the regimes it is designed to trade. We only
+    # count regimes with observed samples when counts are available, so a
+    # bull/choppy model is not blocked for intentionally having no bear trades.
+    if validation_card and validation_card.total_trades >= min_stat_trades:
+        allowed = {r.lower() for r in allowed_regimes} if allowed_regimes else None
+        regime_rows = [
+            ("bull", validation_card.bull_win_rate, validation_card.bull_trades),
+            ("bear", validation_card.bear_win_rate, validation_card.bear_trades),
+            ("choppy", validation_card.choppy_win_rate, validation_card.choppy_trades),
+        ]
+        if allowed is not None:
+            regime_rows = [row for row in regime_rows if row[0] in allowed]
+
+        has_regime_counts = any(count > 0 for _, _, count in regime_rows)
+        if has_regime_counts:
+            evaluated_regimes = [(name, wr) for name, wr, count in regime_rows if count > 0]
+        else:
+            # Backward-compatible path for hand-built/old ValidationCards.
+            evaluated_regimes = [(name, wr) for name, wr, _ in regime_rows]
+
+        if evaluated_regimes:
+            regimes_positive = sum(1 for _, wr in evaluated_regimes if wr > 0.5)
+            required_positive = min(2, len(evaluated_regimes))
+            regime_survival_ok = regimes_positive >= required_positive
+        else:
+            regimes_positive = 0
+            required_positive = 0
+            regime_survival_ok = True
     else:
         regime_survival_ok = True  # insufficient data → pass
         regimes_positive = 0
+        required_positive = 0
     checks["regime_survival_check"] = _PASS if regime_survival_ok else _FAIL
     if not regime_survival_ok:
-        key_risks.append(f"Positive in only {regimes_positive}/3 regimes (need 2)")
+        key_risks.append(
+            f"Positive in only {regimes_positive}/{len(evaluated_regimes)} "
+            f"evaluated regimes (need {required_positive})"
+        )
 
     # ── Check 8: risk_reward_floor_check ──
     rr_values = list(risk_reward_ratios or [])

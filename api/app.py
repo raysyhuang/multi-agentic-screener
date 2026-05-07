@@ -722,17 +722,23 @@ async def cache_stats():
 # ---------------------------------------------------------------------------
 
 @app.get("/api/signals/{report_date}")
-async def signals_json(report_date: str):
-    """Return signals as JSON for a given date."""
+async def signals_json(report_date: str, source: str | None = "mas_official"):
+    """Return signals as JSON for a given date.
+
+    Defaults to official MAS picks. Use ``source=all`` to include manual sleeve
+    records as well.
+    """
     try:
         rd = date.fromisoformat(report_date)
     except ValueError:
         raise HTTPException(400, "Invalid date")
 
+    source_filter = _resolve_source(source)
     async with get_session() as session:
-        result = await session.execute(
-            select(Signal).where(Signal.run_date == rd)
-        )
+        query = select(Signal).where(Signal.run_date == rd)
+        if source_filter is not None:
+            query = query.where(Signal.signal_source == source_filter)
+        result = await session.execute(query)
         signals = result.scalars().all()
 
     return [
@@ -740,6 +746,9 @@ async def signals_json(report_date: str):
             "ticker": s.ticker,
             "direction": s.direction,
             "signal_model": s.signal_model,
+            "signal_source": s.signal_source,
+            "also_in_mas": s.also_in_mas,
+            "suppressed_by_cross_model_ranking": s.suppressed_by_cross_model_ranking,
             "entry_price": s.entry_price,
             "stop_loss": s.stop_loss,
             "target_1": s.target_1,
