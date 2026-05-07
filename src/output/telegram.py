@@ -335,6 +335,12 @@ def format_daily_alert(
             lines.append(mode_line.rstrip())
         lines.extend(["", "No high-conviction picks today."])
 
+        if key_risks:
+            lines.append("")
+            lines.append("\u26a0\ufe0f <b>Why official picks were blocked</b>")
+            for risk in key_risks:
+                lines.append(f"   \u2022 {_esc(risk)}")
+
         if manual_sleeve_picks is not None:
             lines.append("")
             lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
