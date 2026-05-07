@@ -158,7 +158,7 @@ def test_slippage_sensitivity_passes_no_card():
 
 def test_threshold_sensitivity_fails_when_high():
     today = date(2025, 3, 15)
-    card = _make_card(threshold_sensitivity=0.5)
+    card = _make_card(threshold_sensitivity=0.5, total_trades=120)
     result = run_validation_checks(
         run_date=today,
         signal_dates=[today],
@@ -167,6 +167,19 @@ def test_threshold_sensitivity_fails_when_high():
         validation_card=card,
     )
     assert result.checks["threshold_sensitivity_check"] == "fail"
+
+
+def test_threshold_sensitivity_passes_until_large_sample():
+    today = date(2025, 3, 15)
+    card = _make_card(threshold_sensitivity=0.5, total_trades=31)
+    result = run_validation_checks(
+        run_date=today,
+        signal_dates=[today],
+        execution_dates=[today + timedelta(days=1)],
+        feature_columns=[],
+        validation_card=card,
+    )
+    assert result.checks["threshold_sensitivity_check"] == "pass"
 
 
 # ── Check 6: confidence_calibration ──

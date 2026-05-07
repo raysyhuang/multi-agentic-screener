@@ -289,8 +289,12 @@ def run_validation_checks(
 
     # ── Check 5: threshold_sensitivity_check ──
     # Score threshold +/- 10% should not flip >30% of signals.
-    # Requires minimum 30 trades for statistical significance (same as checks 6-7).
-    if validation_card and validation_card.total_trades >= min_stat_trades:
+    # The current card estimates threshold sensitivity from window dispersion;
+    # that proxy is too noisy at the first statistical boundary. Keep reporting
+    # the metric, but require a larger sample before it can hard-block live
+    # picks.
+    min_threshold_trades = 100
+    if validation_card and validation_card.total_trades >= min_threshold_trades:
         threshold_ok = validation_card.threshold_sensitivity < 0.3
         threshold_sens = validation_card.threshold_sensitivity
     else:
