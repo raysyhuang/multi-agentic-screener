@@ -637,6 +637,7 @@ def scan_sniper(
     stop_atr_mult: float = 2.0,
     target_atr_mult: float = 3.0,
     holding_period: int = 7,
+    allow_bear: bool = False,
 ) -> list[tuple[date, SniperSignal]]:
     """Scan every trading day for sniper (BB squeeze + vol compression) signals."""
     if len(df) < MIN_HISTORY_BARS:
@@ -673,6 +674,7 @@ def scan_sniper(
             stop_atr_mult=stop_atr_mult,
             target_atr_mult=target_atr_mult,
             holding_period=holding_period,
+            allow_bear=allow_bear,
         )
         if sig is None:
             continue
@@ -753,6 +755,7 @@ def run_model_backtest(
                 stop_atr_mult=params.get("stop_atr_mult", 2.0),
                 target_atr_mult=params.get("target_atr_mult", 3.0),
                 holding_period=params.get("holding_period", 7),
+                allow_bear=params.get("allow_bear", False),
             )
         else:
             raise ValueError(f"Unknown model: {model}")

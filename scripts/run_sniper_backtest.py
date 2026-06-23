@@ -122,6 +122,7 @@ def run_backtest(
     params: dict,
     tickers: list[str] | None = None,
     no_cache: bool = False,
+    suffix: str = "",
 ) -> dict:
     """Run a single sniper backtest and return serializable results."""
     if tickers is None:
@@ -154,7 +155,7 @@ def run_backtest(
     out_dir = Path("outputs/research")
     out_dir.mkdir(parents=True, exist_ok=True)
     horizon = HORIZON_LABELS.get(years, f"{years}Y")
-    save_trades_csv(result.trades, out_dir / f"backtest_sniper_{horizon}_trades.csv")
+    save_trades_csv(result.trades, out_dir / f"backtest_sniper_{horizon}{suffix}_trades.csv")
 
     return out
 
@@ -172,6 +173,10 @@ def main():
                         help="Holding period in days (default: 7)")
     parser.add_argument("--no-cache", action="store_true",
                         help="Force fresh data download")
+    parser.add_argument("--allow-bear", action="store_true",
+                        help="RESEARCH ONLY: bypass the sniper bear-regime hard block so "
+                             "bear trades are simulated (populates by_regime['bear']). "
+                             "Does not affect production.")
     args = parser.parse_args()
 
     params = SNIPER_PARAMS.copy()
@@ -179,6 +184,8 @@ def main():
     params["stop_atr_mult"] = args.stop_mult
     params["target_atr_mult"] = args.target_mult
     params["holding_period"] = args.hold
+    params["allow_bear"] = args.allow_bear
+    suffix = "_bear_research" if args.allow_bear else ""
 
     horizons = [args.years] if args.years else HORIZONS
     tickers = list(SP500_TICKERS)
@@ -193,11 +200,11 @@ def main():
         print(f"  Running sniper @ {horizon_label}")
         print(f"{'='*60}")
 
-        result = run_backtest(years, params, tickers, args.no_cache)
+        result = run_backtest(years, params, tickers, args.no_cache, suffix=suffix)
         all_results[horizon_label] = result
 
         # Save result
-        out_path = Path(f"outputs/research/sniper_{horizon_label}_{date.today()}.json")
+        out_path = Path(f"outputs/research/sniper_{horizon_label}{suffix}_{date.today()}.json")
         out_path.write_text(json.dumps(result, indent=2))
         print(f"\nSaved to {out_path}")
 
@@ -218,7 +225,7 @@ def main():
 
     # Save baseline
     if len(all_results) >= 1:
-        baseline_path = Path(f"outputs/research/sniper_baseline.json")
+        baseline_path = Path(f"outputs/research/sniper_baseline{suffix}.json")
         baseline_path.write_text(json.dumps(all_results, indent=2))
         print(f"\nBaseline saved to {baseline_path}")
 

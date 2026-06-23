@@ -60,6 +60,7 @@ def score_sniper(
     target_atr_mult: float = 3.0,
     target_2_atr_mult: float = 5.0,
     holding_period: int = 7,
+    allow_bear: bool = False,
 ) -> SniperSignal | None:
     """Score a ticker for sniper (BB squeeze + vol compression) potential.
 
@@ -69,9 +70,19 @@ def score_sniper(
         return None
 
     # --- Hard gate: bear regime block ---
-    # Sniper targets volatility expansion which fails in bear (61.5% WR, -0.02% avg).
-    # Only fire in bull/choppy where wind is at our back.
-    if regime == "bear":
+    # Precautionary: sniper trades volatility expansion (BB squeeze -> breakout), which
+    # leans on the move resolving UP — a weaker bet when fighting a bear tape, and bear
+    # carries the worst per-regime drawdown in backtest (~68% vs bull ~54% / choppy ~17%).
+    #
+    # NOTE: the block is precautionary, NOT proven. The old "61.5% WR / -0.02% avg" claim
+    # came from a 12-trade 1Y sample and does NOT reproduce: a 276-trade point-in-time bear
+    # backtest (2026-06-22) showed bear ~= bull/choppy (~81% WR, +4.1% avg). It stays blocked
+    # because that backtest is optimistic vs live (~81% sim WR vs ~69% live) and no sustained
+    # 2022-style bear was tested. See memory/research-sniper-bear-block.md before changing.
+    #
+    # allow_bear is a research-only escape hatch (default False) so backtests can regenerate
+    # the bear sample to re-evaluate this gate. Production never sets it.
+    if regime == "bear" and not allow_bear:
         return None
 
     scores: dict[str, float] = {}
