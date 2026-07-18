@@ -46,9 +46,11 @@ Create a database and copy its connection string. It will look like:
 postgresql://USER:PASSWORD@HOST/DBNAME?sslmode=require
 ```
 
-The code normalizes `postgres://` and `postgresql://` to the async
-`postgresql+asyncpg://` driver automatically (see `src/db/session.py`), so paste
-the URL as the provider gives it.
+Paste the URL exactly as the provider gives it — `src/db/session.py` handles the
+rest automatically: it rewrites `postgres://` / `postgresql://` to the async
+`postgresql+asyncpg://` driver, strips libpq-only query params that asyncpg
+rejects (`sslmode`, `channel_binding`, …), and forces SSL (`ssl=require`) for any
+non-local host, so Neon/Supabase/Heroku connections negotiate TLS correctly.
 
 ## Step 2 — Migrate the existing data (optional but recommended)
 
