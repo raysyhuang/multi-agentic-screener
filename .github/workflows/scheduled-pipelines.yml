@@ -1,18 +1,3 @@
-# ============================================================================
-# MOVE THIS FILE TO: .github/workflows/scheduled-pipelines.yml
-#
-# It is stored here as a .txt because the automation that opened this PR does
-# not have GitHub "workflows" permission and cannot create files under
-# .github/workflows/. Rename/move it into place with your own account:
-#
-#     mkdir -p .github/workflows
-#     git mv docs/github-actions/scheduled-pipelines.yml.txt \
-#            .github/workflows/scheduled-pipelines.yml
-#     git commit -m "chore: install scheduled-pipelines workflow"
-#
-# (or drag-and-drop it to that path in the GitHub web editor.)
-# ============================================================================
-
 name: Scheduled Pipelines (GitHub-hosted)
 
 # Runs the pipeline jobs that used to live on the Heroku `worker` dyno's

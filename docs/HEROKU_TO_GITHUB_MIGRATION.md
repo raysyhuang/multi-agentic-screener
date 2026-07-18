@@ -24,25 +24,13 @@ evening **21:30** (Mon–Fri), weekly meta review **Sun 19:00**. The workflow us
 dual UTC cron lines + an Eastern-time guard so daylight-saving shifts don't move
 the run or double-fire it.
 
-## Step 0 — install the workflow file (one manual move)
+## Step 0 — workflow file (already installed)
 
-The workflow itself ships in this PR at
-**`docs/github-actions/scheduled-pipelines.yml.txt`**. It is a `.txt` under
-`docs/` because the automation that opened this PR lacks GitHub *workflows*
-permission and cannot create files under `.github/workflows/`. Move it into
-place with your own account (which does have permission):
-
-```bash
-mkdir -p .github/workflows
-git mv docs/github-actions/scheduled-pipelines.yml.txt \
-       .github/workflows/scheduled-pipelines.yml
-git commit -m "chore: install scheduled-pipelines workflow"
-git push
-```
-
-(Or use the GitHub web editor to create `.github/workflows/scheduled-pipelines.yml`
-and paste the file's contents.) Everything below assumes the workflow now lives
-at `.github/workflows/scheduled-pipelines.yml`.
+The workflow ships in this PR already in place at
+**`.github/workflows/scheduled-pipelines.yml`** — no manual move needed. Merging
+this PR to `main` is what activates the cron schedules (scheduled workflows only
+fire from the default branch). Until it's merged you can still test any job from
+the branch via **Actions → Run workflow** (`workflow_dispatch`).
 
 ## Step 1 — Stand up a free external Postgres
 

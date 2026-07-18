@@ -1,0 +1,15 @@
+All OHLCV sources failed for SNV: HTTP Error 404: 
+Scanned 50 candidate outcome(s)
+Skipped (inconclusive / no data): 5
+Changed: 18
+P&L delta: +20.37% (old sum -4.44% -> new +15.93%)
+Exit-reason transitions:
+  stop -> stop: 1
+  stop -> trail_stop: 1
+  target -> target: 2
+  target -> trail_stop: 1
+  time_stop -> trail_stop: 3
+  trail_stop -> trail_stop: 10
+
+Snapshot written: backups/phantom_backfill/phantom_backfill_snapshot_20260428_145354.json
+Applied 18 updates.
