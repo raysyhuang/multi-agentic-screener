@@ -1,0 +1,141 @@
+name: Scheduled Pipelines (GitHub-hosted)
+
+# Runs the pipeline jobs that used to live on the Heroku `worker` dyno's
+# APScheduler (see src/worker.py). Each job invokes the worker's existing
+# one-off flags (--run-now / --check-now / --collect-now / --meta-now), which
+# run a single pipeline and exit — exactly what a CI cron needs.
+#
+# DST handling: GitHub Actions cron is UTC-only and cannot follow US/Eastern
+# across daylight-saving changes. For each logical job we register TWO cron
+# lines — one at the EDT (UTC-4) offset and one at the EST (UTC-5) offset — and
+# a guard step below checks the *actual* current Eastern time and skips the run
+# unless it matches the intended Eastern hour. Net effect: exactly one run per
+# scheduled slot, year-round, at the correct Eastern local time.
+#
+# NOTE: scheduled workflows only fire from the repository's DEFAULT branch, so
+# this file must be merged to `main` before the crons take effect. Until then,
+# use the "Run workflow" button (workflow_dispatch) to test any job manually.
+
+on:
+  schedule:
+    # Morning pipeline — 06:00 ET Mon-Fri   (EDT 10:00 UTC / EST 11:00 UTC)
+    - cron: "0 10 * * 1-5"
+    - cron: "0 11 * * 1-5"
+    # Afternoon position check — 16:30 ET Mon-Fri   (EDT 20:30 UTC / EST 21:30 UTC)
+    - cron: "30 20 * * 1-5"
+    - cron: "30 21 * * 1-5"
+    # Evening cross-engine collection — 21:30 ET Mon-Fri   (EDT next-day 01:30 UTC / EST next-day 02:30 UTC)
+    - cron: "30 1 * * 2-6"
+    - cron: "30 2 * * 2-6"
+    # Weekly meta-analyst review — Sun 19:00 ET   (EDT Sun 23:00 UTC / EST Mon 00:00 UTC)
+    - cron: "0 23 * * 0"
+    - cron: "0 0 * * 1"
+  workflow_dispatch:
+    inputs:
+      pipeline:
+        description: "Which pipeline to run"
+        required: true
+        default: "morning"
+        type: choice
+        options:
+          - morning
+          - afternoon
+          - evening
+          - weekly
+
+concurrency:
+  # Serialize per pipeline; never cancel an in-flight run (the pipelines are
+  # idempotent/re-run safe, but we don't want to interrupt a live run).
+  group: mas-pipeline-${{ github.event.schedule || github.event.inputs.pipeline }}
+  cancel-in-progress: false
+
+jobs:
+  run-pipeline:
+    name: Run scheduled pipeline
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      # --- Database (external managed Postgres — replaces Heroku Postgres) ---
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+      # --- Telegram alerts ---
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      # --- Market data providers (quant_only needs at least one) ---
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+      FINANCIAL_DATASETS_API_KEY: ${{ secrets.FINANCIAL_DATASETS_API_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      # --- LLM keys (only required for hybrid / agentic_full modes) ---
+      ANTHROPIC_API_KEY: ${{ secrets.ANTHROPIC_API_KEY }}
+      OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+      # --- Cross-engine HTTP (evening collection) ---
+      KOOCORE_API_URL: ${{ secrets.KOOCORE_API_URL }}
+      GEMINI_API_URL: ${{ secrets.GEMINI_API_URL }}
+      TOP3_7D_API_URL: ${{ secrets.TOP3_7D_API_URL }}
+      ENGINE_API_KEY: ${{ secrets.ENGINE_API_KEY }}
+      # --- Misc ---
+      API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
+      EXECUTION_MODE: ${{ vars.EXECUTION_MODE || 'quant_only' }}
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+
+      - name: Install project
+        run: pip install -e .
+
+      - name: Resolve pipeline & DST guard
+        id: resolve
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            PIPELINE="${{ github.event.inputs.pipeline }}"
+            RUN="true"
+            echo "Manual dispatch: pipeline=$PIPELINE"
+          else
+            SCHED="${{ github.event.schedule }}"
+            TARGET_DOW=""
+            case "$SCHED" in
+              "0 10 * * 1-5"|"0 11 * * 1-5")   PIPELINE="morning";   TARGET_HOUR=6  ;;
+              "30 20 * * 1-5"|"30 21 * * 1-5") PIPELINE="afternoon"; TARGET_HOUR=16 ;;
+              "30 1 * * 2-6"|"30 2 * * 2-6")   PIPELINE="evening";   TARGET_HOUR=21 ;;
+              "0 23 * * 0"|"0 0 * * 1")        PIPELINE="weekly";    TARGET_HOUR=19; TARGET_DOW=7 ;;
+              *) echo "::error::Unknown schedule '$SCHED'"; exit 1 ;;
+            esac
+            CUR_HOUR=$(TZ=America/New_York date +%-H)
+            CUR_DOW=$(TZ=America/New_York date +%u)   # 1=Mon .. 7=Sun
+            RUN="true"
+            [ "$CUR_HOUR" != "$TARGET_HOUR" ] && RUN="false"
+            [ -n "$TARGET_DOW" ] && [ "$CUR_DOW" != "$TARGET_DOW" ] && RUN="false"
+            echo "schedule='$SCHED' pipeline=$PIPELINE current_ET_hour=$CUR_HOUR current_ET_dow=$CUR_DOW target_hour=$TARGET_HOUR target_dow='${TARGET_DOW:-any}' -> run=$RUN"
+            if [ "$RUN" != "true" ]; then
+              echo "::notice::Skipping — this cron line is the wrong DST offset for $PIPELINE right now."
+            fi
+          fi
+          case "$PIPELINE" in
+            morning)   FLAG="--run-now"     ;;
+            afternoon) FLAG="--check-now"   ;;
+            evening)   FLAG="--collect-now" ;;
+            weekly)    FLAG="--meta-now"    ;;
+            *) echo "::error::Unknown pipeline '$PIPELINE'"; exit 1 ;;
+          esac
+          {
+            echo "pipeline=$PIPELINE"
+            echo "flag=$FLAG"
+            echo "run=$RUN"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Apply database migrations
+        if: steps.resolve.outputs.run == 'true'
+        run: alembic upgrade head
+
+      - name: Run ${{ steps.resolve.outputs.pipeline }} pipeline
+        if: steps.resolve.outputs.run == 'true'
+        run: python -m src.worker ${{ steps.resolve.outputs.flag }}

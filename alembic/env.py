@@ -10,8 +10,8 @@ from sqlalchemy.ext.asyncio import async_engine_from_config
 
 from alembic import context
 
-from src.config import get_settings
 from src.db.models import Base
+from src.db.session import _get_async_url, _needs_ssl
 
 # Alembic Config object
 config = context.config
@@ -41,13 +41,14 @@ def include_name(name, type_, parent_names):
 
 
 def _get_url() -> str:
-    """Resolve the database URL from settings, converting to asyncpg."""
-    url = get_settings().database_url
-    if url.startswith("postgres://"):
-        url = url.replace("postgres://", "postgresql+asyncpg://", 1)
-    elif url.startswith("postgresql://"):
-        url = url.replace("postgresql://", "postgresql+asyncpg://", 1)
-    return url
+    """Resolve the database URL, normalized for asyncpg.
+
+    Delegates to ``src.db.session._get_async_url`` so alembic and the app share
+    identical URL handling — asyncpg driver + stripping libpq-only query params
+    (``sslmode``/``channel_binding``) that managed Postgres providers append and
+    asyncpg rejects. SSL itself is negotiated via connect_args (see below).
+    """
+    return _get_async_url()
 
 
 def run_migrations_offline() -> None:
@@ -78,12 +79,18 @@ def do_run_migrations(connection) -> None:
 async def run_async_migrations() -> None:
     """Run migrations in 'online' mode with an async engine."""
     configuration = config.get_section(config.config_ini_section, {})
-    configuration["sqlalchemy.url"] = _get_url()
+    url = _get_url()
+    configuration["sqlalchemy.url"] = url
+
+    # asyncpg ignores sslmode in the URL; force SSL for remote managed Postgres
+    # (Neon/Supabase/Heroku), matching src.db.session.get_engine.
+    connect_args = {"ssl": "require"} if _needs_ssl(url) else {}
 
     connectable = async_engine_from_config(
         configuration,
         prefix="sqlalchemy.",
         poolclass=pool.NullPool,
+        connect_args=connect_args,
     )
 
     async with connectable.connect() as connection:
