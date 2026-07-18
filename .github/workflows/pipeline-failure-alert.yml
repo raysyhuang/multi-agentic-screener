@@ -1,0 +1,43 @@
+name: Pipeline Failure Alert
+
+# Hands-off safety net for the Heroku->GitHub parallel-run window. Fires whenever
+# a "Scheduled Pipelines" run finishes in failure and sends a Telegram ping so a
+# broken GitHub run (or a missing [MAS-GH] alert caused by one) never goes
+# unnoticed. Runs on GitHub infra — no dependency on any local session.
+#
+# workflow_run only triggers from the workflow file on the default branch.
+
+on:
+  workflow_run:
+    workflows: ["Scheduled Pipelines (GitHub-hosted)"]
+    types: [completed]
+
+jobs:
+  notify-on-failure:
+    # Only alert on genuine failures (skip success / cancelled / skipped).
+    if: ${{ github.event.workflow_run.conclusion == 'failure' }}
+    runs-on: ubuntu-latest
+    steps:
+      - name: Send Telegram failure alert
+        env:
+          TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+          TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+          RUN_TITLE: ${{ github.event.workflow_run.display_title }}
+          RUN_EVENT: ${{ github.event.workflow_run.event }}
+          RUN_URL: ${{ github.event.workflow_run.html_url }}
+          RUN_STARTED: ${{ github.event.workflow_run.run_started_at }}
+        run: |
+          set -euo pipefail
+          TEXT="[MAS-GH] ⚠️ Scheduled pipeline FAILED
+          ${RUN_TITLE} (${RUN_EVENT})
+          started: ${RUN_STARTED}
+          ${RUN_URL}
+
+          The GitHub pipeline did not complete — its [MAS-GH] picks alert may be missing this slot. Check the run, compare against Heroku's [MAS] alert."
+          curl -sS --fail -X POST \
+            "https://api.telegram.org/bot${TELEGRAM_BOT_TOKEN}/sendMessage" \
+            --data-urlencode "chat_id=${TELEGRAM_CHAT_ID}" \
+            --data-urlencode "text=${TEXT}" \
+            --data-urlencode "disable_web_page_preview=true" \
+            > /dev/null
+          echo "Failure alert sent to Telegram."
