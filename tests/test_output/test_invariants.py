@@ -194,16 +194,21 @@ async def test_p3_clean_since_filter_excludes_pre_fix_rows():
     the contaminated historical window isn't counted toward the cluster.
     """
     session = _mock_session_with_rows([])
+    # clean_since must sit INSIDE the lookback window (more recent than
+    # today-30d) so that it wins as the cutoff. Derive it relative to today
+    # rather than hardcoding a date that eventually falls outside the window
+    # and silently inverts the assertion.
+    clean_since = date.today() - timedelta(days=10)
     await detect_zero_real_exits(
-        session, lookback_days=30, min_sample=10, clean_since=date(2026, 4, 28)
+        session, lookback_days=30, min_sample=10, clean_since=clean_since
     )
     # Inspect the predicate compiled into the query
     call_args = session.execute.call_args
     stmt = call_args.args[0]
-    # The compiled WHERE clause should reference 2026-04-28 (the clean_since)
-    # rather than `today() - 30d`.
+    # The compiled WHERE clause should reference clean_since (the more-recent
+    # cutoff) rather than `today() - 30d`.
     compiled = str(stmt.compile(compile_kwargs={"literal_binds": True}))
-    assert "2026-04-28" in compiled
+    assert str(clean_since) in compiled
 
 
 @pytest.mark.asyncio
