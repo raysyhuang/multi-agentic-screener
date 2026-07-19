@@ -1,7 +1,7 @@
 [project]
 name = "multi-agentic-screener"
 version = "0.1.0"
-description = "Multi-agentic short-term stock screener with LLM-powered signal validation"
+description = "Quant-only short-term stock screener (mean-reversion + sniper signals)"
 requires-python = ">=3.12"
 dependencies = [
     # Core
@@ -27,10 +27,6 @@ dependencies = [
 
     # Cross-engine HTTP client
     "aiohttp>=3.9",
-
-    # LLM
-    "anthropic>=0.40",
-    "openai>=1.50",
 
     # API + Reporting
     "fastapi>=0.115",

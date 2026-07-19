@@ -23,7 +23,7 @@ from slowapi.errors import RateLimitExceeded
 
 from src.config import get_settings
 from src.db.session import init_db, close_db, get_session
-from src.db.models import DailyRun, Signal, Outcome, AgentLog
+from src.db.models import DailyRun, Signal, Outcome
 from src.output.report import generate_daily_report, generate_performance_report
 from src.output.performance import get_performance_summary
 
@@ -739,43 +739,6 @@ async def ticker_outcomes(ticker: str):
     ]
 
 
-@app.get("/api/costs")
-async def cost_summary(days: int = Query(default=30, le=90)):
-    """Daily and per-agent cost breakdown over the specified period."""
-    async with get_session() as session:
-        from datetime import timedelta
-        cutoff = date.today() - timedelta(days=days)
-        result = await session.execute(
-            select(AgentLog).where(AgentLog.run_date >= cutoff)
-        )
-        logs = result.scalars().all()
-
-    by_date: dict[str, float] = {}
-    by_agent: dict[str, float] = {}
-    total_cost = 0.0
-    total_tokens_in = 0
-    total_tokens_out = 0
-
-    for log in logs:
-        cost = log.cost_usd or 0.0
-        total_cost += cost
-        total_tokens_in += log.tokens_in or 0
-        total_tokens_out += log.tokens_out or 0
-
-        d = str(log.run_date)
-        by_date[d] = by_date.get(d, 0.0) + cost
-        by_agent[log.agent_name] = by_agent.get(log.agent_name, 0.0) + cost
-
-    return {
-        "period_days": days,
-        "total_cost_usd": round(total_cost, 4),
-        "total_tokens_in": total_tokens_in,
-        "total_tokens_out": total_tokens_out,
-        "by_date": {k: round(v, 4) for k, v in sorted(by_date.items())},
-        "by_agent": {k: round(v, 4) for k, v in sorted(by_agent.items(), key=lambda x: -x[1])},
-    }
-
-
 @app.get("/api/artifacts/{run_id}")
 async def get_artifacts(run_id: str):
     """Return all pipeline stage artifacts for a given run."""
@@ -801,29 +764,6 @@ async def get_artifacts(run_id: str):
             "created_at": str(a.created_at),
         }
         for a in artifacts
-    ]
-
-
-@app.get("/api/meta-reviews")
-async def list_meta_reviews(limit: int = Query(default=10, le=50)):
-    """Return recent meta-analyst reviews."""
-    async with get_session() as session:
-        result = await session.execute(
-            select(AgentLog)
-            .where(AgentLog.agent_name == "meta_analyst")
-            .order_by(AgentLog.run_date.desc())
-            .limit(limit)
-        )
-        reviews = result.scalars().all()
-
-    return [
-        {
-            "run_date": str(r.run_date),
-            "model_used": r.model_used,
-            "output": r.output_data,
-            "cost_usd": r.cost_usd,
-        }
-        for r in reviews
     ]
 
 
@@ -1074,9 +1014,6 @@ async def health_check():
     settings = get_settings()
     if not settings.polygon_api_key and not settings.fmp_api_key:
         issues.append("no data provider API key configured (polygon or fmp)")
-    if settings.execution_mode != "quant_only":
-        if not settings.anthropic_api_key and not settings.openai_api_key:
-            issues.append("no LLM API key configured (anthropic or openai)")
 
     if issues:
         return JSONResponse(

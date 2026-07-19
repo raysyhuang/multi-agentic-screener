@@ -4,8 +4,6 @@ from __future__ import annotations
 
 import asyncio
 from collections import defaultdict
-import hashlib
-import json
 import logging
 import os
 import re
@@ -86,10 +84,6 @@ from src.governance.performance_monitor import (
     check_decay,
 )
 from src.portfolio.construct import build_trade_plan
-from src.governance.divergence_ledger import (
-    freeze_quant_baseline,
-    compute_divergences,
-)
 
 
 def _get_rss_mb() -> float | None:
@@ -550,103 +544,6 @@ def _build_quant_only_result(
         approved=approved,
         vetoed=[],
         agent_logs=[],
-    )
-
-
-async def _run_hybrid_pipeline(
-    ranked: list,
-    regime_context: dict,
-    run_id: str,
-    max_picks: int = 2,
-) -> PipelineRun:
-    """Run interpreter only, then auto-approve top picks by confidence.
-
-    No debate or risk gate — lower cost than full agentic pipeline.
-    """
-    from src.agents.base import (
-        DebateResult,
-        DebatePosition,
-        RiskGateOutput,
-        GateDecision,
-    )
-    from src.agents.signal_interpreter import SignalInterpreterAgent
-    from src.agents.orchestrator import PipelineResult, PipelineRun
-
-    settings = get_settings()
-    interpreter = SignalInterpreterAgent()
-    agent_logs: list[dict] = []
-    interpretations = []
-
-    for candidate in ranked[:settings.top_n_for_interpretation]:
-        retry_result = await interpreter.interpret(candidate, regime_context)
-        if retry_result.value:
-            interpretations.append((candidate, retry_result.value))
-            agent_logs.append({
-                "agent": "signal_interpreter",
-                "ticker": candidate.ticker,
-                "confidence": retry_result.value.confidence,
-                "attempts": retry_result.attempt_count,
-                **interpreter.last_call_meta,
-            })
-
-    # Sort by confidence, take top picks
-    interpretations.sort(key=lambda x: x[1].confidence, reverse=True)
-
-    approved: list[PipelineResult] = []
-    for candidate, interp in interpretations[:max_picks]:
-        stub_debate = DebateResult(
-            ticker=candidate.ticker,
-            bull_case=DebatePosition(
-                position="BULL", argument=interp.thesis,
-                evidence=interp.key_drivers, weakness="No adversarial review", conviction=interp.confidence,
-            ),
-            bear_case=DebatePosition(
-                position="BEAR", argument="Skipped in hybrid mode.",
-                evidence=[], weakness="N/A", conviction=0,
-            ),
-            rebuttal_summary="Debate skipped in hybrid mode.",
-            final_verdict="PROCEED",
-            net_conviction=interp.confidence,
-            key_risk="No adversarial debate or risk gate review",
-        )
-        stub_gate = RiskGateOutput(
-            ticker=candidate.ticker,
-            decision=GateDecision.APPROVE,
-            reasoning="Auto-approved in hybrid mode based on interpreter confidence.",
-            position_size_pct=5.0,
-        )
-        approved.append(PipelineResult(
-            ticker=candidate.ticker,
-            signal_model=candidate.signal_model,
-            signal_source=getattr(candidate, "signal_source", "mas_official"),
-            direction=candidate.direction,
-            entry_price=candidate.entry_price,
-            stop_loss=interp.suggested_stop or candidate.stop_loss,
-            target_1=interp.suggested_target or candidate.target_1,
-            target_2=candidate.target_2,
-            holding_period=interp.timeframe_days or candidate.holding_period,
-            confidence=interp.confidence,
-            interpretation=interp,
-            debate=stub_debate,
-            risk_gate=stub_gate,
-            features=candidate.persisted_features(),
-            max_entry_price=getattr(candidate, "max_entry_price", None),
-            also_in_mas=getattr(candidate, "also_in_mas", False),
-            suppressed_by_cross_model_ranking=getattr(
-                candidate, "suppressed_by_cross_model_ranking", False,
-            ),
-        ))
-
-    return PipelineRun(
-        run_date=date.today(),
-        regime=regime_context.get("regime", "unknown"),
-        regime_details=regime_context,
-        candidates_scored=len(ranked),
-        interpreted=len(interpretations),
-        debated=0,
-        approved=approved,
-        vetoed=[],
-        agent_logs=agent_logs,
     )
 
 
@@ -1217,22 +1114,14 @@ async def _run_pipeline_core(
     logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
     mr_manual_result = None
 
-    if execution_mode == ExecutionMode.QUANT_ONLY:
-        pipeline_result = _build_quant_only_result(
-            ranked, regime_context, max_picks=settings.max_final_picks,
+    if execution_mode != ExecutionMode.QUANT_ONLY:
+        logger.error(
+            "execution_mode=%s is not supported (LLM stack removed); "
+            "falling back to quant_only.", execution_mode.value,
         )
-    elif execution_mode == ExecutionMode.HYBRID:
-        pipeline_result = await _run_hybrid_pipeline(
-            ranked, regime_context, run_id=run_id,
-            max_picks=settings.max_final_picks,
-        )
-    else:
-        from src.agents.orchestrator import run_agent_pipeline
-        pipeline_result = await run_agent_pipeline(
-            candidates=ranked,
-            regime_context=regime_context,
-            run_id=run_id,
-        )
+    pipeline_result = _build_quant_only_result(
+        ranked, regime_context, max_picks=settings.max_final_picks,
+    )
 
     if mr_manual_ranked:
         mr_manual_result = _build_quant_only_result(
@@ -1244,40 +1133,8 @@ async def _run_pipeline_core(
         for pick in mr_manual_result.approved:
             pick.also_in_mas = pick.ticker in official_tickers
 
-    # --- Step 7a: Divergence Ledger — freeze quant baseline and compute divergences ---
-    divergence_records = []
-    if execution_mode != ExecutionMode.QUANT_ONLY:
-        try:
-            quant_baseline_result = _build_quant_only_result(
-                ranked, regime_context, max_picks=settings.max_final_picks,
-            )
-            config_hash_str = json.dumps(
-                _json_safe({"min_price": settings.min_price,
-                            "min_adv": settings.min_avg_daily_volume,
-                            "top_n": settings.top_n_for_interpretation,
-                            "max_picks": settings.max_final_picks}),
-                sort_keys=True,
-            )
-            quant_baseline = freeze_quant_baseline(
-                ranked=ranked,
-                max_picks=settings.max_final_picks,
-                regime=regime_assessment.regime.value,
-                config_hash=hashlib.md5(config_hash_str.encode()).hexdigest(),
-            )
-            divergence_records = compute_divergences(
-                quant_baseline=quant_baseline,
-                agentic_result=pipeline_result,
-                agent_logs=pipeline_result.agent_logs,
-            )
-            if divergence_records:
-                logger.info(
-                    "Divergence ledger: %d events — %s",
-                    len(divergence_records),
-                    ", ".join(f"{d.event_type.value}({d.ticker})" for d in divergence_records),
-                )
-        except Exception as e:
-            logger.error("Divergence ledger failed (non-fatal): %s", e)
-            divergence_records = []
+    # Divergence ledger removed with the LLM overlay — quant_only has no
+    # agentic result to diverge from, so no divergence events are produced.
 
     # Agent review envelope
     agent_review_envelope = StageEnvelope(
@@ -1652,32 +1509,6 @@ async def _run_pipeline_core(
                 cost_usd=log.get("cost_usd"),
             ))
 
-        # Persist divergence events
-        for drec in divergence_records:
-            session.add(DivergenceEvent(
-                run_id=run_id,
-                run_date=today,
-                ticker=drec.ticker,
-                event_type=drec.event_type.value,
-                execution_mode=execution_mode.value,
-                quant_rank=drec.quant_rank,
-                agentic_rank=drec.agentic_rank,
-                quant_size=drec.quant_size,
-                agentic_size=drec.agentic_size,
-                quant_score=drec.quant_score,
-                agentic_score=drec.agentic_score,
-                reason_codes=drec.reason_codes,
-                llm_cost_usd=drec.llm_cost_usd,
-                confidence=drec.confidence,
-                regime=regime_assessment.regime.value,
-                quant_baseline_snapshot=_json_safe(quant_baseline) if divergence_records else None,
-                quant_entry_price=drec.quant_entry_price,
-                quant_stop_loss=drec.quant_stop_loss,
-                quant_target_1=drec.quant_target_1,
-                quant_holding_period=drec.quant_holding_period,
-                quant_direction=drec.quant_direction,
-                outcome_resolved=False,
-            ))
 
         # Persist near-miss records
         if hasattr(pipeline_result, 'near_misses'):
@@ -1921,91 +1752,6 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
         logger.warning("Decay check failed: %s", e)
 
 
-async def run_weekly_meta_review() -> None:
-    """Weekly meta-analyst review — runs Sunday at 7:00 PM ET."""
-    from src.agents.meta_analyst import MetaAnalystAgent
-    from src.output.performance import get_performance_summary
-
-    logger.info("Starting weekly meta-review...")
-    today = date.today()
-
-    performance_data = await get_performance_summary(days=30)
-
-    if performance_data.get("total_signals", 0) == 0:
-        logger.info("No closed trades in past 30 days — skipping meta-review")
-        return
-
-    # Enrich with divergence stats (fail-closed)
-    try:
-        from src.output.performance import get_divergence_stats
-        divergence_stats = await get_divergence_stats(days=30)
-        if divergence_stats is not None:
-            performance_data["divergence"] = divergence_stats
-            logger.info(
-                "Divergence stats added: %d events, %d resolved",
-                divergence_stats.get("total_events", 0),
-                divergence_stats.get("total_resolved", 0),
-            )
-    except Exception as e:
-        logger.warning("Failed to fetch divergence stats (non-fatal): %s", e)
-
-    # Enrich with near-miss stats (fail-closed)
-    try:
-        from src.output.performance import get_near_miss_stats
-        near_miss_stats = await get_near_miss_stats(days=30)
-        if near_miss_stats is not None:
-            performance_data["near_misses"] = near_miss_stats
-            logger.info(
-                "Near-miss stats added: %d near-misses",
-                near_miss_stats.get("total_near_misses", 0),
-            )
-    except Exception as e:
-        logger.warning("Failed to fetch near-miss stats (non-fatal): %s", e)
-
-    analyst = MetaAnalystAgent()
-    result = await analyst.analyze(performance_data)
-
-    if result:
-        async with get_session() as session:
-            session.add(AgentLog(
-                run_date=today,
-                agent_name="meta_analyst",
-                model_used=analyst.model,
-                ticker=None,
-                output_data=result.model_dump(),
-            ))
-
-        logger.info(
-            "Meta-review complete: win_rate=%.2f, biases=%s, adjustments=%d",
-            result.win_rate,
-            result.biases_detected,
-            len(result.threshold_adjustments),
-        )
-
-        # Process threshold adjustments (dry-run by default)
-        if result.threshold_adjustments:
-            from src.governance.threshold_manager import process_adjustments
-            adj_result = process_adjustments(
-                adjustments=result.threshold_adjustments,
-                run_date=str(today),
-                dry_run=True,
-            )
-            logger.info(
-                "Threshold proposals: %d applied (dry-run), %d rejected",
-                len(adj_result.applied), len(adj_result.rejected),
-            )
-            async with get_session() as session:
-                session.add(AgentLog(
-                    run_date=today,
-                    agent_name="threshold_manager",
-                    model_used="deterministic",
-                    ticker=None,
-                    output_data=adj_result.snapshot.to_dict(),
-                ))
-    else:
-        logger.warning("Meta-review returned no result")
-
-
 async def run_afternoon_check() -> None:
     """Afternoon position check — runs at 4:30 PM ET."""
     logger.info("Running afternoon position check...")
@@ -2117,27 +1863,11 @@ def start_scheduler() -> None:
         coalesce=True,
     )
 
-    # Weekly meta-analyst review (Sunday 7 PM ET)
-    scheduler.add_job(
-        run_weekly_meta_review,
-        CronTrigger(
-            day_of_week="sun",
-            hour=19,
-            minute=0,
-            timezone="US/Eastern",
-        ),
-        id="weekly_meta_review",
-        name="Weekly Meta-Analyst Review",
-        max_instances=1,
-        misfire_grace_time=3600,
-        coalesce=True,
-    )
-
     scheduler.start()
     for job in scheduler.get_jobs():
         logger.info("Scheduled job '%s' — next run: %s", job.name, job.next_run_time)
     logger.info(
-        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d, weekly=Sun 19:00 (all ET, Mon-Fri)",
+        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
     )
@@ -2170,7 +1900,7 @@ async def main():
                 settings.execution_mode = mode_value
                 logger.info("Execution mode overridden to: %s", mode_value)
             except ValueError:
-                logger.error("Invalid mode '%s'. Use: quant_only, hybrid, agentic_full", mode_value)
+                logger.error("Invalid mode '%s'. Use: quant_only", mode_value)
                 return
         elif arg == "--mode" and sys.argv.index(arg) + 1 < len(sys.argv):
             mode_value = sys.argv[sys.argv.index(arg) + 1]
@@ -2180,7 +1910,7 @@ async def main():
                 settings.execution_mode = mode_value
                 logger.info("Execution mode overridden to: %s", mode_value)
             except ValueError:
-                logger.error("Invalid mode '%s'. Use: quant_only, hybrid, agentic_full", mode_value)
+                logger.error("Invalid mode '%s'. Use: quant_only", mode_value)
                 return
 
     if "--run-now" in sys.argv:
@@ -2189,10 +1919,6 @@ async def main():
 
     if "--check-now" in sys.argv:
         await run_afternoon_check()
-        return
-
-    if "--meta-now" in sys.argv:
-        await run_weekly_meta_review()
         return
 
     # Start scheduler + API server

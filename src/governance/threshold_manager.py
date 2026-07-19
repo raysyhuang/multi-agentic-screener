@@ -1,7 +1,7 @@
-"""Threshold Manager — applies meta-analyst suggestions with guardrails.
+"""Threshold Manager — applies threshold-adjustment suggestions with guardrails.
 
-Closes the feedback loop: MetaAnalystAgent suggests adjustments,
-ThresholdManager validates, versions, and optionally applies them.
+Validates, versions, and optionally applies ThresholdAdjustment proposals from
+the governance layer.
 
 Default: dry-run mode (human reviews before applying).
 """

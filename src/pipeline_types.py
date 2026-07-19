@@ -6,10 +6,9 @@ PipelineResult containers). They are consumed by the quant-only pipeline
 (`src/main.py::_build_quant_only_result`) and by governance, neither of which
 should have to import the LLM agent stack.
 
-They previously lived in `src/agents/base.py` and `src/agents/orchestrator.py`,
-which pulled the whole `anthropic`/`openai` agent tree into the import graph at
-process start even in quant_only mode. This module holds them with no LLM
-dependency; the agent modules re-export from here for backward compatibility.
+They previously lived in the LLM agent stack, which pulled a heavy third-party
+agent tree into the import graph at process start even in quant_only mode. That
+stack has been removed; these types now live here with no LLM dependency.
 """
 
 from __future__ import annotations

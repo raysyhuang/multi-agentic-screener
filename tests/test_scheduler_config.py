@@ -74,5 +74,6 @@ def test_start_scheduler_uses_one_hour_misfire_grace(monkeypatch):
     scheduler = main.start_scheduler()
 
     assert scheduler.started is True
-    assert len(scheduler.jobs) == 3
+    # Morning pipeline + afternoon check (weekly meta-review removed with LLM stack)
+    assert len(scheduler.jobs) == 2
     assert {job["misfire_grace_time"] for job in scheduler.jobs} == {3600}

@@ -8,7 +8,7 @@ from pathlib import Path
 from unittest.mock import patch
 
 
-from src.agents.base import ThresholdAdjustment
+from src.pipeline_types import ThresholdAdjustment
 from src.governance.threshold_manager import (
     ADJUSTABLE_PARAMS,
     validate_adjustment,
