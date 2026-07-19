@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.agents.base import ThresholdAdjustment
+from src.pipeline_types import ThresholdAdjustment
 from src.config import get_settings
 
 logger = logging.getLogger(__name__)

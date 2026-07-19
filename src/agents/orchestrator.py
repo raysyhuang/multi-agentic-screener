@@ -46,60 +46,13 @@ class BudgetExhaustedError(Exception):
         )
 
 
-@dataclass
-class PipelineResult:
-    ticker: str
-    signal_model: str
-    direction: str
-    entry_price: float
-    stop_loss: float
-    target_1: float
-    target_2: float | None
-    holding_period: int
-    confidence: float
-    interpretation: SignalInterpretation
-    debate: DebateResult
-    risk_gate: RiskGateOutput
-    features: dict
-    signal_source: str = "mas_official"
-    max_entry_price: float | None = None
-    also_in_mas: bool = False
-    suppressed_by_cross_model_ranking: bool = False
-
-
-@dataclass
-class NearMissRecord:
-    """In-memory record of a signal rejected at debate or risk gate."""
-    ticker: str
-    stage: str  # "debate" or "risk_gate"
-    debate_verdict: str
-    net_conviction: float
-    bull_conviction: float | None = None
-    bear_conviction: float | None = None
-    key_risk: str | None = None
-    risk_gate_decision: str | None = None
-    risk_gate_reasoning: str | None = None
-    interpreter_confidence: float | None = None
-    signal_model: str | None = None
-    entry_price: float | None = None
-    stop_loss: float | None = None
-    target_price: float | None = None
-    timeframe_days: int | None = None
-
-
-@dataclass
-class PipelineRun:
-    run_date: date
-    regime: str
-    regime_details: dict
-    candidates_scored: int
-    interpreted: int
-    debated: int
-    approved: list[PipelineResult]
-    vetoed: list[str]
-    agent_logs: list[dict]
-    convergence_state: str = "converged"
-    near_misses: list[NearMissRecord] = field(default_factory=list)
+# PipelineResult / NearMissRecord / PipelineRun now live in src/pipeline_types.py
+# (LLM-free) and are re-exported here for backward compatibility.
+from src.pipeline_types import (  # noqa: E402,F401
+    NearMissRecord,
+    PipelineResult,
+    PipelineRun,
+)
 
 
 async def run_agent_pipeline(

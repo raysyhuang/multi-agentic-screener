@@ -1,83 +1,23 @@
-"""Base agent class and structured output schemas (Pydantic models)."""
+"""Base agent class and structured output schemas (Pydantic models).
+
+The quant-consumed schemas now live in `src/pipeline_types.py` (LLM-free) and
+are re-exported here for backward compatibility. This module keeps only the
+LLM-specific schemas and the BaseAgent class.
+"""
 
 from __future__ import annotations
 
-from enum import Enum
-
 from pydantic import BaseModel, Field
 
-
-# --- Structured output schemas ---
-
-class RiskFlag(str, Enum):
-    EARNINGS_IMMINENT = "earnings_imminent"
-    HIGH_VOLATILITY = "high_volatility"
-    LOW_LIQUIDITY = "low_liquidity"
-    SECTOR_CORRELATION = "sector_correlation"
-    REGIME_MISMATCH = "regime_mismatch"
-    OVEREXTENDED = "overextended"
-    NEWS_RISK = "news_risk"
-
-
-class SignalInterpretation(BaseModel):
-    """Output schema for Signal Interpreter agent."""
-    ticker: str
-    thesis: str = Field(description="2-4 sentence investment thesis")
-    confidence: float = Field(ge=0, le=100, description="Confidence score 0-100")
-    key_drivers: list[str] = Field(description="Top 3 factors driving the signal")
-    risk_flags: list[RiskFlag] = Field(default_factory=list)
-    suggested_entry: float
-    suggested_stop: float
-    suggested_target: float
-    timeframe_days: int
-
-
-class DebatePosition(BaseModel):
-    """One side of the adversarial debate."""
-    position: str = Field(description="BULL or BEAR")
-    argument: str = Field(description="Core argument in 2-3 sentences")
-    evidence: list[str] = Field(description="Specific data points supporting the position")
-    weakness: str = Field(description="Acknowledged weakness of this position")
-    conviction: float = Field(ge=0, le=100)
-
-
-class DebateResult(BaseModel):
-    """Output of the full adversarial debate."""
-    ticker: str
-    bull_case: DebatePosition
-    bear_case: DebatePosition
-    rebuttal_summary: str = Field(description="Summary of the rebuttal exchange")
-    final_verdict: str = Field(description="PROCEED, CAUTIOUS, or REJECT")
-    net_conviction: float = Field(ge=0, le=100)
-    key_risk: str = Field(description="Single biggest risk identified")
-
-
-class GateDecision(str, Enum):
-    APPROVE = "APPROVE"
-    VETO = "VETO"
-    ADJUST = "ADJUST"
-
-
-class RiskGateOutput(BaseModel):
-    """Output schema for Risk Gatekeeper agent."""
-    ticker: str
-    decision: GateDecision
-    reasoning: str = Field(description="2-3 sentence reasoning for the decision")
-    position_size_pct: float = Field(ge=0, le=100, description="Suggested portfolio allocation %")
-    adjusted_stop: float | None = Field(default=None, description="Adjusted stop if ADJUST")
-    adjusted_target: float | None = Field(default=None, description="Adjusted target if ADJUST")
-    correlation_warning: str | None = None
-    regime_note: str | None = None
-
-
-class ThresholdAdjustment(BaseModel):
-    """A suggested threshold change from the Meta-Analyst."""
-    parameter: str = Field(description="Config parameter name (e.g., 'vix_high_threshold')")
-    current_value: float
-    suggested_value: float
-    reasoning: str = Field(description="Why this adjustment is suggested")
-    confidence: float = Field(ge=0, le=100, description="Confidence in this adjustment")
-    evidence_sample_size: int = Field(ge=0, description="Number of trades supporting this suggestion")
+from src.pipeline_types import (  # noqa: F401  (re-exported for backward compat)
+    DebatePosition,
+    DebateResult,
+    GateDecision,
+    RiskFlag,
+    RiskGateOutput,
+    SignalInterpretation,
+    ThresholdAdjustment,
+)
 
 
 class AgentAdjustment(BaseModel):

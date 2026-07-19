@@ -76,7 +76,7 @@ from src.signals.ranker import (
     apply_cooldown,
     MODEL_MAP,
 )
-from src.agents.orchestrator import PipelineRun
+from src.pipeline_types import PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert, format_cross_engine_alert
 from src.output.performance import check_open_positions
@@ -645,14 +645,15 @@ def _build_quant_only_result(
     Uses deterministic stubs for interpretation/debate/risk_gate fields
     so all downstream consumers (DB, Telegram, envelopes) work unchanged.
     """
-    from src.agents.base import (
+    from src.pipeline_types import (
         SignalInterpretation,
         DebateResult,
         DebatePosition,
         RiskGateOutput,
         GateDecision,
+        PipelineResult,
+        PipelineRun,
     )
-    from src.agents.orchestrator import PipelineResult, PipelineRun
 
     approved: list[PipelineResult] = []
     for candidate in ranked[:max_picks]:
