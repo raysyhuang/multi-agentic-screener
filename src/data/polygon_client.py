@@ -82,6 +82,53 @@ class PolygonClient:
         df = df.sort_values("date").reset_index(drop=True)
         return df
 
+    async def get_intraday_aggs(
+        self,
+        ticker: str,
+        from_date: date,
+        to_date: date,
+        multiplier: int = 1,
+        timespan: str = "minute",
+        max_pages: int = 50,
+    ) -> pd.DataFrame:
+        """Fetch intraday aggregate bars (default 1-minute), paginated.
+
+        Unlike get_ohlcv (daily), this preserves the intraday timestamp: the
+        returned frame has both a `datetime` column (tz-naive UTC) and a `date`
+        column, so a single trading day yields many rows. Follows Polygon's
+        next_url pagination since a multi-day minute window easily exceeds the
+        per-response limit. Requires an intraday-enabled plan (the $199 tier).
+        """
+        url = (
+            f"{BASE_URL}/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}"
+            f"/{from_date}/{to_date}"
+        )
+        params = self._params(adjusted="true", sort="asc", limit=50000)
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            while url and page < max_pages:
+                resp = await _request_with_backoff(client, url, params)
+                data = resp.json()
+                results.extend(data.get("results", []))
+                url = data.get("next_url")
+                # next_url carries its own query string; only the key is needed.
+                params = {"apiKey": self._api_key} if url else {}
+                page += 1
+
+        if not results:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(results)
+        df = df.rename(columns={
+            "o": "open", "h": "high", "l": "low", "c": "close",
+            "v": "volume", "vw": "vwap", "t": "timestamp", "n": "trades",
+        })
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df["date"] = df["datetime"].dt.date
+        df = df.sort_values("datetime").reset_index(drop=True)
+        return df
+
     async def get_options_flow(self, ticker: str, on_date: date) -> list[dict]:
         """Fetch options contracts for unusual activity detection."""
         url = f"{BASE_URL}/v3/reference/options/contracts"
