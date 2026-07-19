@@ -54,3 +54,41 @@ a gross-return probe — that is exactly how the 82% sniper illusion happened.
 
 Two hypotheses refuted by honest testing this session (gap-continuation,
 intraday-MR); one real directional signal discovered (intraday VWAP-momentum).
+
+## Addendum — the proper backtest KILLS VWAP-momentum too (2026-07-19)
+
+`scripts/intraday_vwap_backtest.py`: single actionable entry at 12:00 ET (dev ≥
+threshold above session VWAP), ride to the close through the unified exit engine
+(minute ExitBars, expiry), net of realistic per-side cost. 40 liquid tickers × 40
+sampled days.
+
+| test (dev≥+1%, ride to close) | N | WR | avg net% |
+|---|---|---|---|
+| net of 5 bp/side | 78 | 41% | **−0.26** |
+| **zero cost** | 78 | 45% | **−0.16** |
+| below-VWAP control | 158 | 48% | −0.28 |
+| early / mid / late third | 25/22/31 | — | +0.11 / −0.53 / −0.37 |
+
+**Verdict: refuted.** The signal is negative even before costs; the below-VWAP
+CONTROL is equally negative (so there is no *directional* edge — both sides lose);
+and it is positive in only one of three sub-periods. The +0.40% probe number was an
+**intraday-overlap artifact**: the probe pooled 5 decision times per day, so an
+all-day-strong name was counted ~5× and inflated the mean. Counting each ticker-day
+once — a real tradeable entry — erases the edge. Classic why-you-must-backtest-not-
+probe. Do not pursue.
+
+### Session scorecard on new alphas (all liquid large-cap technical signals)
+- Gap-continuation: dead (daily + intraday).
+- Intraday mean-reversion: refuted (effect is momentum).
+- Intraday VWAP-momentum: refuted (overlap artifact; no edge single-entry, control
+  also negative, unstable across sub-periods).
+- Post-earnings drift: still untested (needs point-in-time earnings dates).
+
+Read-through: simple price-derived technical signals on the most-liquid large-caps
+are efficiently priced — three plausible ones all died under honest testing. The
+value delivered is the TESTING FRAMEWORK (unified engine + realistic costs +
+controls + sub-period splits + overlap-aware sampling) that reliably kills
+artifacts — exactly what was missing when the 82% sniper backtest was believed.
+Genuine alpha more likely needs a data edge the $199 plan enables but we haven't
+mined (short interest, options flow), a less-efficient universe (small/mid-caps),
+or an event edge (post-earnings drift) — not more technical signals on mega-caps.
