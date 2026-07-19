@@ -95,6 +95,50 @@ class TestQuantOnlyMode:
         result = _build_quant_only_result(candidates, {"regime": "bull"}, max_picks=2)
         assert len(result.approved) == 2
 
+    def test_sniper_cap_limits_sniper_picks(self):
+        """max_sniper caps sniper picks; lower-ranked non-sniper picks still fill."""
+        from src.main import _build_quant_only_result
+
+        # Two sniper candidates rank ahead of a mean_reversion one.
+        candidates = [
+            FakeCandidate(ticker="SNP1", signal_model="sniper"),
+            FakeCandidate(ticker="SNP2", signal_model="sniper"),
+            FakeCandidate(ticker="MR1", signal_model="mean_reversion"),
+        ]
+        result = _build_quant_only_result(
+            candidates, {"regime": "bull"}, max_picks=2, max_sniper=1,
+        )
+        models = [p.signal_model for p in result.approved]
+        tickers = [p.ticker for p in result.approved]
+        assert models.count("sniper") == 1          # only one sniper admitted
+        assert tickers == ["SNP1", "MR1"]           # 2nd sniper skipped, MR fills slot
+
+    def test_sniper_cap_zero_blocks_all_sniper(self):
+        """max_sniper=0 admits no sniper picks (all slots concurrent-full)."""
+        from src.main import _build_quant_only_result
+
+        candidates = [
+            FakeCandidate(ticker="SNP1", signal_model="sniper"),
+            FakeCandidate(ticker="MR1", signal_model="mean_reversion"),
+        ]
+        result = _build_quant_only_result(
+            candidates, {"regime": "bull"}, max_picks=2, max_sniper=0,
+        )
+        assert [p.ticker for p in result.approved] == ["MR1"]
+
+    def test_no_sniper_cap_when_none(self):
+        """max_sniper=None applies no sniper-specific cap."""
+        from src.main import _build_quant_only_result
+
+        candidates = [
+            FakeCandidate(ticker="SNP1", signal_model="sniper"),
+            FakeCandidate(ticker="SNP2", signal_model="sniper"),
+        ]
+        result = _build_quant_only_result(
+            candidates, {"regime": "bull"}, max_picks=2, max_sniper=None,
+        )
+        assert len(result.approved) == 2
+
     def test_deterministic_stubs_present(self):
         """Interpretation/debate/risk_gate fields must be populated (not None)."""
         from src.main import _build_quant_only_result

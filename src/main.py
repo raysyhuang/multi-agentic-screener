@@ -459,11 +459,17 @@ def _build_quant_only_result(
     ranked: list,
     regime_context: dict,
     max_picks: int = 2,
+    max_sniper: int | None = None,
 ) -> PipelineRun:
     """Build a PipelineResult from ranked candidates without any LLM calls.
 
     Uses deterministic stubs for interpretation/debate/risk_gate fields
     so all downstream consumers (DB, Telegram, envelopes) work unchanged.
+
+    max_sniper caps how many sniper picks may be selected (the concurrent
+    sniper-position risk cap). Sniper candidates beyond the cap are skipped
+    while lower-ranked non-sniper candidates still fill remaining pick slots.
+    None means no sniper-specific cap.
     """
     from src.pipeline_types import (
         SignalInterpretation,
@@ -476,7 +482,19 @@ def _build_quant_only_result(
     )
 
     approved: list[PipelineResult] = []
-    for candidate in ranked[:max_picks]:
+    sniper_taken = 0
+    for candidate in ranked:
+        if len(approved) >= max_picks:
+            break
+        # Concurrent sniper-position risk cap: skip sniper candidates once the
+        # available slots are used, but keep scanning for non-sniper picks.
+        if (
+            max_sniper is not None
+            and getattr(candidate, "signal_model", None) == "sniper"
+        ):
+            if sniper_taken >= max_sniper:
+                continue
+            sniper_taken += 1
         stub_interp = SignalInterpretation(
             ticker=candidate.ticker,
             thesis=f"Quant-only pick: {candidate.signal_model} score={candidate.raw_score:.2f}",
@@ -1119,11 +1137,25 @@ async def _run_pipeline_core(
             "execution_mode=%s is not supported (LLM stack removed); "
             "falling back to quant_only.", execution_mode.value,
         )
+    # Concurrent sniper-position risk cap: sniper's true edge is thin (see the
+    # truth matrix — the 82% backtest was a fill artifact), and the validated
+    # 18%-drawdown risk profile assumed a max of sniper_max_positions concurrent
+    # sniper trades. Enforce that live by only admitting sniper picks up to the
+    # remaining open slots.
+    open_sniper = await _count_open_sniper_positions()
+    sniper_slots = max(0, settings.sniper_max_positions - open_sniper)
+    if open_sniper:
+        logger.info(
+            "Sniper concurrency: %d open, %d of %d slots free",
+            open_sniper, sniper_slots, settings.sniper_max_positions,
+        )
     pipeline_result = _build_quant_only_result(
         ranked, regime_context, max_picks=settings.max_final_picks,
+        max_sniper=sniper_slots,
     )
 
     if mr_manual_ranked:
+        # mr_manual sleeve is mean-reversion only — no sniper cap needed.
         mr_manual_result = _build_quant_only_result(
             mr_manual_ranked,
             regime_context,
@@ -1696,6 +1728,31 @@ async def _get_recent_signals(days: int = 7) -> list[dict]:
     except Exception as e:
         logger.warning("Failed to fetch recent signals for cooldown: %s", e)
         return []
+
+
+async def _count_open_sniper_positions() -> int:
+    """Count currently-open sniper positions (official sleeve).
+
+    Used to enforce the concurrent sniper-position risk cap. Fail-safe: on any
+    DB error return 0 so a transient failure widens the cap rather than blocking
+    the pipeline.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(func.count())
+                .select_from(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == True,  # noqa: E712
+                    Signal.signal_model == "sniper",
+                    Signal.signal_source == "mas_official",
+                )
+            )
+            return int(result.scalar() or 0)
+    except Exception as e:
+        logger.warning("Failed to count open sniper positions (cap disabled this run): %s", e)
+        return 0
 
 
 async def _check_and_record_decay(gov: GovernanceContext) -> None:
