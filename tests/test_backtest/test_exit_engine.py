@@ -92,6 +92,47 @@ def test_same_bar_stop_and_target_resolves_to_stop():
     assert out.exit_reason == "stop"  # stop checked first
 
 
+def test_same_bar_resolver_can_pick_target():
+    """When minute data says the target came first, the resolver overrides the
+    conservative stop-first assumption on the ambiguous bar."""
+    from src.backtest.exit_engine import resolve_first_touch
+
+    bars = _bars([
+        (100.0, 101.0, 99.5, 100.5),
+        (99.0, 104.0, 97.0, 100.0),    # ambiguous: low 97<=98 and high 104>=103
+    ])
+    # Minute path: rises to target BEFORE dipping to stop.
+    minute = [(99.0, 100.0), (103.5, 104.0), (97.0, 98.0)]  # (low, high) per minute
+    resolver = lambda d, stop, tgt: resolve_first_touch(minute, stop, tgt)
+    out = walk_exit(bars, 100.0, _params(stop=98.0, target=103.0, same_bar_resolver=resolver))
+    assert out.exit_reason == "target"
+    assert out.exit_price == 103.0
+
+
+def test_same_bar_resolver_none_keeps_conservative_stop():
+    """An unresolved verdict (None) falls back to the conservative stop."""
+    bars = _bars([
+        (100.0, 101.0, 99.5, 100.5),
+        (99.0, 104.0, 97.0, 100.0),
+    ])
+    resolver = lambda d, stop, tgt: None
+    out = walk_exit(bars, 100.0, _params(stop=98.0, target=103.0, same_bar_resolver=resolver))
+    assert out.exit_reason == "stop"
+
+
+def test_resolve_first_touch_orders():
+    from src.backtest.exit_engine import resolve_first_touch
+
+    # stop touched first
+    assert resolve_first_touch([(97.0, 99.0), (100.0, 104.0)], 98.0, 103.0) == "stop"
+    # target touched first
+    assert resolve_first_touch([(99.0, 100.0), (103.5, 104.0)], 98.0, 103.0) == "target"
+    # neither touched
+    assert resolve_first_touch([(99.0, 100.0), (99.5, 100.5)], 98.0, 103.0) is None
+    # single minute straddles both → conservative stop
+    assert resolve_first_touch([(97.0, 104.0)], 98.0, 103.0) == "stop"
+
+
 # ---------------------------------------------------------------------------
 # Trailing stop guards
 # ---------------------------------------------------------------------------

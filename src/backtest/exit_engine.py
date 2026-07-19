@@ -33,6 +33,7 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date
+from typing import Callable, Iterable
 
 
 @dataclass(frozen=True)
@@ -70,6 +71,14 @@ class ExitParams:
     gap_through: bool = True  # model open-gap fills on stop AND target
     check_entry_bar: bool = True  # if False, bars[0] is not eligible for exits
     leg1_prefilled: bool = False  # leg-1 already filled before this walk
+    # Optional same-bar tie-breaker. When a daily bar's low breaches the stop AND
+    # its high reaches the target (neither via an opening gap), the daily OHLC
+    # cannot say which came first, so walk_exit conservatively takes the stop.
+    # If set, this callable — (bar_date, stop_level, target_level) -> "stop" |
+    # "target" | None — resolves the tie from intraday (minute) data. None means
+    # "unresolved"; the conservative stop is kept. walk_exit stays pure: the
+    # caller wires the minute-bar lookup (see resolve_first_touch).
+    same_bar_resolver: Callable[[date, float, float], str | None] | None = None
 
 
 @dataclass
@@ -91,6 +100,29 @@ class ExitOutcome:
     leg1_filled: bool
     leg1_index: int | None  # bar index where the partial filled this walk (None if preloaded)
     days_held: int | None
+
+
+def resolve_first_touch(
+    minute_bars: Iterable[tuple[float, float]],
+    stop: float,
+    target: float,
+) -> str | None:
+    """Given a day's ordered (low, high) minute bars, return which level was hit
+    first: "stop", "target", or None if neither was touched.
+
+    Used to break the same-bar stop-vs-target tie that daily OHLC can't. If a
+    single minute bar straddles both levels it stays ambiguous, so we keep the
+    conservative "stop" for that minute. Pure and pandas-free; the caller adapts
+    its minute frame to (low, high) tuples.
+    """
+    for low, high in minute_bars:
+        hit_stop = low <= stop
+        hit_target = high >= target
+        if hit_stop:
+            return "stop"          # conservative when a single minute hits both
+        if hit_target:
+            return "target"
+    return None
 
 
 def walk_exit(bars: list[ExitBar], entry_price: float, params: ExitParams) -> ExitOutcome:
@@ -169,16 +201,27 @@ def walk_exit(bars: list[ExitBar], entry_price: float, params: ExitParams) -> Ex
         stop_reason = "trail_stop" if trailed else "stop"
 
         # Exit checks, in canonical live order (stop before target — conservative).
+        # Opening-gap fills are unambiguous (the open already breached the level).
         if params.gap_through and bar.open <= effective_stop:
             return _result(i, bar.open * (1 - params.slippage), stop_reason)
-
-        if bar.low <= effective_stop:
-            return _result(i, effective_stop * (1 - params.slippage), stop_reason)
-
         if params.gap_through and bar.open >= params.target:
             return _result(i, bar.open * (1 - params.slippage), "target")
 
-        if bar.high >= params.target:
+        stop_hit = bar.low <= effective_stop
+        target_hit = bar.high >= params.target
+
+        # Same-bar tie: both intraday levels reached. Use the resolver if given
+        # (minute data says which came first); otherwise keep the conservative
+        # stop-first assumption.
+        if stop_hit and target_hit and params.same_bar_resolver is not None:
+            verdict = params.same_bar_resolver(bar.date, effective_stop, params.target)
+            if verdict == "target":
+                return _result(i, params.target * (1 - params.slippage), "target")
+            # "stop" or None (unresolved) → fall through to conservative stop.
+
+        if stop_hit:
+            return _result(i, effective_stop * (1 - params.slippage), stop_reason)
+        if target_hit:
             return _result(i, params.target * (1 - params.slippage), "target")
 
         if params.early_exit_mfe_pct > 0 and mfe >= params.early_exit_mfe_pct:
