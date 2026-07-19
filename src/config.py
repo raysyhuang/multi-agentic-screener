@@ -159,41 +159,8 @@ class Settings(BaseSettings):
     breadth_bullish_threshold: float = 0.60
     breadth_bearish_threshold: float = 0.40
 
-    # --- External Engine URLs ---
-    koocore_api_url: str = ""
-    gemini_api_url: str = ""
-    top3_7d_api_url: str = ""
-    engine_api_key: str = ""
-
-    # --- Local Engine Runners ---
-    engine_run_mode: str = "hybrid"  # "local" | "http" | "hybrid" (KooCore-D via HTTP, Gemini local)
-    koocore_config_path: str = "KooCore-D/config/default.yaml"
-
-    # --- Cross-Engine System ---
-    cross_engine_enabled: bool = False
-    cross_engine_model: str = "claude-opus-4-6"  # unused: kept for agent class compat
-    cross_engine_max_cost_usd: float = 0.50      # unused: kept for agent class compat
-    cross_engine_verify_before_synthesize: bool = True  # unused: Steps 12-13 are deterministic
-    engine_fetch_timeout_s: float = 30.0
+    # --- LLM request timeout ---
     llm_request_timeout_s: float = 90.0
-
-    # --- Credibility Tracking ---
-    credibility_lookback_days: int = 30
-    credibility_min_picks_for_weight: int = 10
-    convergence_2_engine_multiplier: float = 1.3
-    convergence_3_engine_multiplier: float = 1.0
-    convergence_4_engine_multiplier: float = 1.0
-    convergence_1_engine_multiplier: float = 0.9
-    convergence_sector_multiplier: float = 1.15  # boost when 2+ engines pick same sector
-
-    # --- Strategy-level hit-rate floor ---
-    credibility_strategy_floor_enabled: bool = True
-    credibility_strategy_floor_hit_rate: float = 0.15  # reject strategies below 15% hit rate
-    credibility_strategy_floor_min_picks: int = 5      # only enforce floor with >= N resolved picks
-
-    # --- Confidence Recalibration ---
-    credibility_recalibration_enabled: bool = True
-    credibility_recalibration_min_picks: int = 10  # only recalibrate engines with >= N resolved picks
 
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True
@@ -212,25 +179,11 @@ class Settings(BaseSettings):
     low_overlap_max_positions: int = 3
     low_overlap_max_total_weight_pct: float = 30.0
 
-    # --- Gemini STST filter thresholds (backtest adapter) ---
-    gemini_momentum_adv_min: float = 300_000
-    gemini_momentum_rvol_min: float = 1.0
-    gemini_reversion_adv_min: float = 750_000
-    gemini_reversion_rsi2_max: float = 15.0
-
-    # --- Execution Gates (pre-synthesis safety checks) ---
-    min_engines_for_trade: int = 2  # Require N engines reporting before allowing synthesis
-    require_known_regime: bool = False  # Block trades when regime is "unknown"
-
     # --- MCP Data Connectors ---
     mcp_enabled: bool = True  # Master toggle for MCP enrichment layer
     mcp_enabled_providers: str = ""  # Comma-separated list (empty = all from .mcp.json)
     mcp_enrich_top_n: int = 10  # Only enrich top N candidates (controls cost)
     mcp_request_timeout_s: float = 30.0
-
-    # --- Cross-Engine Alert Cooldown ---
-    cross_engine_alert_cooldown_hours: int = 4
-    engine_drop_alert_cooldown_minutes: int = 60
 
     # --- Production Profile ---
     production_profile: str = "balanced"  # "balanced" (default) or future challenger profiles
@@ -244,16 +197,6 @@ class Settings(BaseSettings):
     sniper_holding_period: int = 7
     sniper_max_positions: int = 3
     sniper_time_stop_days: int = 1
-    sniper_hard_veto_only: bool = True
-
-    # --- Shadow Tracks (parallel parameter experiments) ---
-    shadow_tracks_enabled: bool = False
-
-    # --- Regime Strategy Gate ---
-    regime_strategy_gate_enabled: bool = True
-    regime_gate_bear_blocked_strategies: str = "momentum"
-    regime_gate_bear_penalized_strategies: str = "breakout,swing"
-    regime_gate_bear_penalty_multiplier: float = 0.65
 
     @model_validator(mode="after")
     def _validate_model_names(self) -> "Settings":
@@ -261,7 +204,6 @@ class Settings(BaseSettings):
         model_fields = [
             "signal_interpreter_model", "adversarial_model", "risk_gate_model",
             "meta_analyst_model", "planner_model", "verifier_model",
-            "cross_engine_model",
         ]
         for field_name in model_fields:
             value = getattr(self, field_name, "")

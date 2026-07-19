@@ -3,7 +3,6 @@
 This runs as a separate dyno from the web process:
   - Morning pipeline (6:00 AM ET)
   - Afternoon position check (4:30 PM ET)
-  - Evening cross-engine collection (9:30 PM ET)
   - Weekly meta-analyst review (Sunday 7:00 PM ET)
 """
 
@@ -17,7 +16,7 @@ import sys
 from src.config import ExecutionMode, get_settings
 from src.db.session import init_db
 from src.main import (
-    run_morning_pipeline, run_afternoon_check, run_evening_collection,
+    run_morning_pipeline, run_afternoon_check,
     run_weekly_meta_review, _setup_logging,
 )
 from src.output.telegram import send_alert
@@ -45,7 +44,6 @@ async def start_worker() -> None:
     one_off_jobs = {
         "--run-now": run_morning_pipeline,
         "--check-now": run_afternoon_check,
-        "--collect-now": run_evening_collection,
         "--meta-now": run_weekly_meta_review,
     }
     for flag, job in one_off_jobs.items():
@@ -105,23 +103,6 @@ async def start_worker() -> None:
         coalesce=True,
     )
 
-    # Evening cross-engine collection (9:30 PM ET Mon-Fri)
-    # Runs AFTER all external engines finish (latest by ~8:15 PM ET)
-    scheduler.add_job(
-        run_evening_collection,
-        CronTrigger(
-            hour=21,
-            minute=30,
-            day_of_week="mon-fri",
-            timezone="US/Eastern",
-        ),
-        id="evening_collection",
-        name="Evening Cross-Engine Collection",
-        max_instances=1,
-        misfire_grace_time=3600,
-        coalesce=True,
-    )
-
     # Weekly meta-analyst review (Sunday 7 PM ET) — LLM-only job.
     # Skip in quant_only mode: it calls the meta-analyst agent (LLM spend) and
     # produces nothing consumed by the quant-only pipeline. Was scheduled
@@ -151,7 +132,7 @@ async def start_worker() -> None:
         logger.info("Scheduled job '%s' — next run: %s", job.name, job.next_run_time)
 
     logger.info(
-        "Worker started: morning=%02d:%02d, afternoon=%02d:%02d, evening=21:30, weekly=Sun 19:00 (all ET, Mon-Fri)",
+        "Worker started: morning=%02d:%02d, afternoon=%02d:%02d, weekly=Sun 19:00 (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
     )

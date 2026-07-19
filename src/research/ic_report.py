@@ -16,9 +16,7 @@ from datetime import date, datetime, timezone
 
 from src.research.ic_analysis import (
     compute_engine_ic,
-    compute_cross_engine_independence,
     EngineICReport,
-    PairwiseCorrelation,
 )
 
 logger = logging.getLogger(__name__)
@@ -39,20 +37,7 @@ def _format_table(reports: list[EngineICReport]) -> str:
     return "\n".join(lines)
 
 
-def _format_correlations(correlations: list[PairwiseCorrelation]) -> str:
-    """Format pairwise correlations."""
-    if not correlations:
-        return "  (no engine pair data)"
-    lines: list[str] = []
-    for c in correlations:
-        lines.append(
-            f"  {c.engine_a} \u2194 {c.engine_b}: "
-            f"{c.correlation:.2f} ({c.n_overlap} overlapping picks)"
-        )
-    return "\n".join(lines)
-
-
-def _to_serializable(reports: list[EngineICReport], correlations: list[PairwiseCorrelation]) -> dict:
+def _to_serializable(reports: list[EngineICReport]) -> dict:
     """Convert results to JSON-serializable dict."""
     return {
         "generated_at": datetime.now(timezone.utc).isoformat(),
@@ -66,16 +51,6 @@ def _to_serializable(reports: list[EngineICReport], correlations: list[PairwiseC
                 "brier_score": r.brier_score,
             }
             for r in reports
-        ],
-        "cross_engine_correlations": [
-            {
-                "engine_a": c.engine_a,
-                "engine_b": c.engine_b,
-                "correlation": c.correlation,
-                "p_value": c.p_value,
-                "n_overlap": c.n_overlap,
-            }
-            for c in correlations
         ],
     }
 
@@ -93,17 +68,10 @@ async def run_report(lookback_days: int = 90) -> None:
             )
             reports.append(report)
 
-        correlations = await compute_cross_engine_independence(
-            session, lookback_days=lookback_days
-        )
-
     # Print to stdout
     print(f"\nIC Report (lookback={lookback_days}d, as of {date.today()})")
     print()
     print(_format_table(reports))
-    print()
-    print("Cross-Engine Independence (prediction correlation):")
-    print(_format_correlations(correlations))
     print()
 
     # Save JSON
@@ -111,7 +79,7 @@ async def run_report(lookback_days: int = 90) -> None:
     os.makedirs(output_dir, exist_ok=True)
     output_path = os.path.join(output_dir, f"ic_{date.today().isoformat()}.json")
     with open(output_path, "w") as f:
-        json.dump(_to_serializable(reports, correlations), f, indent=2)
+        json.dump(_to_serializable(reports), f, indent=2)
     print(f"Saved to {output_path}")
 
 

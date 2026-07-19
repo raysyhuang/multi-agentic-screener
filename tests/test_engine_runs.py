@@ -69,20 +69,3 @@ class TestEngineRunModel:
         assert "uq_engine_run_name_date_attempt" in constraint_names
 
 
-class TestFailureStatusMapping:
-    """Test the failure kind -> status mapping used in main.py."""
-
-    def test_mapping_covers_all_failure_kinds(self):
-        """All EngineFailureKind values map to a status."""
-        from src.engines.collector import EngineFailureKind
-        from typing import get_args
-
-        failure_kinds = get_args(EngineFailureKind)
-        status_map = {
-            "exception": "failed",
-            "no_output": "no_output",
-            "no_response": "no_response",
-            "quality_rejected": "quality_rejected",
-        }
-        for kind in failure_kinds:
-            assert kind in status_map, f"EngineFailureKind '{kind}' not in status map"
