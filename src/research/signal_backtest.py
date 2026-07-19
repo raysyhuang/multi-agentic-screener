@@ -178,8 +178,16 @@ def simulate_trade(
     confirm_entry: bool = False,
     confirm_mode: str = "close_gt_open",
     early_exit_mfe_pct: float = 0.0,
+    gap_through: bool = False,
+    time_stop_days: int = 0,
+    time_stop_eligible: bool = False,
 ) -> dict | None:
     """Simulate a LONG trade with T+1 open entry, optional trailing stop, and two-leg exits.
+
+    Entry resolution (T+1 open / confirm-entry modes / gap filter) stays here;
+    the bar-by-bar exit walk delegates to the shared pure engine in
+    ``src.backtest.exit_engine`` so this backtester and the live tracker cannot
+    drift apart.
 
     Trailing stop: once unrealized gain reaches trail_activate_pct, a trailing
     stop activates at (high_watermark * (1 - trail_distance_pct/100)). It only
@@ -192,6 +200,10 @@ def simulate_trade(
 
     Gap filter (max_entry_price > 0):
       Reject if T+1 open exceeds max_entry_price (reversion already gapped away).
+
+    Live-faithfulness toggles (default off to preserve legacy backtest results):
+      gap_through: model open-gap fills on stop AND target (live behaviour).
+      time_stop_days / time_stop_eligible: sniper time-stop exit.
     """
     future = df[df["date"] > signal_date].sort_values("date")
     if len(future) < 2:
@@ -243,158 +255,90 @@ def simulate_trade(
         entry_price = raw_open * (1 + slippage)
         entry_date = entry_row["date"]
         window = future.iloc[:max_hold + 1]
-    mfe = 0.0
-    mae = 0.0
-    high_watermark = entry_price
-    trailing_active = False
-    use_trailing = trail_activate_pct > 0 and trail_distance_pct > 0
 
     # Two-leg state
     use_two_leg = partial_tp_atr_mult > 0 and atr_value > 0
     partial_target = entry_price + partial_tp_atr_mult * atr_value if use_two_leg else 0.0
-    leg1_filled = False
+
+    # --- Exit walk via the shared pure engine ---
+    # Legacy backtest conventions: the entry bar (window[0]) is not eligible for
+    # exits (check_entry_bar=False), open-gap fills default off (gap_through),
+    # and expiry lands on window[-1] (max_hold=len(bars)).
+    from src.backtest.exit_engine import ExitBar, ExitParams, walk_exit
+
+    bars = [
+        ExitBar(
+            date=row["date"],
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+        )
+        for _, row in window.iterrows()
+    ]
+
+    exit_outcome = walk_exit(
+        bars,
+        entry_price,
+        ExitParams(
+            stop=stop_loss,
+            target=target,
+            max_hold=len(bars),
+            slippage=slippage,
+            trail_activate_pct=trail_activate_pct,
+            trail_distance_pct=trail_distance_pct,
+            partial_tp_target=partial_target,
+            partial_tp_fraction=0.5,
+            time_stop_days=time_stop_days,
+            time_stop_eligible=time_stop_eligible,
+            early_exit_mfe_pct=early_exit_mfe_pct,
+            gap_through=gap_through,
+            check_entry_bar=False,
+        ),
+    )
+
+    mfe = exit_outcome.mfe_pct
+    mae = exit_outcome.mae_pct
+
+    # Leg-1 fill: legacy applies slippage to the partial exit price (the live
+    # tracker does NOT — an intentional, documented per-caller convention).
+    leg1_filled = exit_outcome.leg1_filled
     leg1_pnl = 0.0
-    leg1_exit_date = None
+    if leg1_filled:
+        leg1_pnl = (partial_target * (1 - slippage) - entry_price) / entry_price * 100
 
-    for i in range(1, len(window)):
-        row = window.iloc[i]
-        high, low = float(row["high"]), float(row["low"])
+    # Still open at the end of the window → legacy has no such state; the last
+    # bar always resolves as expiry there. walk_exit with max_hold=len(bars)
+    # guarantees an exit, but guard defensively.
+    if not exit_outcome.exited:
+        last = window.iloc[-1]
+        exit_price = float(last["close"]) * (1 - slippage)
+        exit_reason = "expiry"
+        exit_date = last["date"]
+    else:
+        exit_price = exit_outcome.exit_price
+        exit_reason = exit_outcome.exit_reason
+        exit_date = bars[exit_outcome.exit_index].date
 
-        # Update high watermark (intraday)
-        high_watermark = max(high_watermark, high)
-
-        # Activate trailing stop once MFE threshold reached. A trail that
-        # arms on THIS bar must not enforce on the same bar — daily OHLC
-        # cannot prove the high came before the low. Already-active trails
-        # ratchet same-bar (preserved behavior).
-        trail_just_activated = False
-        if use_trailing and not trailing_active:
-            gain_pct = (high_watermark - entry_price) / entry_price * 100
-            if gain_pct >= trail_activate_pct:
-                trailing_active = True
-                trail_just_activated = True
-
-        # Compute effective stop: max of fixed stop and trailing stop
-        effective_stop = stop_loss
-        if trailing_active and not trail_just_activated:
-            trail_stop = high_watermark * (1 - trail_distance_pct / 100)
-            effective_stop = max(stop_loss, trail_stop)
-
-        # Breakeven pivot: only apply if leg1 was filled BEFORE this bar. A
-        # leg1 that fills on THIS bar must not raise the floor for this same
-        # bar — daily OHLC cannot prove the partial_target high came before
-        # the intraday low. The floor starts enforcing next bar.
-        if leg1_filled:
-            effective_stop = max(effective_stop, entry_price)
-
-        # Check Leg 1 partial TP (before stop/target checks). Breakeven floor
-        # raise is intentionally NOT applied here; leg1_filled flipping true
-        # during this bar only affects bars that come after.
-        if use_two_leg and not leg1_filled and high >= partial_target:
-            leg1_filled = True
-            leg1_pnl = (partial_target * (1 - slippage) - entry_price) / entry_price * 100
-            leg1_exit_date = row["date"]
-
-        # Check stop (fixed or trailing)
-        if low <= effective_stop:
-            exit_price = effective_stop * (1 - slippage)
-            leg2_pnl = (exit_price - entry_price) / entry_price * 100
-            exit_reason = "trail_stop" if trailing_active and not trail_just_activated and effective_stop > stop_loss else "stop"
-
-            if use_two_leg and leg1_filled:
-                weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl
-                # Foregone profit: what we'd have made with full position at leg2 exit
-                full_pnl = leg2_pnl
-                foregone = full_pnl - weighted_pnl
-                return dict(
-                    entry_date=entry_date, entry_price=round(entry_price, 2),
-                    exit_date=row["date"], exit_price=round(exit_price, 2),
-                    exit_reason=exit_reason, holding_days=(row["date"] - entry_date).days,
-                    pnl_pct=round(weighted_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-                    leg1_pnl=round(leg1_pnl, 4), leg2_pnl=round(leg2_pnl, 4),
-                    foregone_profit=round(foregone, 4),
-                )
-            else:
-                return dict(
-                    entry_date=entry_date, entry_price=round(entry_price, 2),
-                    exit_date=row["date"], exit_price=round(exit_price, 2),
-                    exit_reason=exit_reason, holding_days=(row["date"] - entry_date).days,
-                    pnl_pct=round(leg2_pnl if not use_two_leg else leg2_pnl, 4),
-                    mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-                )
-
-        if high >= target:
-            exit_price = target * (1 - slippage)
-            leg2_pnl = (exit_price - entry_price) / entry_price * 100
-
-            if use_two_leg and leg1_filled:
-                weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl
-                full_pnl = leg2_pnl
-                foregone = full_pnl - weighted_pnl
-                return dict(
-                    entry_date=entry_date, entry_price=round(entry_price, 2),
-                    exit_date=row["date"], exit_price=round(exit_price, 2),
-                    exit_reason="target", holding_days=(row["date"] - entry_date).days,
-                    pnl_pct=round(weighted_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-                    leg1_pnl=round(leg1_pnl, 4), leg2_pnl=round(leg2_pnl, 4),
-                    foregone_profit=round(foregone, 4),
-                )
-            elif use_two_leg and not leg1_filled:
-                # Target hit before partial — treat as single-leg target
-                return dict(
-                    entry_date=entry_date, entry_price=round(entry_price, 2),
-                    exit_date=row["date"], exit_price=round(exit_price, 2),
-                    exit_reason="target", holding_days=(row["date"] - entry_date).days,
-                    pnl_pct=round(leg2_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-                )
-            else:
-                return dict(
-                    entry_date=entry_date, entry_price=round(entry_price, 2),
-                    exit_date=row["date"], exit_price=round(exit_price, 2),
-                    exit_reason="target", holding_days=(row["date"] - entry_date).days,
-                    pnl_pct=round(leg2_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-                )
-
-        day_best = (high - entry_price) / entry_price * 100
-        day_worst = (low - entry_price) / entry_price * 100
-        mfe = max(mfe, day_best)
-        mae = min(mae, day_worst)
-
-        # Adaptive early exit: if MFE exceeds threshold, take profit at close
-        if early_exit_mfe_pct > 0 and mfe >= early_exit_mfe_pct:
-            exit_price = float(row["close"]) * (1 - slippage)
-            pnl = (exit_price - entry_price) / entry_price * 100
-            return dict(
-                entry_date=entry_date, entry_price=round(entry_price, 2),
-                exit_date=row["date"], exit_price=round(exit_price, 2),
-                exit_reason="early_exit", holding_days=(row["date"] - entry_date).days,
-                pnl_pct=round(pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-            )
-
-    # Expiry
-    last = window.iloc[-1]
-    exit_price = float(last["close"]) * (1 - slippage)
     leg2_pnl = (exit_price - entry_price) / entry_price * 100
+
+    common = dict(
+        entry_date=entry_date, entry_price=round(entry_price, 2),
+        exit_date=exit_date, exit_price=round(exit_price, 2),
+        exit_reason=exit_reason, holding_days=(exit_date - entry_date).days,
+        mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+    )
 
     if use_two_leg and leg1_filled:
         weighted_pnl = 0.5 * leg1_pnl + 0.5 * leg2_pnl
-        full_pnl = leg2_pnl
-        foregone = full_pnl - weighted_pnl
+        foregone = leg2_pnl - weighted_pnl  # full position at leg2 exit vs weighted
         return dict(
-            entry_date=entry_date, entry_price=round(entry_price, 2),
-            exit_date=last["date"], exit_price=round(exit_price, 2),
-            exit_reason="expiry", holding_days=(last["date"] - entry_date).days,
-            pnl_pct=round(weighted_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
+            **common,
+            pnl_pct=round(weighted_pnl, 4),
             leg1_pnl=round(leg1_pnl, 4), leg2_pnl=round(leg2_pnl, 4),
             foregone_profit=round(foregone, 4),
         )
-    else:
-        return dict(
-            entry_date=entry_date, entry_price=round(entry_price, 2),
-            exit_date=last["date"], exit_price=round(exit_price, 2),
-            exit_reason="expiry", holding_days=(last["date"] - entry_date).days,
-            pnl_pct=round(leg2_pnl, 4), mfe_pct=round(mfe, 4), mae_pct=round(mae, 4),
-        )
+    return dict(**common, pnl_pct=round(leg2_pnl, 4))
 
 
 # ── Signal scanning ──────────────────────────────────────────────────────────

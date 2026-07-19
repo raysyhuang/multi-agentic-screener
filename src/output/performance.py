@@ -478,129 +478,65 @@ async def _evaluate_position(
             atr = abs(signal.entry_price - signal.stop_loss) / 0.75
         partial_target = entry_price + settings.partial_tp_atr_multiple * atr
 
-    # --- Bar-by-bar walk ---
-    high_watermark = entry_price
-    trailing_active = False
-    use_trailing = settings.trail_activate_pct > 0 and settings.trail_distance_pct > 0
-    mfe = 0.0
-    mae = 0.0
-    days_traded = 0
+    # --- Bar-by-bar walk via the shared pure exit engine ---
+    # All exit semantics (entry-bar eligibility, gap-through fills, trailing
+    # same-bar-arm guard, breakeven-defer, sniper time_stop, expiry) live in
+    # src/backtest/exit_engine.py so the live tracker and the research
+    # backtester cannot drift apart. This call is the canonical (live) path:
+    # check_entry_bar=True, gap_through=True.
+    from src.backtest.exit_engine import ExitBar, ExitParams, walk_exit
 
+    bars: list[ExitBar] = []
+    bar_dates: list[date] = []
     for i in range(len(since_entry)):
         row = since_entry.iloc[i]
-        bar_open = float(row["open"])
-        bar_high = float(row["high"])
-        bar_low = float(row["low"])
-        bar_close = float(row["close"])
         bar_date = row["date"] if "date" in row.index else outcome.entry_date + timedelta(days=i)
         if hasattr(bar_date, "date"):
             bar_date = bar_date.date()
+        bar_dates.append(bar_date)
+        bars.append(ExitBar(
+            date=bar_date,
+            open=float(row["open"]),
+            high=float(row["high"]),
+            low=float(row["low"]),
+            close=float(row["close"]),
+        ))
 
-        days_traded += 1
+    exit_params = ExitParams(
+        stop=base_stop,
+        target=target,
+        max_hold=signal.holding_period_days,
+        slippage=slippage,
+        trail_activate_pct=settings.trail_activate_pct,
+        trail_distance_pct=settings.trail_distance_pct,
+        partial_tp_target=partial_target if use_two_leg else 0.0,
+        partial_tp_fraction=settings.partial_tp_fraction,
+        time_stop_days=settings.sniper_time_stop_days,
+        time_stop_eligible=(getattr(signal, "signal_model", None) == "sniper"),
+        early_exit_mfe_pct=0.0,
+        gap_through=True,
+        check_entry_bar=True,
+        leg1_prefilled=leg1_filled,
+    )
 
-        # Update high watermark
-        high_watermark = max(high_watermark, bar_high)
+    exit_outcome = walk_exit(bars, entry_price, exit_params)
+    mfe = exit_outcome.mfe_pct
+    mae = exit_outcome.mae_pct
 
-        # Update MFE/MAE
-        bar_mfe = (bar_high - entry_price) / entry_price * 100
-        bar_mae = (bar_low - entry_price) / entry_price * 100
-        mfe = max(mfe, bar_mfe)
-        mae = min(mae, bar_mae)
+    # Stamp a fresh leg-1 partial fill (independent of whether we also exit this
+    # pass — a leg-1 fill on a still-open position must persist too).
+    if exit_outcome.leg1_index is not None:
+        update["partial_exit_price"] = round(partial_target, 4)
+        update["partial_exit_date"] = bar_dates[exit_outcome.leg1_index]
 
-        # Activate trailing stop. If it activates on THIS bar, flag it so we
-        # don't enforce the newly-computed trail level on this same bar — daily
-        # OHLC cannot prove the high came before the low, so a trail derived
-        # from today's high cannot legitimately clip today's open/low. The trail
-        # starts enforcing on the NEXT bar. Ratcheting of an already-active
-        # trail still happens on the same bar (preserved old behavior).
-        trail_just_activated = False
-        if use_trailing and not trailing_active:
-            gain_pct = (high_watermark - entry_price) / entry_price * 100
-            if gain_pct >= settings.trail_activate_pct:
-                trailing_active = True
-                trail_just_activated = True
-
-        # Compute effective stop for this bar
-        effective_stop = base_stop
-        if trailing_active and not trail_just_activated:
-            trail_stop = high_watermark * (1 - settings.trail_distance_pct / 100)
-            effective_stop = max(base_stop, trail_stop)
-
-        # Breakeven pivot: only apply if leg1 was filled BEFORE this bar (either
-        # loaded from outcome.partial_exit_price or filled in a prior loop
-        # iteration). A leg1 that fills on THIS bar must not raise the floor
-        # for this same bar — daily OHLC cannot prove the partial_target high
-        # came before the intraday low. The floor starts enforcing next bar.
-        if leg1_filled:
-            effective_stop = max(effective_stop, entry_price)
-
-        # Check leg1 partial TP (still keyed to current bar high). Note: the
-        # breakeven floor raise is intentionally NOT applied here — see comment
-        # above. leg1_filled flipping true during this bar only affects bars
-        # that come after.
-        if use_two_leg and not leg1_filled and bar_high >= partial_target:
-            leg1_filled = True
-            update["partial_exit_price"] = round(partial_target, 4)
-            update["partial_exit_date"] = bar_date
-
-        # --- Exit checks (stop before target — conservative) ---
-
-        # Gap-through-stop: open below stop
-        if bar_open <= effective_stop:
-            exit_price = round(bar_open * (1 - slippage), 4)
-            exit_reason = "trail_stop" if trailing_active and effective_stop > base_stop else "stop"
-            return _build_exit_update(
-                update, entry_price, exit_price, exit_reason, bar_date,
-                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
-            ), df
-
-        # Intraday stop: low breaches stop
-        if bar_low <= effective_stop:
-            exit_price = round(effective_stop * (1 - slippage), 4)
-            exit_reason = "trail_stop" if trailing_active and effective_stop > base_stop else "stop"
-            return _build_exit_update(
-                update, entry_price, exit_price, exit_reason, bar_date,
-                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
-            ), df
-
-        # Gap-through-target: open above target
-        if bar_open >= target:
-            exit_price = round(bar_open * (1 - slippage), 4)
-            return _build_exit_update(
-                update, entry_price, exit_price, "target", bar_date,
-                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
-            ), df
-
-        # Intraday target: high reaches target
-        if bar_high >= target:
-            exit_price = round(target * (1 - slippage), 4)
-            return _build_exit_update(
-                update, entry_price, exit_price, "target", bar_date,
-                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
-            ), df
-
-        # Sniper time stop. Never fires on the entry bar (i == 0): the trade has
-        # not been "held" for any period yet, regardless of where days_traded
-        # lands after the top-of-loop increment. From bar i==1 onward, preserve
-        # original semantics: exit if held the configured minimum and the bar
-        # closed at or below entry.
-        if (i > 0
-                and getattr(signal, "signal_model", None) == "sniper"
-                and days_traded >= settings.sniper_time_stop_days
-                and bar_close <= entry_price):
-            exit_price = round(bar_close * (1 - slippage), 4)
-            return _build_exit_update(
-                update, entry_price, exit_price, "time_stop", bar_date,
-                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
-            ), df
-
-        # Expiry: held past holding period
-        if days_traded >= signal.holding_period_days:
-            exit_price = round(bar_close * (1 - slippage), 4)
-            return _build_exit_update(
-                update, entry_price, exit_price, "expiry", bar_date,
-                mfe, mae, outcome, settings, leg1_filled, use_two_leg,
-            ), df
+    if exit_outcome.exited:
+        assert exit_outcome.exit_index is not None and exit_outcome.exit_price is not None
+        exit_price = round(exit_outcome.exit_price, 4)
+        return _build_exit_update(
+            update, entry_price, exit_price, exit_outcome.exit_reason,
+            bar_dates[exit_outcome.exit_index], mfe, mae, outcome, settings,
+            exit_outcome.leg1_filled, use_two_leg,
+        ), df
 
     # No exit triggered yet — position still open, update live stats
     latest = since_entry.iloc[-1]
