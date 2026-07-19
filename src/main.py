@@ -1237,12 +1237,17 @@ async def _run_pipeline_core(
             sniper_sig = score_sniper(
                 ticker, df, feat,
                 regime=regime_assessment.regime.value,
+                spy_df=spy_df,
                 atr_pct_floor=settings.sniper_atr_pct_floor,
                 stop_atr_mult=settings.sniper_stop_atr_mult,
                 target_atr_mult=settings.sniper_target_atr_mult,
                 holding_period=settings.sniper_holding_period,
             )
-            if sniper_sig:
+            # Enforce the configured minimum score as a post-score gate, matching
+            # the backtest's scan_sniper (`if sig.score < min_score: continue`).
+            # Without this, live admitted signals down to the internal 60/65 floor
+            # while the backtest baseline required 70.
+            if sniper_sig and sniper_sig.score >= settings.sniper_min_score:
                 all_signals.append(sniper_sig)
 
         # Catalyst model — disabled: depends on sparse earnings calendar data
