@@ -179,6 +179,36 @@ class PolygonClient:
             df = df.sort_values("date").reset_index(drop=True)
         return df
 
+    async def get_short_interest(
+        self,
+        ticker: str,
+        max_pages: int = 10,
+    ) -> pd.DataFrame:
+        """Fetch bi-monthly short interest (FINRA) for a ticker, paginated.
+
+        Returns a frame with `settlement_date`, `short_interest`, `avg_daily_volume`,
+        and `days_to_cover`. Requires the $199 plan. Empty frame if no data.
+        """
+        url = f"{BASE_URL}/stocks/v1/short-interest"
+        params = self._params(ticker=ticker, order="asc", sort="settlement_date", limit=10000)
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            while url and page < max_pages:
+                resp = await _request_with_backoff(client, url, params)
+                data = resp.json()
+                results.extend(data.get("results", []))
+                url = data.get("next_url")
+                params = {"apiKey": self._api_key} if url else {}
+                page += 1
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+        if "settlement_date" in df.columns:
+            df["settlement_date"] = pd.to_datetime(df["settlement_date"]).dt.date
+            df = df.sort_values("settlement_date").reset_index(drop=True)
+        return df
+
     async def get_options_flow(self, ticker: str, on_date: date) -> list[dict]:
         """Fetch options contracts for unusual activity detection."""
         url = f"{BASE_URL}/v3/reference/options/contracts"

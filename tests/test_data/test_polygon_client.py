@@ -189,3 +189,26 @@ async def test_get_short_volume_empty(client):
         mock_client_cls.return_value = mock_client
         df = await client.get_short_volume("AAPL", date(2025, 1, 1), date(2025, 1, 31))
     assert df.empty
+
+
+@pytest.mark.asyncio
+async def test_get_short_interest_parses(client):
+    resp = MagicMock()
+    resp.json.return_value = {
+        "results": [
+            {"settlement_date": "2025-01-15", "short_interest": 1000000, "avg_daily_volume": 500000, "days_to_cover": 2.0},
+            {"settlement_date": "2025-01-31", "short_interest": 1500000, "avg_daily_volume": 500000, "days_to_cover": 3.0},
+        ],
+        "next_url": None,
+    }
+    resp.raise_for_status = MagicMock()
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+        df = await client.get_short_interest("AAPL")
+    assert len(df) == 2
+    assert "days_to_cover" in df.columns
+    assert df["settlement_date"].is_monotonic_increasing

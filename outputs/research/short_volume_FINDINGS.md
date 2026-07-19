@@ -31,3 +31,35 @@ Untried-edge tally so far: short-volume ratio ✗. Short-interest days-to-cover
 (bi-monthly squeeze factor, distinct data) and small/mid-cap universe still open.
 Read-through remains: on efficient large-caps, price/flow technical signals don't
 carry tradeable edge — the one survivor (PEAD) is an event edge, not a technical one.
+
+---
+
+## Addendum — days-to-cover (short interest squeeze) also null (2026-07-19)
+
+`scripts/days_to_cover_probe.py` on Polygon bi-monthly short interest, 502 tickers,
+95,043 settlement observations, publication-lag corrected (enter settlement +8
+trading days, since FINRA publishes ~8 business days late — entering at settlement
+is look-ahead).
+
+| days-to-cover | +5d edge | +10d edge | +20d edge | N |
+|---|---|---|---|---|
+| 1-2 | +117 bp | −15 bp | +221 bp | 23,326 |
+| 2-3 | +56 | −98 | +81 | 29,871 |
+| 3-5 | +41 | −114 | +82 | 27,526 |
+| 5-8 | +22 | −154 | +80 | 9,765 |
+| ≥8 | +11 | −235 | +162 | 4,058 |
+
+**Verdict: no coherent edge.** The sign FLIPS across horizons (+5d weakly favors low
+short interest, +10d uniformly negative, +20d uniformly positive and non-monotonic) —
+the signature of noise, not a factor. A real squeeze/informed-short effect would be
+stable and monotonic.
+
+## Untried-edge tally (short data): both null
+- Short-volume ratio ✗ (tiny, weakly bearish, untradeable)
+- Days-to-cover / short interest ✗ (incoherent across horizons)
+
+Both confirm the session read-through: on efficient large-caps, price/flow/short
+technical factors do not carry tradeable edge. Remaining untried: options flow
+(IV/OI — likely also efficient on mega-caps, heavier to test) and a small/mid-cap
+universe (the one genuinely less-efficient population — the real remaining
+hypothesis, but needs a dedicated data pull).
