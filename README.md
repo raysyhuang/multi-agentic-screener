@@ -2,7 +2,7 @@
 
 A quant-first stock screening system that scans NYSE/NASDAQ daily to surface 1-3 short-term trade candidates using two complementary signal models: **Mean Reversion** (defensive compounder, all regimes) and **Sniper** (concentrated high-velocity, bull/choppy only).
 
-The system runs autonomously on a daily schedule: morning pipeline at 6 AM ET, afternoon position checks at 4:30 PM ET, and weekly meta-reviews on Sundays.
+The system runs autonomously on a daily schedule: morning pipeline at 6 AM ET and afternoon position checks at 4:30 PM ET.
 
 ## Architecture
 
@@ -16,7 +16,7 @@ L5  Output             PostgreSQL, Telegram alerts (with model scorecard), FastA
 L6  Engine Observer    Collect external engine results → deterministic synthesis → Capital Guardian
 ```
 
-Layers 1-5 produce picks with zero LLM cost. Layer 6 collects signals from external engines as observer/telemetry — currently inactive (all engine apps scaled to zero). The only LLM usage is the optional weekly meta-analyst review (Sundays).
+The pipeline is fully deterministic — no LLM calls anywhere in the flow. Layers 1-5 produce picks from quant signals alone; Layer 6 collects signals from external engines as observer/telemetry — currently inactive (all engine apps scaled to zero).
 
 ## Signal Models
 
@@ -188,8 +188,6 @@ tests/                          # 913+ tests across all modules
     - Position health assessment
     - Outcome resolution (MR + Sniper)
     - Model drift detection (alerts if drift detected)
-
-  Sunday 7 PM  Weekly meta-review (only LLM usage — Claude Opus 4.6)
 ```
 
 ## Setup
@@ -198,7 +196,7 @@ tests/                          # 913+ tests across all modules
 
 - Python 3.11+
 - PostgreSQL database
-- API keys: Polygon, FMP, FRED, Finnhub (required); Anthropic (optional — weekly meta-review only)
+- API keys: Polygon, FMP, FRED, Finnhub
 
 ### Installation
 
@@ -227,9 +225,6 @@ FMP_API_KEY                # Fundamentals, earnings, insider transactions
 FRED_API_KEY               # Macro indicators (VIX, yield curve)
 FINNHUB_API_KEY            # Earnings calendar
 
-# API Keys (optional)
-ANTHROPIC_API_KEY          # Weekly meta-analyst review only
-
 # Output
 TELEGRAM_BOT_TOKEN         # Telegram alerts
 TELEGRAM_CHAT_ID           # Target chat for alerts
@@ -251,9 +246,6 @@ python -m src.main --run-now
 
 # Run afternoon position check
 python -m src.main --check-now
-
-# Run weekly meta-review
-python -m src.main --meta-now
 
 # Start scheduler + API server (production)
 python -m src.main
@@ -279,7 +271,7 @@ heroku run --size standard-2x "python -m src.main --run-now" --app multi-agentic
 
 ## Cost
 
-Near-zero daily LLM cost. The pipeline is fully deterministic (quant_only mode). The only LLM usage is the optional weekly Sunday meta-analyst review (~$0.15/run via Claude Opus 4.6).
+Zero LLM cost. The pipeline is fully deterministic (quant_only mode) — no LLM calls in any scheduled run.
 
 Data API costs: Polygon + FMP + FRED + Finnhub (see provider plans).
 
