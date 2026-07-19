@@ -47,3 +47,39 @@ genuine shot at promotion — the first of the session.
 
 Session tally: gap-continuation ✗, intraday-MR ✗, VWAP-momentum ✗, **PEAD ✓ (survives
 diagnostic; backtest next).**
+
+## Addendum — PEAD SURVIVES the proper backtest (2026-07-19)
+
+`scripts/pead_backtest.py`: long an earnings beat at T+1 open (via the shared
+simulate_trade / unified exit engine), 20-day hold, stop 3×ATR, target 6×ATR, net
+of per-side cost, concurrency-capped equity, sub-period split. Cached data only.
+
+Threshold sweep (net 7.5 bp/side):
+
+| beat threshold | N | WR | avg/trade | PF | per-trade Sharpe | equity× | CAGR | eqDD |
+|---|---|---|---|---|---|---|---|---|
+| >2% | 3,748 | 55.3% | +1.35% | 1.58 | 1.23 | 1.10× | 3.4% | 30% |
+| **>10%** | 1,558 | 57.1% | **+1.80%** | 1.73 | **1.50** | 1.76× | 21% | 21% |
+| >25% | 552 | 55.2% | +1.57% | 1.59 | 1.24 | 1.31× | 10% | 12% |
+
+- **Survives costs:** +1.20%/trade even at 15 bp/side (30 bp round-trip); a 20-day
+  hold barely notices execution. (VWAP-momentum was negative before costs.)
+- **Positive per-trade in ALL sub-periods:** early/mid/late = +2.11 / +1.01 / +0.93%
+  — never flips negative (VWAP-momentum was negative in 2 of 3). BUT it DECAYS:
+  per-trade Sharpe 2.09 → 0.85 → 0.84; the mid-third concurrency-capped equity even
+  lost (−12.7% CAGR) on clustering/drawdown timing.
+- **Healthy exits:** 2,367 expiry / 937 stop / 444 target — captures drift by
+  holding, not by manufacturing wins with trailing stops (the sniper failure mode).
+
+### Verdict: PEAD earns a PAPER TRIAL — the first strategy this session to clear the bar
+Best variant: long beats >10%, T+1 entry, 20-day hold, 3×ATR stop. Real, cost-
+surviving, sub-period-stable per-trade edge with a documented mechanism. Caveats
+before production capital: (1) edge decays across the window (alpha decay / crowding /
+regime — needs a longer & older, incl. bear, sample); (2) concurrency-capped equity
+is sizing-sensitive because earnings cluster in seasons (concentration risk — needs a
+sector/season cap in sizing); (3) 20-day overlap overstates significance. So: paper-
+first on the VPS mirror, forward-tracked against this backtest, before any capital.
+
+### Session outcome
+Four candidates tested with one honest framework; three refuted, ONE survives:
+gap-continuation ✗, intraday-MR ✗, VWAP-momentum ✗, **PEAD ✓ → paper trial.**
