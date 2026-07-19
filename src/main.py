@@ -126,6 +126,9 @@ def _validation_allowed_regimes_for_model(signal_model: str) -> set[str] | None:
         return {"bull", "choppy"}
     if model in {"mean_reversion", "mr"}:
         return {"bull", "bear", "choppy"}
+    if model == "pead":
+        # Event-driven; allowed in all regimes (backtest edge held across sub-periods).
+        return {"bull", "bear", "choppy"}
     return None
 
 
@@ -881,6 +884,24 @@ async def _run_pipeline_core(
         fmp_endpoint_status.get("endpoints", {}),
     )
 
+    # PEAD (paper trial, default off): fetch today's earnings surprises while the
+    # aggregator is still alive, keyed by ticker, for use in Step 5. One calendar
+    # call covers all reporters.
+    pead_surprise_by_ticker: dict[str, float] = {}
+    if settings.pead_enabled:
+        try:
+            from src.signals.post_earnings_drift import eps_surprise_pct
+            cal = await aggregator.fmp.get_earnings_calendar(today, today)
+            for row in cal or []:
+                sym = str(row.get("symbol", "")).upper()
+                sp = eps_surprise_pct(row.get("epsActual"), row.get("epsEstimated"))
+                if sym and sp is not None:
+                    pead_surprise_by_ticker[sym] = sp
+            logger.info("PEAD: %d reporters with computable surprise on %s",
+                        len(pead_surprise_by_ticker), today)
+        except Exception as e:
+            logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
+
     # Release news data and aggregator — no longer needed after Step 4
     del news_by_ticker
     news_by_ticker = None
@@ -977,6 +998,21 @@ async def _run_pipeline_core(
             # while the backtest baseline required 70.
             if sniper_sig and sniper_sig.score >= settings.sniper_min_score:
                 all_signals.append(sniper_sig)
+
+        # Post-earnings drift (paper trial, default off): long a fresh earnings beat.
+        if settings.pead_enabled and pead_surprise_by_ticker:
+            from src.signals.post_earnings_drift import score_post_earnings_drift
+            pead_sig = score_post_earnings_drift(
+                ticker, df, feat,
+                earnings_surprise_pct=pead_surprise_by_ticker.get(ticker.upper()),
+                regime=regime_assessment.regime.value,
+                min_surprise=settings.pead_min_surprise,
+                stop_atr_mult=settings.pead_stop_atr_mult,
+                target_atr_mult=settings.pead_target_atr_mult,
+                holding_period=settings.pead_holding_period,
+            )
+            if pead_sig:
+                all_signals.append(pead_sig)
 
         # Catalyst model — disabled: depends on sparse earnings calendar data
         # (days_to_earnings is None for most tickers → timing_score=0 → filtered).

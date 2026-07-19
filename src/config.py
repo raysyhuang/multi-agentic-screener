@@ -166,6 +166,16 @@ class Settings(BaseSettings):
     sniper_max_positions: int = 3
     sniper_time_stop_days: int = 1
 
+    # --- Post-Earnings Drift (PEAD) — paper trial, default OFF ---
+    # Backtest survives (outputs/research/pead_FINDINGS.md) but earns a paper
+    # trial, not production capital. Enable only on the VPS/paper instance.
+    pead_enabled: bool = False
+    pead_min_surprise: float = 10.0      # min EPS surprise % (beat) to fire
+    pead_stop_atr_mult: float = 3.0
+    pead_target_atr_mult: float = 6.0
+    pead_holding_period: int = 20
+    pead_max_positions: int = 5
+
     def validate_keys_for_mode(self) -> None:
         """Validate that required API keys are present.
 

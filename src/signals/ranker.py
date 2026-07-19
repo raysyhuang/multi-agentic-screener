@@ -19,24 +19,28 @@ from src.signals.breakout import BreakoutSignal
 from src.signals.mean_reversion import MeanReversionSignal
 from src.signals.catalyst import CatalystSignal
 from src.signals.sniper import SniperSignal
+from src.signals.post_earnings_drift import PEADSignal
 
 logger = logging.getLogger(__name__)
 
 # Type alias for any signal
-AnySignal = BreakoutSignal | MeanReversionSignal | CatalystSignal | SniperSignal
+AnySignal = BreakoutSignal | MeanReversionSignal | CatalystSignal | SniperSignal | PEADSignal
 
 MODEL_MAP = {
     BreakoutSignal: "breakout",
     MeanReversionSignal: "mean_reversion",
     CatalystSignal: "catalyst",
     SniperSignal: "sniper",
+    PEADSignal: "pead",
 }
 
-# Regime multipliers: boost signals that work well in current regime
+# Regime multipliers: boost signals that work well in current regime. PEAD is
+# event-driven (earnings underreaction), not trend-driven, so keep it ~neutral
+# across regimes rather than boosting/penalizing by trend.
 REGIME_MULTIPLIERS = {
-    Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0, "sniper": 1.3},
-    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7, "sniper": 0.4},
-    Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1, "sniper": 0.6},
+    Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0, "sniper": 1.3, "pead": 1.0},
+    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7, "sniper": 0.4, "pead": 0.9},
+    Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1, "sniper": 0.6, "pead": 1.0},
 }
 
 # Regime target multipliers: scale stop/target distances in adverse regimes
@@ -86,6 +90,7 @@ class RankedCandidate:
             "mean_reversion": "score_mean_reversion",
             "breakout": "score_breakout",
             "catalyst": "score_catalyst",
+            "pead": "score_post_earnings_drift",
         }
         enriched = dict(self.features) if self.features else {}
         enriched["model_raw_score"] = self.raw_score

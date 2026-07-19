@@ -227,9 +227,11 @@ def get_regime_allowed_models(regime: Regime) -> list[str]:
 
     Key insight: momentum breakouts in bear markets destroy returns.
     """
+    # PEAD is event-driven (earnings underreaction), not trend-following, so it is
+    # allowed in every regime — the backtest edge held across sub-periods.
     if regime == Regime.BULL:
-        return ["breakout", "mean_reversion", "catalyst", "sniper"]
+        return ["breakout", "mean_reversion", "catalyst", "sniper", "pead"]
     elif regime == Regime.BEAR:
-        return ["mean_reversion"]  # Only counter-trend works in downtrends
+        return ["mean_reversion", "pead"]  # counter-trend + event-driven
     else:  # CHOPPY
-        return ["mean_reversion", "catalyst", "sniper"]  # Sniper has own bear block
+        return ["mean_reversion", "catalyst", "sniper", "pead"]  # Sniper has own bear block
