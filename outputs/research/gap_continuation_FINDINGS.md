@@ -63,3 +63,32 @@ paper trial.
 The other two Phase-4 candidates remain data-gated: intraday mean-reversion needs
 minute bars (VWAP deviation is meaningless daily); post-earnings drift needs
 point-in-time earnings dates.
+
+## Addendum (2026-07-19) — intraday probe REFUTES the "edge lives intraday" guess
+
+With the Polygon $199 minute feed now working, `scripts/gap_intraday_probe.py`
+pulled real minute bars for the T+1 entry day of 149 sampled gap signals and
+built the average intraday return path from the regular-session open (timezone
+converted UTC→America/New_York, DST-correct):
+
+| checkpoint | avg % | median % | % up |
+|---|---|---|---|
+| open+15m | −0.08 | −0.07 | 46% |
+| +1h | −0.19 | −0.13 | 47% |
+| +2h (midday) | −0.38 | −0.41 | 43% |
+| close | −0.20 | −0.27 | 45% |
+
+The entry day **fades**: price drifts down from the open, bottoms midday, recovers
+slightly into the close but ends negative (−0.20% avg, only ~44% of days up). An
+opening-buy / hold-intraday rule loses money. **The momentum-continuation thesis is
+refuted at the very resolution where I hypothesized it might live.** The tiny
+multi-day drift the daily study found accrues overnight (gap→next-open), not in the
+session.
+
+**Verdict: gap-continuation is dead at BOTH daily and intraday resolution. Retire it.**
+
+Silver lining / direction: the open→midday fade-then-recover shape is an intraday
+MEAN-REVERSION pattern, not continuation — i.e. the minute data points toward
+**candidate 2 (intraday mean-reversion)** as the more promising family to test next,
+now that the minute pipeline is proven. (149-signal probe, one window — directional,
+not a validated strategy.)

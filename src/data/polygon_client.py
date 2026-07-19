@@ -23,9 +23,23 @@ BACKOFF_BASE = 0.5  # seconds: 0.5, 1.0, 2.0
 async def _request_with_backoff(
     client: httpx.AsyncClient, url: str, params: dict,
 ) -> httpx.Response:
-    """Make an HTTP GET with exponential backoff on 429 responses."""
+    """Make an HTTP GET with exponential backoff on 429s and transient network errors."""
     for attempt in range(MAX_RETRIES):
-        resp = await client.get(url, params=params)
+        try:
+            resp = await client.get(url, params=params)
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            # Transient connectivity blip (ConnectError, ReadError, timeout).
+            # Heavy minute-bar pulling hits these; retry with backoff instead of
+            # aborting the whole run.
+            if attempt < MAX_RETRIES - 1:
+                delay = BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "Polygon network error %s (attempt %d/%d) — retrying in %.1fs",
+                    type(exc).__name__, attempt + 1, MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
         if resp.status_code == 429:
             if attempt < MAX_RETRIES - 1:
                 delay = BACKOFF_BASE * (2 ** attempt)
