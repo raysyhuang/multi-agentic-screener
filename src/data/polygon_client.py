@@ -143,6 +143,42 @@ class PolygonClient:
         df = df.sort_values("datetime").reset_index(drop=True)
         return df
 
+    async def get_short_volume(
+        self,
+        ticker: str,
+        from_date: date,
+        to_date: date,
+        max_pages: int = 20,
+    ) -> pd.DataFrame:
+        """Fetch daily short-volume (FINRA) for a ticker, paginated.
+
+        Returns a frame with `date`, `short_volume`, `total_volume`, and
+        `short_volume_ratio` (percent). Requires the $199 plan's short-volume
+        entitlement. Empty frame if no data.
+        """
+        url = f"{BASE_URL}/stocks/v1/short-volume"
+        params = self._params(**{
+            "ticker": ticker, "date.gte": str(from_date), "date.lte": str(to_date),
+            "order": "asc", "sort": "date", "limit": 50000,
+        })
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            while url and page < max_pages:
+                resp = await _request_with_backoff(client, url, params)
+                data = resp.json()
+                results.extend(data.get("results", []))
+                url = data.get("next_url")
+                params = {"apiKey": self._api_key} if url else {}
+                page += 1
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"]).dt.date
+            df = df.sort_values("date").reset_index(drop=True)
+        return df
+
     async def get_options_flow(self, ticker: str, on_date: date) -> list[dict]:
         """Fetch options contracts for unusual activity detection."""
         url = f"{BASE_URL}/v3/reference/options/contracts"

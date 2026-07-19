@@ -144,3 +144,48 @@ async def test_get_intraday_aggs_paginates(client):
 
     assert len(df) == 2  # both pages accumulated
     assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_short_volume_parses_and_paginates(client):
+    page1 = MagicMock()
+    page1.json.return_value = {
+        "results": [{"date": "2025-01-02", "short_volume": 500, "total_volume": 1000, "short_volume_ratio": 50.0}],
+        "next_url": "https://api.polygon.io/next?cursor=x",
+    }
+    page1.raise_for_status = MagicMock()
+    page2 = MagicMock()
+    page2.json.return_value = {
+        "results": [{"date": "2025-01-03", "short_volume": 300, "total_volume": 1000, "short_volume_ratio": 30.0}],
+        "next_url": None,
+    }
+    page2.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [page1, page2]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        df = await client.get_short_volume("AAPL", date(2025, 1, 1), date(2025, 1, 31))
+
+    assert len(df) == 2
+    assert "short_volume_ratio" in df.columns
+    assert df["date"].is_monotonic_increasing
+    assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_short_volume_empty(client):
+    resp = MagicMock()
+    resp.json.return_value = {"results": [], "next_url": None}
+    resp.raise_for_status = MagicMock()
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+        df = await client.get_short_volume("AAPL", date(2025, 1, 1), date(2025, 1, 31))
+    assert df.empty
