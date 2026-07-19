@@ -549,8 +549,10 @@ def run_model_backtest(
                 holding_period=params.get("holding_period", 3),
             )
         elif model == "sniper":
-            # Fetch SPY data for relative strength — use price_data if available
-            spy_df = price_data.get("SPY")
+            # Fetch SPY data for relative strength — use price_data if available.
+            # use_spy=False models the live production bug (spy_df never passed),
+            # which pins the relative_strength component at its 50 neutral value.
+            spy_df = price_data.get("SPY") if params.get("use_spy", True) else None
             raw_signals = scan_sniper(
                 ticker, df,
                 spy_df=spy_df,
@@ -571,6 +573,10 @@ def run_model_backtest(
         confirm_mode = params.get("confirm_mode", "close_gt_open")
         blocked_weekdays = params.get("blocked_weekdays", set())
         early_exit_mfe = params.get("early_exit_mfe_pct", 0.0)
+        # Live-faithfulness toggles (default off = legacy backtest). The truth
+        # matrix flips these on to measure the true, live-faithful expectancy.
+        gap_through = params.get("gap_through", False)
+        time_stop_days = params.get("sniper_time_stop_days", 0)
         # Score-tiered stops: list of (min_score, stop_atr_mult) sorted desc
         score_stop_tiers = params.get("score_stop_tiers", None)
         base_stop_mult = params.get("stop_atr_mult", 0.75)
@@ -607,6 +613,9 @@ def run_model_backtest(
                 confirm_entry=confirm_entry,
                 confirm_mode=confirm_mode,
                 early_exit_mfe_pct=early_exit_mfe,
+                gap_through=gap_through,
+                time_stop_days=time_stop_days,
+                time_stop_eligible=(model == "sniper"),
             )
             if result is None:
                 continue
