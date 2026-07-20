@@ -139,10 +139,23 @@ async def main() -> None:
     ap.add_argument("--cache-file", default="", help="daily OHLCV parquet for lookups")
     ap.add_argument("--cost-bps", type=float, default=5.0, help="per-side cost bps")
     ap.add_argument("--paired-out", default="", help="write per-trade paired live-vs-engine CSV here")
+    # CRITICAL: the replay MUST mirror the live tracker's exit config or the
+    # comparison is an exit-semantics artifact, not a live-vs-engine gap. Live
+    # runs a trailing stop; default these to the live settings, not simulate_trade's
+    # 0/0. (Neo: with 0/0 only 27/98 exit reasons matched; with the live 0.5/0.3
+    # trail, 80/98 match and the streams reconcile.)
+    from src.config import get_settings
+    _s = get_settings()
+    ap.add_argument("--trail-activate-pct", type=float, default=_s.trail_activate_pct,
+                    help="live trailing-stop activation %% (default = settings)")
+    ap.add_argument("--trail-distance-pct", type=float, default=_s.trail_distance_pct,
+                    help="live trailing-stop distance %% (default = settings)")
     args = ap.parse_args()
 
     cohort = _load_cohort(args.cohort)
     print(f"Loaded {len(cohort)} cohort rows from {args.cohort}")
+    print(f"Exit config (mirrors live): trail_activate={args.trail_activate_pct}%, "
+          f"trail_distance={args.trail_distance_pct}%, cost={args.cost_bps}bp/side, gap_through=True")
 
     cache: dict[str, pd.DataFrame] = {}
     if args.cache_file:
@@ -188,6 +201,8 @@ async def main() -> None:
         res = simulate_trade(
             df, row["signal_date"], stop_loss=row["stop_loss"], target=row["target_1"],
             max_hold=row["holding_period"], slippage=cost, gap_through=True,
+            trail_activate_pct=args.trail_activate_pct,
+            trail_distance_pct=args.trail_distance_pct,
         )
         if res is None:
             unresolvable.append(row)
