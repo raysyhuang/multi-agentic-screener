@@ -75,17 +75,48 @@ def _load_cohort(path: str) -> list[dict]:
                 return float(v) if v not in (None, "") else None
 
             rows.append({
+                "signal_id": (r.get("signal_id") or "").strip(),
                 "ticker": r["ticker"].strip().upper(),
                 "signal_date": sd,
                 "stop_loss": _f("stop_loss"),
                 "target_1": _f("target_1"),
                 "holding_period": int(float(r.get("holding_period") or 3)),
                 "live_pnl_pct": _f("live_pnl_pct"),
+                "live_entry_date": r.get("entry_date", "").strip(),
+                "live_exit_date": r.get("exit_date", "").strip(),
+                "live_exit_reason": (r.get("exit_reason") or "").strip(),
                 "signal_source": (r.get("signal_source") or "unknown").strip() or "unknown",
                 "skip_reason": (r.get("skip_reason") or "").strip() or None,
                 "cls": _classify(r),
             })
     return rows
+
+
+def polygon_symbol_candidates(ticker: str) -> list[str]:
+    """Symbol forms to try on Polygon, in order.
+
+    Share-class tickers differ by vendor: the cohort/universe normalizer uses the
+    DASH form (e.g. PBR-A, BRK-B) while Polygon uses the DOT form (PBR.A, BRK.B).
+    Try the original first, then the dot alias. (Regression: two PBR-A manual-sleeve
+    rows had no Polygon data under the dash form and were silently dropped.)
+    """
+    cands = [ticker]
+    if "-" in ticker:
+        dot = ticker.replace("-", ".")
+        if dot not in cands:
+            cands.append(dot)
+    return cands
+
+
+async def _poly_fetch(poly, ticker: str, start: date, end: date) -> pd.DataFrame | None:
+    for sym in polygon_symbol_candidates(ticker):
+        try:
+            df = await poly.get_ohlcv(sym, start, end)
+        except Exception:
+            df = None
+        if df is not None and not df.empty:
+            return df
+    return None
 
 
 async def _ohlcv(ticker: str, cache: dict, fetched: dict, poly, start: date, end: date) -> pd.DataFrame | None:
@@ -97,13 +128,7 @@ async def _ohlcv(ticker: str, cache: dict, fetched: dict, poly, start: date, end
         return c
     if ticker in fetched:
         return fetched[ticker]
-    if poly is None:
-        return None
-    try:
-        df = await poly.get_ohlcv(ticker, start, end)
-        df = df if df is not None and not df.empty else None
-    except Exception:
-        df = None
+    df = await _poly_fetch(poly, ticker, start, end) if poly is not None else None
     fetched[ticker] = df
     return df
 
@@ -113,6 +138,7 @@ async def main() -> None:
     ap.add_argument("--cohort", required=True, help="frozen cohort CSV (see module docstring)")
     ap.add_argument("--cache-file", default="", help="daily OHLCV parquet for lookups")
     ap.add_argument("--cost-bps", type=float, default=5.0, help="per-side cost bps")
+    ap.add_argument("--paired-out", default="", help="write per-trade paired live-vs-engine CSV here")
     args = ap.parse_args()
 
     cohort = _load_cohort(args.cohort)
@@ -166,7 +192,10 @@ async def main() -> None:
         if res is None:
             unresolvable.append(row)
             continue
-        replayed.append({**row, "engine_pnl_pct": res["pnl_pct"], "exit_reason": res["exit_reason"]})
+        replayed.append({**row, "engine_pnl_pct": res["pnl_pct"],
+                         "engine_exit_reason": res["exit_reason"],
+                         "engine_entry_date": str(res.get("entry_date", "")),
+                         "engine_exit_date": str(res.get("exit_date", ""))})
 
     if unresolvable:
         print(f"({len(unresolvable)} resolved rows had no OHLCV/levels — reported, not dropped)")
@@ -195,10 +224,33 @@ async def main() -> None:
         _report(f"[{src}]", [r for r in replayed if r["signal_source"] == src])
     _report("[ALL sources combined]", replayed)
 
+    # Per-trade PAIRED artifact (Neo's next-valid-artifact): live vs engine, per trade.
+    if args.paired_out and replayed:
+        cols = ["signal_id", "ticker", "signal_source", "signal_date",
+                "live_entry_date", "live_exit_date", "live_exit_reason", "live_pnl_pct",
+                "engine_entry_date", "engine_exit_date", "engine_exit_reason", "engine_pnl_pct",
+                "delta_live_minus_engine"]
+        with open(args.paired_out, "w", newline="") as f:
+            w = csv.writer(f)
+            w.writerow(cols)
+            for r in replayed:
+                delta = (r["live_pnl_pct"] - r["engine_pnl_pct"]) if r["live_pnl_pct"] is not None else ""
+                w.writerow([
+                    r.get("signal_id", ""), r["ticker"], r["signal_source"], r["signal_date"],
+                    r["live_entry_date"], r["live_exit_date"], r["live_exit_reason"],
+                    r["live_pnl_pct"] if r["live_pnl_pct"] is not None else "",
+                    r["engine_entry_date"], r["engine_exit_date"], r["engine_exit_reason"],
+                    round(r["engine_pnl_pct"], 4),
+                    round(delta, 4) if delta != "" else "",
+                ])
+        print(f"\nWrote per-trade paired live-vs-engine artifact: {args.paired_out}")
+
     print("\nRead: live ≈ engine  → the doc/backtest label was optimistic-exit bias (retire it).")
-    print("      live << engine  → genuine signal decay beyond the exit model.")
-    print("Gate: compare to the repaired 90-day live scorecard; preserve official vs manual-sleeve")
-    print("provenance; treat skipped (unfilled) and censored (open) rows as denominator, not trades.")
+    print("      live << engine  → residual live-vs-simulator gap (exit-model bias, fill/timing,")
+    print("      tracker semantics, or vendor) — NOT yet uniquely signal decay. Needs the paired")
+    print("      per-trade artifact + a pre-specified decomposition and uncertainty interval.")
+    print("Gate: preserve official vs manual-sleeve provenance; do NOT promote/relabel MR from the")
+    print("small 23/75 stream samples; skipped (unfilled) + censored (open) rows are denominator only.")
 
 
 if __name__ == "__main__":
