@@ -1,22 +1,26 @@
 # Multi-Strategy Quantitative Screener
 
-A quant-first stock screening system that scans NYSE/NASDAQ daily to surface 1-3 short-term trade candidates using two complementary signal models: **Mean Reversion** (defensive compounder, all regimes) and **Sniper** (concentrated high-velocity, bull/choppy only).
+A quant-first stock screening system that scans NYSE/NASDAQ daily to surface short-term trade candidates using complementary deterministic signal models.
 
-The system runs autonomously on a daily schedule: morning pipeline at 6 AM ET, afternoon position checks at 4:30 PM ET, and weekly meta-reviews on Sundays.
+The system runs autonomously: morning pipeline at 6:00 AM ET and afternoon position checks at 4:30 PM ET.
+
+> **Fully deterministic — zero LLM.** The LLM agent stack was removed (2026-07-19); the app is lean quant-only. The repo name is historical.
 
 ## Architecture
 
 ```
-L0  Scheduler          APScheduler (cron), triggers daily at 6:00 AM ET
-L1  Data Ingestion     Async Python — Polygon + FMP + yfinance + FRED (semaphore-controlled)
+L1  Data Ingestion     Async Python — Polygon (daily + minute) + FMP + yfinance + FRED
 L2  Feature Engine     pandas, pandas-ta, numpy — 30+ technical indicators
-L3  Signal Models      Mean Reversion + Sniper — regime-gated, score-ranked
+L3  Signal Models      Mean Reversion + Sniper (+ PEAD, paper trial) — regime-gated, score-ranked
 L4  Validation         8-check NoSilentPass gate + Deflated Sharpe Ratio
 L5  Output             PostgreSQL, Telegram alerts (with model scorecard), FastAPI dashboard
-L6  Engine Observer    Collect external engine results → deterministic synthesis → Capital Guardian
+
+    research/          Alpha probes — IC analysis, signal backtests, drift checks
+    governance/        Threshold management, retrain policy, performance monitor, divergence ledger
+    portfolio/         Capital Guardian — position sizing, drawdown defense, regime scaling
 ```
 
-Layers 1-5 produce picks with zero LLM cost. Layer 6 collects signals from external engines as observer/telemetry — currently inactive (all engine apps scaled to zero). The only LLM usage is the optional weekly meta-analyst review (Sundays).
+Scheduling runs on GitHub Actions cron (`.github/workflows/scheduled-pipelines.yml`, DST-guarded); alerts from those runs are tagged `[MAS-GH]`. APScheduler remains available for local/worker use.
 
 ## Signal Models
 
@@ -37,16 +41,16 @@ Five scoring factors: RSI(2) oversold level, long-term trend intact, consecutive
 
 ### Sniper (Offensive — Bull/Choppy Only)
 
-BB squeeze + volume compression setups on high-ATR stocks. Concentrated high-velocity.
+BB squeeze + volume compression setups on high-ATR stocks.
 
 - **Entry**: BB squeeze + volume compression→expansion + RS vs SPY + trend alignment + momentum base
-- **Hard gates**: ATR% < 5.0 (must be volatile enough), avg volume < 500K, bear regime block, score < 70
-- **Stop**: 1.5x ATR below entry
-- **Target**: 3.0x ATR above entry
+- **Hard gates**: ATR% < 5.0, avg volume < 500K, bear regime block, score < 70
+- **Stop**: 1.5x ATR below entry · **Target**: 3.0x ATR above entry
 - **Hold**: 7 days max, 1-day time stop (exit if flat/negative after day 1)
 - **Trailing stop**: Activates at +1.0%, distance 0.5%
-- **Max positions**: 3 (16.7% each)
-- **Backtest baseline** (1Y): 84 trades, 85.7% WR, Sharpe 10.5, PF 5.19, sleeve DD 3.8%
+- **Max positions**: 3, enforced as a concurrent-position cap
+
+> ⚠️ **Retracted backtest.** The previously reported 84-trade, 85.7% WR / Sharpe 10.5 / PF 5.19 result was a **fill artifact**, not a tradeable edge (see the sniper truth matrix). Do not cite those figures. Sniper remains live but unproven; treat its expectancy as unestablished pending honest re-measurement.
 
 | Component | Weight | Logic |
 |-----------|--------|-------|
@@ -56,9 +60,28 @@ BB squeeze + volume compression setups on high-ATR stocks. Concentrated high-vel
 | Trend alignment | 15% | Price > SMA50 > SMA200 |
 | Momentum base | 10% | RSI(14) 40-65 (coiled, not overbought) |
 
+### PEAD — Post-Earnings Announcement Drift (Paper Trial, default OFF)
+
+`signals/post_earnings_drift.py`. The **first alpha candidate to survive backtesting** in the research program below. Wired into the pipeline as a paper-trial signal and **disabled by default** — it must prove out on paper before promotion.
+
 ### Ticker Blacklist
 
 24 tickers with win rate < 35% over 50+ trades are permanently excluded. See `mean_reversion_blacklist` in config.
+
+## Alpha Research Program
+
+Systematic probe → backtest → refute-or-promote workflow. Scripts live in `scripts/`, analysis tooling in `src/research/`, and outputs in `outputs/research/`. Results to date:
+
+| Probe | Script | Verdict |
+|---|---|---|
+| **PEAD (post-earnings drift)** | `pead_probe.py`, `pead_backtest.py` | ✅ **Survives** → promoted to paper trial |
+| Gap continuation | `gap_continuation_research.py`, `gap_intraday_probe.py` | ❌ No tradeable daily edge |
+| Intraday mean reversion | `intraday_mr_probe.py` | ❌ Reversion refuted (surfaced a VWAP-momentum lead) |
+| VWAP momentum | `intraday_vwap_backtest.py` | ❌ Refuted on backtest |
+| Short volume ratio | (untried edge #1) | ❌ No coherent edge |
+| Days to cover | `days_to_cover_probe.py` | ❌ No coherent edge |
+
+Supporting infrastructure: Polygon minute-bar fetch with a windowed intraday cache, an intraday same-bar tie resolver in the exit engine, and hardened Polygon retries.
 
 ## Regime Detection
 
@@ -95,20 +118,15 @@ Every pipeline run passes through 8 validation checks. A single failure blocks a
 Daily alerts include:
 - Regime status and pick details (entry, stop, target, R:R, holding period)
 - Validation gate results (pass/fail with specific check failures)
-- **Model Scorecard (30d)**: Per-model breakdown of trades, WR, avg P&L, PF, and open positions
+- **Model Scorecard (30d)**: per-model trades, WR, avg P&L, PF, and open positions (`--days` configurable)
 - The scorecard appears in all alert paths (normal picks, no picks, validation failure)
 
-## Engine Observer Layer (Currently Inactive)
+## Removed Subsystems
 
-Three external engines previously fed into a cross-engine synthesis layer. After 90 days of zero convergence and no actionable alpha, all engine Heroku apps were scaled to zero (2026-03-09). The pipeline handles engine unavailability gracefully — Steps 10-14 are non-fatal.
+Two subsystems were deleted on 2026-07-19 and are documented here only so old references make sense:
 
-| Engine | Heroku App | Status |
-|---|---|---|
-| KooCore-D | `koocore-dashboard` | Scaled to zero |
-| Gemini STST | `geministst` | Scaled to zero |
-| Top3-7D | `top3-7d-engine` | Scaled to zero |
-
-Steps 1-9 (signal generation, validation, DB, Telegram) are fully independent of engine availability.
+- **LLM agent stack** — agents, memory, skills, and the Sunday meta-analyst review. The app no longer calls any LLM.
+- **Cross-engine observer (former L6)** — collector, credibility tracker, outcome resolver, deterministic synthesizer and agreement analysis. It ingested three external engines (`koocore-dashboard`, `geministst`, `top3-7d-engine`), all of which were scaled to zero on 2026-03-09 after 90 days of zero convergence and no actionable alpha. The code is now gone; those engines are archive-only and have no runtime relationship to this project.
 
 ## Project Structure
 
@@ -116,61 +134,50 @@ Steps 1-9 (signal generation, validation, DB, Telegram) are fully independent of
 src/
 ├── config.py                   # Environment + typed settings
 ├── main.py                     # Pipeline orchestration, scheduling, fail-closed wrapper
-├── contracts.py                # StageEnvelope + typed payload models + engine contracts
-├── worker.py                   # Heroku worker process
+├── contracts.py                # StageEnvelope + typed payload models
+├── worker.py                   # Worker process
 ├── data/                       # Data ingestion
 │   ├── aggregator.py           # Unified interface with fallback chains
-│   ├── polygon_client.py       # OHLCV, news
-│   ├── fmp_client.py           # Fundamentals, earnings, insider transactions
+│   ├── polygon_client.py       # OHLCV, news, minute bars (windowed intraday cache)
+│   ├── fmp_client.py           # Fundamentals, earnings, insider transactions (/stable endpoints)
 │   ├── yfinance_client.py      # Fallback price data
 │   └── fred_client.py          # VIX, yield curve, macro indicators
-├── features/                   # Feature engineering
-│   ├── technical.py            # 30+ indicators (RSI, ATR, VWAP, RVOL, MAs, BB width pctile, vol slope)
-│   ├── fundamental.py          # Earnings surprise, insider activity scoring
-│   ├── sentiment.py            # News headline sentiment scoring
-│   └── regime.py               # Market regime classifier + breadth + allowed model gate
+├── features/                   # technical.py, fundamental.py, sentiment.py, regime.py
 ├── signals/                    # Signal generation
 │   ├── filter.py               # Universe filtering + funnel counters
 │   ├── mean_reversion.py       # RSI(2) mean reversion model (active)
 │   ├── sniper.py               # BB squeeze + vol compression model (active)
+│   ├── post_earnings_drift.py  # PEAD (paper trial, default OFF)
 │   ├── breakout.py             # Momentum breakout model (disabled — zero edge)
 │   ├── catalyst.py             # Event-driven catalyst model (disabled)
 │   └── ranker.py               # Ranking + correlation + confluence + cooldown
-├── engines/                    # Cross-engine system (observer layer)
-│   ├── collector.py            # Async HTTP engine fetcher (aiohttp, fail-open)
-│   ├── credibility.py          # Dynamic weight tracker (hit rate, Brier score, convergence)
-│   ├── outcome_resolver.py     # Resolve past picks, update credibility
-│   ├── deterministic_synthesizer.py  # Deterministic cross-engine synthesis
-│   └── agreement_analysis.py   # Engine convergence/agreement analysis
-├── portfolio/                  # Position sizing + risk management
-│   └── capital_guardian.py     # Position sizing, drawdown defense, regime scaling
-├── backtest/                   # Validation
+├── backtest/
 │   ├── walk_forward.py         # Walk-forward backtesting engine
+│   ├── exit_engine.py          # Exit simulation + intraday same-bar tie resolver
 │   ├── metrics.py              # Sharpe, Sortino, Calmar, DSR, profit factor
-│   └── validation_card.py      # 8-check NoSilentPass validation gate
-├── research/                   # Research tools
+│   ├── validation_card.py      # 8-check NoSilentPass validation gate
+│   └── runner.py
+├── research/                   # Alpha research tooling
+│   ├── ic_analysis.py          # Information coefficient analysis
+│   ├── ic_report.py
 │   ├── signal_backtest.py      # Standalone signal model backtester
-│   └── drift_check.py          # Model drift detection (runs on afternoon schedule)
-├── output/                     # Output
-│   ├── telegram.py             # Telegram alerts (daily picks, scorecard, cross-engine)
-│   ├── report.py               # Jinja2 HTML report generation
-│   ├── health.py               # Position health card engine
-│   └── performance.py          # Outcome tracking, calibration, risk metrics
-└── db/
-    ├── models.py               # SQLAlchemy models
-    └── session.py              # Async PostgreSQL connection
+│   ├── drift_check.py          # Model drift detection (afternoon schedule)
+│   └── sp500_tickers.py
+├── governance/                 # Model governance
+│   ├── threshold_manager.py    # Threshold lifecycle
+│   ├── retrain_policy.py       # Retrain triggers
+│   ├── performance_monitor.py
+│   ├── divergence_ledger.py
+│   └── artifacts.py
+├── portfolio/
+│   ├── capital_guardian.py     # Position sizing, drawdown defense, regime scaling
+│   └── construct.py            # Portfolio construction
+├── validation/stage_validator.py
+├── output/                     # telegram.py, report.py, health.py, performance.py
+└── db/                         # models.py, session.py (async PostgreSQL)
 
-scripts/
-├── run_v12_backtest.py         # Standardized MR backtester
-├── run_sniper_backtest.py      # Sniper signal backtester
-├── run_phase2_backtest.py      # A/B experiment matrix runner
-├── simulate_sniper_sleeve.py   # Sleeve portfolio simulator (Max 2 vs Max 3)
-├── evaluate_sniper_campaign.py # Campaign evaluator with hybrid promotion gates
-└── analyze_weekday.py          # Weekday effect analysis
-
-api/
-└── app.py                      # FastAPI dashboard — reports, signals, outcomes, cross-engine
-
+scripts/                        # Backtesters, probes, evaluators, backfills
+api/app.py                      # FastAPI dashboard — reports, signals, outcomes
 tests/                          # 913+ tests across all modules
 ```
 
@@ -179,26 +186,23 @@ tests/                          # 913+ tests across all modules
 ```
   6:00 AM ET   Morning pipeline:
     Steps 1-4    Macro regime → Universe → OHLCV → Features
-    Step 5       Signal generation (MR + Sniper, regime-gated)
+    Step 5       Signal generation (MR + Sniper, regime-gated; PEAD paper trial if enabled)
     Steps 6-7    Ranking + Validation gate
     Steps 8-9    DB save + Telegram alert (with model scorecard)
-    Steps 10-14  Engine observer (non-fatal, currently all engines offline)
 
   4:30 PM ET   Afternoon check:
     - Position health assessment
-    - Outcome resolution (MR + Sniper)
+    - Outcome resolution
     - Model drift detection (alerts if drift detected)
-
-  Sunday 7 PM  Weekly meta-review (only LLM usage — Claude Opus 4.6)
 ```
 
 ## Setup
 
 ### Prerequisites
 
-- Python 3.11+
+- Python 3.12
 - PostgreSQL database
-- API keys: Polygon, FMP, FRED, Finnhub (required); Anthropic (optional — weekly meta-review only)
+- API keys: Polygon, FMP, FRED, Finnhub
 
 ### Installation
 
@@ -206,14 +210,11 @@ tests/                          # 913+ tests across all modules
 git clone https://github.com/raysyhuang/multi-agentic-screener.git
 cd multi-agentic-screener
 
-# Create virtual environment
 python -m venv .venv
 source .venv/bin/activate
 
-# Install dependencies
 pip install -e ".[dev]"
 
-# Configure environment
 cp .env.example .env
 # Edit .env with your API keys
 ```
@@ -222,13 +223,10 @@ cp .env.example .env
 
 ```
 # API Keys (required)
-POLYGON_API_KEY            # Market data — OHLCV, news
+POLYGON_API_KEY            # Market data — OHLCV, news, minute bars
 FMP_API_KEY                # Fundamentals, earnings, insider transactions
 FRED_API_KEY               # Macro indicators (VIX, yield curve)
 FINNHUB_API_KEY            # Earnings calendar
-
-# API Keys (optional)
-ANTHROPIC_API_KEY          # Weekly meta-analyst review only
 
 # Output
 TELEGRAM_BOT_TOKEN         # Telegram alerts
@@ -243,6 +241,8 @@ ALLOWED_ORIGINS            # Comma-separated CORS origins
 TRADING_MODE               # PAPER (default) or LIVE
 ```
 
+> FMP's legacy `/api/v3` endpoints were retired (2025-08-31). This project uses the `/stable` endpoints.
+
 ### Running
 
 ```bash
@@ -252,10 +252,7 @@ python -m src.main --run-now
 # Run afternoon position check
 python -m src.main --check-now
 
-# Run weekly meta-review
-python -m src.main --meta-now
-
-# Start scheduler + API server (production)
+# Start scheduler + API server
 python -m src.main
 
 # Run tests
@@ -264,8 +261,6 @@ pytest tests/ -v
 
 ### Heroku Deployment
 
-The app runs on Heroku with two Standard-2X dynos:
-
 ```
 web:    gunicorn api.app:app --worker-class uvicorn.workers.UvicornWorker
 worker: python -m src.worker  (APScheduler with SIGTERM handling)
@@ -273,13 +268,12 @@ worker: python -m src.worker  (APScheduler with SIGTERM handling)
 
 ```bash
 git push heroku main
-# Production test run:
 heroku run --size standard-2x "python -m src.main --run-now" --app multi-agentic-screener
 ```
 
 ## Cost
 
-Near-zero daily LLM cost. The pipeline is fully deterministic (quant_only mode). The only LLM usage is the optional weekly Sunday meta-analyst review (~$0.15/run via Claude Opus 4.6).
+**Zero LLM cost** — the pipeline is fully deterministic and the LLM stack has been removed.
 
 Data API costs: Polygon + FMP + FRED + Finnhub (see provider plans).
 
@@ -293,8 +287,10 @@ All experiments are tracked in `configs/experiment_log.yaml` with hypothesis, co
 | Entry refinement filters | **Pass** | Sharpe +6.5%, Sortino +27%, MaxDD -20% |
 | Confirmation proxy (T+1 close) | Shadow | +8pp WR but lower expectancy |
 | Score-tiered stops v3 | **Pass** | Sharpe +6.7%, PF +9.4%, no trade count impact |
-| Sniper BB squeeze model | **Pass** | 85.7% WR, Sharpe 10.5, PF 5.19 (backtest) |
+| Sniper BB squeeze model | **Retracted** | Headline 85.7% WR was a fill artifact — not a real edge |
 | Adaptive MFE exit | Fail | WR=50%, MaxDD=97% without trailing stop |
+| PEAD | **Pass** | Survived backtest → paper trial (default OFF) |
+| Gap continuation / intraday MR / VWAP momentum / short-volume / days-to-cover | Fail | No coherent tradeable edge |
 
 ## License
 
