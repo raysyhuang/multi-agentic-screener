@@ -65,16 +65,24 @@ def _load_cohort(path: str) -> list[dict]:
     return rows
 
 
-async def _ohlcv(ticker: str, cache: dict, poly, start: date, end: date) -> pd.DataFrame | None:
-    if ticker in cache:
-        return cache[ticker]
+async def _ohlcv(ticker: str, cache: dict, fetched: dict, poly, start: date, end: date) -> pd.DataFrame | None:
+    """Return OHLCV covering [start, end]. Prefer the cache ONLY if it actually
+    covers the window (the shipped parquet is stale — ends April — so recent live
+    picks must come from a fresh Polygon fetch, memoized per ticker)."""
+    c = cache.get(ticker)
+    if c is not None and not c.empty and c["date"].min() <= start and c["date"].max() >= end:
+        return c
+    if ticker in fetched:
+        return fetched[ticker]
     if poly is None:
         return None
     try:
         df = await poly.get_ohlcv(ticker, start, end)
-        return df if df is not None and not df.empty else None
+        df = df if df is not None and not df.empty else None
     except Exception:
-        return None
+        df = None
+    fetched[ticker] = df
+    return df
 
 
 async def main() -> None:
@@ -99,15 +107,19 @@ async def main() -> None:
     except Exception:
         pass
 
+    # Fetch each ticker ONCE over the whole cohort span (so multiple picks per
+    # ticker at different dates are all covered), memoized in `fetched`.
+    span_start = min(r["signal_date"] for r in cohort) - timedelta(days=10)
+    span_end = max(r["signal_date"] + timedelta(days=r["holding_period"]) for r in cohort) + timedelta(days=10)
+
     cost = args.cost_bps / 10000.0
+    fetched: dict = {}
     replayed, censored, unresolvable = [], [], []
     for row in cohort:
         # Unresolved live rows are censored — kept and flagged, never dropped.
         if row["live_status"] in ("open", "censored") and row["live_pnl_pct"] is None:
             censored.append(row)
-        df = await _ohlcv(row["ticker"], cache, poly,
-                          row["signal_date"] - timedelta(days=10),
-                          row["signal_date"] + timedelta(days=row["holding_period"] + 10))
+        df = await _ohlcv(row["ticker"], cache, fetched, poly, span_start, span_end)
         if df is None or df.empty:
             unresolvable.append(row)
             continue
