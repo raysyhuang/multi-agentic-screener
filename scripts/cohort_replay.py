@@ -82,9 +82,11 @@ def _load_cohort(path: str) -> list[dict]:
                 "target_1": _f("target_1"),
                 "holding_period": int(float(r.get("holding_period") or 3)),
                 "live_pnl_pct": _f("live_pnl_pct"),
-                "live_entry_date": r.get("entry_date", "").strip(),
-                "live_exit_date": r.get("exit_date", "").strip(),
-                "live_exit_reason": (r.get("exit_reason") or "").strip(),
+                "live_entry_date": (r.get("live_entry_date") or r.get("entry_date") or "").strip(),
+                "live_exit_date": (r.get("live_exit_date") or r.get("exit_date") or "").strip(),
+                "live_exit_reason": (r.get("live_exit_reason") or r.get("exit_reason") or "").strip(),
+                "live_entry_price": _f("live_entry_price"),
+                "live_exit_price": _f("live_exit_price"),
                 "signal_source": (r.get("signal_source") or "unknown").strip() or "unknown",
                 "skip_reason": (r.get("skip_reason") or "").strip() or None,
                 "cls": _classify(r),
@@ -137,15 +139,18 @@ async def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cohort", required=True, help="frozen cohort CSV (see module docstring)")
     ap.add_argument("--cache-file", default="", help="daily OHLCV parquet for lookups")
-    ap.add_argument("--cost-bps", type=float, default=5.0, help="per-side cost bps")
     ap.add_argument("--paired-out", default="", help="write per-trade paired live-vs-engine CSV here")
-    # CRITICAL: the replay MUST mirror the live tracker's exit config or the
-    # comparison is an exit-semantics artifact, not a live-vs-engine gap. Live
-    # runs a trailing stop; default these to the live settings, not simulate_trade's
-    # 0/0. (Neo: with 0/0 only 27/98 exit reasons matched; with the live 0.5/0.3
-    # trail, 80/98 match and the streams reconcile.)
+    # CRITICAL: the replay MUST mirror the live tracker's FULL exit config or the
+    # comparison is an execution-parameter artifact, not a live-vs-engine gap.
+    # Two such bugs have already been caught here (both by Neo's re-runs):
+    #  - trailing defaulted to 0/0 while live runs 0.5/0.3 (27/98 -> 80/98 reasons match)
+    #  - cost defaulted to 5bp/side while live slippage_pct is 10bp/side, which
+    #    produced a near-constant -0.1004pp +/- 0.0025 delta on every matched-exit row.
+    # Default every execution parameter from the live settings.
     from src.config import get_settings
     _s = get_settings()
+    ap.add_argument("--cost-bps", type=float, default=_s.slippage_pct * 10000,
+                    help="per-side cost bps (default = live settings.slippage_pct)")
     ap.add_argument("--trail-activate-pct", type=float, default=_s.trail_activate_pct,
                     help="live trailing-stop activation %% (default = settings)")
     ap.add_argument("--trail-distance-pct", type=float, default=_s.trail_distance_pct,
@@ -210,7 +215,9 @@ async def main() -> None:
         replayed.append({**row, "engine_pnl_pct": res["pnl_pct"],
                          "engine_exit_reason": res["exit_reason"],
                          "engine_entry_date": str(res.get("entry_date", "")),
-                         "engine_exit_date": str(res.get("exit_date", ""))})
+                         "engine_exit_date": str(res.get("exit_date", "")),
+                         "engine_entry_price": res.get("entry_price"),
+                         "engine_exit_price": res.get("exit_price")})
 
     if unresolvable:
         print(f"({len(unresolvable)} resolved rows had no OHLCV/levels — reported, not dropped)")
@@ -239,11 +246,14 @@ async def main() -> None:
         _report(f"[{src}]", [r for r in replayed if r["signal_source"] == src])
     _report("[ALL sources combined]", replayed)
 
-    # Per-trade PAIRED artifact (Neo's next-valid-artifact): live vs engine, per trade.
+    # Per-trade PAIRED artifact (Neo's next-valid-artifact): live vs engine, per trade,
+    # including entry/exit PRICES so fill differences are attributable per-row.
     if args.paired_out and replayed:
         cols = ["signal_id", "ticker", "signal_source", "signal_date",
-                "live_entry_date", "live_exit_date", "live_exit_reason", "live_pnl_pct",
-                "engine_entry_date", "engine_exit_date", "engine_exit_reason", "engine_pnl_pct",
+                "live_entry_date", "live_entry_price", "live_exit_date", "live_exit_price",
+                "live_exit_reason", "live_pnl_pct",
+                "engine_entry_date", "engine_entry_price", "engine_exit_date",
+                "engine_exit_price", "engine_exit_reason", "engine_pnl_pct",
                 "delta_live_minus_engine"]
         with open(args.paired_out, "w", newline="") as f:
             w = csv.writer(f)
@@ -252,13 +262,32 @@ async def main() -> None:
                 delta = (r["live_pnl_pct"] - r["engine_pnl_pct"]) if r["live_pnl_pct"] is not None else ""
                 w.writerow([
                     r.get("signal_id", ""), r["ticker"], r["signal_source"], r["signal_date"],
-                    r["live_entry_date"], r["live_exit_date"], r["live_exit_reason"],
+                    r["live_entry_date"], r.get("live_entry_price") or "",
+                    r["live_exit_date"], r.get("live_exit_price") or "",
+                    r["live_exit_reason"],
                     r["live_pnl_pct"] if r["live_pnl_pct"] is not None else "",
-                    r["engine_entry_date"], r["engine_exit_date"], r["engine_exit_reason"],
-                    round(r["engine_pnl_pct"], 4),
+                    r["engine_entry_date"], r.get("engine_entry_price") or "",
+                    r["engine_exit_date"], r.get("engine_exit_price") or "",
+                    r["engine_exit_reason"], round(r["engine_pnl_pct"], 4),
                     round(delta, 4) if delta != "" else "",
                 ])
         print(f"\nWrote per-trade paired live-vs-engine artifact: {args.paired_out}")
+
+        # Exploratory bootstrap CI of the paired mean delta (matches Neo's method:
+        # percentile bootstrap, 10k resamples, fixed seed; post-outcome, not
+        # promotion evidence).
+        import random
+        paired_deltas = [r["live_pnl_pct"] - r["engine_pnl_pct"]
+                         for r in replayed if r["live_pnl_pct"] is not None]
+        if len(paired_deltas) >= 10:
+            rng = random.Random(20260720)
+            n = len(paired_deltas)
+            means = sorted(
+                sum(rng.choices(paired_deltas, k=n)) / n for _ in range(10_000)
+            )
+            lo, hi = means[249], means[9749]
+            print(f"Bootstrap 95% CI of mean delta (10k resamples, seed 20260720, exploratory): "
+                  f"[{lo:+.4f}, {hi:+.4f}]pp over {n} pairs")
 
     print("\nRead: live ≈ engine  → the doc/backtest label was optimistic-exit bias (retire it).")
     print("      live << engine  → residual live-vs-simulator gap (exit-model bias, fill/timing,")

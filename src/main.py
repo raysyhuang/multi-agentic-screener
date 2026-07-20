@@ -1521,6 +1521,21 @@ async def _run_pipeline_core(
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
 
+        # Snapshot the execution/exit config into every signal's features so
+        # future live-vs-engine reconciliations can replay the ACTUAL historical
+        # config instead of assuming today's settings. (The MR reconciliation
+        # was limited by exactly this gap: trail/slippage were not persisted
+        # per signal, so the replay had to use the current live defaults.)
+        _exit_config_snapshot = {
+            "slippage_pct": settings.slippage_pct,
+            "trail_activate_pct": settings.trail_activate_pct,
+            "trail_distance_pct": settings.trail_distance_pct,
+            "score_tiered_stops_enabled": settings.score_tiered_stops_enabled,
+            "partial_tp_enabled": settings.partial_tp_enabled,
+            "sniper_time_stop_days": settings.sniper_time_stop_days,
+            "entry_gap_max_atr": settings.entry_gap_max_atr,
+        }
+
         for pick in picks_to_persist:
             signal = Signal(
                 run_date=today,
@@ -1539,7 +1554,7 @@ async def _run_pipeline_core(
                 risk_gate_decision=pick.risk_gate.decision.value,
                 risk_gate_reasoning=pick.risk_gate.reasoning,
                 regime=regime_assessment.regime.value,
-                features=_json_safe(pick.features),
+                features=_json_safe({**(pick.features or {}), "exit_config": _exit_config_snapshot}),
                 max_entry_price=pick.max_entry_price,
                 also_in_mas=pick.also_in_mas,
                 suppressed_by_cross_model_ranking=pick.suppressed_by_cross_model_ranking,
