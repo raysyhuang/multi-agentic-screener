@@ -46,6 +46,22 @@ def _parse_day(s: str) -> date | None:
         return None
 
 
+def _classify(r: dict) -> str:
+    """Map a cohort row to replay class from the audit fields.
+
+    - 'skipped'  : never filled (e.g. gap_above_limit no-chase). Counted in the
+                   all-signal denominator; NOT simulated as a trade.
+    - 'censored' : genuine recent-open, unresolved. Counted; NOT simulated.
+    - 'resolved' : a real filled+closed trade → replay through the exit engine.
+    """
+    audit = (r.get("audit_status") or "").strip().lower()
+    if audit == "skipped" or (r.get("skip_reason") or "").strip():
+        return "skipped"
+    if audit in ("recent_open", "open") or (r.get("live_status") or "").strip().lower() == "censored":
+        return "censored"
+    return "resolved"
+
+
 def _load_cohort(path: str) -> list[dict]:
     rows = []
     with open(path, newline="") as f:
@@ -53,14 +69,21 @@ def _load_cohort(path: str) -> list[dict]:
             sd = _parse_day(r.get("signal_date", ""))
             if not r.get("ticker") or sd is None:
                 continue
+
+            def _f(key):
+                v = r.get(key)
+                return float(v) if v not in (None, "") else None
+
             rows.append({
                 "ticker": r["ticker"].strip().upper(),
                 "signal_date": sd,
-                "stop_loss": float(r["stop_loss"]),
-                "target_1": float(r["target_1"]),
+                "stop_loss": _f("stop_loss"),
+                "target_1": _f("target_1"),
                 "holding_period": int(float(r.get("holding_period") or 3)),
-                "live_pnl_pct": float(r["live_pnl_pct"]) if r.get("live_pnl_pct") not in (None, "") else None,
-                "live_status": (r.get("live_status") or "").strip().lower() or None,
+                "live_pnl_pct": _f("live_pnl_pct"),
+                "signal_source": (r.get("signal_source") or "unknown").strip() or "unknown",
+                "skip_reason": (r.get("skip_reason") or "").strip() or None,
+                "cls": _classify(r),
             })
     return rows
 
@@ -114,11 +137,24 @@ async def main() -> None:
 
     cost = args.cost_bps / 10000.0
     fetched: dict = {}
-    replayed, censored, unresolvable = [], [], []
+
+    # All-signal denominator (never silently drop): classify every row.
+    counts = {"resolved": 0, "skipped": 0, "censored": 0}
+    for r in cohort:
+        counts[r["cls"]] += 1
+    print(f"\nAll-signal denominator ({len(cohort)}): "
+          f"{counts['resolved']} resolved, {counts['skipped']} skipped/unfilled "
+          f"(gap_above_limit etc.), {counts['censored']} censored (recent-open).")
+
+    # Replay ONLY resolved (filled+closed) rows. Skipped rows were never filled —
+    # simulating them as trades would fabricate fills; they stay in the denominator.
+    replayed, unresolvable = [], []
     for row in cohort:
-        # Unresolved live rows are censored — kept and flagged, never dropped.
-        if row["live_status"] in ("open", "censored") and row["live_pnl_pct"] is None:
-            censored.append(row)
+        if row["cls"] != "resolved":
+            continue
+        if row["stop_loss"] is None or row["target_1"] is None:
+            unresolvable.append(row)
+            continue
         df = await _ohlcv(row["ticker"], cache, fetched, poly, span_start, span_end)
         if df is None or df.empty:
             unresolvable.append(row)
@@ -132,29 +168,37 @@ async def main() -> None:
             continue
         replayed.append({**row, "engine_pnl_pct": res["pnl_pct"], "exit_reason": res["exit_reason"]})
 
-    print(f"\nReplayed {len(replayed)} through the unified engine; "
-          f"{len(censored)} censored (unresolved live); {len(unresolvable)} no-OHLCV.\n")
+    if unresolvable:
+        print(f"({len(unresolvable)} resolved rows had no OHLCV/levels — reported, not dropped)")
 
-    if replayed:
-        eng = np.array([r["engine_pnl_pct"] for r in replayed])
+    # Report split BY signal_source (provenance must be preserved) + a combined line.
+    def _report(label: str, rows: list[dict]) -> None:
+        if not rows:
+            print(f"\n{label}: 0 replayed")
+            return
+        eng = np.array([r["engine_pnl_pct"] for r in rows])
         m = compute_metrics(eng.tolist())
-        print("CORRECTED-EXIT backtest on the exact cohort (unified engine, gap-through):")
-        print(f"  N={m.total_trades}  WR={m.win_rate:.1%}  avg={m.avg_return_pct:+.2f}%  "
-              f"expectancy={m.expectancy:+.3f}%  PF={m.profit_factor:.2f}  Sharpe={m.sharpe_ratio:.2f}")
-
-        paired = [r for r in replayed if r["live_pnl_pct"] is not None]
+        line = (f"\n{label}  (n_replayed={m.total_trades})\n"
+                f"  corrected-exit engine: WR={m.win_rate:.1%}  avg={m.avg_return_pct:+.3f}%  "
+                f"expectancy={m.expectancy:+.3f}%  PF={m.profit_factor:.2f}  Sharpe={m.sharpe_ratio:.2f}")
+        paired = [r for r in rows if r["live_pnl_pct"] is not None]
         if paired:
             live = np.array([r["live_pnl_pct"] for r in paired])
             eng2 = np.array([r["engine_pnl_pct"] for r in paired])
-            print(f"\nGap decomposition on {len(paired)} resolved rows (live vs corrected engine):")
-            print(f"  live avg  {live.mean():+.3f}%   engine avg {eng2.mean():+.3f}%   "
-                  f"mean delta {(live - eng2).mean():+.3f}%")
-            print("  If live ~= engine: the doc/backtest baseline was the (optimistic)")
-            print("  exit-model bias. If live << engine: genuine signal decay beyond exits.")
-        else:
-            print("\n(no resolved live_pnl_pct provided — supply it for the gap decomposition)")
-    print("\nGate: this is the corrected-exit baseline on the frozen cohort. Compare to the")
-    print("repaired 90-day live scorecard; do not treat as a headline until both are frozen.")
+            line += (f"\n  live avg {live.mean():+.3f}%  vs  engine avg {eng2.mean():+.3f}%  "
+                     f"(mean delta {(live - eng2).mean():+.3f}% over {len(paired)} resolved)")
+        print(line)
+
+    sources = sorted({r["signal_source"] for r in replayed})
+    print("\n=== CORRECTED-EXIT replay on the exact cohort (unified engine, gap-through) ===")
+    for src in sources:
+        _report(f"[{src}]", [r for r in replayed if r["signal_source"] == src])
+    _report("[ALL sources combined]", replayed)
+
+    print("\nRead: live ≈ engine  → the doc/backtest label was optimistic-exit bias (retire it).")
+    print("      live << engine  → genuine signal decay beyond the exit model.")
+    print("Gate: compare to the repaired 90-day live scorecard; preserve official vs manual-sleeve")
+    print("provenance; treat skipped (unfilled) and censored (open) rows as denominator, not trades.")
 
 
 if __name__ == "__main__":
