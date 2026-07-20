@@ -61,12 +61,17 @@ def score_post_earnings_drift(
     stop_atr_mult: float = 3.0,
     target_atr_mult: float = 6.0,
     holding_period: int = 20,
+    min_price: float = 5.0,
 ) -> PEADSignal | None:
     """Emit a long PEAD signal if the ticker just reported a sufficient beat.
 
     earnings_surprise_pct is the EPS surprise (percent of |estimate|) for the
     ticker's report on the as-of day, or None if it did not report / no estimate.
     Returns None unless the surprise is a beat >= min_surprise.
+
+    Guards (the edge was measured on liquid S&P names): reject sub-min_price names
+    and reject when 3xATR exceeds the price (a would-be negative stop = too
+    volatile for a 20-day swing hold).
     """
     if earnings_surprise_pct is None or earnings_surprise_pct < min_surprise:
         return None
@@ -77,7 +82,7 @@ def score_post_earnings_drift(
     if not _valid(close_price):
         close_price = float(df["close"].iloc[-1])
     close_price = float(close_price)
-    if close_price <= 0:
+    if close_price <= 0 or close_price < min_price:
         return None
 
     atr = features.get("atr_14")
@@ -86,6 +91,10 @@ def score_post_earnings_drift(
     atr = max(float(atr), close_price * 0.005)
 
     stop_loss = close_price - stop_atr_mult * atr
+    # A non-positive stop means the name is too volatile (3xATR >= price) for this
+    # swing strategy — reject rather than emit a nonsensical negative stop.
+    if stop_loss <= 0:
+        return None
     target_1 = close_price + target_atr_mult * atr
     target_2 = close_price + (target_atr_mult + 2.0) * atr
 

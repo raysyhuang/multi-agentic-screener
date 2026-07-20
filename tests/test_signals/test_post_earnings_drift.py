@@ -67,6 +67,21 @@ def test_threshold_respected():
     assert score_post_earnings_drift("AAA", _df(), _feat(), 10.0, min_surprise=10.0) is not None
 
 
+def test_rejects_sub_min_price():
+    # $3 stock below the default $5 floor → no signal (edge is liquid-only).
+    assert score_post_earnings_drift("AAA", _df(close=3.0), _feat(close=3.0, atr=0.1), 20.0) is None
+    # Same beat on a $50 name fires.
+    assert score_post_earnings_drift("AAA", _df(close=50.0), _feat(close=50.0, atr=1.0), 20.0) is not None
+
+
+def test_rejects_negative_stop_from_high_atr():
+    # 3xATR (3*4=12) exceeds price (10) → would-be negative stop → reject.
+    assert score_post_earnings_drift(
+        "AAA", _df(close=10.0), _feat(close=10.0, atr=4.0), 20.0,
+        stop_atr_mult=3.0, min_price=1.0,
+    ) is None
+
+
 def test_atr_fallback_when_missing():
     # No atr_14 in features → falls back to a fraction of price, still valid levels.
     sig = score_post_earnings_drift("AAA", _df(close=50.0), {"close": 50.0}, 15.0)
