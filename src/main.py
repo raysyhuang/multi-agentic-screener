@@ -117,6 +117,25 @@ def _log_memory(label: str) -> None:
         logger.info("Memory [%s]: RSS=%.0f MB", label, rss)
 
 
+def build_exit_config_snapshot(settings) -> dict:
+    """Snapshot the execution/exit config persisted into every signal's features.
+
+    Enables future live-vs-engine reconciliations to replay the ACTUAL historical
+    config instead of assuming today's settings. (The 2026-07 MR reconciliation
+    was limited by exactly this gap: trail/slippage were not persisted per signal,
+    so the replay had to assume the current live defaults.)
+    """
+    return {
+        "slippage_pct": settings.slippage_pct,
+        "trail_activate_pct": settings.trail_activate_pct,
+        "trail_distance_pct": settings.trail_distance_pct,
+        "score_tiered_stops_enabled": settings.score_tiered_stops_enabled,
+        "partial_tp_enabled": settings.partial_tp_enabled,
+        "sniper_time_stop_days": settings.sniper_time_stop_days,
+        "entry_gap_max_atr": settings.entry_gap_max_atr,
+    }
+
+
 def _validation_allowed_regimes_for_model(signal_model: str) -> set[str] | None:
     """Return regimes where a signal model is intentionally allowed to trade."""
     model = (signal_model or "").lower()
@@ -1521,20 +1540,7 @@ async def _run_pipeline_core(
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
 
-        # Snapshot the execution/exit config into every signal's features so
-        # future live-vs-engine reconciliations can replay the ACTUAL historical
-        # config instead of assuming today's settings. (The MR reconciliation
-        # was limited by exactly this gap: trail/slippage were not persisted
-        # per signal, so the replay had to use the current live defaults.)
-        _exit_config_snapshot = {
-            "slippage_pct": settings.slippage_pct,
-            "trail_activate_pct": settings.trail_activate_pct,
-            "trail_distance_pct": settings.trail_distance_pct,
-            "score_tiered_stops_enabled": settings.score_tiered_stops_enabled,
-            "partial_tp_enabled": settings.partial_tp_enabled,
-            "sniper_time_stop_days": settings.sniper_time_stop_days,
-            "entry_gap_max_atr": settings.entry_gap_max_atr,
-        }
+        _exit_config_snapshot = build_exit_config_snapshot(settings)
 
         for pick in picks_to_persist:
             signal = Signal(

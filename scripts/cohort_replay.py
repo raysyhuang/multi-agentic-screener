@@ -135,27 +135,35 @@ async def _ohlcv(ticker: str, cache: dict, fetched: dict, poly, start: date, end
     return df
 
 
-async def main() -> None:
+def build_arg_parser() -> argparse.ArgumentParser:
+    """Build the CLI parser. Extracted so tests can assert the defaults.
+
+    CRITICAL: the replay MUST mirror the live tracker's FULL exit config or the
+    comparison is an execution-parameter artifact, not a live-vs-engine gap.
+    Two such bugs were caught here (both by Neo's re-runs):
+     - trailing defaulted to 0/0 while live runs 0.5/0.3 (27/98 -> 80/98 reasons match)
+     - cost defaulted to 5bp/side while live slippage_pct is 10bp/side.
+    Default every execution parameter from the live settings. NOTE: cost is NOT a
+    post-hoc constant — the slippage-adjusted entry fill is the base for trail
+    activation, so changing cost changes exit PATHS, not just subtracts bp.
+    """
+    from src.config import get_settings
+    _s = get_settings()
     ap = argparse.ArgumentParser()
     ap.add_argument("--cohort", required=True, help="frozen cohort CSV (see module docstring)")
     ap.add_argument("--cache-file", default="", help="daily OHLCV parquet for lookups")
     ap.add_argument("--paired-out", default="", help="write per-trade paired live-vs-engine CSV here")
-    # CRITICAL: the replay MUST mirror the live tracker's FULL exit config or the
-    # comparison is an execution-parameter artifact, not a live-vs-engine gap.
-    # Two such bugs have already been caught here (both by Neo's re-runs):
-    #  - trailing defaulted to 0/0 while live runs 0.5/0.3 (27/98 -> 80/98 reasons match)
-    #  - cost defaulted to 5bp/side while live slippage_pct is 10bp/side, which
-    #    produced a near-constant -0.1004pp +/- 0.0025 delta on every matched-exit row.
-    # Default every execution parameter from the live settings.
-    from src.config import get_settings
-    _s = get_settings()
     ap.add_argument("--cost-bps", type=float, default=_s.slippage_pct * 10000,
                     help="per-side cost bps (default = live settings.slippage_pct)")
     ap.add_argument("--trail-activate-pct", type=float, default=_s.trail_activate_pct,
                     help="live trailing-stop activation %% (default = settings)")
     ap.add_argument("--trail-distance-pct", type=float, default=_s.trail_distance_pct,
                     help="live trailing-stop distance %% (default = settings)")
-    args = ap.parse_args()
+    return ap
+
+
+async def main() -> None:
+    args = build_arg_parser().parse_args()
 
     cohort = _load_cohort(args.cohort)
     print(f"Loaded {len(cohort)} cohort rows from {args.cohort}")
