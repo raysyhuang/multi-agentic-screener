@@ -50,6 +50,19 @@ async def start_worker() -> None:
             logger.info("One-off job %s complete; exiting worker", flag)
             return
 
+    # Guard: an unrecognized flag (e.g. a removed one like --collect-now or
+    # --meta-now) must fail loudly, NOT fall through and start the blocking
+    # scheduler loop — in CI that would hang the job until the runner timeout.
+    unknown_flags = [a for a in sys.argv[1:] if a.startswith("--")]
+    if unknown_flags:
+        logger.error(
+            "Unknown worker flag(s) %s. Valid one-off flags: %s. "
+            "The evening (--collect-now) and weekly (--meta-now) jobs were "
+            "removed with the cross-engine/LLM subsystems.",
+            unknown_flags, ", ".join(one_off_jobs),
+        )
+        sys.exit(2)
+
     scheduler = AsyncIOScheduler(timezone="US/Eastern")
 
     # Error listener — log and alert on job failures
