@@ -85,3 +85,130 @@ async def test_get_news_parses_response(client):
 
     assert len(news) == 2
     assert news[0]["title"] == "AAPL beats earnings"
+
+
+@pytest.mark.asyncio
+async def test_get_intraday_aggs_preserves_datetime(client):
+    """Intraday bars must keep the intraday time (many rows per date)."""
+    mock_response = MagicMock()
+    mock_response.json.return_value = {
+        "results": [
+            {"o": 100, "h": 101, "l": 99, "c": 100.5, "v": 5000, "vw": 100.2, "t": 1704114000000, "n": 50},
+            {"o": 100.5, "h": 102, "l": 100, "c": 101.5, "v": 6000, "vw": 101.1, "t": 1704114060000, "n": 60},
+        ],
+        "next_url": None,
+    }
+    mock_response.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = mock_response
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        df = await client.get_intraday_aggs("AAPL", date(2024, 1, 1), date(2024, 1, 1))
+
+    assert not df.empty
+    assert "datetime" in df.columns and "date" in df.columns
+    assert len(df) == 2
+    # Two distinct minute timestamps on the same date
+    assert df["datetime"].nunique() == 2
+    assert df["date"].nunique() == 1
+
+
+@pytest.mark.asyncio
+async def test_get_intraday_aggs_paginates(client):
+    """next_url must be followed until exhausted, accumulating all bars."""
+    page1 = MagicMock()
+    page1.json.return_value = {
+        "results": [{"o": 1, "h": 1, "l": 1, "c": 1, "v": 1, "vw": 1, "t": 1704114000000, "n": 1}],
+        "next_url": "https://api.polygon.io/next?cursor=abc",
+    }
+    page1.raise_for_status = MagicMock()
+    page2 = MagicMock()
+    page2.json.return_value = {
+        "results": [{"o": 2, "h": 2, "l": 2, "c": 2, "v": 2, "vw": 2, "t": 1704114060000, "n": 2}],
+        "next_url": None,
+    }
+    page2.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [page1, page2]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        df = await client.get_intraday_aggs("AAPL", date(2024, 1, 1), date(2024, 1, 1))
+
+    assert len(df) == 2  # both pages accumulated
+    assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_short_volume_parses_and_paginates(client):
+    page1 = MagicMock()
+    page1.json.return_value = {
+        "results": [{"date": "2025-01-02", "short_volume": 500, "total_volume": 1000, "short_volume_ratio": 50.0}],
+        "next_url": "https://api.polygon.io/next?cursor=x",
+    }
+    page1.raise_for_status = MagicMock()
+    page2 = MagicMock()
+    page2.json.return_value = {
+        "results": [{"date": "2025-01-03", "short_volume": 300, "total_volume": 1000, "short_volume_ratio": 30.0}],
+        "next_url": None,
+    }
+    page2.raise_for_status = MagicMock()
+
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.side_effect = [page1, page2]
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+
+        df = await client.get_short_volume("AAPL", date(2025, 1, 1), date(2025, 1, 31))
+
+    assert len(df) == 2
+    assert "short_volume_ratio" in df.columns
+    assert df["date"].is_monotonic_increasing
+    assert mock_client.get.call_count == 2
+
+
+@pytest.mark.asyncio
+async def test_get_short_volume_empty(client):
+    resp = MagicMock()
+    resp.json.return_value = {"results": [], "next_url": None}
+    resp.raise_for_status = MagicMock()
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+        df = await client.get_short_volume("AAPL", date(2025, 1, 1), date(2025, 1, 31))
+    assert df.empty
+
+
+@pytest.mark.asyncio
+async def test_get_short_interest_parses(client):
+    resp = MagicMock()
+    resp.json.return_value = {
+        "results": [
+            {"settlement_date": "2025-01-15", "short_interest": 1000000, "avg_daily_volume": 500000, "days_to_cover": 2.0},
+            {"settlement_date": "2025-01-31", "short_interest": 1500000, "avg_daily_volume": 500000, "days_to_cover": 3.0},
+        ],
+        "next_url": None,
+    }
+    resp.raise_for_status = MagicMock()
+    with patch("httpx.AsyncClient") as mock_client_cls:
+        mock_client = AsyncMock()
+        mock_client.get.return_value = resp
+        mock_client.__aenter__ = AsyncMock(return_value=mock_client)
+        mock_client.__aexit__ = AsyncMock(return_value=False)
+        mock_client_cls.return_value = mock_client
+        df = await client.get_short_interest("AAPL")
+    assert len(df) == 2
+    assert "days_to_cover" in df.columns
+    assert df["settlement_date"].is_monotonic_increasing

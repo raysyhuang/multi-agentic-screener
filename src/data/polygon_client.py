@@ -23,9 +23,23 @@ BACKOFF_BASE = 0.5  # seconds: 0.5, 1.0, 2.0
 async def _request_with_backoff(
     client: httpx.AsyncClient, url: str, params: dict,
 ) -> httpx.Response:
-    """Make an HTTP GET with exponential backoff on 429 responses."""
+    """Make an HTTP GET with exponential backoff on 429s and transient network errors."""
     for attempt in range(MAX_RETRIES):
-        resp = await client.get(url, params=params)
+        try:
+            resp = await client.get(url, params=params)
+        except (httpx.TransportError, httpx.TimeoutException) as exc:
+            # Transient connectivity blip (ConnectError, ReadError, timeout).
+            # Heavy minute-bar pulling hits these; retry with backoff instead of
+            # aborting the whole run.
+            if attempt < MAX_RETRIES - 1:
+                delay = BACKOFF_BASE * (2 ** attempt)
+                logger.warning(
+                    "Polygon network error %s (attempt %d/%d) — retrying in %.1fs",
+                    type(exc).__name__, attempt + 1, MAX_RETRIES, delay,
+                )
+                await asyncio.sleep(delay)
+                continue
+            raise
         if resp.status_code == 429:
             if attempt < MAX_RETRIES - 1:
                 delay = BACKOFF_BASE * (2 ** attempt)
@@ -80,6 +94,119 @@ class PolygonClient:
         })
         df["date"] = pd.to_datetime(df["timestamp"], unit="ms").dt.date
         df = df.sort_values("date").reset_index(drop=True)
+        return df
+
+    async def get_intraday_aggs(
+        self,
+        ticker: str,
+        from_date: date,
+        to_date: date,
+        multiplier: int = 1,
+        timespan: str = "minute",
+        max_pages: int = 50,
+    ) -> pd.DataFrame:
+        """Fetch intraday aggregate bars (default 1-minute), paginated.
+
+        Unlike get_ohlcv (daily), this preserves the intraday timestamp: the
+        returned frame has both a `datetime` column (tz-naive UTC) and a `date`
+        column, so a single trading day yields many rows. Follows Polygon's
+        next_url pagination since a multi-day minute window easily exceeds the
+        per-response limit. Requires an intraday-enabled plan (the $199 tier).
+        """
+        url = (
+            f"{BASE_URL}/v2/aggs/ticker/{ticker}/range/{multiplier}/{timespan}"
+            f"/{from_date}/{to_date}"
+        )
+        params = self._params(adjusted="true", sort="asc", limit=50000)
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            while url and page < max_pages:
+                resp = await _request_with_backoff(client, url, params)
+                data = resp.json()
+                results.extend(data.get("results", []))
+                url = data.get("next_url")
+                # next_url carries its own query string; only the key is needed.
+                params = {"apiKey": self._api_key} if url else {}
+                page += 1
+
+        if not results:
+            return pd.DataFrame()
+
+        df = pd.DataFrame(results)
+        df = df.rename(columns={
+            "o": "open", "h": "high", "l": "low", "c": "close",
+            "v": "volume", "vw": "vwap", "t": "timestamp", "n": "trades",
+        })
+        df["datetime"] = pd.to_datetime(df["timestamp"], unit="ms")
+        df["date"] = df["datetime"].dt.date
+        df = df.sort_values("datetime").reset_index(drop=True)
+        return df
+
+    async def get_short_volume(
+        self,
+        ticker: str,
+        from_date: date,
+        to_date: date,
+        max_pages: int = 20,
+    ) -> pd.DataFrame:
+        """Fetch daily short-volume (FINRA) for a ticker, paginated.
+
+        Returns a frame with `date`, `short_volume`, `total_volume`, and
+        `short_volume_ratio` (percent). Requires the $199 plan's short-volume
+        entitlement. Empty frame if no data.
+        """
+        url = f"{BASE_URL}/stocks/v1/short-volume"
+        params = self._params(**{
+            "ticker": ticker, "date.gte": str(from_date), "date.lte": str(to_date),
+            "order": "asc", "sort": "date", "limit": 50000,
+        })
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            while url and page < max_pages:
+                resp = await _request_with_backoff(client, url, params)
+                data = resp.json()
+                results.extend(data.get("results", []))
+                url = data.get("next_url")
+                params = {"apiKey": self._api_key} if url else {}
+                page += 1
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+        if "date" in df.columns:
+            df["date"] = pd.to_datetime(df["date"]).dt.date
+            df = df.sort_values("date").reset_index(drop=True)
+        return df
+
+    async def get_short_interest(
+        self,
+        ticker: str,
+        max_pages: int = 10,
+    ) -> pd.DataFrame:
+        """Fetch bi-monthly short interest (FINRA) for a ticker, paginated.
+
+        Returns a frame with `settlement_date`, `short_interest`, `avg_daily_volume`,
+        and `days_to_cover`. Requires the $199 plan. Empty frame if no data.
+        """
+        url = f"{BASE_URL}/stocks/v1/short-interest"
+        params = self._params(ticker=ticker, order="asc", sort="settlement_date", limit=10000)
+        results: list[dict] = []
+        page = 0
+        async with httpx.AsyncClient(timeout=60) as client:
+            while url and page < max_pages:
+                resp = await _request_with_backoff(client, url, params)
+                data = resp.json()
+                results.extend(data.get("results", []))
+                url = data.get("next_url")
+                params = {"apiKey": self._api_key} if url else {}
+                page += 1
+        if not results:
+            return pd.DataFrame()
+        df = pd.DataFrame(results)
+        if "settlement_date" in df.columns:
+            df["settlement_date"] = pd.to_datetime(df["settlement_date"]).dt.date
+            df = df.sort_values("settlement_date").reset_index(drop=True)
         return df
 
     async def get_options_flow(self, ticker: str, on_date: date) -> list[dict]:

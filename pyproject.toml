@@ -1,7 +1,7 @@
 [project]
 name = "multi-agentic-screener"
 version = "0.1.0"
-description = "Multi-agentic short-term stock screener with LLM-powered signal validation"
+description = "Quant-only short-term stock screener (mean-reversion + sniper signals)"
 requires-python = ">=3.12"
 dependencies = [
     # Core
@@ -18,6 +18,7 @@ dependencies = [
     "yfinance>=0.2",
     "pandas>=2.2",
     "numpy>=1.26",
+    "pyarrow>=15.0",  # parquet engine (intraday/OHLCV caches)
 
     # Features
     "pandas-ta-openbb>=0.4",
@@ -27,10 +28,6 @@ dependencies = [
 
     # Cross-engine HTTP client
     "aiohttp>=3.9",
-
-    # LLM
-    "anthropic>=0.40",
-    "openai>=1.50",
 
     # API + Reporting
     "fastapi>=0.115",
@@ -46,6 +43,7 @@ dependencies = [
 [project.optional-dependencies]
 dev = [
     "pytest>=8.0",
+    "aiosqlite>=0.20",  # in-memory DB for persistence round-trip tests
     "pytest-asyncio>=0.24",
     "pytest-cov>=5.0",
     "ruff>=0.8",

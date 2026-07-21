@@ -7,19 +7,9 @@ from enum import Enum
 from pathlib import Path
 
 from pydantic_settings import BaseSettings
-from pydantic import Field, model_validator
+from pydantic import Field
 
 logger = logging.getLogger(__name__)
-
-# Known-good model names for validation
-KNOWN_MODELS = {
-    # Anthropic
-    "claude-opus-4-6", "claude-sonnet-4-5-20250929", "claude-haiku-4-5-20251001",
-    "claude-sonnet-4-20250514",
-    # OpenAI
-    "gpt-5.2", "gpt-5.2-nano",
-    "o1", "o1-mini", "o1-preview", "o3-mini",
-}
 
 
 class ExecutionMode(str, Enum):
@@ -35,8 +25,6 @@ ENV_PATH = PROJECT_ROOT / ".env"
 
 class Settings(BaseSettings):
     # --- API keys ---
-    anthropic_api_key: str = ""
-    openai_api_key: str = ""
     polygon_api_key: str = ""
     fmp_api_key: str = ""
     financial_datasets_api_key: str = ""
@@ -54,12 +42,6 @@ class Settings(BaseSettings):
     # --- API auth ---
     api_secret_key: str = ""  # Bearer token for /api/* routes
     allowed_origins: str = ""  # Comma-separated CORS origins (empty = same-origin only)
-
-    # --- Model configs ---
-    signal_interpreter_model: str = "claude-sonnet-4-5-20250929"
-    adversarial_model: str = "gpt-5.2"
-    risk_gate_model: str = "claude-opus-4-6"
-    meta_analyst_model: str = "claude-opus-4-6"
 
     # --- Pipeline parameters ---
     min_price: float = 5.0
@@ -139,17 +121,6 @@ class Settings(BaseSettings):
     afternoon_check_hour: int = 16
     afternoon_check_minute: int = 30
 
-    # --- Planner / Verifier ---
-    planner_model: str = "gpt-5.2"
-    verifier_model: str = "gpt-5.2"
-
-    # --- Retry settings ---
-    agent_max_retry_attempts: int = 2
-    agent_retry_cost_cap_usd: float = 0.50
-    agent_retry_on_low_quality: bool = True
-    max_run_cost_usd: float = 2.00
-    max_verifier_retries: int = 2
-
     # --- Logging ---
     log_format: str = "text"  # "text" or "json" — use json for Heroku log drains
 
@@ -158,42 +129,6 @@ class Settings(BaseSettings):
     vix_low_threshold: float = 15.0
     breadth_bullish_threshold: float = 0.60
     breadth_bearish_threshold: float = 0.40
-
-    # --- External Engine URLs ---
-    koocore_api_url: str = ""
-    gemini_api_url: str = ""
-    top3_7d_api_url: str = ""
-    engine_api_key: str = ""
-
-    # --- Local Engine Runners ---
-    engine_run_mode: str = "hybrid"  # "local" | "http" | "hybrid" (KooCore-D via HTTP, Gemini local)
-    koocore_config_path: str = "KooCore-D/config/default.yaml"
-
-    # --- Cross-Engine System ---
-    cross_engine_enabled: bool = False
-    cross_engine_model: str = "claude-opus-4-6"  # unused: kept for agent class compat
-    cross_engine_max_cost_usd: float = 0.50      # unused: kept for agent class compat
-    cross_engine_verify_before_synthesize: bool = True  # unused: Steps 12-13 are deterministic
-    engine_fetch_timeout_s: float = 30.0
-    llm_request_timeout_s: float = 90.0
-
-    # --- Credibility Tracking ---
-    credibility_lookback_days: int = 30
-    credibility_min_picks_for_weight: int = 10
-    convergence_2_engine_multiplier: float = 1.3
-    convergence_3_engine_multiplier: float = 1.0
-    convergence_4_engine_multiplier: float = 1.0
-    convergence_1_engine_multiplier: float = 0.9
-    convergence_sector_multiplier: float = 1.15  # boost when 2+ engines pick same sector
-
-    # --- Strategy-level hit-rate floor ---
-    credibility_strategy_floor_enabled: bool = True
-    credibility_strategy_floor_hit_rate: float = 0.15  # reject strategies below 15% hit rate
-    credibility_strategy_floor_min_picks: int = 5      # only enforce floor with >= N resolved picks
-
-    # --- Confidence Recalibration ---
-    credibility_recalibration_enabled: bool = True
-    credibility_recalibration_min_picks: int = 10  # only recalibrate engines with >= N resolved picks
 
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True
@@ -212,25 +147,11 @@ class Settings(BaseSettings):
     low_overlap_max_positions: int = 3
     low_overlap_max_total_weight_pct: float = 30.0
 
-    # --- Gemini STST filter thresholds (backtest adapter) ---
-    gemini_momentum_adv_min: float = 300_000
-    gemini_momentum_rvol_min: float = 1.0
-    gemini_reversion_adv_min: float = 750_000
-    gemini_reversion_rsi2_max: float = 15.0
-
-    # --- Execution Gates (pre-synthesis safety checks) ---
-    min_engines_for_trade: int = 2  # Require N engines reporting before allowing synthesis
-    require_known_regime: bool = False  # Block trades when regime is "unknown"
-
     # --- MCP Data Connectors ---
     mcp_enabled: bool = True  # Master toggle for MCP enrichment layer
     mcp_enabled_providers: str = ""  # Comma-separated list (empty = all from .mcp.json)
     mcp_enrich_top_n: int = 10  # Only enrich top N candidates (controls cost)
     mcp_request_timeout_s: float = 30.0
-
-    # --- Cross-Engine Alert Cooldown ---
-    cross_engine_alert_cooldown_hours: int = 4
-    engine_drop_alert_cooldown_minutes: int = 60
 
     # --- Production Profile ---
     production_profile: str = "balanced"  # "balanced" (default) or future challenger profiles
@@ -244,52 +165,27 @@ class Settings(BaseSettings):
     sniper_holding_period: int = 7
     sniper_max_positions: int = 3
     sniper_time_stop_days: int = 1
-    sniper_hard_veto_only: bool = True
 
-    # --- Shadow Tracks (parallel parameter experiments) ---
-    shadow_tracks_enabled: bool = False
-
-    # --- Regime Strategy Gate ---
-    regime_strategy_gate_enabled: bool = True
-    regime_gate_bear_blocked_strategies: str = "momentum"
-    regime_gate_bear_penalized_strategies: str = "breakout,swing"
-    regime_gate_bear_penalty_multiplier: float = 0.65
-
-    @model_validator(mode="after")
-    def _validate_model_names(self) -> "Settings":
-        """Warn on unrecognized model names at startup."""
-        model_fields = [
-            "signal_interpreter_model", "adversarial_model", "risk_gate_model",
-            "meta_analyst_model", "planner_model", "verifier_model",
-            "cross_engine_model",
-        ]
-        for field_name in model_fields:
-            value = getattr(self, field_name, "")
-            if value and value not in KNOWN_MODELS:
-                logger.warning(
-                    "Unrecognized model '%s' in %s — may cause runtime errors. "
-                    "Known models: %s",
-                    value, field_name, ", ".join(sorted(KNOWN_MODELS)),
-                )
-        return self
+    # --- Post-Earnings Drift (PEAD) — paper trial, default OFF ---
+    # Backtest survives (outputs/research/pead_FINDINGS.md) but earns a paper
+    # trial, not production capital. Enable only on the VPS/paper instance.
+    pead_enabled: bool = False
+    pead_min_surprise: float = 10.0      # min EPS surprise % (beat) to fire
+    pead_stop_atr_mult: float = 3.0
+    pead_target_atr_mult: float = 6.0
+    pead_holding_period: int = 20
+    pead_max_positions: int = 5
 
     def validate_keys_for_mode(self) -> None:
-        """Validate that required API keys are present for the configured execution mode.
+        """Validate that required API keys are present.
 
         Raises ValueError with a clear message listing all missing keys.
         """
         missing: list[str] = []
 
-        # Data keys are always required (all modes fetch market data)
+        # Data keys are always required (the pipeline fetches market data)
         if not self.polygon_api_key and not self.fmp_api_key:
             missing.append("polygon_api_key or fmp_api_key (at least one data provider)")
-
-        mode = ExecutionMode(self.execution_mode)
-        if mode in (ExecutionMode.HYBRID, ExecutionMode.AGENTIC_FULL):
-            if not self.anthropic_api_key and not self.openai_api_key:
-                missing.append(
-                    "anthropic_api_key or openai_api_key (required for LLM agents)"
-                )
 
         if missing:
             raise ValueError(

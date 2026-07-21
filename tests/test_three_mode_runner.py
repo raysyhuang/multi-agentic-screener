@@ -1,10 +1,10 @@
-"""Tests for the Three-Mode Runner (quant_only / hybrid / agentic_full)."""
+"""Tests for the quant_only pipeline runner and ExecutionMode plumbing."""
 
 from __future__ import annotations
 
 from dataclasses import dataclass, field
 from datetime import date
-from unittest.mock import AsyncMock, patch, MagicMock
+from unittest.mock import patch
 
 import pytest
 
@@ -95,6 +95,50 @@ class TestQuantOnlyMode:
         result = _build_quant_only_result(candidates, {"regime": "bull"}, max_picks=2)
         assert len(result.approved) == 2
 
+    def test_sniper_cap_limits_sniper_picks(self):
+        """max_sniper caps sniper picks; lower-ranked non-sniper picks still fill."""
+        from src.main import _build_quant_only_result
+
+        # Two sniper candidates rank ahead of a mean_reversion one.
+        candidates = [
+            FakeCandidate(ticker="SNP1", signal_model="sniper"),
+            FakeCandidate(ticker="SNP2", signal_model="sniper"),
+            FakeCandidate(ticker="MR1", signal_model="mean_reversion"),
+        ]
+        result = _build_quant_only_result(
+            candidates, {"regime": "bull"}, max_picks=2, max_sniper=1,
+        )
+        models = [p.signal_model for p in result.approved]
+        tickers = [p.ticker for p in result.approved]
+        assert models.count("sniper") == 1          # only one sniper admitted
+        assert tickers == ["SNP1", "MR1"]           # 2nd sniper skipped, MR fills slot
+
+    def test_sniper_cap_zero_blocks_all_sniper(self):
+        """max_sniper=0 admits no sniper picks (all slots concurrent-full)."""
+        from src.main import _build_quant_only_result
+
+        candidates = [
+            FakeCandidate(ticker="SNP1", signal_model="sniper"),
+            FakeCandidate(ticker="MR1", signal_model="mean_reversion"),
+        ]
+        result = _build_quant_only_result(
+            candidates, {"regime": "bull"}, max_picks=2, max_sniper=0,
+        )
+        assert [p.ticker for p in result.approved] == ["MR1"]
+
+    def test_no_sniper_cap_when_none(self):
+        """max_sniper=None applies no sniper-specific cap."""
+        from src.main import _build_quant_only_result
+
+        candidates = [
+            FakeCandidate(ticker="SNP1", signal_model="sniper"),
+            FakeCandidate(ticker="SNP2", signal_model="sniper"),
+        ]
+        result = _build_quant_only_result(
+            candidates, {"regime": "bull"}, max_picks=2, max_sniper=None,
+        )
+        assert len(result.approved) == 2
+
     def test_deterministic_stubs_present(self):
         """Interpretation/debate/risk_gate fields must be populated (not None)."""
         from src.main import _build_quant_only_result
@@ -108,60 +152,6 @@ class TestQuantOnlyMode:
         assert pick.risk_gate is not None
         assert "quant_only" in pick.interpretation.thesis.lower() or "quant" in pick.interpretation.thesis.lower()
         assert pick.risk_gate.decision.value == "APPROVE"
-
-
-# ---------------------------------------------------------------------------
-# PR1.3 — hybrid calls interpreter only, no debate/risk gate
-# ---------------------------------------------------------------------------
-
-class TestHybridMode:
-    @pytest.mark.asyncio
-    async def test_hybrid_calls_interpreter_only(self):
-        from src.main import _run_hybrid_pipeline
-
-        fake_interp = MagicMock()
-        fake_interp.confidence = 75.0
-        fake_interp.thesis = "Strong breakout thesis"
-        fake_interp.key_drivers = ["momentum", "volume"]
-        fake_interp.suggested_stop = 145.0
-        fake_interp.suggested_target = 160.0
-        fake_interp.timeframe_days = 10
-        fake_interp.risk_flags = []
-
-        fake_retry = MagicMock()
-        fake_retry.value = fake_interp
-        fake_retry.attempt_count = 1
-        fake_retry.total_tokens = 500
-        fake_retry.total_cost_usd = 0.01
-
-        with patch("src.agents.signal_interpreter.SignalInterpreterAgent") as MockInterp:
-            instance = MockInterp.return_value
-            instance.interpret = AsyncMock(return_value=fake_retry)
-            instance.last_call_meta = {"model": "test", "tokens_in": 200, "tokens_out": 300}
-
-            candidates = [FakeCandidate()]
-            result = await _run_hybrid_pipeline(
-                candidates, {"regime": "bull"}, run_id="test123",
-            )
-
-        # Interpreter was called
-        assert instance.interpret.call_count >= 1
-        # Results produced
-        assert len(result.approved) >= 1
-        # Debate was skipped
-        assert result.debated == 0
-        # Agent logs contain only interpreter entries
-        agent_names = [log["agent"] for log in result.agent_logs]
-        assert all(name == "signal_interpreter" for name in agent_names)
-
-
-# ---------------------------------------------------------------------------
-# PR1.4 — agentic_full remains unchanged
-# ---------------------------------------------------------------------------
-
-class TestAgenticFullMode:
-    def test_agentic_full_enum_value(self):
-        assert ExecutionMode.AGENTIC_FULL.value == "agentic_full"
 
 
 # ---------------------------------------------------------------------------

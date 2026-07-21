@@ -44,17 +44,6 @@ class EngineICReport:
     brier_score: float
 
 
-@dataclass
-class PairwiseCorrelation:
-    """Pairwise prediction correlation between two engines."""
-
-    engine_a: str
-    engine_b: str
-    correlation: float
-    p_value: float
-    n_overlap: int
-
-
 # ── Core Functions ───────────────────────────────────────────────────────────
 
 
@@ -145,80 +134,3 @@ async def compute_engine_ic(
         brier_score=_compute_brier(confidences, hit_targets),
     )
 
-
-async def compute_cross_engine_independence(
-    session: AsyncSession,
-    lookback_days: int = 90,
-    asof_date: date | None = None,
-) -> list[PairwiseCorrelation]:
-    """Compute pairwise prediction correlation on overlapping (run_date, ticker) pairs.
-
-    For each engine pair, finds picks where both engines picked the same ticker
-    on the same date, then computes Spearman correlation of their confidences.
-    Low correlation = more independent = better for ensemble diversification.
-    """
-    reference = asof_date or date.today()
-    cutoff = reference - timedelta(days=lookback_days)
-
-    result = await session.execute(
-        select(EnginePickOutcome).where(
-            and_(
-                EnginePickOutcome.outcome_resolved == True,  # noqa: E712
-                EnginePickOutcome.run_date >= cutoff,
-                EnginePickOutcome.run_date <= reference,
-            )
-        )
-    )
-    outcomes = result.scalars().all()
-
-    # Index by (run_date, ticker) → {engine: confidence}
-    by_key: dict[tuple[date, str], dict[str, float]] = {}
-    for o in outcomes:
-        key = (o.run_date, o.ticker)
-        by_key.setdefault(key, {})[o.engine_name] = o.confidence
-
-    # Collect engine names
-    all_engines = sorted({o.engine_name for o in outcomes})
-
-    correlations: list[PairwiseCorrelation] = []
-    for i, eng_a in enumerate(all_engines):
-        for eng_b in all_engines[i + 1:]:
-            # Find overlapping picks
-            confs_a: list[float] = []
-            confs_b: list[float] = []
-            for engines_map in by_key.values():
-                if eng_a in engines_map and eng_b in engines_map:
-                    confs_a.append(engines_map[eng_a])
-                    confs_b.append(engines_map[eng_b])
-
-            n_overlap = len(confs_a)
-            if n_overlap < 5:
-                correlations.append(PairwiseCorrelation(
-                    engine_a=eng_a,
-                    engine_b=eng_b,
-                    correlation=0.0,
-                    p_value=1.0,
-                    n_overlap=n_overlap,
-                ))
-                continue
-
-            if len(set(confs_a)) <= 1 or len(set(confs_b)) <= 1:
-                correlations.append(PairwiseCorrelation(
-                    engine_a=eng_a,
-                    engine_b=eng_b,
-                    correlation=0.0,
-                    p_value=1.0,
-                    n_overlap=n_overlap,
-                ))
-                continue
-
-            corr, p_val = spearmanr(confs_a, confs_b)
-            correlations.append(PairwiseCorrelation(
-                engine_a=eng_a,
-                engine_b=eng_b,
-                correlation=round(float(corr), 4),
-                p_value=round(float(p_val), 4),
-                n_overlap=n_overlap,
-            ))
-
-    return correlations

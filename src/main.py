@@ -3,15 +3,10 @@
 from __future__ import annotations
 
 import asyncio
-from collections import defaultdict
-import hashlib
-import json
 import logging
 import os
-import re
 import time
-from datetime import date, datetime, timedelta, timezone
-from typing import Literal
+from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -76,22 +71,16 @@ from src.signals.ranker import (
     apply_cooldown,
     MODEL_MAP,
 )
-from src.agents.orchestrator import PipelineRun
+from src.pipeline_types import PipelineRun
 from src.backtest.validation_card import run_validation_checks
-from src.output.telegram import send_alert, format_daily_alert, format_cross_engine_alert
+from src.output.telegram import send_alert, format_daily_alert
 from src.output.performance import check_open_positions
-from src.engines.engine_drop_alerts import maybe_send_engine_drop_alert
 from src.governance.artifacts import GovernanceContext
 from src.governance.performance_monitor import (
     compute_rolling_metrics,
     check_decay,
 )
 from src.portfolio.construct import build_trade_plan
-from src.governance.divergence_ledger import (
-    freeze_quant_baseline,
-    compute_divergences,
-)
-from src.engines.collector import EngineFailure
 
 
 def _get_rss_mb() -> float | None:
@@ -125,6 +114,25 @@ def _log_memory(label: str) -> None:
         logger.info("Memory [%s]: RSS=%.0f MB", label, rss)
 
 
+def build_exit_config_snapshot(settings) -> dict:
+    """Snapshot the execution/exit config persisted into every signal's features.
+
+    Enables future live-vs-engine reconciliations to replay the ACTUAL historical
+    config instead of assuming today's settings. (The 2026-07 MR reconciliation
+    was limited by exactly this gap: trail/slippage were not persisted per signal,
+    so the replay had to assume the current live defaults.)
+    """
+    return {
+        "slippage_pct": settings.slippage_pct,
+        "trail_activate_pct": settings.trail_activate_pct,
+        "trail_distance_pct": settings.trail_distance_pct,
+        "score_tiered_stops_enabled": settings.score_tiered_stops_enabled,
+        "partial_tp_enabled": settings.partial_tp_enabled,
+        "sniper_time_stop_days": settings.sniper_time_stop_days,
+        "entry_gap_max_atr": settings.entry_gap_max_atr,
+    }
+
+
 def _validation_allowed_regimes_for_model(signal_model: str) -> set[str] | None:
     """Return regimes where a signal model is intentionally allowed to trade."""
     model = (signal_model or "").lower()
@@ -133,6 +141,9 @@ def _validation_allowed_regimes_for_model(signal_model: str) -> set[str] | None:
         # markets, so the validation gate must not require bear survival.
         return {"bull", "choppy"}
     if model in {"mean_reversion", "mr"}:
+        return {"bull", "bear", "choppy"}
+    if model == "pead":
+        # Event-driven; allowed in all regimes (backtest edge held across sub-periods).
         return {"bull", "bear", "choppy"}
     return None
 
@@ -229,9 +240,6 @@ def _json_safe(obj):
     return obj
 
 
-_cross_engine_last_alert: dict[str, datetime] = {}  # date_str → datetime of last alert
-
-
 def _safe_float(value: object) -> float | None:
     try:
         if value is None:
@@ -264,175 +272,6 @@ def _is_fundamental_candidate(feat: dict) -> bool:
     return rsi2 is not None and rsi2 <= 22
 
 
-def _portfolio_ticker_set(portfolio: list[dict] | None) -> set[str]:
-    """Ticker set used for same-day cross-engine alert dedupe."""
-    out: set[str] = set()
-    for p in portfolio or []:
-        if not isinstance(p, dict):
-            continue
-        t = str(p.get("ticker") or "").upper().strip()
-        if t:
-            out.add(t)
-    return out
-
-
-def _convergent_ticker_set(convergent: list | None) -> set[str]:
-    """Ticker set from convergent picks payload (dict rows or plain strings)."""
-    out: set[str] = set()
-    for row in convergent or []:
-        if isinstance(row, str):
-            t = row.upper().strip()
-        elif isinstance(row, dict):
-            t = str(row.get("ticker") or "").upper().strip()
-        else:
-            t = ""
-        if t:
-            out.add(t)
-    return out
-
-
-def _normalize_portfolio_for_alert(portfolio: list[dict] | None) -> list[dict]:
-    """Normalized, sorted portfolio snapshot for stable alert hashing/diffing."""
-    normalized: list[dict] = []
-    for row in portfolio or []:
-        if not isinstance(row, dict):
-            continue
-        ticker = str(row.get("ticker") or "").upper().strip()
-        if not ticker:
-            continue
-        normalized.append({
-            "ticker": ticker,
-            "weight_pct": round(_safe_float(row.get("weight_pct")) or 0.0, 2),
-            "entry_price": round(_safe_float(row.get("entry_price")) or 0.0, 4),
-            "stop_loss": round(_safe_float(row.get("stop_loss")) or 0.0, 4),
-            "target_price": round(_safe_float(row.get("target_price")) or 0.0, 4),
-            "holding_period_days": int(row.get("holding_period_days") or 0),
-            "source": str(row.get("source") or "").lower().strip(),
-        })
-    normalized.sort(key=lambda r: r["ticker"])
-    return normalized
-
-
-def _cross_engine_alert_fingerprint_payload(
-    *,
-    run_date: date,
-    regime_consensus: str | None,
-    engines_reporting: int,
-    convergent_picks: list | None,
-    portfolio: list[dict] | None,
-    executive_summary: str | None,
-) -> dict:
-    """Actionable cross-engine payload used for stable alert dedupe/update checks."""
-    halted = "HALT" in str(executive_summary or "").upper()
-    return {
-        "run_date": str(run_date),
-        "regime_consensus": str(regime_consensus or "").strip().upper(),
-        "engines_reporting": int(engines_reporting),
-        "halted": halted,
-        "convergent_tickers": sorted(_convergent_ticker_set(convergent_picks)),
-        "portfolio": _normalize_portfolio_for_alert(portfolio),
-    }
-
-
-def _read_cross_engine_alert_state(cross_health: dict | None) -> dict:
-    """Best-effort extraction of persisted alert_state metadata."""
-    if not isinstance(cross_health, dict):
-        return {}
-    state = cross_health.get("alert_state")
-    return state if isinstance(state, dict) else {}
-
-
-def _cross_engine_change_reasons(
-    *,
-    existing_synthesis,
-    new_synthesis: dict,
-    new_engines_reporting: int,
-) -> list[str]:
-    """Human-readable reasons for cross-engine alert updates."""
-    reasons: list[str] = []
-
-    if existing_synthesis.engines_reporting != new_engines_reporting:
-        reasons.append(
-            f"engines reporting {existing_synthesis.engines_reporting}\u2192{new_engines_reporting}"
-        )
-
-    old_halt = "HALT" in str(existing_synthesis.executive_summary or "").upper()
-    new_halt = "HALT" in str(new_synthesis.get("executive_summary") or "").upper()
-    if old_halt != new_halt:
-        reasons.append("validation gate status changed")
-
-    old_tickers = _portfolio_ticker_set(existing_synthesis.portfolio_recommendation)
-    new_tickers = _portfolio_ticker_set(new_synthesis.get("portfolio"))
-    if old_tickers != new_tickers:
-        reasons.append("portfolio tickers changed")
-    elif old_tickers:
-        old_portfolio = _normalize_portfolio_for_alert(existing_synthesis.portfolio_recommendation)
-        new_portfolio = _normalize_portfolio_for_alert(new_synthesis.get("portfolio"))
-        if old_portfolio != new_portfolio:
-            reasons.append("position sizing/risk levels changed")
-
-    old_regime = str(existing_synthesis.regime_consensus or "").strip().upper()
-    new_regime = str(new_synthesis.get("regime_consensus") or "").strip().upper()
-    if old_regime != new_regime:
-        reasons.append("regime consensus changed")
-
-    old_conv = _convergent_ticker_set(existing_synthesis.convergent_tickers)
-    new_conv = _convergent_ticker_set(new_synthesis.get("convergent_picks"))
-    if old_conv != new_conv:
-        reasons.append("convergent tickers changed")
-
-    return reasons
-
-
-def _stable_payload_hash(payload: dict) -> str:
-    """Deterministic SHA-256 hash for payload revision tracking."""
-    canonical = json.dumps(payload, sort_keys=True, separators=(",", ":"), ensure_ascii=True)
-    return hashlib.sha256(canonical.encode("utf-8")).hexdigest()
-
-
-def _summarize_engine_failures(failed_engines: list[EngineFailure]) -> dict:
-    """Build cycle-level engine failure stats for dashboard visibility."""
-    by_kind: dict[str, int] = defaultdict(int)
-    by_reason_code: dict[str, int] = defaultdict(int)
-    engines_by_kind: dict[str, list[str]] = defaultdict(list)
-    failures: list[dict[str, str]] = []
-
-    for failure in failed_engines:
-        by_kind[failure.kind] += 1
-        by_reason_code[failure.reason_code] += 1
-        engines_by_kind[failure.kind].append(failure.engine_name)
-        failures.append({
-            "engine_name": failure.engine_name,
-            "kind": failure.kind,
-            "reason_code": failure.reason_code,
-            "detail": failure.detail,
-        })
-
-    return {
-        "total_failed": len(failed_engines),
-        "by_kind": dict(by_kind),
-        "by_reason_code": dict(by_reason_code),
-        "engines_by_kind": {k: sorted(v) for k, v in engines_by_kind.items()},
-        "failures": failures,
-    }
-
-
-def _parse_engine_run_timestamp(run_timestamp: str | None) -> datetime | None:
-    """Parse engine ISO timestamp into timezone-aware UTC datetime."""
-    if not run_timestamp:
-        return None
-    raw = str(run_timestamp).strip()
-    if not raw:
-        return None
-    if raw.endswith("Z"):
-        raw = f"{raw[:-1]}+00:00"
-    try:
-        dt = datetime.fromisoformat(raw)
-    except ValueError:
-        return None
-    if dt.tzinfo is None:
-        dt = dt.replace(tzinfo=timezone.utc)
-    return dt.astimezone(timezone.utc)
 
 
 def _trading_date_et(now: datetime | None = None) -> date:
@@ -639,23 +478,42 @@ def _build_quant_only_result(
     ranked: list,
     regime_context: dict,
     max_picks: int = 2,
+    max_sniper: int | None = None,
 ) -> PipelineRun:
     """Build a PipelineResult from ranked candidates without any LLM calls.
 
     Uses deterministic stubs for interpretation/debate/risk_gate fields
     so all downstream consumers (DB, Telegram, envelopes) work unchanged.
+
+    max_sniper caps how many sniper picks may be selected (the concurrent
+    sniper-position risk cap). Sniper candidates beyond the cap are skipped
+    while lower-ranked non-sniper candidates still fill remaining pick slots.
+    None means no sniper-specific cap.
     """
-    from src.agents.base import (
+    from src.pipeline_types import (
         SignalInterpretation,
         DebateResult,
         DebatePosition,
         RiskGateOutput,
         GateDecision,
+        PipelineResult,
+        PipelineRun,
     )
-    from src.agents.orchestrator import PipelineResult, PipelineRun
 
     approved: list[PipelineResult] = []
-    for candidate in ranked[:max_picks]:
+    sniper_taken = 0
+    for candidate in ranked:
+        if len(approved) >= max_picks:
+            break
+        # Concurrent sniper-position risk cap: skip sniper candidates once the
+        # available slots are used, but keep scanning for non-sniper picks.
+        if (
+            max_sniper is not None
+            and getattr(candidate, "signal_model", None) == "sniper"
+        ):
+            if sniper_taken >= max_sniper:
+                continue
+            sniper_taken += 1
         stub_interp = SignalInterpretation(
             ticker=candidate.ticker,
             thesis=f"Quant-only pick: {candidate.signal_model} score={candidate.raw_score:.2f}",
@@ -726,103 +584,6 @@ def _build_quant_only_result(
     )
 
 
-async def _run_hybrid_pipeline(
-    ranked: list,
-    regime_context: dict,
-    run_id: str,
-    max_picks: int = 2,
-) -> PipelineRun:
-    """Run interpreter only, then auto-approve top picks by confidence.
-
-    No debate or risk gate — lower cost than full agentic pipeline.
-    """
-    from src.agents.base import (
-        DebateResult,
-        DebatePosition,
-        RiskGateOutput,
-        GateDecision,
-    )
-    from src.agents.signal_interpreter import SignalInterpreterAgent
-    from src.agents.orchestrator import PipelineResult, PipelineRun
-
-    settings = get_settings()
-    interpreter = SignalInterpreterAgent()
-    agent_logs: list[dict] = []
-    interpretations = []
-
-    for candidate in ranked[:settings.top_n_for_interpretation]:
-        retry_result = await interpreter.interpret(candidate, regime_context)
-        if retry_result.value:
-            interpretations.append((candidate, retry_result.value))
-            agent_logs.append({
-                "agent": "signal_interpreter",
-                "ticker": candidate.ticker,
-                "confidence": retry_result.value.confidence,
-                "attempts": retry_result.attempt_count,
-                **interpreter.last_call_meta,
-            })
-
-    # Sort by confidence, take top picks
-    interpretations.sort(key=lambda x: x[1].confidence, reverse=True)
-
-    approved: list[PipelineResult] = []
-    for candidate, interp in interpretations[:max_picks]:
-        stub_debate = DebateResult(
-            ticker=candidate.ticker,
-            bull_case=DebatePosition(
-                position="BULL", argument=interp.thesis,
-                evidence=interp.key_drivers, weakness="No adversarial review", conviction=interp.confidence,
-            ),
-            bear_case=DebatePosition(
-                position="BEAR", argument="Skipped in hybrid mode.",
-                evidence=[], weakness="N/A", conviction=0,
-            ),
-            rebuttal_summary="Debate skipped in hybrid mode.",
-            final_verdict="PROCEED",
-            net_conviction=interp.confidence,
-            key_risk="No adversarial debate or risk gate review",
-        )
-        stub_gate = RiskGateOutput(
-            ticker=candidate.ticker,
-            decision=GateDecision.APPROVE,
-            reasoning="Auto-approved in hybrid mode based on interpreter confidence.",
-            position_size_pct=5.0,
-        )
-        approved.append(PipelineResult(
-            ticker=candidate.ticker,
-            signal_model=candidate.signal_model,
-            signal_source=getattr(candidate, "signal_source", "mas_official"),
-            direction=candidate.direction,
-            entry_price=candidate.entry_price,
-            stop_loss=interp.suggested_stop or candidate.stop_loss,
-            target_1=interp.suggested_target or candidate.target_1,
-            target_2=candidate.target_2,
-            holding_period=interp.timeframe_days or candidate.holding_period,
-            confidence=interp.confidence,
-            interpretation=interp,
-            debate=stub_debate,
-            risk_gate=stub_gate,
-            features=candidate.persisted_features(),
-            max_entry_price=getattr(candidate, "max_entry_price", None),
-            also_in_mas=getattr(candidate, "also_in_mas", False),
-            suppressed_by_cross_model_ranking=getattr(
-                candidate, "suppressed_by_cross_model_ranking", False,
-            ),
-        ))
-
-    return PipelineRun(
-        run_date=date.today(),
-        regime=regime_context.get("regime", "unknown"),
-        regime_details=regime_context,
-        candidates_scored=len(ranked),
-        interpreted=len(interpretations),
-        debated=0,
-        approved=approved,
-        vetoed=[],
-        agent_logs=agent_logs,
-    )
-
-
 async def _load_validation_history_cards(execution_mode: str) -> dict:
     """Load validation history scoped to the active execution mode."""
     from src.output.performance import build_validation_card_from_history
@@ -868,20 +629,6 @@ async def _run_pipeline_core(
 
     # --- Pipeline health report (accumulated throughout the run) ---
     pipeline_health = PipelineHealthReport(run_date=today)
-
-    # --- Pre-fetch: kick off engine collection in background ---
-    # Engine collection (Gemini STST local runner, KooCore-D HTTP) runs heavy
-    # DB queries that stall under contention with the main pipeline's Polygon
-    # OHLCV fetches. By starting it concurrently with Steps 1-9, the engine
-    # queries run while the main pipeline does Polygon/LLM work instead of after.
-    engine_prefetch_task: asyncio.Task | None = None
-    if settings.cross_engine_enabled:
-        from src.engines.collector import collect_engine_results
-        engine_prefetch_task = asyncio.create_task(
-            collect_engine_results(target_date=today, collection_time="morning"),
-            name="engine_prefetch",
-        )
-        logger.info("Engine collection pre-fetch started (runs concurrently with Steps 1-9)")
 
     # --- Step 1: Macro context and regime detection (preliminary, breadth added after OHLCV) ---
     logger.info("Step 1: Fetching macro context...")
@@ -1153,6 +900,24 @@ async def _run_pipeline_core(
         fmp_endpoint_status.get("endpoints", {}),
     )
 
+    # PEAD (paper trial, default off): fetch today's earnings surprises while the
+    # aggregator is still alive, keyed by ticker, for use in Step 5. One calendar
+    # call covers all reporters.
+    pead_surprise_by_ticker: dict[str, float] = {}
+    if settings.pead_enabled:
+        try:
+            from src.signals.post_earnings_drift import eps_surprise_pct
+            cal = await aggregator.fmp.get_earnings_calendar(today, today)
+            for row in cal or []:
+                sym = str(row.get("symbol", "")).upper()
+                sp = eps_surprise_pct(row.get("epsActual"), row.get("epsEstimated"))
+                if sym and sp is not None:
+                    pead_surprise_by_ticker[sym] = sp
+            logger.info("PEAD: %d reporters with computable surprise on %s",
+                        len(pead_surprise_by_ticker), today)
+        except Exception as e:
+            logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
+
     # Release news data and aggregator — no longer needed after Step 4
     del news_by_ticker
     news_by_ticker = None
@@ -1237,13 +1002,33 @@ async def _run_pipeline_core(
             sniper_sig = score_sniper(
                 ticker, df, feat,
                 regime=regime_assessment.regime.value,
+                spy_df=spy_df,
                 atr_pct_floor=settings.sniper_atr_pct_floor,
                 stop_atr_mult=settings.sniper_stop_atr_mult,
                 target_atr_mult=settings.sniper_target_atr_mult,
                 holding_period=settings.sniper_holding_period,
             )
-            if sniper_sig:
+            # Enforce the configured minimum score as a post-score gate, matching
+            # the backtest's scan_sniper (`if sig.score < min_score: continue`).
+            # Without this, live admitted signals down to the internal 60/65 floor
+            # while the backtest baseline required 70.
+            if sniper_sig and sniper_sig.score >= settings.sniper_min_score:
                 all_signals.append(sniper_sig)
+
+        # Post-earnings drift (paper trial, default off): long a fresh earnings beat.
+        if settings.pead_enabled and pead_surprise_by_ticker:
+            from src.signals.post_earnings_drift import score_post_earnings_drift
+            pead_sig = score_post_earnings_drift(
+                ticker, df, feat,
+                earnings_surprise_pct=pead_surprise_by_ticker.get(ticker.upper()),
+                regime=regime_assessment.regime.value,
+                min_surprise=settings.pead_min_surprise,
+                stop_atr_mult=settings.pead_stop_atr_mult,
+                target_atr_mult=settings.pead_target_atr_mult,
+                holding_period=settings.pead_holding_period,
+            )
+            if pead_sig:
+                all_signals.append(pead_sig)
 
         # Catalyst model — disabled: depends on sparse earnings calendar data
         # (days_to_earnings is None for most tickers → timing_score=0 → filtered).
@@ -1399,24 +1184,30 @@ async def _run_pipeline_core(
     logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
     mr_manual_result = None
 
-    if execution_mode == ExecutionMode.QUANT_ONLY:
-        pipeline_result = _build_quant_only_result(
-            ranked, regime_context, max_picks=settings.max_final_picks,
+    if execution_mode != ExecutionMode.QUANT_ONLY:
+        logger.error(
+            "execution_mode=%s is not supported (LLM stack removed); "
+            "falling back to quant_only.", execution_mode.value,
         )
-    elif execution_mode == ExecutionMode.HYBRID:
-        pipeline_result = await _run_hybrid_pipeline(
-            ranked, regime_context, run_id=run_id,
-            max_picks=settings.max_final_picks,
+    # Concurrent sniper-position risk cap: sniper's true edge is thin (see the
+    # truth matrix — the 82% backtest was a fill artifact), and the validated
+    # 18%-drawdown risk profile assumed a max of sniper_max_positions concurrent
+    # sniper trades. Enforce that live by only admitting sniper picks up to the
+    # remaining open slots.
+    open_sniper = await _count_open_sniper_positions()
+    sniper_slots = max(0, settings.sniper_max_positions - open_sniper)
+    if open_sniper:
+        logger.info(
+            "Sniper concurrency: %d open, %d of %d slots free",
+            open_sniper, sniper_slots, settings.sniper_max_positions,
         )
-    else:
-        from src.agents.orchestrator import run_agent_pipeline
-        pipeline_result = await run_agent_pipeline(
-            candidates=ranked,
-            regime_context=regime_context,
-            run_id=run_id,
-        )
+    pipeline_result = _build_quant_only_result(
+        ranked, regime_context, max_picks=settings.max_final_picks,
+        max_sniper=sniper_slots,
+    )
 
     if mr_manual_ranked:
+        # mr_manual sleeve is mean-reversion only — no sniper cap needed.
         mr_manual_result = _build_quant_only_result(
             mr_manual_ranked,
             regime_context,
@@ -1426,40 +1217,8 @@ async def _run_pipeline_core(
         for pick in mr_manual_result.approved:
             pick.also_in_mas = pick.ticker in official_tickers
 
-    # --- Step 7a: Divergence Ledger — freeze quant baseline and compute divergences ---
-    divergence_records = []
-    if execution_mode != ExecutionMode.QUANT_ONLY:
-        try:
-            quant_baseline_result = _build_quant_only_result(
-                ranked, regime_context, max_picks=settings.max_final_picks,
-            )
-            config_hash_str = json.dumps(
-                _json_safe({"min_price": settings.min_price,
-                            "min_adv": settings.min_avg_daily_volume,
-                            "top_n": settings.top_n_for_interpretation,
-                            "max_picks": settings.max_final_picks}),
-                sort_keys=True,
-            )
-            quant_baseline = freeze_quant_baseline(
-                ranked=ranked,
-                max_picks=settings.max_final_picks,
-                regime=regime_assessment.regime.value,
-                config_hash=hashlib.md5(config_hash_str.encode()).hexdigest(),
-            )
-            divergence_records = compute_divergences(
-                quant_baseline=quant_baseline,
-                agentic_result=pipeline_result,
-                agent_logs=pipeline_result.agent_logs,
-            )
-            if divergence_records:
-                logger.info(
-                    "Divergence ledger: %d events — %s",
-                    len(divergence_records),
-                    ", ".join(f"{d.event_type.value}({d.ticker})" for d in divergence_records),
-                )
-        except Exception as e:
-            logger.error("Divergence ledger failed (non-fatal): %s", e)
-            divergence_records = []
+    # Divergence ledger removed with the LLM overlay — quant_only has no
+    # agentic result to diverge from, so no divergence events are produced.
 
     # Agent review envelope
     agent_review_envelope = StageEnvelope(
@@ -1778,6 +1537,8 @@ async def _run_pipeline_core(
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
 
+        _exit_config_snapshot = build_exit_config_snapshot(settings)
+
         for pick in picks_to_persist:
             signal = Signal(
                 run_date=today,
@@ -1796,7 +1557,7 @@ async def _run_pipeline_core(
                 risk_gate_decision=pick.risk_gate.decision.value,
                 risk_gate_reasoning=pick.risk_gate.reasoning,
                 regime=regime_assessment.regime.value,
-                features=_json_safe(pick.features),
+                features=_json_safe({**(pick.features or {}), "exit_config": _exit_config_snapshot}),
                 max_entry_price=pick.max_entry_price,
                 also_in_mas=pick.also_in_mas,
                 suppressed_by_cross_model_ranking=pick.suppressed_by_cross_model_ranking,
@@ -1834,32 +1595,6 @@ async def _run_pipeline_core(
                 cost_usd=log.get("cost_usd"),
             ))
 
-        # Persist divergence events
-        for drec in divergence_records:
-            session.add(DivergenceEvent(
-                run_id=run_id,
-                run_date=today,
-                ticker=drec.ticker,
-                event_type=drec.event_type.value,
-                execution_mode=execution_mode.value,
-                quant_rank=drec.quant_rank,
-                agentic_rank=drec.agentic_rank,
-                quant_size=drec.quant_size,
-                agentic_size=drec.agentic_size,
-                quant_score=drec.quant_score,
-                agentic_score=drec.agentic_score,
-                reason_codes=drec.reason_codes,
-                llm_cost_usd=drec.llm_cost_usd,
-                confidence=drec.confidence,
-                regime=regime_assessment.regime.value,
-                quant_baseline_snapshot=_json_safe(quant_baseline) if divergence_records else None,
-                quant_entry_price=drec.quant_entry_price,
-                quant_stop_loss=drec.quant_stop_loss,
-                quant_target_1=drec.quant_target_1,
-                quant_holding_period=drec.quant_holding_period,
-                quant_direction=drec.quant_direction,
-                outcome_resolved=False,
-            ))
 
         # Persist near-miss records
         if hasattr(pipeline_result, 'near_misses'):
@@ -2024,20 +1759,6 @@ async def _run_pipeline_core(
     except Exception as alert_exc:
         logger.error("Step 9 Telegram alert failed (non-fatal): %s", alert_exc)
 
-    # --- Steps 10-14: Cross-Engine Integration ---
-    await _run_cross_engine_steps(
-        today=today,
-        run_id=run_id,
-        regime_context={
-            "regime": regime_assessment.regime.value,
-            "confidence": regime_assessment.confidence,
-            "vix": regime_context.get("vix"),
-        },
-        screener_picks=picks_for_alert,
-        settings=settings,
-        engine_prefetch_task=engine_prefetch_task,
-        collection_time="morning",
-    )
 
     logger.info(
         "Pipeline complete in %.1fs: %d picks, %d stage envelopes, run_id=%s",
@@ -2061,6 +1782,31 @@ async def _get_recent_signals(days: int = 7) -> list[dict]:
     except Exception as e:
         logger.warning("Failed to fetch recent signals for cooldown: %s", e)
         return []
+
+
+async def _count_open_sniper_positions() -> int:
+    """Count currently-open sniper positions (official sleeve).
+
+    Used to enforce the concurrent sniper-position risk cap. Fail-safe: on any
+    DB error return 0 so a transient failure widens the cap rather than blocking
+    the pipeline.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(func.count())
+                .select_from(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == True,  # noqa: E712
+                    Signal.signal_model == "sniper",
+                    Signal.signal_source == "mas_official",
+                )
+            )
+            return int(result.scalar() or 0)
+    except Exception as e:
+        logger.warning("Failed to count open sniper positions (cap disabled this run): %s", e)
+        return 0
 
 
 async def _check_and_record_decay(gov: GovernanceContext) -> None:
@@ -2117,996 +1863,6 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
         logger.warning("Decay check failed: %s", e)
 
 
-def _validate_cross_engine_pick_risk(pick: dict) -> tuple[bool, str]:
-    """Require complete long-side risk parameters for cross-engine picks."""
-    ticker = str(pick.get("ticker", "")).upper().strip()
-    if not ticker:
-        return False, "missing ticker"
-    if ticker in {"CASH", "USD", "USDT", "USDC", "NONE", "N/A", "NA"}:
-        return False, f"{ticker}: non-tradable placeholder ticker"
-    if not re.fullmatch(r"[A-Z][A-Z0-9.\-]{0,9}", ticker):
-        return False, f"{ticker}: invalid ticker format"
-
-    entry = pick.get("entry_price")
-    stop = pick.get("stop_loss")
-    target = pick.get("target_price")
-
-    if entry is None or entry <= 0:
-        return False, f"{ticker}: invalid entry_price={entry}"
-    if stop is None or stop <= 0:
-        return False, f"{ticker}: missing/invalid stop_loss={stop}"
-    if target is None or target <= 0:
-        return False, f"{ticker}: missing/invalid target_price={target}"
-    if not (stop < entry < target):
-        return False, (
-            f"{ticker}: invalid ordering stop/entry/target "
-            f"({stop}, {entry}, {target})"
-        )
-    return True, ""
-
-
-async def _run_cross_engine_steps(
-    today: date,
-    run_id: str,
-    regime_context: dict,
-    screener_picks: list[dict],
-    settings,
-    engine_prefetch_task: asyncio.Task | None = None,
-    collection_time: Literal["morning", "evening"] = "morning",
-) -> None:
-    """Steps 10-14: Cross-engine integration pipeline.
-
-    Step 10: Collect external engine results (3 parallel HTTP calls)
-    Step 11: Resolve previous day's engine pick outcomes → update credibility weights
-    Step 12: Deterministic regime weight adjustment (replaces LLM verifier)
-    Step 13: Deterministic portfolio synthesis (replaces LLM synthesizer)
-    Step 14: Save to DB + send Telegram cross-engine alert
-    """
-    if not settings.cross_engine_enabled:
-        logger.info("Cross-engine integration disabled, skipping steps 10-14")
-        return
-
-    from src.engines.collector import collect_engine_results
-    from src.engines.credibility import (
-        compute_credibility_snapshot,
-        compute_weighted_picks,
-    )
-    from src.engines.regime_gate import apply_regime_strategy_gate
-    from src.engines.outcome_resolver import resolve_engine_outcomes
-    from src.engines.deterministic_synthesizer import (
-        deterministic_regime_weight_adjust,
-        synthesize_deterministic,
-    )
-    from src.db.models import (
-        ExternalEngineResult,
-        ExternalEngineResultRevision,
-        EnginePickOutcome,
-        CrossEngineSynthesis,
-        EngineRun,
-    )
-
-    try:
-        # --- Step 10: Collect external engine results ---
-        _engine_fetch_started = datetime.now(timezone.utc)
-        if engine_prefetch_task is not None:
-            logger.info("Step 10: Awaiting pre-fetched engine results...")
-            engine_results, failed_engines = await engine_prefetch_task
-        else:
-            logger.info("Step 10: Collecting external engine results...")
-            engine_results, failed_engines = await collect_engine_results(
-                target_date=today,
-                collection_time=collection_time,
-            )
-        _engine_fetch_finished = datetime.now(timezone.utc)
-        _engine_fetch_duration_ms = int(
-            (_engine_fetch_finished - _engine_fetch_started).total_seconds() * 1000
-        )
-
-        sent_drop_alert = await maybe_send_engine_drop_alert(
-            failed_engines=failed_engines,
-            engines_reporting=len(engine_results),
-            run_date=today,
-            success_engine_names=[er.engine_name for er in engine_results],
-            settings=settings,
-            send_alert_fn=send_alert,
-        )
-        failure_stats = _summarize_engine_failures(failed_engines)
-        if sent_drop_alert:
-            logger.warning(
-                "Step 10 engine-drop alert sent: %d engine(s) failed",
-                len(failed_engines),
-            )
-
-        if not engine_results:
-            logger.info("No external engine results available, recording degraded synthesis state")
-            from src.data.dataset_verification import verify_cross_engine
-            cross_health = verify_cross_engine(engine_results=[], regime_context=regime_context)
-            cross_health_dict = _json_safe(cross_health.to_dict())
-            cross_health_dict["engine_failure_stats"] = failure_stats
-            cross_health_dict["engines_reporting"] = 0
-            cross_health_dict["engines_failed"] = failure_stats.get("total_failed", 0)
-
-            async with get_session() as session:
-                existing_synth = await session.execute(
-                    select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
-                )
-                row = existing_synth.scalar_one_or_none()
-                summary = (
-                    "No external engine results passed validation this cycle. "
-                    "Cross-engine synthesis skipped and marked degraded."
-                )
-                if row:
-                    row.convergent_tickers = []
-                    row.portfolio_recommendation = []
-                    row.regime_consensus = summary
-                    row.engines_reporting = 0
-                    row.executive_summary = summary
-                    row.verifier_notes = {"skipped": "no_engine_results"}
-                    row.credibility_weights = {}
-                    row.cross_engine_health = cross_health_dict
-                else:
-                    session.add(CrossEngineSynthesis(
-                        run_date=today,
-                        convergent_tickers=[],
-                        portfolio_recommendation=[],
-                        regime_consensus=summary,
-                        engines_reporting=0,
-                        executive_summary=summary,
-                        verifier_notes={"skipped": "no_engine_results"},
-                        credibility_weights={},
-                        cross_engine_health=cross_health_dict,
-                    ))
-            return
-
-        # Store raw results in DB (true upsert + immutable revision trail)
-        async with get_session() as session:
-            for er in engine_results:
-                try:
-                    engine_run_date = date.fromisoformat(er.run_date)
-                except ValueError:
-                    logger.warning(
-                        "Engine %s returned invalid run_date '%s'; falling back to %s",
-                        er.engine_name, er.run_date, today,
-                    )
-                    engine_run_date = today
-
-                payload_dict = _json_safe(er.model_dump())
-                payload_hash = _stable_payload_hash(payload_dict)
-                source_run_ts = _parse_engine_run_timestamp(er.run_timestamp)
-                if source_run_ts is None:
-                    logger.warning(
-                        "Engine %s returned unparseable run_timestamp '%s'",
-                        er.engine_name,
-                        er.run_timestamp,
-                    )
-
-                # Check for existing result row for this engine/date.
-                existing = await session.execute(
-                    select(ExternalEngineResult).where(
-                        ExternalEngineResult.engine_name == er.engine_name,
-                        ExternalEngineResult.run_date == engine_run_date,
-                    )
-                )
-                existing_row = existing.scalar_one_or_none()
-
-                # Upsert metadata row.
-                if existing_row:
-                    new_revision = (existing_row.ingest_revision or 1) + 1
-                    existing_row.ingest_revision = new_revision
-                    existing_row.status = er.status
-                    existing_row.regime = er.regime
-                    existing_row.picks_count = len(er.picks)
-                    existing_row.payload = payload_dict
-                    existing_row.source_run_timestamp = source_run_ts
-                    existing_row.source_payload_hash = payload_hash
-                    existing_row.last_ingested_at = datetime.now(timezone.utc)
-                    engine_result_id = existing_row.id
-                else:
-                    new_revision = 1
-                    row = ExternalEngineResult(
-                        engine_name=er.engine_name,
-                        run_date=engine_run_date,
-                        status=er.status,
-                        regime=er.regime,
-                        picks_count=len(er.picks),
-                        ingest_revision=new_revision,
-                        source_run_timestamp=source_run_ts,
-                        source_payload_hash=payload_hash,
-                        last_ingested_at=datetime.now(timezone.utc),
-                        payload=payload_dict,
-                    )
-                    session.add(row)
-                    await session.flush()
-                    engine_result_id = row.id
-
-                # Append immutable revision snapshot for rerun auditability.
-                session.add(ExternalEngineResultRevision(
-                    engine_result_id=engine_result_id,
-                    engine_name=er.engine_name,
-                    run_date=engine_run_date,
-                    revision=new_revision,
-                    status=er.status,
-                    regime=er.regime,
-                    picks_count=len(er.picks),
-                    source_run_timestamp=source_run_ts,
-                    source_payload_hash=payload_hash,
-                    payload=payload_dict,
-                ))
-                logger.info(
-                    "Engine %s upserted for %s at revision=%d (hash=%s)",
-                    er.engine_name,
-                    engine_run_date,
-                    new_revision,
-                    payload_hash[:12],
-                )
-
-                # Upsert per-pick outcomes for this engine/date.
-                # If any outcomes are already resolved, preserve them for historical integrity.
-                existing_pick_rows = (
-                    await session.execute(
-                        select(EnginePickOutcome).where(
-                            EnginePickOutcome.engine_name == er.engine_name,
-                            EnginePickOutcome.run_date == engine_run_date,
-                        )
-                    )
-                ).scalars().all()
-                resolved_rows = sum(1 for row in existing_pick_rows if row.outcome_resolved)
-                if resolved_rows > 0:
-                    logger.warning(
-                        "Engine %s rerun for %s has %d resolved pick outcomes; "
-                        "preserving existing outcomes and skipping pick refresh",
-                        er.engine_name,
-                        engine_run_date,
-                        resolved_rows,
-                    )
-                    continue
-
-                if existing_pick_rows:
-                    await session.execute(
-                        delete(EnginePickOutcome).where(
-                            EnginePickOutcome.engine_name == er.engine_name,
-                            EnginePickOutcome.run_date == engine_run_date,
-                        )
-                    )
-
-                seen_tickers: set[str] = set()
-                for pick in er.picks:
-                    ticker_key = str(pick.ticker).upper()
-                    if ticker_key in seen_tickers:
-                        logger.warning(
-                            "Engine %s returned duplicate ticker %s for %s; "
-                            "keeping first occurrence only",
-                            er.engine_name,
-                            ticker_key,
-                            engine_run_date,
-                        )
-                        continue
-                    seen_tickers.add(ticker_key)
-                    session.add(EnginePickOutcome(
-                        engine_name=er.engine_name,
-                        run_date=engine_run_date,
-                        ticker=pick.ticker,
-                        strategy=pick.strategy,
-                        entry_price=pick.entry_price,
-                        target_price=pick.target_price,
-                        stop_loss=pick.stop_loss,
-                        confidence=pick.confidence,
-                        holding_period_days=pick.holding_period_days,
-                        is_paper_trade=True,  # default paper; flipped after synthesis
-                    ))
-
-        logger.info("Step 10 complete: %d engines reported", len(engine_results))
-
-        # Persist EngineRun rows for both successes and failures
-        try:
-            async with get_session() as run_session:
-                # Determine attempt number for today
-                from sqlalchemy import func as sa_func
-                existing_attempts = (
-                    await run_session.execute(
-                        select(sa_func.max(EngineRun.attempt)).where(
-                            EngineRun.run_date == today,
-                        )
-                    )
-                ).scalar_one_or_none()
-                attempt_num = (existing_attempts or 0) + 1
-
-                # Build engine_name -> engine_result_id map from upsert loop
-                engine_result_ids: dict[str, int] = {}
-                for er in engine_results:
-                    try:
-                        erd = date.fromisoformat(er.run_date)
-                    except ValueError:
-                        erd = today
-                    existing = (
-                        await run_session.execute(
-                            select(ExternalEngineResult.id).where(
-                                ExternalEngineResult.engine_name == er.engine_name,
-                                ExternalEngineResult.run_date == erd,
-                            )
-                        )
-                    ).scalar_one_or_none()
-                    if existing is not None:
-                        engine_result_ids[er.engine_name] = existing
-
-                # Insert success rows
-                for er in engine_results:
-                    p_hash = _stable_payload_hash(_json_safe(er.model_dump()))
-                    run_session.add(EngineRun(
-                        engine_name=er.engine_name,
-                        run_date=today,
-                        attempt=attempt_num,
-                        status="success",
-                        fetch_started_at=_engine_fetch_started,
-                        fetch_finished_at=_engine_fetch_finished,
-                        fetch_duration_ms=_engine_fetch_duration_ms,
-                        picks_count=len(er.picks),
-                        candidates_screened=er.candidates_screened,
-                        payload_hash=p_hash,
-                        engine_result_id=engine_result_ids.get(er.engine_name),
-                    ))
-
-                # Insert failure rows
-                _failure_status_map = {
-                    "exception": "failed",
-                    "no_output": "no_output",
-                    "no_response": "no_response",
-                    "quality_rejected": "quality_rejected",
-                }
-                for failure in failed_engines:
-                    error_message = failure.reason_code
-                    if failure.detail:
-                        error_message = f"{failure.reason_code}: {failure.detail}"
-                    run_session.add(EngineRun(
-                        engine_name=failure.engine_name,
-                        run_date=today,
-                        attempt=attempt_num,
-                        status=_failure_status_map.get(failure.kind, "failed"),
-                        fetch_started_at=_engine_fetch_started,
-                        fetch_finished_at=_engine_fetch_finished,
-                        fetch_duration_ms=_engine_fetch_duration_ms,
-                        error_message=error_message[:2000] if error_message else None,
-                    ))
-
-            logger.info(
-                "Persisted %d engine run rows (attempt=%d)",
-                len(engine_results) + len(failed_engines),
-                attempt_num,
-            )
-        except Exception:
-            logger.exception("Failed to persist engine_runs rows (non-fatal)")
-
-        # --- Step 10b: Cross-engine dataset health check ---
-        from src.data.dataset_verification import verify_cross_engine
-        cross_health = verify_cross_engine(
-            engine_results=[
-                {
-                    "engine_name": er.engine_name,
-                    "run_date": er.run_date,
-                    "regime": er.regime,
-                    "status": er.status,
-                    "picks": [p.model_dump() for p in er.picks],
-                    "candidates_screened": getattr(er, "candidates_screened", 0),
-                }
-                for er in engine_results
-            ],
-            regime_context=regime_context,
-        )
-        logger.info(
-            "Cross-engine health: %s (%d/%d checks passed)",
-            "PASS" if cross_health.passed else "WARN",
-            cross_health.passed_count, cross_health.total_checks,
-        )
-        if not cross_health.passed:
-            for w in cross_health.warnings:
-                logger.warning("CrossEngine: %s", w)
-
-        # --- Step 11: Resolve previous engine pick outcomes ---
-        logger.info("Step 11: Resolving previous engine pick outcomes...")
-        feedback = await resolve_engine_outcomes()
-
-        # Resolve shadow track outcomes alongside engine outcomes
-        if settings.shadow_tracks_enabled:
-            try:
-                from src.experiments.outcome_resolver import resolve_shadow_track_outcomes
-                shadow_resolved = await resolve_shadow_track_outcomes()
-                if shadow_resolved:
-                    logger.info("Step 11: resolved %d shadow track picks", shadow_resolved)
-            except Exception as e:
-                logger.error("Shadow track outcome resolution failed (non-fatal): %s", e)
-        for fb in feedback:
-            logger.info(
-                "Engine feedback — %s: %d resolved, %.0f%% hit rate, avg return %+.1f%%",
-                fb["engine_name"], fb["resolved_count"],
-                fb["hit_rate"] * 100, fb["avg_return_pct"],
-            )
-
-        # Compute credibility snapshot
-        cred_snapshot = await compute_credibility_snapshot()
-
-        # Build flat pick list for weighting (strict risk-schema gate)
-        all_picks: list[dict] = []
-        dropped_by_engine: dict[str, int] = defaultdict(int)
-        drop_reasons: dict[str, list[str]] = defaultdict(list)
-        for er in engine_results:
-            for pick in er.picks:
-                normalized_pick = {
-                    "engine_name": er.engine_name,
-                    "ticker": pick.ticker,
-                    "strategy": pick.strategy,
-                    "entry_price": pick.entry_price,
-                    "stop_loss": pick.stop_loss,
-                    "target_price": pick.target_price,
-                    "confidence": pick.confidence,
-                    "holding_period_days": pick.holding_period_days,
-                    "thesis": pick.thesis,
-                    "risk_factors": pick.risk_factors,
-                }
-                ok, reason = _validate_cross_engine_pick_risk(normalized_pick)
-                if not ok:
-                    dropped_by_engine[er.engine_name] += 1
-                    if len(drop_reasons[er.engine_name]) < 5:
-                        drop_reasons[er.engine_name].append(reason)
-                    continue
-                all_picks.append(normalized_pick)
-
-        # Add screener's own picks with engine_name="mas_quant_screener"
-        for sp in screener_picks:
-            normalized_pick = {
-                "engine_name": "mas_quant_screener",
-                "ticker": sp.get("ticker", ""),
-                "strategy": sp.get("signal_model", ""),
-                "entry_price": sp.get("entry_price", 0),
-                "stop_loss": sp.get("stop_loss", 0),
-                "target_price": sp.get("target_1", 0),
-                "confidence": sp.get("confidence", 0),
-                "holding_period_days": sp.get("holding_period", sp.get("holding_period_days", 3)),
-                "thesis": sp.get("thesis", ""),
-                "risk_factors": [],
-            }
-            ok, reason = _validate_cross_engine_pick_risk(normalized_pick)
-            if not ok:
-                dropped_by_engine["mas_quant_screener"] += 1
-                if len(drop_reasons["mas_quant_screener"]) < 5:
-                    drop_reasons["mas_quant_screener"].append(reason)
-                continue
-            all_picks.append(normalized_pick)
-
-        for engine_name, dropped in sorted(dropped_by_engine.items()):
-            logger.warning(
-                "Step 11 risk gate dropped %d picks from %s due to missing/invalid risk params: %s",
-                dropped,
-                engine_name,
-                drop_reasons.get(engine_name, [])[:3],
-            )
-
-        # Enrich picks with sector metadata for sector convergence analysis
-        from src.engines.sector_lookup import enrich_picks_with_sector
-        enrich_picks_with_sector(all_picks)
-
-        logger.info("Step 11 complete: %d picks collected for weighting", len(all_picks))
-
-        # --- Step 12: Deterministic regime weight adjustment ---
-        # Replaces LLM verifier — applies regime-based weight multipliers
-        # deterministically. Zero LLM cost.
-        verifier_output_dict = {}
-        logger.info("Step 12: Applying deterministic regime weight adjustments...")
-        regime = regime_context.get("regime", "unknown")
-        weight_adjustments = deterministic_regime_weight_adjust(
-            cred_snapshot.engine_stats, regime,
-        )
-        verifier_output_dict = {"weight_adjustments": weight_adjustments, "mode": "deterministic"}
-        logger.info(
-            "Step 12 complete: %d weight adjustments applied (deterministic)",
-            len(weight_adjustments),
-        )
-
-        # Compute weighted picks AFTER verifier adjustments are applied
-        weighted_picks = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
-        weighted_picks, gate_meta = apply_regime_strategy_gate(
-            weighted_picks=weighted_picks,
-            regime=regime_context.get("regime", "unknown"),
-            settings=settings,
-        )
-        if gate_meta.get("applied"):
-            logger.info(
-                "Step 11.5 regime strategy gate applied: regime=%s, dropped=%d, penalized=%d",
-                gate_meta.get("regime"),
-                gate_meta.get("dropped", 0),
-                gate_meta.get("penalized", 0),
-            )
-            if gate_meta.get("dropped_tickers"):
-                logger.warning(
-                    "Step 11.5 dropped bear-regime-incompatible tickers: %s",
-                    gate_meta["dropped_tickers"][:5],
-                )
-        logger.info("Weighted picks computed: %d tickers ranked", len(weighted_picks))
-
-        cred_weights_dict = {
-            name: {"weight": s.weight, "hit_rate": s.hit_rate, "resolved_picks": s.resolved_picks}
-            for name, s in cred_snapshot.engine_stats.items()
-        }
-
-        # --- Step 12.5: Execution Gates (pre-synthesis safety checks) ---
-        gate_blocked = False
-        gate_reason = ""
-        engines_reporting = len(engine_results)
-        if settings.min_engines_for_trade > 0 and engines_reporting < settings.min_engines_for_trade:
-            gate_blocked = True
-            gate_reason = (
-                f"Only {engines_reporting}/{settings.min_engines_for_trade} engines reporting"
-            )
-            logger.warning("Execution gate BLOCKED: %s", gate_reason)
-        elif settings.require_known_regime and regime_context.get("regime") == "unknown":
-            gate_blocked = True
-            gate_reason = "Regime is UNKNOWN and require_known_regime is enabled"
-            logger.warning("Execution gate BLOCKED: %s", gate_reason)
-
-        # --- Step 13: Deterministic Portfolio Synthesis ---
-        # Replaces LLM synthesizer — builds portfolio from weighted picks
-        # using pure deterministic logic. Zero LLM cost.
-        if gate_blocked:
-            from src.agents.cross_engine_synthesizer import SynthesizerOutput
-
-            logger.warning("Step 13 skipped: execution gate blocked — %s", gate_reason)
-            synthesis = SynthesizerOutput(
-                convergent_picks=[],
-                unique_picks=[],
-                portfolio=[],
-                regime_consensus=regime_context.get("regime", "unknown"),
-                executive_summary=f"NO TRADES THIS CYCLE — {gate_reason}.",
-            )
-        elif weighted_picks:
-            logger.info("Step 13: Running deterministic synthesis...")
-            synthesis = synthesize_deterministic(
-                weighted_picks=weighted_picks,
-                regime=regime_context.get("regime", "unknown"),
-                engines_reporting=len(engine_results),
-                engine_results=engine_results,
-            )
-        else:
-            from src.agents.cross_engine_synthesizer import SynthesizerOutput
-
-            logger.warning("Step 13 skipped: no risk-defined weighted picks available")
-            synthesis = SynthesizerOutput(
-                convergent_picks=[],
-                unique_picks=[],
-                portfolio=[],
-                regime_consensus=(
-                    "No risk-defined picks available after stop/target validation "
-                    "across reporting engines."
-                ),
-                executive_summary=(
-                    "NO TRADES THIS CYCLE — all candidate picks failed strict risk "
-                    "parameter checks (missing/invalid stop-loss or target)."
-                ),
-            )
-
-        # Final safety gate: drop any synthesized portfolio positions with
-        # non-tradable/invalid ticker or invalid risk tuple.
-        if synthesis.portfolio:
-            valid_portfolio = []
-            dropped_portfolio_reasons: list[str] = []
-            for pos in synthesis.portfolio:
-                ok, reason = _validate_cross_engine_pick_risk(pos.model_dump())
-                if ok:
-                    valid_portfolio.append(pos)
-                else:
-                    if len(dropped_portfolio_reasons) < 5:
-                        dropped_portfolio_reasons.append(reason)
-            if len(valid_portfolio) != len(synthesis.portfolio):
-                logger.warning(
-                    "Step 13 safety gate dropped %d synthesized positions due to "
-                    "invalid ticker/risk schema: %s",
-                    len(synthesis.portfolio) - len(valid_portfolio),
-                    dropped_portfolio_reasons,
-                )
-                synthesis.portfolio = valid_portfolio
-
-        # Backfill regime_consensus from the actual regime detection when the
-        # LLM left it empty or returned a non-standard label.
-        _KNOWN_REGIMES = {"bull", "bear", "choppy", "unknown"}
-        if (
-            not synthesis.regime_consensus
-            or synthesis.regime_consensus.lower() not in _KNOWN_REGIMES
-        ):
-            detected = regime_context.get("regime", "unknown")
-            synthesis.regime_consensus = detected
-
-        # Low-overlap guardrail: when there are no convergent picks, force a
-        # smaller, lighter portfolio rather than allowing broad unique-only risk.
-        if not synthesis.convergent_picks and synthesis.portfolio:
-            max_positions = max(1, int(settings.low_overlap_max_positions))
-            max_total_weight = max(1.0, float(settings.low_overlap_max_total_weight_pct))
-
-            original_count = len(synthesis.portfolio)
-            original_total_weight = sum(float(p.weight_pct) for p in synthesis.portfolio)
-
-            # Keep only top-N positions in declared order.
-            if original_count > max_positions:
-                synthesis.portfolio = synthesis.portfolio[:max_positions]
-
-            # Cap total gross exposure in low-overlap sessions.
-            new_total_weight = sum(float(p.weight_pct) for p in synthesis.portfolio)
-            if new_total_weight > max_total_weight:
-                scale = max_total_weight / new_total_weight
-                for p in synthesis.portfolio:
-                    p.weight_pct = round(float(p.weight_pct) * scale, 2)
-
-            logger.info(
-                "Low-overlap guardrail applied: convergent=0, positions %d→%d, "
-                "weight %.1f%%→%.1f%%",
-                original_count,
-                len(synthesis.portfolio),
-                original_total_weight,
-                sum(float(p.weight_pct) for p in synthesis.portfolio),
-            )
-
-        logger.info(
-            "Step 13 complete: %d convergent, %d portfolio positions",
-            len(synthesis.convergent_picks), len(synthesis.portfolio),
-        )
-
-        # --- Step 13.5: Capital Guardian (portfolio-level risk defense) ---
-        guardian_summary = ""
-        if settings.guardian_enabled:
-            from src.portfolio.capital_guardian import (
-                compute_portfolio_risk_state,
-                compute_guardian_verdict,
-                apply_guardian_to_portfolio,
-                format_guardian_summary,
-            )
-
-            logger.info("Step 13.5: Running Capital Guardian...")
-            risk_state = await compute_portfolio_risk_state()
-            guardian_verdict = compute_guardian_verdict(
-                risk_state=risk_state,
-                regime=regime_context.get("regime", "bull"),
-            )
-
-            # Apply sizing adjustments to the synthesis portfolio
-            original_portfolio = [p.model_dump() for p in synthesis.portfolio]
-            adjusted_portfolio = apply_guardian_to_portfolio(
-                original_portfolio, guardian_verdict
-            )
-
-            # Update synthesis with guardian-adjusted portfolio
-            from src.agents.cross_engine_synthesizer import PortfolioPosition
-            synthesis.portfolio = [
-                PortfolioPosition.model_validate(p) for p in adjusted_portfolio
-            ]
-
-            guardian_summary = format_guardian_summary(guardian_verdict)
-
-            if guardian_verdict.halt:
-                logger.warning("Capital Guardian HALTED trading: %s", guardian_verdict.halt_reason)
-                # Keep persisted/alerted summary strictly consistent with guardian-enforced no-trade state.
-                synthesis.executive_summary = (
-                    f"HALT — NO TRADES THIS CYCLE. {guardian_verdict.halt_reason}. "
-                    "All candidate positions are blocked until risk state improves."
-                )
-            else:
-                # Reconcile narrative with executed portfolio after guardian sizing.
-                original_total_weight = sum(float(p.get("weight_pct", 0.0)) for p in original_portfolio)
-                adjusted_total_weight = sum(float(p.get("weight_pct", 0.0)) for p in adjusted_portfolio)
-                changed = (
-                    len(original_portfolio) != len(adjusted_portfolio)
-                    or round(original_total_weight, 2) != round(adjusted_total_weight, 2)
-                )
-                if changed:
-                    tickers = ", ".join(
-                        f"{p['ticker']} ({p.get('weight_pct', 0):.2f}%)"
-                        for p in adjusted_portfolio
-                    ) if adjusted_portfolio else "none"
-                    synthesis.executive_summary = (
-                        f"Guardian-adjusted allocation: {len(adjusted_portfolio)} positions, "
-                        f"{adjusted_total_weight:.1f}% gross exposure. Active names: {tickers}."
-                    )
-                logger.info(
-                    "Step 13.5 complete: sizing=%.0f%%, %d→%d positions, warnings=%d",
-                    guardian_verdict.sizing_multiplier * 100,
-                    len(original_portfolio), len(adjusted_portfolio),
-                    len(guardian_verdict.warnings),
-                )
-        else:
-            logger.info("Step 13.5: Capital Guardian disabled, skipping")
-
-        # --- Step 13.6: Flip paper-trade flag for portfolio picks ---
-        # All engine picks default to is_paper_trade=True. Flip to False for
-        # picks that made the final synthesized portfolio.
-        portfolio_tickers = {pos.ticker.upper() for pos in synthesis.portfolio}
-        if portfolio_tickers:
-            async with get_session() as session:
-                from sqlalchemy import update
-                count_result = await session.execute(
-                    update(EnginePickOutcome)
-                    .where(
-                        EnginePickOutcome.run_date == today,
-                        EnginePickOutcome.ticker.in_(portfolio_tickers),
-                        EnginePickOutcome.is_paper_trade == True,  # noqa: E712
-                    )
-                    .values(is_paper_trade=False)
-                )
-                flipped = count_result.rowcount
-                if flipped:
-                    logger.info(
-                        "Step 13.6: marked %d engine pick(s) as live trades: %s",
-                        flipped, sorted(portfolio_tickers),
-                    )
-
-        # --- Step 13.7: Shadow tracks (paper-only parallel experiments) ---
-        if settings.shadow_tracks_enabled:
-            try:
-                from src.experiments.runner import run_shadow_tracks
-
-                logger.info("Step 13.7: Running shadow tracks...")
-                await run_shadow_tracks(
-                    all_picks=all_picks,
-                    cred_snapshot_stats=cred_snapshot.engine_stats,
-                    regime_context=regime_context,
-                    run_date=today,
-                )
-            except Exception as e:
-                logger.error("Step 13.7 shadow tracks failed (non-fatal): %s", e, exc_info=True)
-
-        # --- Step 14: Save to DB + send Telegram ---
-        logger.info("Step 14: Saving synthesis and sending alert...")
-        synthesis_dict = _json_safe(synthesis.model_dump())
-        should_send_alert = True
-        alert_sent = False
-        alert_meta = {
-            "is_update": False,
-            "revision": 1,
-            "run_date": str(today),
-            "change_reasons": ["initial synthesis for date"],
-        }
-        alert_hash = _stable_payload_hash(
-            _cross_engine_alert_fingerprint_payload(
-                run_date=today,
-                regime_consensus=synthesis.regime_consensus,
-                engines_reporting=len(engine_results),
-                convergent_picks=synthesis_dict.get("convergent_picks"),
-                portfolio=synthesis_dict.get("portfolio"),
-                executive_summary=synthesis.executive_summary,
-            )
-        )
-        prior_alert_hash: str | None = None
-        prior_alert_revision = 0
-        async with get_session() as session:
-            # Check for existing synthesis (re-run safety)
-            existing_synth = await session.execute(
-                select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
-            )
-            row = existing_synth.scalar_one_or_none()
-            cross_health_dict = _json_safe(cross_health.to_dict())
-            cross_health_dict["engine_failure_stats"] = failure_stats
-            cross_health_dict["engines_reporting"] = len(engine_results)
-            cross_health_dict["engines_failed"] = failure_stats.get("total_failed", 0)
-            if row:
-                existing_state = _read_cross_engine_alert_state(row.cross_engine_health)
-                prev_hash_raw = existing_state.get("last_alert_hash")
-                if isinstance(prev_hash_raw, str) and prev_hash_raw:
-                    prior_alert_hash = prev_hash_raw
-                else:
-                    # Backward compatibility for historical rows before alert_state metadata.
-                    prior_alert_hash = _stable_payload_hash(
-                        _cross_engine_alert_fingerprint_payload(
-                            run_date=today,
-                            regime_consensus=row.regime_consensus,
-                            engines_reporting=row.engines_reporting,
-                            convergent_picks=row.convergent_tickers,
-                            portfolio=row.portfolio_recommendation,
-                            executive_summary=row.executive_summary,
-                        )
-                    )
-                try:
-                    prior_alert_revision = int(existing_state.get("last_alert_revision") or 0)
-                except (TypeError, ValueError):
-                    prior_alert_revision = 0
-
-                try:
-                    previous_synthesis_revision = int(existing_state.get("synthesis_revision") or 0)
-                except (TypeError, ValueError):
-                    previous_synthesis_revision = 0
-                synthesis_revision = max(1, previous_synthesis_revision + 1)
-
-                change_reasons = _cross_engine_change_reasons(
-                    existing_synthesis=row,
-                    new_synthesis=synthesis_dict,
-                    new_engines_reporting=len(engine_results),
-                )
-                should_send_alert = alert_hash != prior_alert_hash
-                if should_send_alert and not change_reasons:
-                    change_reasons = ["synthesis details updated"]
-
-                logger.info(
-                    "Step 14 dedupe: hash %s→%s rev=%d send=%s reasons=%s",
-                    (prior_alert_hash or "")[:12],
-                    alert_hash[:12],
-                    synthesis_revision,
-                    should_send_alert,
-                    change_reasons,
-                )
-                alert_meta = {
-                    "is_update": should_send_alert and prior_alert_hash is not None,
-                    "revision": synthesis_revision,
-                    "run_date": str(today),
-                    "supersedes_revision": (
-                        prior_alert_revision if prior_alert_revision > 0 else None
-                    ),
-                    "change_reasons": change_reasons[:3],
-                }
-                cross_health_dict["alert_state"] = {
-                    "synthesis_revision": synthesis_revision,
-                    "current_payload_hash": alert_hash,
-                    "last_alert_hash": prior_alert_hash,
-                    "last_alert_revision": prior_alert_revision,
-                    "last_alert_sent_at": existing_state.get("last_alert_sent_at"),
-                }
-                row.convergent_tickers = synthesis_dict.get("convergent_picks")
-                row.portfolio_recommendation = synthesis_dict.get("portfolio")
-                row.regime_consensus = synthesis.regime_consensus
-                row.engines_reporting = len(engine_results)
-                row.executive_summary = synthesis.executive_summary
-                row.verifier_notes = verifier_output_dict
-                row.credibility_weights = cred_weights_dict
-                row.cross_engine_health = cross_health_dict
-            else:
-                cross_health_dict["alert_state"] = {
-                    "synthesis_revision": 1,
-                    "current_payload_hash": alert_hash,
-                    "last_alert_hash": None,
-                    "last_alert_revision": 0,
-                    "last_alert_sent_at": None,
-                }
-                session.add(CrossEngineSynthesis(
-                    run_date=today,
-                    convergent_tickers=synthesis_dict.get("convergent_picks"),
-                    portfolio_recommendation=synthesis_dict.get("portfolio"),
-                    regime_consensus=synthesis.regime_consensus,
-                    engines_reporting=len(engine_results),
-                    executive_summary=synthesis.executive_summary,
-                    verifier_notes=verifier_output_dict,
-                    credibility_weights=cred_weights_dict,
-                    cross_engine_health=cross_health_dict,
-                ))
-
-        # Send cross-engine Telegram alert
-        if should_send_alert:
-            cross_alert = format_cross_engine_alert(
-                synthesis={
-                    **synthesis_dict,
-                    "engines_reporting": len(engine_results),
-                    "alert_meta": alert_meta,
-                },
-                credibility=cred_weights_dict,
-            )
-            if guardian_summary:
-                cross_alert += guardian_summary
-            alert_sent = await send_alert(cross_alert)
-            if alert_sent:
-                sent_at = datetime.now(timezone.utc)
-                _cross_engine_last_alert[str(today)] = sent_at
-                async with get_session() as session:
-                    existing_synth = await session.execute(
-                        select(CrossEngineSynthesis).where(CrossEngineSynthesis.run_date == today)
-                    )
-                    row = existing_synth.scalar_one_or_none()
-                    if row:
-                        persisted_health = _json_safe(row.cross_engine_health or {})
-                        persisted_state = _read_cross_engine_alert_state(persisted_health)
-                        persisted_state["current_payload_hash"] = alert_hash
-                        persisted_state["last_alert_hash"] = alert_hash
-                        persisted_state["last_alert_revision"] = int(alert_meta.get("revision") or 1)
-                        persisted_state["last_alert_sent_at"] = sent_at.isoformat()
-                        persisted_state["last_alert_change_reasons"] = alert_meta.get("change_reasons") or []
-                        persisted_health["alert_state"] = persisted_state
-                        row.cross_engine_health = persisted_health
-            else:
-                logger.warning(
-                    "Step 14: cross-engine alert send failed for %s; state remains unsent",
-                    today,
-                )
-        else:
-            logger.info(
-                "Step 14: synthesis unchanged for %s; suppressing duplicate cross-engine alert",
-                today,
-            )
-
-        logger.info(
-            "Steps 10-14 complete: cross-engine synthesis saved; alert_sent=%s",
-            alert_sent,
-        )
-
-    except Exception as e:
-        logger.error("Cross-engine steps failed (non-fatal): %s", e, exc_info=True)
-
-
-async def run_weekly_meta_review() -> None:
-    """Weekly meta-analyst review — runs Sunday at 7:00 PM ET."""
-    from src.agents.meta_analyst import MetaAnalystAgent
-    from src.output.performance import get_performance_summary
-
-    logger.info("Starting weekly meta-review...")
-    today = date.today()
-
-    performance_data = await get_performance_summary(days=30)
-
-    if performance_data.get("total_signals", 0) == 0:
-        logger.info("No closed trades in past 30 days — skipping meta-review")
-        return
-
-    # Enrich with divergence stats (fail-closed)
-    try:
-        from src.output.performance import get_divergence_stats
-        divergence_stats = await get_divergence_stats(days=30)
-        if divergence_stats is not None:
-            performance_data["divergence"] = divergence_stats
-            logger.info(
-                "Divergence stats added: %d events, %d resolved",
-                divergence_stats.get("total_events", 0),
-                divergence_stats.get("total_resolved", 0),
-            )
-    except Exception as e:
-        logger.warning("Failed to fetch divergence stats (non-fatal): %s", e)
-
-    # Enrich with near-miss stats (fail-closed)
-    try:
-        from src.output.performance import get_near_miss_stats
-        near_miss_stats = await get_near_miss_stats(days=30)
-        if near_miss_stats is not None:
-            performance_data["near_misses"] = near_miss_stats
-            logger.info(
-                "Near-miss stats added: %d near-misses",
-                near_miss_stats.get("total_near_misses", 0),
-            )
-    except Exception as e:
-        logger.warning("Failed to fetch near-miss stats (non-fatal): %s", e)
-
-    analyst = MetaAnalystAgent()
-    result = await analyst.analyze(performance_data)
-
-    if result:
-        async with get_session() as session:
-            session.add(AgentLog(
-                run_date=today,
-                agent_name="meta_analyst",
-                model_used=analyst.model,
-                ticker=None,
-                output_data=result.model_dump(),
-            ))
-
-        logger.info(
-            "Meta-review complete: win_rate=%.2f, biases=%s, adjustments=%d",
-            result.win_rate,
-            result.biases_detected,
-            len(result.threshold_adjustments),
-        )
-
-        # Process threshold adjustments (dry-run by default)
-        if result.threshold_adjustments:
-            from src.governance.threshold_manager import process_adjustments
-            adj_result = process_adjustments(
-                adjustments=result.threshold_adjustments,
-                run_date=str(today),
-                dry_run=True,
-            )
-            logger.info(
-                "Threshold proposals: %d applied (dry-run), %d rejected",
-                len(adj_result.applied), len(adj_result.rejected),
-            )
-            async with get_session() as session:
-                session.add(AgentLog(
-                    run_date=today,
-                    agent_name="threshold_manager",
-                    model_used="deterministic",
-                    ticker=None,
-                    output_data=adj_result.snapshot.to_dict(),
-                ))
-    else:
-        logger.warning("Meta-review returned no result")
-
-
 async def run_afternoon_check() -> None:
     """Afternoon position check — runs at 4:30 PM ET."""
     logger.info("Running afternoon position check...")
@@ -3154,149 +1910,6 @@ async def run_afternoon_check() -> None:
                         drift_report.total_resolved)
     except Exception as e:
         logger.error("Drift check failed (non-fatal): %s", e)
-
-
-async def run_evening_collection() -> None:
-    """Evening cross-engine collection — runs at 9:30 PM ET.
-
-    Standalone trigger for Steps 10-14 (cross-engine integration) that
-    doesn't require the full morning pipeline to re-run.  Fetches today's
-    screener picks from the DB so the synthesizer sees them alongside the
-    external engines.
-    """
-    import uuid
-
-    requested_date = _trading_date_et()
-    context_date = requested_date
-    settings = get_settings()
-    run_id = f"eve-{uuid.uuid4().hex[:8]}"
-
-    logger.info("=" * 60)
-    logger.info(
-        "Starting evening cross-engine collection for %s (run_id=%s)",
-        requested_date,
-        run_id,
-    )
-    logger.info("=" * 60)
-
-    if not settings.cross_engine_enabled:
-        logger.info("Cross-engine integration disabled, nothing to do")
-        return
-
-    # Fetch screener context from DB. If requested date has no morning run yet
-    # (for example manual trigger after midnight ET), fall back to latest prior
-    # run_date so synthesis stays aligned with a real pipeline cycle.
-    screener_picks: list[dict] = []
-    regime_context: dict = {"regime": "unknown", "confidence": 0.0, "vix": None}
-    try:
-        async with get_session() as session:
-            # Get the latest DailyRun for the requested date.
-            daily_run_result = await session.execute(
-                select(DailyRun).where(DailyRun.run_date == requested_date)
-                .order_by(DailyRun.id.desc()).limit(1)
-            )
-            daily_run = daily_run_result.scalar_one_or_none()
-            if not daily_run:
-                fallback_daily_run_result = await session.execute(
-                    select(DailyRun)
-                    .where(DailyRun.run_date <= requested_date)
-                    .order_by(DailyRun.run_date.desc(), DailyRun.id.desc())
-                    .limit(1)
-                )
-                daily_run = fallback_daily_run_result.scalar_one_or_none()
-                if daily_run:
-                    context_date = daily_run.run_date
-                    logger.warning(
-                        "No morning run for requested date %s; using fallback context date %s",
-                        requested_date,
-                        context_date,
-                    )
-            if daily_run and daily_run.regime:
-                regime_context["regime"] = daily_run.regime
-                if daily_run.regime_details:
-                    regime_context["confidence"] = daily_run.regime_details.get("confidence", 0.0)
-                    regime_context["vix"] = daily_run.regime_details.get("vix")
-
-            # Get approved picks from the aligned context date.
-            artifact_result = await session.execute(
-                select(PipelineArtifact).where(
-                    PipelineArtifact.run_date == context_date,
-                    PipelineArtifact.stage == StageName.FINAL_OUTPUT.value,
-                ).order_by(PipelineArtifact.id.desc()).limit(1)
-            )
-            artifact = artifact_result.scalar_one_or_none()
-            if artifact and artifact.payload:
-                for pick in artifact.payload.get("picks", []):
-                    targets = pick.get("targets") or []
-                    screener_picks.append({
-                        "ticker": pick.get("ticker", ""),
-                        "direction": pick.get("direction", "LONG"),
-                        "entry_price": pick.get("entry_price", pick.get("entry_zone", 0)),
-                        "stop_loss": pick.get("stop_loss", 0),
-                        "target_1": pick.get("target_1", targets[0] if targets else 0),
-                        "confidence": pick.get("confidence", 0),
-                        "signal_model": pick.get("signal_model", ""),
-                        "thesis": pick.get("thesis", ""),
-                        "holding_period": pick.get("holding_period", pick.get("holding_period_days", 3)),
-                    })
-    except Exception as e:
-        logger.warning("Failed to load today's screener context: %s", e)
-
-    # Fallback: derive regime from engine-reported regimes when DailyRun is missing
-    if regime_context["regime"] == "unknown":
-        try:
-            from src.db.models import ExternalEngineResult
-
-            async with get_session() as session:
-                engine_rows = await session.execute(
-                    select(ExternalEngineResult.regime)
-                    .where(
-                        ExternalEngineResult.run_date == context_date,
-                        ExternalEngineResult.status == "success",
-                        ExternalEngineResult.regime.isnot(None),
-                    )
-                )
-                engine_regimes = [r[0].lower() for r in engine_rows.all() if r[0]]
-                if engine_regimes:
-                    from collections import Counter
-                    regime_votes = Counter(engine_regimes)
-                    consensus_regime = regime_votes.most_common(1)[0][0]
-                    logger.info(
-                        "Regime fallback from %d engine(s): %s (votes: %s)",
-                        len(engine_regimes), consensus_regime, dict(regime_votes),
-                    )
-                    regime_context["regime"] = consensus_regime
-        except Exception as e:
-            logger.warning("Failed engine-regime fallback: %s", e)
-
-    if regime_context["regime"] == "unknown" or not screener_picks:
-        logger.warning(
-            "Evening collection running with incomplete morning context: "
-            "requested_date=%s, context_date=%s, regime=%s, screener_picks=%d. "
-            "Morning pipeline may not have run or failed today. "
-            "Cross-engine synthesis will proceed with external engines only.",
-            requested_date, context_date, regime_context["regime"], len(screener_picks),
-        )
-    else:
-        logger.info(
-            "Evening collection context: requested_date=%s, context_date=%s, regime=%s, %d screener picks",
-            requested_date, context_date, regime_context["regime"], len(screener_picks),
-        )
-
-    await _run_cross_engine_steps(
-        today=context_date,
-        run_id=run_id,
-        regime_context=regime_context,
-        screener_picks=screener_picks,
-        settings=settings,
-        collection_time="evening",
-    )
-
-    logger.info(
-        "Evening cross-engine collection complete for requested_date=%s (context_date=%s)",
-        requested_date,
-        context_date,
-    )
 
 
 def start_scheduler() -> None:
@@ -3361,196 +1974,15 @@ def start_scheduler() -> None:
         coalesce=True,
     )
 
-    # Evening cross-engine collection (9:30 PM ET Mon-Fri)
-    # Runs AFTER all external engines finish (latest by ~8:15 PM ET)
-    if settings.cross_engine_enabled:
-        scheduler.add_job(
-            run_evening_collection,
-            CronTrigger(
-                hour=21,
-                minute=30,
-                day_of_week="mon-fri",
-                timezone="US/Eastern",
-            ),
-            id="evening_collection",
-            name="Evening Cross-Engine Collection",
-            max_instances=1,
-            misfire_grace_time=3600,
-            coalesce=True,
-        )
-    else:
-        logger.info("Evening cross-engine collection disabled (cross_engine_enabled=False)")
-
-    # Weekly meta-analyst review (Sunday 7 PM ET)
-    scheduler.add_job(
-        run_weekly_meta_review,
-        CronTrigger(
-            day_of_week="sun",
-            hour=19,
-            minute=0,
-            timezone="US/Eastern",
-        ),
-        id="weekly_meta_review",
-        name="Weekly Meta-Analyst Review",
-        max_instances=1,
-        misfire_grace_time=3600,
-        coalesce=True,
-    )
-
     scheduler.start()
     for job in scheduler.get_jobs():
         logger.info("Scheduled job '%s' — next run: %s", job.name, job.next_run_time)
-    evening_msg = ", evening=21:30" if settings.cross_engine_enabled else ""
     logger.info(
-        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d%s, weekly=Sun 19:00 (all ET, Mon-Fri)",
+        "Scheduler started: morning=%02d:%02d, afternoon=%02d:%02d (all ET, Mon-Fri)",
         settings.morning_run_hour, settings.morning_run_minute,
         settings.afternoon_check_hour, settings.afternoon_check_minute,
-        evening_msg,
     )
     return scheduler
-
-
-async def _debug_engines() -> None:
-    """Debug mode: collect all engine results, run deterministic synthesis, print comparison."""
-    import json as _json
-    from pathlib import Path
-
-    from src.engines.collector import collect_engine_results
-    from src.engines.credibility import compute_credibility_snapshot, compute_weighted_picks
-    from src.engines.deterministic_synthesizer import (
-        deterministic_regime_weight_adjust,
-        synthesize_deterministic,
-    )
-
-    today = date.today()
-    logger.info("=" * 60)
-    logger.info("DEBUG ENGINES MODE — %s", today)
-    logger.info("=" * 60)
-
-    # Collect
-    engine_results, failed_engines = await collect_engine_results(target_date=today)
-    logger.info("Collected from %d engines (%d failed)", len(engine_results), len(failed_engines))
-
-    # Credibility
-    cred_snapshot = await compute_credibility_snapshot()
-
-    # Build picks
-    all_picks: list[dict] = []
-    engine_summary: dict[str, dict] = {}
-    for er in engine_results:
-        tickers = [p.ticker for p in er.picks]
-        engine_summary[er.engine_name] = {
-            "picks": tickers,
-            "regime": er.regime,
-            "candidates_screened": er.candidates_screened,
-            "status": er.status,
-        }
-        for pick in er.picks:
-            all_picks.append({
-                "engine_name": er.engine_name,
-                "ticker": pick.ticker,
-                "strategy": pick.strategy,
-                "entry_price": pick.entry_price,
-                "stop_loss": pick.stop_loss,
-                "target_price": pick.target_price,
-                "confidence": pick.confidence,
-                "holding_period_days": pick.holding_period_days,
-                "thesis": pick.thesis,
-                "risk_factors": pick.risk_factors,
-            })
-
-    weighted = compute_weighted_picks(all_picks, cred_snapshot.engine_stats)
-
-    # Deterministic regime weight adjustment
-    cred_stats_dict = {
-        name: {
-            "hit_rate": s.hit_rate, "weight": s.weight,
-            "resolved_picks": s.resolved_picks, "brier_score": s.brier_score,
-        }
-        for name, s in cred_snapshot.engine_stats.items()
-    }
-    weight_adjustments = deterministic_regime_weight_adjust(
-        cred_snapshot.engine_stats, "debug",
-    )
-
-    # Deterministic synthesis
-    synthesis = synthesize_deterministic(
-        weighted_picks=weighted,
-        regime="debug",
-        engines_reporting=len(engine_results),
-    )
-
-    # Build debug output
-    debug_output = {
-        "date": str(today),
-        "engines": engine_summary,
-        "credibility": cred_stats_dict,
-        "weighted_picks": weighted,
-        "weight_adjustments": weight_adjustments,
-        "synthesis": _json_safe(synthesis.model_dump()),
-    }
-
-    # Print summary
-    print("\n" + "=" * 60)
-    print("CROSS-ENGINE DEBUG SUMMARY")
-    print("=" * 60)
-    print(f"\nEngines reporting: {len(engine_results)}")
-    for name, info in engine_summary.items():
-        print(f"\n  {name}:")
-        print(f"    Regime: {info['regime']}")
-        print(f"    Picks: {', '.join(info['picks']) or 'none'}")
-    print("\nWeighted picks (top 10):")
-    for wp in weighted[:10]:
-        print(
-            f"  {wp['ticker']}: score={wp['combined_score']:.0f}, "
-            f"engines={wp['engine_count']}, convergence={wp['convergence_multiplier']:.1f}x"
-        )
-    print("\nSynthesis portfolio:")
-    for pos in synthesis.portfolio:
-        print(f"  {pos.ticker}: {pos.weight_pct:.0f}% [{pos.source}]")
-    print(f"\nExecutive summary: {synthesis.executive_summary}")
-
-    # Save debug JSON
-    debug_dir = Path("outputs/debug")
-    debug_dir.mkdir(parents=True, exist_ok=True)
-    debug_path = debug_dir / f"cross_engine_{today}.json"
-    debug_path.write_text(_json.dumps(debug_output, indent=2, default=str))
-    logger.info("Debug output saved to %s", debug_path)
-
-
-async def _run_reliability_report() -> None:
-    """CLI mode: compute and print engine reliability report."""
-    from src.engines.reliability_report import compute_reliability_report, format_reliability_report
-
-    lookback = 90
-    import sys
-    for arg in sys.argv:
-        if arg.startswith("--lookback="):
-            try:
-                lookback = int(arg.split("=", 1)[1])
-            except ValueError:
-                pass
-
-    report = await compute_reliability_report(lookback_days=lookback)
-    print(format_reliability_report(report))
-
-
-async def _run_agreement_report() -> None:
-    """CLI mode: compute and print engine agreement analysis."""
-    from src.engines.agreement_analysis import compute_agreement_report, format_agreement_report
-
-    lookback = 90
-    # Allow --lookback=N override
-    import sys
-    for arg in sys.argv:
-        if arg.startswith("--lookback="):
-            try:
-                lookback = int(arg.split("=", 1)[1])
-            except ValueError:
-                pass
-
-    report = await compute_agreement_report(lookback_days=lookback)
-    print(format_agreement_report(report))
 
 
 async def main():
@@ -3579,7 +2011,7 @@ async def main():
                 settings.execution_mode = mode_value
                 logger.info("Execution mode overridden to: %s", mode_value)
             except ValueError:
-                logger.error("Invalid mode '%s'. Use: quant_only, hybrid, agentic_full", mode_value)
+                logger.error("Invalid mode '%s'. Use: quant_only", mode_value)
                 return
         elif arg == "--mode" and sys.argv.index(arg) + 1 < len(sys.argv):
             mode_value = sys.argv[sys.argv.index(arg) + 1]
@@ -3589,7 +2021,7 @@ async def main():
                 settings.execution_mode = mode_value
                 logger.info("Execution mode overridden to: %s", mode_value)
             except ValueError:
-                logger.error("Invalid mode '%s'. Use: quant_only, hybrid, agentic_full", mode_value)
+                logger.error("Invalid mode '%s'. Use: quant_only", mode_value)
                 return
 
     if "--run-now" in sys.argv:
@@ -3598,22 +2030,6 @@ async def main():
 
     if "--check-now" in sys.argv:
         await run_afternoon_check()
-        return
-
-    if "--meta-now" in sys.argv:
-        await run_weekly_meta_review()
-        return
-
-    if "--debug-engines" in sys.argv:
-        await _debug_engines()
-        return
-
-    if "--agreement-report" in sys.argv:
-        await _run_agreement_report()
-        return
-
-    if "--reliability-report" in sys.argv:
-        await _run_reliability_report()
         return
 
     # Start scheduler + API server

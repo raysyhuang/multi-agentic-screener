@@ -1,7 +1,7 @@
-"""Threshold Manager — applies meta-analyst suggestions with guardrails.
+"""Threshold Manager — applies threshold-adjustment suggestions with guardrails.
 
-Closes the feedback loop: MetaAnalystAgent suggests adjustments,
-ThresholdManager validates, versions, and optionally applies them.
+Validates, versions, and optionally applies ThresholdAdjustment proposals from
+the governance layer.
 
 Default: dry-run mode (human reviews before applying).
 """
@@ -15,7 +15,7 @@ from datetime import datetime
 from pathlib import Path
 from typing import Any
 
-from src.agents.base import ThresholdAdjustment
+from src.pipeline_types import ThresholdAdjustment
 from src.config import get_settings
 
 logger = logging.getLogger(__name__)

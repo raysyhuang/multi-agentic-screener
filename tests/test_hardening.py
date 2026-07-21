@@ -1,7 +1,7 @@
 """Tests for production hardening changes.
 
-Covers: config validation, API auth, circuit breaker, budget enforcement,
-quality flags, LIVE gate, health check, Telegram resilience.
+Covers: config validation, API auth, circuit breaker, LIVE gate,
+health check, Telegram resilience.
 """
 
 from __future__ import annotations
@@ -16,33 +16,7 @@ import pytest
 
 
 class TestConfigValidation:
-    """Test model name validation and API key validation."""
-
-    def test_known_model_names_pass(self):
-        """Valid model names should not log warnings."""
-        from src.config import Settings
-        import logging
-
-        with patch.object(logging.getLogger("src.config"), "warning") as mock_warn:
-            Settings(
-                signal_interpreter_model="claude-sonnet-4-5-20250929",
-                adversarial_model="gpt-5.2",
-                planner_model="gpt-5.2",
-                verifier_model="gpt-5.2",
-            )
-            # No warnings should be logged for known models
-            for call in mock_warn.call_args_list:
-                assert "Unrecognized model" not in str(call)
-
-    def test_unknown_model_name_warns(self):
-        """Unknown model names should log a warning."""
-        from src.config import Settings
-        import logging
-
-        with patch.object(logging.getLogger("src.config"), "warning") as mock_warn:
-            Settings(adversarial_model="gpt-99-turbo")
-            mock_warn.assert_called()
-            assert "gpt-99-turbo" in str(mock_warn.call_args)
+    """Test API key validation for the quant-only pipeline."""
 
     def test_validate_keys_quant_only_needs_data_key(self):
         """quant_only mode needs at least one data provider key."""
@@ -66,37 +40,6 @@ class TestConfigValidation:
             fmp_api_key="",
         )
         s.validate_keys_for_mode()  # Should not raise
-
-    def test_validate_keys_agentic_needs_llm_key(self):
-        """agentic_full mode needs at least one LLM key."""
-        from src.config import Settings
-
-        s = Settings(
-            execution_mode="agentic_full",
-            polygon_api_key="pk_test",
-            anthropic_api_key="",
-            openai_api_key="",
-        )
-        with pytest.raises(ValueError, match="anthropic_api_key or openai_api_key"):
-            s.validate_keys_for_mode()
-
-    def test_validate_keys_agentic_ok_with_both(self):
-        """agentic_full mode passes with both data + LLM keys."""
-        from src.config import Settings
-
-        s = Settings(
-            execution_mode="agentic_full",
-            polygon_api_key="pk_test",
-            anthropic_api_key="sk-ant-test",
-        )
-        s.validate_keys_for_mode()  # Should not raise
-
-    def test_default_retry_on_low_quality_is_true(self):
-        """agent_retry_on_low_quality should default to True."""
-        from src.config import Settings
-
-        s = Settings()
-        assert s.agent_retry_on_low_quality is True
 
     def test_force_live_defaults_false(self):
         """force_live should default to False."""
@@ -248,74 +191,6 @@ class TestCircuitBreaker:
         assert stats["polygon"]["consecutive_failures"] == 1
         assert stats["polygon"]["total_failures"] == 1
         assert stats["fmp"]["total_successes"] == 1
-
-
-# ── Budget Enforcement ───────────────────────────────────────────────────────
-
-
-class TestBudgetEnforcement:
-    """Test budget checking in the orchestrator."""
-
-    def test_budget_exhausted_error(self):
-        from src.agents.orchestrator import BudgetExhaustedError
-
-        err = BudgetExhaustedError(spent=2.50, budget=2.00, stage="pre_debate")
-        assert err.spent == 2.50
-        assert err.budget == 2.00
-        assert err.stage == "pre_debate"
-        assert "pre_debate" in str(err)
-
-    def test_check_budget_raises_when_exceeded(self):
-        from src.agents.orchestrator import _check_budget, BudgetExhaustedError
-
-        memory_service = MagicMock()
-        memory_service.working.total_cost_usd = 2.50
-
-        with pytest.raises(BudgetExhaustedError) as exc_info:
-            _check_budget(memory_service, budget_usd=2.00, stage="test_stage")
-        assert exc_info.value.stage == "test_stage"
-
-    def test_check_budget_ok_when_under(self):
-        from src.agents.orchestrator import _check_budget
-
-        memory_service = MagicMock()
-        memory_service.working.total_cost_usd = 1.50
-
-        # Should not raise
-        _check_budget(memory_service, budget_usd=2.00, stage="test_stage")
-
-    def test_check_budget_skips_when_no_budget(self):
-        from src.agents.orchestrator import _check_budget
-
-        memory_service = MagicMock()
-        memory_service.working.total_cost_usd = 999.99
-
-        # No budget set — should not raise
-        _check_budget(memory_service, budget_usd=None, stage="test_stage")
-
-
-# ── Quality Warning Flag ─────────────────────────────────────────────────────
-
-
-class TestQualityWarning:
-    """Test that low-quality interpretations get quality_warning flag."""
-
-    def test_attempt_record_has_quality_warning(self):
-        from src.agents.retry import AttemptRecord, FailureReason
-
-        record = AttemptRecord(
-            attempt_num=1,
-            success=False,
-            failure_reason=FailureReason.LOW_QUALITY,
-            quality_warning=True,
-        )
-        assert record.quality_warning is True
-
-    def test_attempt_record_default_no_warning(self):
-        from src.agents.retry import AttemptRecord
-
-        record = AttemptRecord(attempt_num=1, success=True)
-        assert record.quality_warning is False
 
 
 # ── Telegram Resilience ──────────────────────────────────────────────────────
