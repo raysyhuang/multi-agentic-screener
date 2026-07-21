@@ -3,19 +3,16 @@
 from __future__ import annotations
 
 import logging
-import glob
 import math
-import re
 from collections import Counter
 from contextlib import asynccontextmanager
 from datetime import date
 from pathlib import Path
 
-from fastapi import BackgroundTasks, FastAPI, HTTPException, Query, Request, Response
+from fastapi import FastAPI, HTTPException, Query, Request, Response
 from fastapi.responses import HTMLResponse, FileResponse, JSONResponse
 from fastapi.staticfiles import StaticFiles
 from fastapi.middleware.cors import CORSMiddleware
-import sqlalchemy as sa
 from sqlalchemy import func, select, text
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address

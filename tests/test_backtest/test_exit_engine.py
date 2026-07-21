@@ -103,7 +103,10 @@ def test_same_bar_resolver_can_pick_target():
     ])
     # Minute path: rises to target BEFORE dipping to stop.
     minute = [(99.0, 100.0), (103.5, 104.0), (97.0, 98.0)]  # (low, high) per minute
-    resolver = lambda d, stop, tgt: resolve_first_touch(minute, stop, tgt)
+
+    def resolver(d, stop, tgt):
+        return resolve_first_touch(minute, stop, tgt)
+
     out = walk_exit(bars, 100.0, _params(stop=98.0, target=103.0, same_bar_resolver=resolver))
     assert out.exit_reason == "target"
     assert out.exit_price == 103.0
@@ -115,7 +118,9 @@ def test_same_bar_resolver_none_keeps_conservative_stop():
         (100.0, 101.0, 99.5, 100.5),
         (99.0, 104.0, 97.0, 100.0),
     ])
-    resolver = lambda d, stop, tgt: None
+    def resolver(d, stop, tgt):
+        return None
+
     out = walk_exit(bars, 100.0, _params(stop=98.0, target=103.0, same_bar_resolver=resolver))
     assert out.exit_reason == "stop"
 
