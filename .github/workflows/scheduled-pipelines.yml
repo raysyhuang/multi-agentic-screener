@@ -12,9 +12,12 @@ name: Scheduled Pipelines (GitHub-hosted)
 # DST handling: GitHub Actions cron is UTC-only and cannot follow US/Eastern
 # across daylight-saving changes. For each logical job we register TWO cron
 # lines — one at the EDT (UTC-4) offset and one at the EST (UTC-5) offset — and
-# a guard step below checks the *actual* current Eastern time and skips the run
-# unless it matches the intended Eastern hour. Net effect: exactly one run per
-# scheduled slot, year-round, at the correct Eastern local time.
+# a guard step below runs a line only when its offset matches the CURRENT
+# Eastern timezone (EDT vs EST). Zone-matching is delay-proof: GitHub routinely
+# fires crons 1-2h late, and the previous exact-hour guard silently skipped
+# every late run (all four 2026-07-21 slots were skipped this way — only the
+# Heroku parallel worker actually ran that day). Net effect: exactly one line
+# per slot matches year-round, and it runs whenever GitHub gets around to it.
 #
 # NOTE: scheduled workflows only fire from the repository's DEFAULT branch, so
 # this file must be merged to `main` before the crons take effect. Until then,
@@ -92,17 +95,23 @@ jobs:
             echo "Manual dispatch: pipeline=$PIPELINE"
           else
             SCHED="${{ github.event.schedule }}"
+            # Each schedule line is tied to the timezone offset it was written
+            # for; it runs iff Eastern time is CURRENTLY in that offset. This is
+            # delay-proof (GitHub fires crons 1-2h late routinely) — unlike
+            # exact-hour matching, which silently skipped every late run.
             case "$SCHED" in
-              "0 10 * * 1-5"|"0 11 * * 1-5")   PIPELINE="morning";   TARGET_HOUR=6  ;;
-              "30 20 * * 1-5"|"30 21 * * 1-5") PIPELINE="afternoon"; TARGET_HOUR=16 ;;
+              "0 10 * * 1-5")  PIPELINE="morning";   LINE_ZONE="EDT" ;;
+              "0 11 * * 1-5")  PIPELINE="morning";   LINE_ZONE="EST" ;;
+              "30 20 * * 1-5") PIPELINE="afternoon"; LINE_ZONE="EDT" ;;
+              "30 21 * * 1-5") PIPELINE="afternoon"; LINE_ZONE="EST" ;;
               *) echo "::error::Unknown schedule '$SCHED'"; exit 1 ;;
             esac
-            CUR_HOUR=$(TZ=America/New_York date +%-H)
+            CUR_ZONE=$(TZ=America/New_York date +%Z)
             RUN="true"
-            [ "$CUR_HOUR" != "$TARGET_HOUR" ] && RUN="false"
-            echo "schedule='$SCHED' pipeline=$PIPELINE current_ET_hour=$CUR_HOUR target_hour=$TARGET_HOUR -> run=$RUN"
+            [ "$CUR_ZONE" != "$LINE_ZONE" ] && RUN="false"
+            echo "schedule='$SCHED' pipeline=$PIPELINE line_zone=$LINE_ZONE current_zone=$CUR_ZONE -> run=$RUN"
             if [ "$RUN" != "true" ]; then
-              echo "::notice::Skipping — this cron line is the wrong DST offset for $PIPELINE right now."
+              echo "::notice::Skipping — this cron line is the $LINE_ZONE offset; Eastern is currently $CUR_ZONE."
             fi
           fi
           case "$PIPELINE" in
