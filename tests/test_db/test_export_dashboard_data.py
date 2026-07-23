@@ -101,6 +101,32 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     await engine.dispose()
 
 
+def test_alpha_summary_ci_and_significance():
+    """Bootstrap CI is seeded (reproducible) and flags significance by whether it excludes 0."""
+    import scripts.export_dashboard_data as exp
+
+    # Too few trades → no summary (a 2-trade "edge" is noise).
+    assert exp._alpha_summary([1.0, 2.0]) is None
+    assert exp._alpha_summary([None, None, None]) is None
+
+    # A clearly-positive, tight cluster → CI excludes zero → significant.
+    strong = exp._alpha_summary([2.0, 2.5, 1.8, 2.2, 2.1, 1.9, 2.3, 2.0])
+    assert strong["n"] == 8
+    assert strong["mean"] == pytest.approx(2.1, abs=0.05)
+    assert strong["ci_lo"] > 0 and strong["significant"] is True
+    assert strong["ci_lo"] <= strong["mean"] <= strong["ci_hi"]
+    assert strong["beat_pct"] == 1.0
+
+    # Positive mean but wide spread straddling zero → CI crosses 0 → NOT significant.
+    weak = exp._alpha_summary([5.0, -4.0, 3.0, -3.0, 4.0, -2.0, 1.0, -1.0, 2.0])
+    assert weak["ci_lo"] < 0 < weak["ci_hi"]
+    assert weak["significant"] is False
+
+    # Seeded → identical result on repeat (dashboard number stable across runs).
+    assert exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1]) == \
+        exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1])
+
+
 @pytest.mark.asyncio
 async def test_alpha_none_when_benchmark_unavailable(monkeypatch):
     """No benchmark data (no key / offline) → alpha fields are None, not a crash."""
