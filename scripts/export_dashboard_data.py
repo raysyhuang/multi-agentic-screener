@@ -19,10 +19,55 @@ import asyncio
 import json
 from datetime import date, datetime, timedelta, timezone
 
+import bisect
+from datetime import date as _date
+
 from sqlalchemy import select
 
 from src.db.models import DailyRun, Outcome, Signal
 from src.db.session import get_session
+
+# Benchmarks: SPY = S&P 500 proxy, QQQ = Nasdaq-100 proxy. Per-trade alpha is
+# the pick's return MINUS the benchmark's return over the SAME entry->exit dates
+# — the honest "did I beat just holding the index for those days?" (alpha vs beta),
+# not a buy-and-hold overlay (the strategy sits in cash between short-hold trades).
+BENCHMARKS = {"spy": "SPY", "qqq": "QQQ"}
+
+
+async def _benchmark_closes(days: int) -> dict[str, dict]:
+    """Return {key: {date: close}} for each benchmark over the window, via Polygon.
+    Empty on any failure (no key locally / offline) — alpha fields degrade to None."""
+    out: dict[str, dict] = {}
+    try:
+        from src.data.polygon_client import PolygonClient
+        client = PolygonClient()
+    except Exception:
+        return {k: {} for k in BENCHMARKS}
+    frm = date.today() - timedelta(days=days + 20)
+    to = date.today()
+    for key, ticker in BENCHMARKS.items():
+        try:
+            df = await client.get_ohlcv(ticker, frm, to)
+            out[key] = {r["date"]: float(r["close"]) for _, r in df.iterrows()} if not df.empty else {}
+        except Exception:
+            out[key] = {}
+    return out
+
+
+def _bench_return(closes: dict, entry: _date | None, exit_: _date | None) -> float | None:
+    """Benchmark % return over [entry, exit] using close-to-close, nearest trading
+    day on-or-before each date. None if unavailable."""
+    if not closes or entry is None or exit_ is None:
+        return None
+    days_sorted = sorted(closes)
+    def on_or_before(d):
+        i = bisect.bisect_right(days_sorted, d) - 1
+        return days_sorted[i] if i >= 0 else None
+    de, dx = on_or_before(entry), on_or_before(exit_)
+    if de is None or dx is None:
+        return None
+    c0 = closes[de]
+    return (closes[dx] - c0) / c0 * 100 if c0 else None
 
 # Honest expectation bands (per-trade), from the 2026-07 truth work:
 #  - sniper: truth-matrix Run E (live-faithful fills): ~54.3% WR / +0.54%/trade
@@ -46,8 +91,10 @@ def _stream_key(model: str | None, source: str | None) -> str:
     return f"{model or 'unknown'}|{source or 'unknown'}"
 
 
-async def build_snapshot(days: int = 90) -> dict:
+async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> dict:
     cutoff = date.today() - timedelta(days=days)
+    if bench_closes is None:
+        bench_closes = await _benchmark_closes(days)
 
     async with get_session() as session:
         runs = (await session.execute(
@@ -109,7 +156,7 @@ async def build_snapshot(days: int = 90) -> dict:
             continue
         if o.pnl_pct is None:
             continue
-        trades.setdefault(key, []).append({
+        row = {
             "ticker": o.ticker,
             "signal_date": _iso(s.run_date),
             "entry_date": _iso(o.entry_date),
@@ -120,7 +167,13 @@ async def build_snapshot(days: int = 90) -> dict:
             "mae": o.max_adverse,
             "hold_days": (o.exit_date - o.entry_date).days
                          if (o.exit_date and o.entry_date) else None,
-        })
+        }
+        # Per-trade alpha vs each benchmark over the SAME holding window.
+        for bk, closes in bench_closes.items():
+            br = _bench_return(closes, o.entry_date, o.exit_date)
+            row[f"bench_{bk}"] = round(br, 4) if br is not None else None
+            row[f"alpha_{bk}"] = round(o.pnl_pct - br, 4) if br is not None else None
+        trades.setdefault(key, []).append(row)
     for key in trades:
         trades[key].sort(key=lambda t: (t["exit_date"] or "", t["ticker"]))
 
@@ -153,6 +206,8 @@ async def build_snapshot(days: int = 90) -> dict:
         "skip_counts": skip_counts,
         "run_history": run_history,
         "baselines": BASELINES,
+        "benchmarks": {"spy": "S&P 500 (SPY)", "qqq": "Nasdaq-100 (QQQ)"},
+        "benchmark_available": any(bench_closes.get(k) for k in BENCHMARKS),
     }
 
 
