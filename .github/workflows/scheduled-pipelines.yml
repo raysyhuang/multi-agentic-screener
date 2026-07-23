@@ -53,6 +53,10 @@ jobs:
     name: Run scheduled pipeline
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    outputs:
+      # Whether the pipeline actually ran (vs a DST-guard skip on the duplicate
+      # cron line) — gates the dashboard publish so Pages deploys once per slot.
+      ran: ${{ steps.resolve.outputs.run }}
     env:
       # --- Database (external managed Postgres — replaces Heroku Postgres) ---
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -132,3 +136,42 @@ jobs:
       - name: Run ${{ steps.resolve.outputs.pipeline }} pipeline
         if: steps.resolve.outputs.run == 'true'
         run: python -m src.worker ${{ steps.resolve.outputs.flag }}
+
+  publish-dashboard:
+    name: Publish dashboard to GitHub Pages
+    needs: run-pipeline
+    if: needs.run-pipeline.outputs.ran == 'true'
+    runs-on: ubuntu-latest
+    concurrency:
+      group: mas-pages-deploy
+      cancel-in-progress: false
+    permissions:
+      pages: write
+      id-token: write
+      contents: read
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
+    env:
+      DATABASE_URL: ${{ secrets.DATABASE_URL }}
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install project
+        run: pip install -e .
+      - name: Export dashboard data snapshot
+        run: python scripts/export_dashboard_data.py --out dashboard/data.json
+      - name: Configure Pages
+        uses: actions/configure-pages@v5
+      - name: Upload site
+        uses: actions/upload-pages-artifact@v3
+        with:
+          path: dashboard
+      - name: Deploy to GitHub Pages
+        id: deployment
+        uses: actions/deploy-pages@v4

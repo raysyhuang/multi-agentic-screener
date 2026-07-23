@@ -56,3 +56,4 @@ data/cache/
 
 # Debug outputs
 outputs/
+dashboard/data.json
