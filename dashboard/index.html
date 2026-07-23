@@ -1,0 +1,88 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>MAS — Pipeline Dashboard</title>
+<link rel="stylesheet" href="style.css?v=5">
+<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+</head>
+<body>
+<header class="hero">
+  <div class="container">
+    <nav class="topnav">
+      <span class="brand">MAS <span class="brand-sub">Multi-Agentic Screener</span></span>
+      <div class="navlinks">
+        <a href="#today">Today</a><a href="#performance">Performance</a>
+        <a href="#trades">Trades</a><a href="#system">System</a>
+      </div>
+    </nav>
+    <h1>Pipeline dashboard</h1>
+    <p class="hero-sub" id="hero-sub">Loading snapshot…</p>
+  </div>
+</header>
+
+<main class="container">
+  <section id="today">
+    <h2>Today</h2>
+    <div class="tile-row" id="today-tiles"></div>
+    <div class="card">
+      <h3>Picks <span class="hint">component breakdown shows <em>why</em> each pick scored</span></h3>
+      <div id="picks"></div>
+    </div>
+  </section>
+
+  <section id="performance">
+    <h2>Performance <span class="hint">official and manual-sleeve streams are never blended</span></h2>
+    <div class="card">
+      <h3>Cumulative P&amp;L by stream <span class="hint">sum of per-trade %, closed trades</span></h3>
+      <div id="equity-chart"></div>
+    </div>
+    <div class="card">
+      <h3>Rolling win rate vs honest expectation <span class="hint">15-trade window · band = truth-matrix / reconciliation baseline ±5pp</span></h3>
+      <div class="multiples" id="wr-multiples"></div>
+    </div>
+  </section>
+
+  <section id="trades">
+    <h2>Trade anatomy</h2>
+    <div class="card">
+      <h3>Exit-reason mix by stream</h3>
+      <div id="exit-mix"></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>MFE vs MAE per trade <span class="hint">above the diagonal: had more upside than downside</span></h3>
+        <div id="scatter"></div>
+      </div>
+      <div class="card">
+        <h3>Open positions</h3>
+        <div id="open-positions"></div>
+      </div>
+    </div>
+    <div class="card">
+      <h3>Recent closed trades</h3>
+      <div class="filter-row" id="trade-filters"></div>
+      <div id="trades-table"></div>
+    </div>
+  </section>
+
+  <section id="system">
+    <h2>System</h2>
+    <div class="card">
+      <h3>Run history <span class="hint">a missing weekday = the cron did not run</span></h3>
+      <div id="run-history"></div>
+    </div>
+  </section>
+
+  <footer>
+    <p id="footer-meta"></p>
+    <p class="hint">Baselines are the honest post-truth-matrix numbers, not the retired optimistic labels.
+       Data is a snapshot baked by the pipeline run — no live credentials on this page.</p>
+  </footer>
+</main>
+
+<div id="tooltip" class="tooltip" hidden></div>
+<script type="module" src="app.js?v=6"></script>
+</body>
+</html>
