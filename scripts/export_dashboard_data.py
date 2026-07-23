@@ -54,6 +54,34 @@ async def _benchmark_closes(days: int) -> dict[str, dict]:
     return out
 
 
+def _alpha_summary(alphas: list[float]) -> dict | None:
+    """Per-stream alpha stats with a seeded bootstrap 95% CI of the mean.
+
+    The CI is the anti-over-excitement guard: a positive mean whose CI still
+    crosses zero is a lean, not an established edge (a 64%-beat on n=25 is a
+    coin-flip run away from chance). Seeded so the dashboard number is stable
+    across runs given the same trades.
+    """
+    import random
+    a = [x for x in alphas if x is not None]
+    if len(a) < 3:
+        return None
+    mean = sum(a) / len(a)
+    beat = sum(1 for x in a if x > 0) / len(a)
+    rng = random.Random(20260723)
+    n = len(a)
+    means = sorted(sum(rng.choices(a, k=n)) / n for _ in range(10_000))
+    lo, hi = means[249], means[9749]
+    return {
+        "n": n,
+        "mean": round(mean, 4),
+        "ci_lo": round(lo, 4),
+        "ci_hi": round(hi, 4),
+        "beat_pct": round(beat, 4),
+        "significant": bool(lo > 0 or hi < 0),  # CI excludes zero
+    }
+
+
 def _bench_return(closes: dict, entry: _date | None, exit_: _date | None) -> float | None:
     """Benchmark % return over [entry, exit] using close-to-close, nearest trading
     day on-or-before each date. None if unavailable."""
@@ -177,6 +205,17 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
     for key in trades:
         trades[key].sort(key=lambda t: (t["exit_date"] or "", t["ticker"]))
 
+    # Per-stream alpha summary with bootstrap CI, per benchmark.
+    alpha_summary: dict[str, dict] = {}
+    for key, rows in trades.items():
+        per_bench = {}
+        for bk in BENCHMARKS:
+            s = _alpha_summary([r.get(f"alpha_{bk}") for r in rows])
+            if s:
+                per_bench[bk] = s
+        if per_bench:
+            alpha_summary[key] = per_bench
+
     # --- System: run history + health ---
     run_history = [{
         "date": _iso(r.run_date),
@@ -208,6 +247,7 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         "baselines": BASELINES,
         "benchmarks": {"spy": "S&P 500 (SPY)", "qqq": "Nasdaq-100 (QQQ)"},
         "benchmark_available": any(bench_closes.get(k) for k in BENCHMARKS),
+        "alpha_summary": alpha_summary,
     }
 
 

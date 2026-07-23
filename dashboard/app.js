@@ -281,20 +281,25 @@ function renderCharts(data, streams, keys) {
   if (!data.benchmark_available) {
     if (alphaCard) alphaCard.style.display = "none";
   } else {
+    const summ = data.alpha_summary || {};
     for (const k of keys) {
-      const t = streams[k].filter((u) => u.alpha_spy != null);
-      if (!t.length) continue;
-      const avgS = t.reduce((a, u) => a + u.alpha_spy, 0) / t.length;
-      const beatS = t.filter((u) => u.alpha_spy > 0).length / t.length;
-      const q = streams[k].filter((u) => u.alpha_qqq != null);
-      const avgQ = q.length ? q.reduce((a, u) => a + u.alpha_qqq, 0) / q.length : null;
+      const s = summ[k]?.spy;
+      if (!s) continue;
+      const q = summ[k]?.qqq;
       const d = el("div"); d.className = "tile";
       d.append(Object.assign(el("div"), { className: "k", textContent: `${streamMeta(k).label} — α / trade` }));
-      const v = Object.assign(el("div"), { className: "v", textContent: `${avgS >= 0 ? "+" : ""}${fmt(avgS)}%` });
-      v.style.color = avgS >= 0 ? "var(--success-tx)" : "var(--crit-tx)";
+      // Color by SIGNIFICANCE, not just sign: green/red only when the CI excludes
+      // zero (established); neutral navy when it crosses zero (a lean, not proven).
+      const v = Object.assign(el("div"), { className: "v", textContent: `${s.mean >= 0 ? "+" : ""}${fmt(s.mean)}%` });
+      v.style.color = s.significant ? (s.mean > 0 ? "var(--success-tx)" : "var(--crit-tx)") : "var(--navy)";
       d.append(v);
+      const ci = el("div"); ci.className = "s";
+      ci.style.color = "var(--body)"; ci.style.fontFeatureSettings = '"tnum"';
+      ci.innerHTML = `95% CI [${s.ci_lo >= 0 ? "+" : ""}${fmt(s.ci_lo)}, ${s.ci_hi >= 0 ? "+" : ""}${fmt(s.ci_hi)}]` +
+        (s.significant ? ` <span class="badge ok">✓ excl. 0</span>` : ` <span class="badge neutral">crosses 0</span>`);
+      d.append(ci);
       d.append(Object.assign(el("div"), { className: "s hint",
-        textContent: `vs S&P · beat ${pct(beatS, 0)}${avgQ != null ? ` · vs Nasdaq ${avgQ >= 0 ? "+" : ""}${fmt(avgQ)}%` : ""}` }));
+        textContent: `beat S&P ${pct(s.beat_pct, 0)} · n=${s.n}${q ? ` · vs Nasdaq ${q.mean >= 0 ? "+" : ""}${fmt(q.mean)}%` : ""}` }));
       alphaTiles.append(d);
     }
     // cumulative alpha vs S&P (sum of per-trade excess, in exit order)
