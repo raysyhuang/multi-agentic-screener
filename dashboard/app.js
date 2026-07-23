@@ -275,6 +275,41 @@ async function main() {
 }
 
 function renderCharts(data, streams, keys) {
+  // Alpha vs the index — the honest benchmark (per-trade excess over SPY/QQQ
+  // over the SAME holding days). Tiles + cumulative-alpha chart.
+  const alphaCard = $("alpha-card"), alphaTiles = $("alpha-tiles");
+  if (!data.benchmark_available) {
+    if (alphaCard) alphaCard.style.display = "none";
+  } else {
+    for (const k of keys) {
+      const t = streams[k].filter((u) => u.alpha_spy != null);
+      if (!t.length) continue;
+      const avgS = t.reduce((a, u) => a + u.alpha_spy, 0) / t.length;
+      const beatS = t.filter((u) => u.alpha_spy > 0).length / t.length;
+      const q = streams[k].filter((u) => u.alpha_qqq != null);
+      const avgQ = q.length ? q.reduce((a, u) => a + u.alpha_qqq, 0) / q.length : null;
+      const d = el("div"); d.className = "tile";
+      d.append(Object.assign(el("div"), { className: "k", textContent: `${streamMeta(k).label} — α / trade` }));
+      const v = Object.assign(el("div"), { className: "v", textContent: `${avgS >= 0 ? "+" : ""}${fmt(avgS)}%` });
+      v.style.color = avgS >= 0 ? "var(--success-tx)" : "var(--crit-tx)";
+      d.append(v);
+      d.append(Object.assign(el("div"), { className: "s hint",
+        textContent: `vs S&P · beat ${pct(beatS, 0)}${avgQ != null ? ` · vs Nasdaq ${avgQ >= 0 ? "+" : ""}${fmt(avgQ)}%` : ""}` }));
+      alphaTiles.append(d);
+    }
+    // cumulative alpha vs S&P (sum of per-trade excess, in exit order)
+    const alphaSeries = keys.map((k) => {
+      let a = 0;
+      const pts = streams[k].filter((u) => u.alpha_spy != null)
+        .map((u) => ({ x: Date.parse(u.exit_date), y: (a += u.alpha_spy), tip: `${u.exit_date} ${u.ticker} α${u.alpha_spy >= 0 ? "+" : ""}${fmt(u.alpha_spy)}%` }));
+      return { label: streamMeta(k).label, color: streamMeta(k).color, points: pts };
+    }).filter((s) => s.points.length);
+    if (alphaSeries.length) {
+      lineChart($("alpha-chart"), alphaSeries, { height: 220, unit: "%", yFmt: (v) => `${v >= 0 ? "+" : ""}${fmt(v, 0)}` });
+      legend($("alpha-chart"), keys.filter((k) => streams[k].some((u) => u.alpha_spy != null)));
+    }
+  }
+
   // equity
   lineChart($("equity-chart"), keys.map((k) => ({
     label: streamMeta(k).label, color: streamMeta(k).color, points: cum(streams[k]),

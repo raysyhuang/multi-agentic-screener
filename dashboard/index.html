@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MAS — Pipeline Dashboard</title>
-<link rel="stylesheet" href="style.css?v=5">
+<link rel="stylesheet" href="style.css?v=7">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
 </head>
 <body>
@@ -34,6 +34,12 @@
 
   <section id="performance">
     <h2>Performance <span class="hint">official and manual-sleeve streams are never blended</span></h2>
+    <div class="card" id="alpha-card">
+      <h3>Alpha vs the index <span class="hint">per-trade return minus the index's return over the <em>same</em> holding days — did the pick beat just holding SPY/QQQ for those days?</span></h3>
+      <div class="tile-row" id="alpha-tiles"></div>
+      <h3 style="font-size:16px;margin-top:16px">Cumulative alpha vs S&amp;P 500 <span class="hint">above zero = beating the index over the same windows</span></h3>
+      <div id="alpha-chart"></div>
+    </div>
     <div class="card">
       <h3>Cumulative P&amp;L by stream <span class="hint">sum of per-trade %, closed trades</span></h3>
       <div id="equity-chart"></div>
@@ -83,6 +89,6 @@
 </main>
 
 <div id="tooltip" class="tooltip" hidden></div>
-<script type="module" src="app.js?v=6"></script>
+<script type="module" src="app.js?v=7"></script>
 </body>
 </html>

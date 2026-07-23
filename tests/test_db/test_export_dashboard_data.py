@@ -70,7 +70,10 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
 
     monkeypatch.setattr(exp, "get_session", _fake_session)
 
-    snap = await exp.build_snapshot(days=90)
+    # Injected benchmark closes: SPY flat, QQQ up 1% d1->d2. AAA won +2% over d1->d2,
+    # so alpha_spy = +2 - 0 = +2; alpha_qqq = +2 - 1 = +1.
+    bench = {"spy": {d1: 500.0, d2: 500.0}, "qqq": {d1: 400.0, d2: 404.0}}
+    snap = await exp.build_snapshot(days=90, bench_closes=bench)
 
     assert snap["latest_run"]["date"] == "2026-07-21"
     # Today = latest run's picks only.
@@ -88,4 +91,43 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     assert [r["health"] for r in snap["run_history"]] == ["OK", "WARN"]
     # Baselines present for the expectation bands.
     assert "sniper|mas_official" in snap["baselines"]
+
+    # Per-trade alpha vs each benchmark over the same holding window.
+    aaa = snap["trades"]["sniper|mas_official"][0]
+    assert aaa["bench_spy"] == 0.0 and aaa["alpha_spy"] == pytest.approx(2.0)
+    assert aaa["bench_qqq"] == pytest.approx(1.0) and aaa["alpha_qqq"] == pytest.approx(1.0)
+    assert snap["benchmark_available"] is True
+    assert snap["benchmarks"]["spy"].startswith("S&P")
+    await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_alpha_none_when_benchmark_unavailable(monkeypatch):
+    """No benchmark data (no key / offline) → alpha fields are None, not a crash."""
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+    d1, d2 = date(2026, 7, 20), date(2026, 7, 21)
+    async with factory() as s:
+        s.add(DailyRun(run_date=d2, regime="bull", universe_size=1, candidates_scored=1,
+                       execution_mode="quant_only", pipeline_health={"status": "OK"}))
+        s.add(_signal(d1, "AAA", "sniper", "mas_official", sid=1))
+        s.add(Outcome(signal_id=1, ticker="AAA", entry_date=d1, entry_price=100.0,
+                      exit_date=d2, exit_price=102.0, exit_reason="target", pnl_pct=2.0, still_open=False))
+        await s.commit()
+
+    from contextlib import asynccontextmanager
+    import scripts.export_dashboard_data as exp
+
+    @asynccontextmanager
+    async def _fake_session():
+        async with factory() as session:
+            yield session
+
+    monkeypatch.setattr(exp, "get_session", _fake_session)
+    snap = await exp.build_snapshot(days=90, bench_closes={"spy": {}, "qqq": {}})
+    aaa = snap["trades"]["sniper|mas_official"][0]
+    assert aaa["alpha_spy"] is None and aaa["bench_spy"] is None
+    assert snap["benchmark_available"] is False
     await engine.dispose()
