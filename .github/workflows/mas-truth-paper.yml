@@ -1,0 +1,165 @@
+name: MAS Truth Paper Track
+
+# GitHub scheduled workflows run only from the default branch. This control-plane
+# workflow stays on main but checks out an immutable truth-lean candidate SHA into
+# a separate directory and writes only to DATABASE_URL_TRUTH_LEAN.
+#
+# The track is explicitly PAPER-only. It must never share the MAS-main database
+# or be treated as an execution signal.
+
+on:
+  schedule:
+    # Morning 06:00 America/New_York (EDT/EST; guarded below)
+    - cron: "0 10 * * 1-5"
+    - cron: "0 11 * * 1-5"
+    # Afternoon 16:30 America/New_York (EDT/EST; guarded below)
+    - cron: "30 20 * * 1-5"
+    - cron: "30 21 * * 1-5"
+  workflow_dispatch:
+    inputs:
+      pipeline:
+        description: "Paper pipeline to record"
+        required: true
+        default: "morning"
+        type: choice
+        options: [morning, afternoon]
+
+permissions:
+  contents: read
+
+concurrency:
+  group: mas-truth-paper-${{ github.event.schedule || github.event.inputs.pipeline }}
+  cancel-in-progress: false
+
+jobs:
+  record:
+    name: Record isolated truth-paper run
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    env:
+      POLICY_PATH: config/paper_tracks/truth_lean_v1.json
+      # The candidate receives this as DATABASE_URL. It is intentionally a
+      # different secret from MAS-main's DATABASE_URL.
+      DATABASE_URL: ${{ secrets.DATABASE_URL_TRUTH_LEAN }}
+      POLYGON_API_KEY: ${{ secrets.POLYGON_API_KEY }}
+      FMP_API_KEY: ${{ secrets.FMP_API_KEY }}
+      FRED_API_KEY: ${{ secrets.FRED_API_KEY }}
+      FINNHUB_API_KEY: ${{ secrets.FINNHUB_API_KEY }}
+      TELEGRAM_BOT_TOKEN: ${{ secrets.TELEGRAM_BOT_TOKEN }}
+      TELEGRAM_CHAT_ID: ${{ secrets.TELEGRAM_CHAT_ID }}
+      TELEGRAM_ALERT_PREFIX: MAS-TRUTH-PAPER
+      EXECUTION_MODE: quant_only
+      TRADING_MODE: PAPER
+      PYTHONUNBUFFERED: "1"
+
+    steps:
+      - name: Checkout control plane (main)
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+
+      - name: Set up Python
+        uses: actions/setup-python@a26af69be951a213d495a4c3e4e4022e16d87065 # v5
+        with:
+          python-version: "3.12"
+
+      - name: Validate frozen candidate policy
+        id: policy
+        run: |
+          set -euo pipefail
+          candidate_ref=$(python scripts/truth_paper_manifest.py --policy "$POLICY_PATH" --print-field candidate_ref)
+          policy_sha256=$(python scripts/truth_paper_manifest.py --policy "$POLICY_PATH" --print-field policy_sha256)
+          track_id=$(python scripts/truth_paper_manifest.py --policy "$POLICY_PATH" --print-field track_id)
+          {
+            echo "candidate_ref=$candidate_ref"
+            echo "policy_sha256=$policy_sha256"
+            echo "track_id=$track_id"
+          } >> "$GITHUB_OUTPUT"
+
+      - name: Resolve pipeline and DST guard
+        id: resolve
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+            pipeline="${{ github.event.inputs.pipeline }}"
+            should_run=true
+          else
+            case "${{ github.event.schedule }}" in
+              "0 10 * * 1-5"|"0 11 * * 1-5") pipeline=morning; target_hour=6 ;;
+              "30 20 * * 1-5"|"30 21 * * 1-5") pipeline=afternoon; target_hour=16 ;;
+              *) echo "::error::Unknown schedule"; exit 1 ;;
+            esac
+            current_hour=$(TZ=America/New_York date +%-H)
+            should_run=true
+            [ "$current_hour" != "$target_hour" ] && should_run=false
+          fi
+          case "$pipeline" in
+            morning) flag=--run-now ;;
+            afternoon) flag=--check-now ;;
+            *) echo "::error::Unknown pipeline '$pipeline'"; exit 1 ;;
+          esac
+          {
+            echo "pipeline=$pipeline"
+            echo "flag=$flag"
+            echo "should_run=$should_run"
+            echo "started_at=$(date --utc +%Y-%m-%dT%H:%M:%SZ)"
+          } >> "$GITHUB_OUTPUT"
+
+      # Checkout precedes secret checks so an intentionally fail-closed run can
+      # still retain an immutable candidate/provenance manifest.
+      - name: Checkout frozen truth-lean candidate
+        if: steps.resolve.outputs.should_run == 'true'
+        uses: actions/checkout@11d5960a326750d5838078e36cf38b85af677262 # v4
+        with:
+          ref: ${{ steps.policy.outputs.candidate_ref }}
+          path: candidate
+
+      - name: Check isolated paper prerequisites
+        if: steps.resolve.outputs.should_run == 'true'
+        run: |
+          set -euo pipefail
+          [ -n "$DATABASE_URL" ] || { echo "::error::DATABASE_URL_TRUTH_LEAN is required"; exit 1; }
+          [ -n "$POLYGON_API_KEY$FMP_API_KEY" ] || { echo "::error::At least Polygon or FMP is required"; exit 1; }
+          [ -n "$FRED_API_KEY" ] || { echo "::error::FRED_API_KEY is required"; exit 1; }
+          [ -n "$FINNHUB_API_KEY" ] || { echo "::error::FINNHUB_API_KEY is required"; exit 1; }
+          [ -n "$TELEGRAM_BOT_TOKEN$TELEGRAM_CHAT_ID" ] || { echo "::error::Telegram secrets are required"; exit 1; }
+          [ "$TRADING_MODE" = PAPER ] || { echo "::error::Truth track must be PAPER"; exit 1; }
+
+      - name: Install candidate
+        if: steps.resolve.outputs.should_run == 'true'
+        run: pip install -e ./candidate
+
+      - name: Migrate isolated truth-paper database
+        if: steps.resolve.outputs.should_run == 'true'
+        working-directory: candidate
+        run: alembic upgrade head
+
+      # Runner output remains in the protected GitHub Actions log. Do not upload
+      # raw stdout/stderr as an artifact: third-party/provider output is not a
+      # trustworthy secret-free data format.
+      - name: Run truth-paper pipeline
+        id: run_pipeline
+        if: steps.resolve.outputs.should_run == 'true'
+        working-directory: candidate
+        run: python -m src.worker "${{ steps.resolve.outputs.flag }}"
+
+      - name: Write non-secret run manifest
+        if: always() && steps.resolve.outputs.should_run == 'true'
+        env:
+          RUNNER_OUTCOME: ${{ steps.run_pipeline.outcome }}
+        run: |
+          set -euo pipefail
+          python scripts/truth_paper_manifest.py \
+            --policy "$POLICY_PATH" \
+            --candidate-dir candidate \
+            --output "artifacts/manifest-${{ steps.resolve.outputs.pipeline }}.json" \
+            --pipeline "${{ steps.resolve.outputs.pipeline }}" \
+            --runner-outcome "${RUNNER_OUTCOME:-failure}" \
+            --started-at "${{ steps.resolve.outputs.started_at }}"
+
+      - name: Upload truth-paper run record
+        if: always() && steps.resolve.outputs.should_run == 'true'
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: ${{ steps.policy.outputs.track_id }}-${{ steps.resolve.outputs.pipeline }}-${{ github.run_id }}
+          path: artifacts/
+          if-no-files-found: warn
+          retention-days: 90
