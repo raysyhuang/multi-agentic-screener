@@ -6,7 +6,7 @@ const STREAM_META = {
   "sniper|mas_official":          { label: "Sniper (official)",    color: "#533afd" },
   "mean_reversion|mas_official":  { label: "MR (official)",        color: "#2874ad" },
   "mean_reversion|mr_manual_sleeve": { label: "MR (manual sleeve)", color: "#ea2261" },
-  "pead|mas_official":            { label: "PEAD (paper)",         color: "#0f8a6d" },
+  "pead|pead_paper":              { label: "PEAD (paper)",         color: "#0f8a6d" },
 };
 const EXIT_COLORS = { trail_stop: "#533afd", stop: "#ea2261", target: "#0f8a6d",
                       time_stop: "#9b6829", expiry: "#2874ad", other: "#d94fc6" };

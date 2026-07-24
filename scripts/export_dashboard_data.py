@@ -117,6 +117,11 @@ BASELINES = {
                                     "source": "90d reconciliation (provisional, n=23)"},
     "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": 0.493, "avg": -0.01,
                                         "source": "90d reconciliation"},
+    # PEAD paper trial — the band is the BACKTEST target we're forward-testing
+    # against (pead_FINDINGS.md), NOT a validated live number. Paper until it
+    # clears ~30 trades / 4-6 weeks live.
+    "pead|pead_paper": {"label": "PEAD (paper)", "wr": 0.57, "avg": 1.80,
+                        "source": "backtest target — paper, unproven live"},
 }
 
 
