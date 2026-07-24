@@ -961,6 +961,11 @@ async def _run_pipeline_core(
     # --- Step 5: Signal generation ---
     logger.info("Step 5: Generating signals...")
     all_signals = []
+    # PEAD runs as a quarantined PAPER stream (signal_source="pead_paper"): it is
+    # scored, ranked, persisted and tracked separately, but never enters the
+    # official book, the executed picks, or the sniper/MR slot budget. Collected
+    # apart from all_signals so an unproven event edge can't displace live picks.
+    pead_signals: list = []
 
     # Ticker blacklist: backtest-proven poor mean reversion candidates
     _blacklist_raw = settings.mean_reversion_blacklist
@@ -1028,7 +1033,7 @@ async def _run_pipeline_core(
                 holding_period=settings.pead_holding_period,
             )
             if pead_sig:
-                all_signals.append(pead_sig)
+                pead_signals.append(pead_sig)  # paper stream, not the official book
 
         # Catalyst model — disabled: depends on sparse earnings calendar data
         # (days_to_earnings is None for most tickers → timing_score=0 → filtered).
@@ -1167,6 +1172,21 @@ async def _run_pipeline_core(
             len(mr_manual_ranked),
         )
 
+    # PEAD paper stream — ranked here (while price_data is still alive) with its
+    # OWN position cap, kept entirely separate from the official `ranked`.
+    pead_ranked = []
+    if pead_signals:
+        _annotate_signal_stream(pead_signals, signal_source="pead_paper")
+        pead_ranked = rank_candidates(
+            pead_signals,
+            regime=regime_assessment.regime,
+            features_by_ticker=features_by_ticker,
+            top_n=settings.pead_max_positions,
+        )
+        pead_ranked = filter_correlated_picks(pead_ranked, price_data)
+        pead_ranked = pead_ranked[: settings.pead_max_positions]
+        logger.info("PEAD paper stream selected %d candidates", len(pead_ranked))
+
     # Release OHLCV data — largest memory consumer, no longer needed
     del price_data
     price_data = None
@@ -1187,6 +1207,7 @@ async def _run_pipeline_core(
     execution_mode = ExecutionMode(settings.execution_mode)
     logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
     mr_manual_result = None
+    pead_result = None
 
     if execution_mode != ExecutionMode.QUANT_ONLY:
         logger.error(
@@ -1219,6 +1240,18 @@ async def _run_pipeline_core(
         )
         official_tickers = {pick.ticker for pick in pipeline_result.approved}
         for pick in mr_manual_result.approved:
+            pick.also_in_mas = pick.ticker in official_tickers
+
+    if pead_ranked:
+        # PEAD paper stream: build its result independently (its own cap, no
+        # sniper slots). Tagged also_in_mas for context in the alert only.
+        pead_result = _build_quant_only_result(
+            pead_ranked,
+            regime_context,
+            max_picks=settings.pead_max_positions,
+        )
+        official_tickers = {pick.ticker for pick in pipeline_result.approved}
+        for pick in pead_result.approved:
             pick.also_in_mas = pick.ticker in official_tickers
 
     # Divergence ledger removed with the LLM overlay — quant_only has no
@@ -1540,6 +1573,10 @@ async def _run_pipeline_core(
         picks_to_persist = list(pipeline_result.approved)
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
+        if pead_result:
+            # Paper stream — persisted (signal_source="pead_paper") so outcomes
+            # are tracked separately; never counted in the official book.
+            picks_to_persist.extend(pead_result.approved)
 
         _exit_config_snapshot = build_exit_config_snapshot(settings)
 
@@ -1747,6 +1784,22 @@ async def _run_pipeline_core(
             for pick in mr_manual_result.approved
         ]
 
+    pead_paper_picks: list[dict] | None = None
+    if pead_result is not None:
+        pead_paper_picks = [
+            {
+                "ticker": pick.ticker,
+                "direction": pick.direction,
+                "entry_price": pick.entry_price,
+                "stop_loss": pick.stop_loss,
+                "target_1": pick.target_1,
+                "confidence": pick.confidence,
+                "holding_period": pick.holding_period,
+                "also_in_mas": pick.also_in_mas,
+            }
+            for pick in pead_result.approved
+        ]
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -1757,6 +1810,7 @@ async def _run_pipeline_core(
         execution_mode=execution_mode.value,
         model_scorecard=model_scorecard or None,
         manual_sleeve_picks=sleeve_picks_for_alert,
+        pead_paper_picks=pead_paper_picks,
     )
     try:
         await send_alert(alert_msg)

@@ -36,6 +36,37 @@ def test_format_daily_alert_with_picks():
     assert "2025-03-15" in msg
 
 
+def test_pead_paper_section_labeled_and_separate():
+    """PEAD picks render in their own PAPER-labeled section, distinct from the
+    official picks — never mistaken for live capital."""
+    official = [{
+        "ticker": "AAPL", "direction": "LONG", "entry_price": 100.0,
+        "stop_loss": 97.0, "target_1": 106.0, "confidence": 80,
+        "signal_model": "sniper", "holding_period": 7,
+    }]
+    pead = [{
+        "ticker": "NVDA", "direction": "LONG", "entry_price": 500.0,
+        "stop_loss": 470.0, "target_1": 560.0, "confidence": 75,
+        "holding_period": 20, "also_in_mas": False,
+    }]
+    msg = format_daily_alert(official, "bull", "2026-07-24", pead_paper_picks=pead)
+    assert "PEAD" in msg and "Paper" in msg.replace("PAPER", "Paper")
+    assert "NVDA" in msg                       # the paper pick is shown
+    assert "not traded and not in the book" in msg  # explicit paper disclaimer
+    # PEAD section comes AFTER the official pick, not blended into it.
+    assert msg.index("AAPL") < msg.index("NVDA")
+
+
+def test_pead_paper_section_absent_when_none():
+    msg = format_daily_alert(
+        [{"ticker": "AAPL", "direction": "LONG", "entry_price": 100.0,
+          "stop_loss": 97.0, "target_1": 106.0, "confidence": 80,
+          "signal_model": "sniper", "holding_period": 7}],
+        "bull", "2026-07-24",
+    )
+    assert "PEAD" not in msg and "Paper Trial" not in msg
+
+
 def test_format_daily_alert_no_picks():
     msg = format_daily_alert([], "choppy", "2025-03-15")
     assert "No high-conviction picks" in msg

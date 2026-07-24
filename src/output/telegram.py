@@ -269,6 +269,59 @@ def _render_manual_sleeve_section(
     return lines
 
 
+def _render_pead_paper_section(pead_picks: list[dict]) -> list[str]:
+    """Render the PEAD paper-trial section appended to the daily alert.
+
+    PEAD (post-earnings drift) runs paper-only: tracked for credibility, never
+    executed or counted in the official book. The section is labeled so the
+    picks are never mistaken for live capital.
+    """
+    lines: list[str] = []
+    lines.append(_section_line())
+    lines.append(
+        f"\U0001f9ea <b>PEAD — Paper Trial</b> ({len(pead_picks)} pick"
+        f"{'' if len(pead_picks) == 1 else 's'})"
+    )
+    lines.append(
+        "<i>Post-earnings drift, PAPER ONLY — tracked to prove out, "
+        "not traded and not in the book.</i>"
+    )
+    lines.append("")
+
+    if not pead_picks:
+        lines.append("   No qualifying earnings beats today.")
+        lines.append("")
+        return lines
+
+    for pick in pead_picks:
+        ticker = pick.get("ticker", "???")
+        direction = pick.get("direction", "LONG")
+        entry = pick.get("entry_price", 0)
+        stop = pick.get("stop_loss", 0)
+        target = pick.get("target_1", 0)
+        confidence = pick.get("confidence", 0)
+        holding = pick.get("holding_period", 20)
+        also_in_mas = pick.get("also_in_mas", False)
+
+        risk_pct = abs(entry - stop) / entry * 100 if entry > 0 else 0
+        reward_pct = abs(target - entry) / entry * 100 if entry > 0 else 0
+        rr = reward_pct / risk_pct if risk_pct > 0 else 0
+        dir_arrow = "▲" if direction == "LONG" else "▼"
+        conf_bar = _bar(confidence, 100, 10)
+
+        lines.append(f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>pead</code>")
+        if also_in_mas:
+            lines.append("   \U0001f501 also an official pick today")
+        lines.extend([
+            f"   {conf_bar} {confidence:.0f}/100",
+            f"   Entry <b>${entry:.2f}</b>  →  Target <b>${target:.2f}</b> (+{reward_pct:.1f}%)",
+            f"   Stop  <b>${stop:.2f}</b>  ({risk_pct:.1f}% risk)   R:R <b>{rr:.1f}:1</b>   {holding}d",
+        ])
+        lines.append("")
+
+    return lines
+
+
 def format_daily_alert(
     picks: list[dict],
     regime: str,
@@ -279,6 +332,7 @@ def format_daily_alert(
     execution_mode: str | None = None,
     model_scorecard: dict[str, dict] | None = None,
     manual_sleeve_picks: list[dict] | None = None,
+    pead_paper_picks: list[dict] | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message.
 
@@ -316,6 +370,10 @@ def format_daily_alert(
             lines.append("")
             lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
 
+        if pead_paper_picks is not None:
+            lines.append("")
+            lines.extend(_render_pead_paper_section(pead_paper_picks))
+
         if model_scorecard:
             lines.append("")
             lines.extend(_render_scorecard(model_scorecard))
@@ -344,6 +402,10 @@ def format_daily_alert(
         if manual_sleeve_picks is not None:
             lines.append("")
             lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
+
+        if pead_paper_picks is not None:
+            lines.append("")
+            lines.extend(_render_pead_paper_section(pead_paper_picks))
 
         if model_scorecard:
             lines.append("")
@@ -400,6 +462,9 @@ def format_daily_alert(
 
     if manual_sleeve_picks is not None:
         lines.extend(_render_manual_sleeve_section(manual_sleeve_picks))
+
+    if pead_paper_picks is not None:
+        lines.extend(_render_pead_paper_section(pead_paper_picks))
 
     # Model scorecard (appended if provided)
     if model_scorecard:
