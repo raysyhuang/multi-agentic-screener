@@ -68,6 +68,7 @@ th { text-align: left; color: var(--label); font-weight: 400; font-size: 12px; p
 td { padding: 6px 8px; border-bottom: 1px solid var(--border); color: var(--body); font-feature-settings: "tnum"; }
 td.num, th.num { text-align: right; }
 tr:hover td { background: #f6f9fc; }
+.pf-table .pf-book td { color: var(--navy); font-weight: 400; background: #f6f9fc; }
 .pos { color: var(--success-tx); } .neg { color: var(--crit-tx); }
 
 /* pick cards */

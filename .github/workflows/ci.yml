@@ -15,7 +15,11 @@ jobs:
         with:
           python-version: "3.12"
           cache: pip
-      - run: pip install ruff
+      # Pin ruff: an unpinned `pip install ruff` pulls the latest release, whose
+      # newer rules/config handling turned the whole repo red overnight with no
+      # code change (e.g. E712 fired despite being in pyproject's ignore list).
+      # Pin to the version the repo is linted against; bump deliberately.
+      - run: pip install ruff==0.7.4
       - run: ruff check .
 
   test:
