@@ -24,8 +24,17 @@ from datetime import date as _date
 
 from sqlalchemy import select
 
+from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.db.models import DailyRun, Outcome, Signal
 from src.db.session import get_session
+
+# The "book" = the two systematic official streams run together. The manual
+# sleeve is deliberately excluded: it reproduces the official MR picks verbatim
+# and adds only negative-alpha breadth (see the 2026-07 manual-sleeve forensic),
+# so it dilutes the book rather than diversifying it.
+BOOK_STREAMS = ["sniper|mas_official", "mean_reversion|mas_official"]
+PORTFOLIO_MAX_CONCURRENT = 10
+PORTFOLIO_START_CAPITAL = 100_000.0
 
 # Benchmarks: SPY = S&P 500 proxy, QQQ = Nasdaq-100 proxy. Per-trade alpha is
 # the pick's return MINUS the benchmark's return over the SAME entry->exit dates
@@ -117,6 +126,57 @@ def _iso(d) -> str | None:
 
 def _stream_key(model: str | None, source: str | None) -> str:
     return f"{model or 'unknown'}|{source or 'unknown'}"
+
+
+def _portfolio(trades: dict[str, list]) -> dict | None:
+    """The book (sniper + MR official) vs each stream alone, as a real
+    concurrency-capped account. Front-end assigns colors; we ship data only."""
+    sniper_key, mr_key = "sniper|mas_official", "mean_reversion|mas_official"
+    if not (trades.get(sniper_key) or trades.get(mr_key)):
+        return None
+
+    def book_trades(rows: list) -> list[BookTrade]:
+        out = []
+        for r in rows:
+            e, x = r.get("entry_date"), r.get("exit_date")
+            if e and x and r.get("pnl_pct") is not None:
+                out.append(BookTrade(entry=date.fromisoformat(e),
+                                     exit=date.fromisoformat(x), pnl_pct=r["pnl_pct"]))
+        return out
+
+    specs = [
+        ("sniper", "Sniper only", [sniper_key]),
+        ("mr", "MR official only", [mr_key]),
+        ("book", "Book (sniper + MR)", BOOK_STREAMS),
+    ]
+    configs, equity = [], {}
+    for ckey, label, streams in specs:
+        rows = [r for k in streams for r in trades.get(k, [])]
+        if not rows:
+            continue
+        res = simulate_book(book_trades(rows), max_concurrent=PORTFOLIO_MAX_CONCURRENT,
+                            start_capital=PORTFOLIO_START_CAPITAL)
+        configs.append({
+            "key": ckey, "label": label, "streams": streams,
+            "trades": res["taken"], "skipped": res["skipped"],
+            "return_pct": round(res["total_return_pct"], 3),
+            "max_dd_pct": round(res["max_drawdown_pct"], 3),
+            "sharpe": round(res["sharpe"], 2) if res["sharpe"] is not None else None,
+        })
+        equity[ckey] = [{"date": d.isoformat(),
+                         "ret": round((eq / PORTFOLIO_START_CAPITAL - 1.0) * 100.0, 4)}
+                        for d, eq in res["equity_curve"]]
+    if not configs:
+        return None
+    return {
+        "book_streams": BOOK_STREAMS,
+        "start_capital": PORTFOLIO_START_CAPITAL,
+        "max_concurrent": PORTFOLIO_MAX_CONCURRENT,
+        "configs": configs,
+        "equity": equity,
+        "overlap": exit_day_overlap({"sniper": trades.get(sniper_key, []),
+                                     "mr": trades.get(mr_key, [])}),
+    }
 
 
 async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> dict:
@@ -248,6 +308,7 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         "benchmarks": {"spy": "S&P 500 (SPY)", "qqq": "Nasdaq-100 (QQQ)"},
         "benchmark_available": any(bench_closes.get(k) for k in BENCHMARKS),
         "alpha_summary": alpha_summary,
+        "portfolio": _portfolio(trades),
     }
 
 

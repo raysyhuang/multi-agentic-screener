@@ -4,7 +4,7 @@
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>MAS — Pipeline Dashboard</title>
-<link rel="stylesheet" href="style.css?v=8">
+<link rel="stylesheet" href="style.css?v=9">
 <link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
 </head>
 <body>
@@ -39,6 +39,13 @@
       <div class="tile-row" id="alpha-tiles"></div>
       <h3 style="font-size:16px;margin-top:16px">Cumulative alpha vs S&amp;P 500 <span class="hint">above zero = beating the index over the same windows</span></h3>
       <div id="alpha-chart"></div>
+    </div>
+    <div class="card" id="portfolio-card">
+      <h3>Portfolio — the book vs each stream alone <span class="hint">sniper + MR official as one concurrency-capped account; the manual sleeve is excluded — it reproduces the official picks and adds only losing breadth</span></h3>
+      <div id="portfolio-table"></div>
+      <h3 style="font-size:16px;margin-top:18px">Compounded account equity <span class="hint">$100k start · 10 concurrent slots · equal-weight · sampled at exits</span></h3>
+      <div id="portfolio-chart"></div>
+      <p class="hint" id="portfolio-note"></p>
     </div>
     <div class="card">
       <h3>Cumulative P&amp;L by stream <span class="hint">sum of per-trade %, closed trades</span></h3>
@@ -89,6 +96,6 @@
 </main>
 
 <div id="tooltip" class="tooltip" hidden></div>
-<script type="module" src="app.js?v=8"></script>
+<script type="module" src="app.js?v=9"></script>
 </body>
 </html>

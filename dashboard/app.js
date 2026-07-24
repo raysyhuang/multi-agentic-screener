@@ -315,6 +315,60 @@ function renderCharts(data, streams, keys) {
     }
   }
 
+  // Portfolio — the book (sniper + MR official) vs each stream alone, replayed
+  // as a real concurrency-capped account. Book Sharpe > either alone = the
+  // diversification payoff; the manual sleeve is excluded (it only dilutes).
+  const pf = data.portfolio, pfCard = $("portfolio-card");
+  if (!pf || !pf.configs?.length) {
+    if (pfCard) pfCard.style.display = "none";
+  } else {
+    const pfColor = (k) => k === "sniper" ? streamMeta("sniper|mas_official").color
+      : k === "mr" ? streamMeta("mean_reversion|mas_official").color : NAVY;
+    const tbl = el("table"); tbl.className = "pf-table";
+    const head = el("tr");
+    for (const h of ["Book", "Trades", "90d return", "Max DD", "Sharpe*"]) {
+      const th = el("th"); th.textContent = h;
+      if (h !== "Book") th.className = "num";
+      head.append(th);
+    }
+    tbl.append(head);
+    for (const c of pf.configs) {
+      const tr = el("tr");
+      if (c.key === "book") tr.className = "pf-book";
+      const name = el("td");
+      const dot = el("span");
+      dot.style.cssText = `display:inline-block;width:10px;height:10px;border-radius:3px;margin-right:7px;background:${pfColor(c.key)}`;
+      name.append(dot, document.createTextNode(c.label));
+      tr.append(name);
+      const cells = [
+        c.trades + (c.skipped ? ` · ${c.skipped} skip` : ""),
+        `${c.return_pct >= 0 ? "+" : ""}${fmt(c.return_pct, 1)}%`,
+        `${fmt(c.max_dd_pct, 1)}%`,
+        c.sharpe == null ? "–" : fmt(c.sharpe, 2),
+      ];
+      for (const cv of cells) { const td = el("td"); td.className = "num"; td.textContent = cv; tr.append(td); }
+      tbl.append(tr);
+    }
+    $("portfolio-table").append(tbl);
+
+    const pfOrder = [["book", "Book (sniper + MR)"], ["sniper", "Sniper only"], ["mr", "MR official only"]];
+    const pfSeries = pfOrder.filter(([k]) => pf.equity?.[k]?.length).map(([k, lbl]) => ({
+      label: lbl, color: pfColor(k),
+      points: pf.equity[k].map((p) => ({ x: Date.parse(p.date), y: p.ret,
+        tip: `${p.date} ${p.ret >= 0 ? "+" : ""}${fmt(p.ret, 1)}%` })),
+    }));
+    if (pfSeries.length)
+      lineChart($("portfolio-chart"), pfSeries, { height: 240, unit: "%", yFmt: (v) => `${v >= 0 ? "+" : ""}${fmt(v, 0)}` });
+
+    const ov = pf.overlap || {};
+    $("portfolio-note").textContent =
+      `Sniper and MR official shared only ${ov.shared_days ?? "–"} exit-days ` +
+      `(of ${ov.sniper_exit_days ?? "–"} and ${ov.mr_exit_days ?? "–"}) — they seldom fire together, ` +
+      `so the book's risk-adjusted return can exceed either alone. ` +
+      `*Sharpe is directional at this trade count: a stream that rarely deploys leaves capital idle, ` +
+      `flattening volatility and inflating Sharpe — trust the ranking across rows, not the absolute value.`;
+  }
+
   // equity
   lineChart($("equity-chart"), keys.map((k) => ({
     label: streamMeta(k).label, color: streamMeta(k).color, points: cum(streams[k]),
