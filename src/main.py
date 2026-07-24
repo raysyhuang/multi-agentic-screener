@@ -1071,11 +1071,15 @@ async def _run_pipeline_core(
     post_cooldown_signals = list(all_signals)
 
     # Preserve a separate mean-reversion manual sleeve before cross-model dedup
+    # MR manual sleeve: the wider MR net, gated off by default (retired — see
+    # settings.mr_manual_sleeve_enabled). Empty list cleanly disables everything
+    # downstream (annotation, ranking, DB emission, and the alert section, all of
+    # which are guarded on this being non-empty).
     mr_manual_signals = [
         signal
         for signal in post_cooldown_signals
         if MODEL_MAP.get(type(signal), "unknown") == "mean_reversion"
-    ]
+    ] if settings.mr_manual_sleeve_enabled else []
     if mr_manual_signals:
         best_post_cooldown = best_signal_by_ticker(post_cooldown_signals)
         mr_suppression_by_ticker = {}

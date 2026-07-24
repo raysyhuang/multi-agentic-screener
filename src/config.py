@@ -97,6 +97,15 @@ class Settings(BaseSettings):
         "NKE,DECK,TTD,GNRC,CDW,DOW,CPRT,CDNS,EXE,LULU,STZ,BIIB,HSY,APD,"
         "INTC,COST,CL,PSA,AMT,LHX,TSN,PAYX,MTB,VRSK"
     )
+    # MR manual sleeve — the wider MR net (all mean-reversion signals, before the
+    # official cross-model dedup/gate) that used to feed the daily manual-trading
+    # alert section. Retired 2026-07-24: the forensic showed it reproduces the
+    # official picks verbatim and adds only gate-rejected losers (−0.38%/trade,
+    # −19.5% over 51 trades) — the official gate's selectivity IS the alpha. Flag
+    # left in place so the stream can be revived deliberately; default OFF = no
+    # sleeve signals scored, persisted, or shown in the alert.
+    mr_manual_sleeve_enabled: bool = False
+
     fmp_daily_call_budget: int = 750
     fmp_budget_warn_threshold_pct: float = 0.80
     fmp_enforce_daily_budget: bool = False
