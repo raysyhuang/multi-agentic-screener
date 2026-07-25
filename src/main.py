@@ -47,6 +47,9 @@ from src.features.regime import classify_regime, get_regime_allowed_models, comp
 from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
 from src.validation.stage_validator import (
     PipelineHealthReport,
+    Severity,
+    StageCheck,
+    StageValidation,
     validate_macro_regime,
     validate_universe,
     validate_ohlcv,
@@ -973,6 +976,12 @@ async def _run_pipeline_core(
     if mr_blacklist:
         logger.info("Mean reversion blacklist: %d tickers excluded", len(mr_blacklist))
 
+    # Earnings-blackout coverage tracking. The blackout FAILS OPEN (dte=None →
+    # trade passes), so a broken/absent earnings feed silently disables it — which
+    # is exactly how earnings gappers leaked before (the FMP-secret incident).
+    # Counted here and surfaced as a health WARN after the loop.
+    earnings_covered = earnings_total = sniper_earnings_skips = 0
+
     for ticker in qualified_tickers:
         feat = features_by_ticker.get(ticker, {})
         df = price_data.get(ticker)
@@ -988,6 +997,9 @@ async def _run_pipeline_core(
 
         # Earnings blackout: skip tickers within N days of earnings
         dte = feat.get("days_to_earnings")
+        earnings_total += 1
+        if dte is not None:
+            earnings_covered += 1
         if dte is not None and dte <= settings.earnings_blackout_days:
             continue
 
@@ -1018,7 +1030,20 @@ async def _run_pipeline_core(
             # Without this, live admitted signals down to the internal 60/65 floor
             # while the backtest baseline required 70.
             if sniper_sig and sniper_sig.score >= settings.sniper_min_score:
-                all_signals.append(sniper_sig)
+                # Hold-aware earnings blackout. The global gate above only blocks
+                # entering within earnings_blackout_days (2) of earnings, but sniper
+                # holds sniper_holding_period (7) days — so a name reporting on day
+                # 3-7 clears that gate yet reports MID-HOLD and gaps through. That
+                # mid-hold earnings gap is the fat left tail (SMCI, COIN, CVNA, APP…
+                # the worst 5% of trades erase 93% of gross return). Skip sniper if
+                # earnings falls anywhere within its hold window.
+                if dte is not None and dte <= settings.sniper_holding_period:
+                    sniper_earnings_skips += 1
+                    logger.info("Sniper earnings blackout: %s reports in %sd "
+                                "(<= %dd hold) — skip to avoid mid-hold gap",
+                                ticker, dte, settings.sniper_holding_period)
+                else:
+                    all_signals.append(sniper_sig)
 
         # Post-earnings drift (paper trial, default off): long a fresh earnings beat.
         if settings.pead_enabled and pead_surprise_by_ticker:
@@ -1048,6 +1073,33 @@ async def _run_pipeline_core(
         #     all_signals.append(catalyst)
 
     logger.info("Generated %d raw signals", len(all_signals))
+
+    # Earnings-blackout coverage health: the blackout fails open, so if the
+    # earnings feed is broken/sparse it silently stops protecting picks. Surface
+    # low coverage as a WARN (not a silent pass) so a broken FMP secret can't
+    # disable the blackout unnoticed again. sniper_skips = names sniper avoided
+    # because earnings fell within its hold window (the mid-hold gap fix).
+    _cov = earnings_covered / earnings_total if earnings_total else 0.0
+    _blackout_stage = StageValidation(stage_name="earnings_blackout", executed=True)
+    _blackout_ok = _cov >= settings.earnings_coverage_min_pct
+    _blackout_stage.checks.append(StageCheck(
+        name="earnings_coverage",
+        passed=_blackout_ok,
+        severity=Severity.WARN,
+        message=(
+            f"Earnings-calendar coverage {_cov:.0%} ({earnings_covered}/{earnings_total}) "
+            f"below {settings.earnings_coverage_min_pct:.0%} — blackout fails OPEN for "
+            f"uncovered names; earnings gappers may leak into picks"
+            if not _blackout_ok else
+            f"Earnings coverage {_cov:.0%}; sniper skipped {sniper_earnings_skips} mid-hold-earnings names"
+        ),
+        value={"coverage": round(_cov, 3), "covered": earnings_covered,
+               "total": earnings_total, "sniper_earnings_skips": sniper_earnings_skips},
+    ))
+    pipeline_health.add_stage(_blackout_stage)
+    if not _blackout_ok:
+        logger.warning("Earnings-blackout coverage LOW: %.0f%% (%d/%d) — blackout "
+                       "fails open for the rest", _cov * 100, earnings_covered, earnings_total)
 
     # Propagate data quality flags to signals
     for sig in all_signals:

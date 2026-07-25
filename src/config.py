@@ -72,6 +72,11 @@ class Settings(BaseSettings):
     choppy_min_score: int = 75             # score floor in choppy regime
     min_atr_percentile_252: float = 0.10   # block if ATR14 in bottom decile
     earnings_blackout_days: int = 2        # block picks within N days of earnings
+    # The earnings blackout fails open (no earnings date → pick passes). Sniper
+    # additionally skips names reporting within its hold window (mid-hold gap
+    # risk). If calendar coverage falls below this fraction, pipeline-health WARNs
+    # so a broken earnings feed can't silently disable the blackout.
+    earnings_coverage_min_pct: float = 0.15
 
     # --- Phase 2: Win-Rate Lift ---
     weekly_trend_gate_enabled: bool = False   # require close > 150-day SMA (30-week proxy)
