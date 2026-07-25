@@ -58,12 +58,24 @@ def _cache_key(tickers: list[str], years: float) -> Path:
     return CACHE_DIR / f"ohlcv_{ticker_hash}_{start}_{end}.parquet"
 
 
-def fetch_ohlcv(tickers: list[str], years: float = 2, no_cache: bool = False) -> dict[str, pd.DataFrame]:
-    """Download historical OHLCV data via yfinance, with disk cache.
+def fetch_ohlcv(tickers: list[str], years: float = 2, no_cache: bool = False,
+                source: str = "polygon") -> dict[str, pd.DataFrame]:
+    """Historical daily OHLCV, disk-cached. Cache keyed on (tickers hash, dates).
 
-    Cache is keyed on (sorted tickers hash, start date, end date).
-    Pass no_cache=True to force a fresh download.
+    source="polygon" (default) uses the paid $199 feed — cleaner/consistent
+    adjusted bars (yfinance has occasional glitches, e.g. inconsistent AAPL
+    adjustment across windows). Falls back to yfinance if Polygon yields nothing.
+    source="yfinance" forces the free path. Pass no_cache=True to force a refetch.
     """
+    if source == "polygon":
+        try:
+            res = fetch_ohlcv_polygon(tickers, years, no_cache=no_cache)
+            if res:
+                return res
+            print("Polygon returned no data — falling back to yfinance")
+        except Exception as e:  # noqa: BLE001 — research fallback, never hard-fail
+            print(f"Polygon fetch failed ({type(e).__name__}: {e}) — falling back to yfinance")
+
     cache_path = _cache_key(tickers, years)
 
     # Try cache first
@@ -122,6 +134,78 @@ def fetch_ohlcv(tickers: list[str], years: float = 2, no_cache: bool = False) ->
         size_mb = cache_path.stat().st_size / 1024 / 1024
         print(f"Cached to {cache_path} ({size_mb:.1f}MB)")
 
+    return result
+
+
+def fetch_ohlcv_polygon(
+    tickers: list[str], years: float = 3.0, no_cache: bool = False,
+    max_concurrent: int = 16,
+) -> dict[str, pd.DataFrame]:
+    """Daily OHLCV from Polygon (adjusted) — a drop-in for fetch_ohlcv using the
+    paid $199 plan instead of free yfinance. Same output shape: dict[ticker] ->
+    DataFrame with date/open/high/low/close/volume, date as a python date.
+
+    Concurrency-bounded (Polygon's client already backs off on 429s). Share-class
+    tickers are dash-form in the universe (BRK-B) but dot-form on Polygon (BRK.B);
+    we alias on the fetch and store under the original dash-form key so the rest of
+    the pipeline is unchanged (see CLAUDE.md polygon_symbol_candidates note).
+    """
+    import asyncio
+
+    from src.data.polygon_client import PolygonClient
+
+    # Separate cache namespace so Polygon and yfinance caches never collide.
+    yf_path = _cache_key(tickers, years)
+    cache_path = yf_path.with_name(yf_path.name.replace("ohlcv_", "ohlcv_poly_"))
+
+    if not no_cache and cache_path.exists():
+        print(f"Loading cached Polygon data from {cache_path}")
+        combined = pd.read_parquet(cache_path)
+        out = {t: g.drop(columns=["_ticker"]).reset_index(drop=True)
+               for t, g in combined.groupby("_ticker")}
+        print(f"Loaded {len(out)} tickers from Polygon cache")
+        return out
+
+    end = date.today()
+    start = end - timedelta(days=int(years * 365.25))
+    print(f"Fetching {len(tickers)} tickers {start}→{end} from Polygon (adjusted daily)...")
+
+    async def _fetch_all() -> dict[str, pd.DataFrame]:
+        client = PolygonClient()
+        sem = asyncio.Semaphore(max_concurrent)
+        done = 0
+
+        async def _one(ticker: str):
+            nonlocal done
+            poly_sym = ticker.replace("-", ".")  # dash→dot for Polygon
+            async with sem:
+                try:
+                    df = await client.get_ohlcv(poly_sym, start, end)
+                except Exception:
+                    df = None
+            done += 1
+            if done % 100 == 0:
+                print(f"  {done}/{len(tickers)} fetched", flush=True)
+            if df is None or df.empty or "close" not in df.columns:
+                return ticker, None
+            keep = df[["date", "open", "high", "low", "close", "volume"]].copy()
+            return ticker, keep.dropna(subset=["close"]).reset_index(drop=True)
+
+        pairs = await asyncio.gather(*[_one(t) for t in tickers])
+        return {t: d for t, d in pairs if d is not None and not d.empty}
+
+    result = asyncio.run(_fetch_all())
+    print(f"Got Polygon data for {len(result)}/{len(tickers)} tickers")
+
+    if result:
+        cache_path.parent.mkdir(parents=True, exist_ok=True)
+        frames = []
+        for ticker, df in result.items():
+            d = df.copy()
+            d["_ticker"] = ticker
+            frames.append(d)
+        pd.concat(frames, ignore_index=True).to_parquet(cache_path, index=False)
+        print(f"Cached to {cache_path} ({cache_path.stat().st_size / 1024 / 1024:.1f}MB)")
     return result
 
 
