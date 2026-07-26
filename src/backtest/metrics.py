@@ -163,8 +163,17 @@ def deflated_sharpe_ratio(
     var_sr = (1 + 0.5 * sr**2 - skew * sr + (kurt / 4) * sr**2) / max(1, n - 1)
     std_sr = np.sqrt(max(var_sr, 1e-10))
 
-    # DSR = P(SR > 0 | observed, trials) = Φ((SR - E[max]) / std(SR))
-    dsr = float(stats.norm.cdf((sr - e_max_z) / std_sr))
+    # DSR (Bailey & López de Prado): compare the observed Sharpe's own z-score
+    # (sr / std_sr — how many standard errors the Sharpe sits above zero) to the
+    # expected-max z-score under the null across `num_trials`, then Φ(·).
+    #   DSR = Φ(sr/std_sr − E[max Z])
+    # NOTE: the observed Sharpe (sr, a ratio) and E[max Z] (a z-score) live on
+    # DIFFERENT scales — sr must be divided by its standard error FIRST. A prior
+    # version computed Φ((sr − E[max Z]) / std_sr), subtracting a z-score from a
+    # raw Sharpe; because sr (~0.2–0.8) is always far below E[max Z] (~1.4–2.5),
+    # that collapsed the DSR to ~0 for EVERY per-trade strategy regardless of true
+    # significance (a t-stat-17 edge scored 0.00). See test_deflated_sharpe_*.
+    dsr = float(stats.norm.cdf(sr / std_sr - e_max_z))
 
     return round(max(0.0, min(1.0, dsr)), 4)
 
