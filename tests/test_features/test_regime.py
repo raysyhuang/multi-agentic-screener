@@ -61,6 +61,48 @@ def test_regime_with_empty_df():
     assert result.spy_trend == "unknown"
 
 
+def test_hy_oas_surfaced_as_context(sample_spy_df, sample_qqq_df):
+    """HY OAS level + stress flag are always surfaced, regardless of the tilt."""
+    result = classify_regime(sample_spy_df, sample_qqq_df, vix=14.0,
+                             yield_spread=1.5, hy_oas=3.2, hy_oas_stress=True)
+    assert result.hy_oas == 3.2
+    assert result.hy_oas_stress is True
+    assert result.details["hy_oas"] == "stress"
+    result_calm = classify_regime(sample_spy_df, sample_qqq_df, vix=14.0,
+                                  hy_oas=2.9, hy_oas_stress=False)
+    assert result_calm.details["hy_oas"] == "calm"
+
+
+def test_hy_oas_fail_open_when_absent(sample_spy_df, sample_qqq_df):
+    """No HY data → hy_oas_stress None → no effect, signal 'unknown'."""
+    result = classify_regime(sample_spy_df, sample_qqq_df, vix=14.0, yield_spread=1.5)
+    assert result.hy_oas is None
+    assert result.hy_oas_stress is None
+    assert result.details["hy_oas"] == "unknown"
+
+
+def test_hy_oas_tilt_off_by_default(sample_spy_df, sample_qqq_df):
+    """With the tilt default-off, HY stress does NOT change the regime label."""
+    base = classify_regime(sample_spy_df, sample_qqq_df, vix=20.0, yield_spread=0.3)
+    with_stress = classify_regime(sample_spy_df, sample_qqq_df, vix=20.0,
+                                  yield_spread=0.3, hy_oas=5.5, hy_oas_stress=True)
+    assert with_stress.regime == base.regime
+
+
+def test_hy_oas_tilt_adds_bear_when_enabled(monkeypatch, sample_spy_df, sample_qqq_df):
+    """When enabled, HY stress adds bear score (higher weight can flip the label)."""
+    from src.config import get_settings
+    s = get_settings()
+    monkeypatch.setattr(s, "regime_hy_oas_enabled", True)
+    monkeypatch.setattr(s, "regime_hy_oas_bear_weight", 5.0)  # large to force a flip
+    calm = classify_regime(sample_spy_df, sample_qqq_df, vix=20.0, yield_spread=0.3,
+                           hy_oas=3.0, hy_oas_stress=False)
+    stress = classify_regime(sample_spy_df, sample_qqq_df, vix=20.0, yield_spread=0.3,
+                             hy_oas=6.0, hy_oas_stress=True)
+    # A large bear weight on stress must move the label toward bear vs the calm case.
+    assert stress.regime != calm.regime or stress.confidence != calm.confidence
+
+
 def test_allowed_models_bull():
     models = get_regime_allowed_models(Regime.BULL)
     assert "breakout" in models

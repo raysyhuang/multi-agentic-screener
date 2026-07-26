@@ -1,0 +1,65 @@
+Loaded 27822 sniper trades from mr_trades_polygon.csv
+HY OAS obs: 787  (2023-07-25..2026-07-23)
+
+Tagged 27665/27822 trades with short data (sv coverage=24956, dtc coverage=27665)
+
+Baseline: ALL N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+Baseline: non-bear (live-faithful) N=20506  WR= 52.5%  exp=+0.039%  PF=1.05  p10= -2.37%
+
+Sniper expectancy by short-volume ratio at entry:
+  sv [0,40): N=7607  WR= 53.0%  exp=+0.102%  PF=1.12  p10= -2.44%
+  sv [40,50): N=6202  WR= 53.1%  exp=+0.084%  PF=1.10  p10= -2.58%
+  sv [50,60): N=5729  WR= 52.0%  exp=-0.009%  PF=0.99  p10= -2.59%
+  sv [60,1000): N=5418  WR= 52.2%  exp=+0.038%  PF=1.04  p10= -2.57%
+
+Sniper expectancy by days-to-cover at entry:
+  dtc [0,2): N=5265  WR= 53.6%  exp=+0.201%  PF=1.22  p10= -2.77%
+  dtc [2,3): N=9262  WR= 52.6%  exp=+0.042%  PF=1.05  p10= -2.37%
+  dtc [3,5): N=9429  WR= 51.9%  exp=-0.009%  PF=0.99  p10= -2.47%
+  dtc [5,1000000000.0): N=3709  WR= 50.4%  exp=-0.071%  PF=0.92  p10= -2.53%
+
+Sniper expectancy by credit-spread state at entry:
+  HY widening (20d chg>0): N=13571  WR= 52.5%  exp=+0.109%  PF=1.12  p10= -2.71%
+  HY tightening (20d chg<=0): N=14251  WR= 52.0%  exp=-0.027%  PF=0.96  p10= -2.33%
+  HY above 50d MA (stress): N=11701  WR= 54.5%  exp=+0.211%  PF=1.24  p10= -2.70%
+  HY below 50d MA (calm):   N=16121  WR= 50.6%  exp=-0.086%  PF=0.89  p10= -2.38%
+
+=== Candidate avoid-filters (does dropping these lift sniper expectancy?) ===
+
+  drop sv>=55 (high short participation)
+    full   : N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+    kept   : N=19668  WR= 52.3%  exp=+0.046%  PF=1.06  p10= -2.45%
+    dropped: N=8154  WR= 52.0%  exp=+0.021%  PF=1.02  p10= -2.58%
+    exp delta kept-full = +0.007%  95%CI [-0.037, +0.054]  -> noise (CI crosses 0)
+
+  drop sv>=50
+    full   : N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+    kept   : N=16675  WR= 52.3%  exp=+0.056%  PF=1.07  p10= -2.43%
+    dropped: N=11147  WR= 52.1%  exp=+0.014%  PF=1.02  p10= -2.58%
+    exp delta kept-full = +0.017%  95%CI [-0.031, +0.066]  -> noise (CI crosses 0)
+
+  drop dtc>=3 (crowded short)
+    full   : N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+    kept   : N=14684  WR= 52.9%  exp=+0.097%  PF=1.12  p10= -2.50%
+    dropped: N=13138  WR= 51.5%  exp=-0.026%  PF=0.97  p10= -2.49%
+    exp delta kept-full = +0.058%  95%CI [+0.005, +0.110]  -> HELPS
+
+  drop dtc>=5
+    full   : N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+    kept   : N=24113  WR= 52.5%  exp=+0.056%  PF=1.07  p10= -2.49%
+    dropped: N=3709  WR= 50.4%  exp=-0.071%  PF=0.92  p10= -2.53%
+    exp delta kept-full = +0.017%  95%CI [-0.025, +0.060]  -> noise (CI crosses 0)
+
+  drop HY widening (20d chg>0)
+    full   : N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+    kept   : N=14251  WR= 52.0%  exp=-0.027%  PF=0.96  p10= -2.33%
+    dropped: N=13571  WR= 52.5%  exp=+0.109%  PF=1.12  p10= -2.71%
+    exp delta kept-full = -0.066%  95%CI [-0.113, -0.021]  -> HURTS
+
+  drop HY above 50d MA (credit stress)
+    full   : N=27822  WR= 52.2%  exp=+0.039%  PF=1.05  p10= -2.50%
+    kept   : N=16121  WR= 50.6%  exp=-0.086%  PF=0.89  p10= -2.38%
+    dropped: N=11701  WR= 54.5%  exp=+0.211%  PF=1.24  p10= -2.70%
+    exp delta kept-full = -0.125%  95%CI [-0.172, -0.080]  -> HURTS
+
+EXIT=0

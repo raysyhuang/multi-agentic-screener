@@ -76,6 +76,38 @@ two reusable byproducts.
 2. **HY-OAS regime color** — free FRED add if we ever want risk-off context in the
    dashboard/regime label, with no alpha claim attached.
 
+## Follow-up (2026-07-26, same session): short signal on MR + HY-OAS wired
+
+Ray: "1 test short signal, 2 use hy oas." Both done.
+
+### Short signal conditioned on MEAN-REVERSION (27,822 live-faithful MR trades)
+- **Days-to-cover IS a real (thin) MR avoid-filter.** Monotonic: dtc[0,2) +0.20% →
+  [2,3) +0.04% → [3,5) −0.01% → ≥5 −0.07%. Dropping dtc≥3 lifts MR expectancy
+  +0.039% → **+0.097%**, bootstrap 95% CI **[+0.005, +0.110] → clears zero**.
+  Crowded-short oversold names are falling knives — the thesis holds where sniper's
+  breakout-fuel logic didn't. CAVEATS: edge is thin (MR raw is ~edgeless), multiple
+  thresholds tested (dtc≥5 alone does not clear), needs a full validation-card gate
+  (deflated Sharpe, live-selectivity) before shipping to live MR. NOT auto-shipped.
+- Short-VOLUME on MR = noise (CI crosses 0). It's short-INTEREST crowding (DTC),
+  not daily short volume, that bites MR.
+- Script: `scripts/gen_mr_trades.py` → `outputs/research/mr_trades_polygon.csv`,
+  then `scripts/sniper_short_credit_filter.py --trades <that>`.
+
+### HY-OAS has OPPOSITE signs across the book — so it's wired as CONTEXT, tilt OFF
+- Sniper does better in calm credit (not significant). **MR does better in credit
+  STRESS: HY above 50d-MA +0.211% vs calm −0.086%; dropping stress trades HURTS MR
+  (CI [−0.172, −0.080], significant).** Mean-reversion thrives on volatility;
+  momentum likes calm.
+- Implication: a naive "HY-stress → bear tilt" would downsize MR exactly when MR is
+  strongest. So HY-OAS (FRED BAMLH0A0HYM2, free) is now **computed + surfaced every
+  run** (level, stress flag, 20d change) in the regime assessment, `regime_context`
+  (→ dashboard/DB), and the pipeline log — used as decision context. The optional
+  bear-score tilt is implemented but **default OFF** (`regime_hy_oas_enabled=False`),
+  documented with this opposite-sign finding. Fail-open (no key/data → no effect).
+- Files: `src/data/fred_client.py` (series + `get_hy_oas` + snapshot fields),
+  `src/features/regime.py` (params + surfaced signal + gated tilt), `src/config.py`,
+  `src/main.py` (both regime call sites + log), tests in `test_regime.py`.
+
 ## Discipline notes
 - Stage-0 base-rate FIRST, then condition on the actual strategy's trades — the
   conditioning is what caught the short-signal reversal. Unconditional IC ≠ strategy

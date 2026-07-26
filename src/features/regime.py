@@ -36,6 +36,8 @@ class RegimeAssessment:
     breadth_score: float | None  # % of stocks above 20-day SMA
     yield_spread: float | None
     details: dict
+    hy_oas: float | None = None          # ICE BofA US HY OAS level (credit spread)
+    hy_oas_stress: bool | None = None    # HY OAS above its ~50-obs MA (risk-off)
 
 
 def compute_breadth_score(price_data: dict[str, pd.DataFrame]) -> float | None:
@@ -75,6 +77,8 @@ def classify_regime(
     vix: float | None = None,
     yield_spread: float | None = None,
     breadth_score: float | None = None,
+    hy_oas: float | None = None,
+    hy_oas_stress: bool | None = None,
 ) -> RegimeAssessment:
     """Classify current market regime using SPY/QQQ trend + VIX + breadth.
 
@@ -111,6 +115,16 @@ def classify_regime(
         elif yield_spread < 0.5:
             yield_signal = "flat"
     signals["yield_curve"] = yield_signal
+
+    # --- Credit spread (HY OAS) ---
+    # Always surfaced as context (risk-off lead VIX misses). The bear tilt below is
+    # config-gated and default-off — the study found HY-OAS helps sniper but MR does
+    # better in stress, so a global tilt is not enabled without more evidence.
+    hy_signal = "unknown"
+    if hy_oas_stress is not None:
+        hy_signal = "stress" if hy_oas_stress else "calm"
+    signals["hy_oas"] = hy_signal
+    signals["hy_oas_level"] = hy_oas
 
     # --- Breadth ---
     breadth_signal = "neutral"
@@ -154,6 +168,10 @@ def classify_regime(
     if yield_signal == "inverted":
         bear_score += 0.5
 
+    # Credit spread (config-gated, default off — see RegimeAssessment / config note).
+    if settings.regime_hy_oas_enabled and hy_oas_stress:
+        bear_score += settings.regime_hy_oas_bear_weight
+
     # Breadth
     if breadth_signal == "broad":
         bull_score += 1.0
@@ -184,6 +202,8 @@ def classify_regime(
         breadth_score=breadth_score,
         yield_spread=yield_spread,
         details=signals,
+        hy_oas=hy_oas,
+        hy_oas_stress=hy_oas_stress,
     )
 
 
