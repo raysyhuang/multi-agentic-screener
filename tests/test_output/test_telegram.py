@@ -336,3 +336,57 @@ def test_alert_prefix_respects_ibkr_override(monkeypatch):
     msg = format_daily_alert([], "bull", "2026-04-23")
     assert "[IBKR]" in msg
     assert "[MAS]" not in msg
+
+
+# --- HY-OAS credit context on the regime line ---
+
+_CREDIT_PICK = [{
+    "ticker": "AAPL", "direction": "LONG", "entry_price": 100.0, "stop_loss": 97.0,
+    "target_1": 106.0, "confidence": 70, "signal_model": "sniper", "holding_period": 7,
+}]
+
+
+def test_credit_context_renders_on_regime_line():
+    msg = format_daily_alert(
+        _CREDIT_PICK, "bull", "2026-07-27",
+        credit_context={"hy_oas": 2.77, "hy_oas_stress": True, "hy_oas_chg20": -0.01},
+    )
+    assert "Credit:" in msg
+    assert "HY 2.77%" in msg
+    assert "stress" in msg
+    assert "-0.01 20d" in msg
+
+
+def test_credit_context_calm_state():
+    msg = format_daily_alert(
+        _CREDIT_PICK, "bull", "2026-07-27",
+        credit_context={"hy_oas": 3.10, "hy_oas_stress": False, "hy_oas_chg20": 0.05},
+    )
+    assert "calm" in msg
+    assert "+0.05 20d" in msg
+
+
+def test_credit_context_omitted_leaves_regime_line_unchanged():
+    """Fail-open: no credit data (or no key) → regime line has no Credit segment."""
+    base = format_daily_alert(_CREDIT_PICK, "bull", "2026-07-27")
+    assert "Credit:" not in base
+    assert "Credit:" not in format_daily_alert(_CREDIT_PICK, "bull", "2026-07-27",
+                                               credit_context={})
+    assert "Credit:" not in format_daily_alert(
+        _CREDIT_PICK, "bull", "2026-07-27",
+        credit_context={"hy_oas": None, "hy_oas_stress": None, "hy_oas_chg20": None})
+
+
+def test_credit_context_on_no_picks_and_validation_failed_paths():
+    """The regime line carries credit context in all three alert paths."""
+    no_picks = format_daily_alert(
+        [], "choppy", "2026-07-27",
+        credit_context={"hy_oas": 2.77, "hy_oas_stress": True, "hy_oas_chg20": 0.0},
+    )
+    assert "Credit:" in no_picks and "HY 2.77%" in no_picks
+    failed = format_daily_alert(
+        _CREDIT_PICK, "bear", "2026-07-27", validation_failed=True,
+        failed_checks=["slippage_sensitivity_check"],
+        credit_context={"hy_oas": 5.5, "hy_oas_stress": True, "hy_oas_chg20": 0.4},
+    )
+    assert "Credit:" in failed and "HY 5.50%" in failed

@@ -269,6 +269,36 @@ def _render_manual_sleeve_section(
     return lines
 
 
+def _credit_suffix(credit_context: dict | None) -> str:
+    """Render the HY-OAS credit-spread state as a suffix on the regime line.
+
+    Credit spreads lead risk-off where VIX is coincident, so the level + stress flag
+    is useful daily context. This is CONTEXT ONLY — the regime bear-tilt from HY is
+    default-off (see config.regime_hy_oas_enabled) because HY has opposite signs
+    across the book (sniper prefers calm credit, MR does better in stress). Returns
+    "" when unavailable so the regime line is unchanged.
+    """
+    if not credit_context:
+        return ""
+    level = credit_context.get("hy_oas")
+    if level is None:
+        return ""
+    stress = credit_context.get("hy_oas_stress")
+    chg20 = credit_context.get("hy_oas_chg20")
+    if stress is True:
+        state = "⚠️ stress"
+    elif stress is False:
+        state = "calm"
+    else:
+        state = ""
+    parts = [f"HY {level:.2f}%"]
+    if state:
+        parts.append(state)
+    if chg20 is not None:
+        parts.append(f"{chg20:+.2f} 20d")
+    return f"   |   Credit: <b>{' · '.join(parts)}</b>"
+
+
 def _render_pead_paper_section(pead_picks: list[dict]) -> list[str]:
     """Render the PEAD paper-trial section appended to the daily alert.
 
@@ -338,14 +368,20 @@ def format_daily_alert(
     model_scorecard: dict[str, dict] | None = None,
     manual_sleeve_picks: list[dict] | None = None,
     pead_paper_picks: list[dict] | None = None,
+    credit_context: dict | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message.
 
     ``manual_sleeve_picks`` is the parallel MR Manual Sleeve stream. It is
     rendered in its own labeled section after the MAS picks (or directly
     after the validation/empty-state body) so MAS tracking stays clean.
+
+    ``credit_context`` optionally carries the HY-OAS credit-spread state
+    (hy_oas / hy_oas_stress / hy_oas_chg20) appended to the regime line as
+    context; omitted or empty leaves the regime line unchanged.
     """
     regime_dot = _regime_emoji(regime)
+    credit = _credit_suffix(credit_context)
 
     if validation_failed:
         mode_line = ""
@@ -354,7 +390,7 @@ def format_daily_alert(
         lines = [
             f"<b>{_prefix()} \U0001f6d1 Daily Screener \u2014 {run_date}</b>",
             "",
-            f"{regime_dot} Regime: <b>{regime.upper()}</b>",
+            f"{regime_dot} Regime: <b>{regime.upper()}</b>{credit}",
         ]
         if mode_line:
             lines.append(mode_line.rstrip())
@@ -392,7 +428,7 @@ def format_daily_alert(
         lines = [
             f"<b>{_prefix()} \U0001f4ca Daily Screener \u2014 {run_date}</b>",
             "",
-            f"{regime_dot} Regime: <b>{regime.upper()}</b>",
+            f"{regime_dot} Regime: <b>{regime.upper()}</b>{credit}",
         ]
         if mode_line:
             lines.append(mode_line.rstrip())
@@ -425,7 +461,7 @@ def format_daily_alert(
     lines = [
         f"<b>{_prefix()} \U0001f4ca Daily Screener \u2014 {run_date}</b>",
         "",
-        f"{regime_dot} Regime: <b>{regime.upper()}</b>   |   Picks: <b>{len(picks)}</b>",
+        f"{regime_dot} Regime: <b>{regime.upper()}</b>   |   Picks: <b>{len(picks)}</b>{credit}",
     ]
     if mode_tag:
         lines.append(mode_tag.rstrip())
