@@ -1945,6 +1945,13 @@ async def _run_pipeline_core(
         model_scorecard=model_scorecard or None,
         manual_sleeve_picks=sleeve_picks_for_alert,
         pead_paper_picks=pead_paper_picks,
+        # HY-OAS credit-spread state as daily context on the regime line (the
+        # bear-tilt itself stays config-gated/off — see config.regime_hy_oas_enabled).
+        credit_context={
+            "hy_oas": regime_assessment.hy_oas,
+            "hy_oas_stress": regime_assessment.hy_oas_stress,
+            "hy_oas_chg20": macro.get("hy_oas_chg20"),
+        },
     )
     try:
         await send_alert(alert_msg)
