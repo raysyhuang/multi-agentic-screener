@@ -204,6 +204,16 @@ def _annotate_signal_stream(
         )
 
 
+def _pead_variant_source(signal) -> str:
+    """PEAD paper variant, keyed by the neglected-beat tag (decelerating YoY revenue
+    growth). The validated stronger cohort tracks under its own signal_source
+    ("pead_neglected") so it accrues a separate forward record; the rest stay
+    "pead_paper". Both are quarantined — PEAD is never added to the official book.
+    """
+    neglected = bool(getattr(signal, "components", {}).get("neglected_beat"))
+    return "pead_neglected" if neglected else "pead_paper"
+
+
 class RunIDFilter(logging.Filter):
     """Attach run_id to all log records within a pipeline execution."""
 
@@ -1284,10 +1294,15 @@ async def _run_pipeline_core(
         )
 
     # PEAD paper stream — ranked here (while price_data is still alive) with its
-    # OWN position cap, kept entirely separate from the official `ranked`.
+    # OWN position cap, kept entirely separate from the official `ranked`. Split
+    # into two labeled PAPER variants by the neglected-beat tag (decelerating YoY
+    # revenue growth = the validated stronger cohort) so each accrues its own
+    # forward track record. Both stay quarantined (never added to the book).
     pead_ranked = []
     if pead_signals:
         _annotate_signal_stream(pead_signals, signal_source="pead_paper")
+        for _sig in pead_signals:
+            _sig.signal_source = _pead_variant_source(_sig)
         pead_ranked = rank_candidates(
             pead_signals,
             regime=regime_assessment.regime,
@@ -1296,7 +1311,9 @@ async def _run_pipeline_core(
         )
         pead_ranked = filter_correlated_picks(pead_ranked, price_data)
         pead_ranked = pead_ranked[: settings.pead_max_positions]
-        logger.info("PEAD paper stream selected %d candidates", len(pead_ranked))
+        _n_neg = sum(1 for c in pead_ranked if getattr(c, "signal_source", "") == "pead_neglected")
+        logger.info("PEAD paper stream selected %d candidates (%d neglected-beat variant)",
+                    len(pead_ranked), _n_neg)
 
     # Release OHLCV data — largest memory consumer, no longer needed
     del price_data
@@ -1685,8 +1702,9 @@ async def _run_pipeline_core(
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
         if pead_result:
-            # Paper stream — persisted (signal_source="pead_paper") so outcomes
-            # are tracked separately; never counted in the official book.
+            # Paper stream — persisted under each pick's signal_source ("pead_paper"
+            # or the "pead_neglected" variant) so both variants' outcomes are tracked
+            # separately; never counted in the official book.
             picks_to_persist.extend(pead_result.approved)
 
         _exit_config_snapshot = build_exit_config_snapshot(settings)
