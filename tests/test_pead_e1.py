@@ -10,7 +10,11 @@ from datetime import date, timedelta
 import pandas as pd
 import pytest
 
-from src.signals.post_earnings_drift import _report_day_reaction, score_post_earnings_drift
+from src.signals.post_earnings_drift import (
+    _report_day_reaction,
+    revenue_growth_acceleration,
+    score_post_earnings_drift,
+)
 
 
 def _df(reaction_pct: float, bars: int = 21):
@@ -67,3 +71,35 @@ def test_e1_off_fires_on_eps_only():
     sig = score_post_earnings_drift("AAA", df, _feat(df), 12.0, revenue_surprise_pct=None,
                                     report_date=rd, e1_filters=False)
     assert sig is not None  # raw EPS-only signal still fires
+
+
+# --- Neglected-beat tag (decelerating YoY revenue growth) ---
+
+def test_revenue_growth_acceleration():
+    d = [date(2024, 1, 1) + timedelta(days=90 * i) for i in range(6)]
+    # Accelerating: YoY growth rising. rev[t]/rev[t-4] > rev[t-1]/rev[t-5].
+    accel = list(zip(d, [100, 100, 100, 100, 130, 180]))
+    assert revenue_growth_acceleration(accel) > 0
+    # Decelerating: YoY growth falling. yoy_now=150/100-1=0.5 < yoy_prev=200/100-1=1.0.
+    decel = list(zip(d, [100, 100, 150, 180, 200, 150]))
+    assert revenue_growth_acceleration(decel) <= 0
+    # Too few quarters → None.
+    assert revenue_growth_acceleration(list(zip(d[:5], [1, 2, 3, 4, 5]))) is None
+
+
+def test_neglected_beat_tag_set_from_accel():
+    df, rd = _df(6.0)
+    # Decelerating growth → neglected_beat True.
+    sig = score_post_earnings_drift("AAA", df, _feat(df), 12.0, revenue_surprise_pct=3.0,
+                                    report_date=rd, revenue_yoy_accel=-0.05)
+    assert sig.components["neglected_beat"] is True
+    assert sig.components["revenue_yoy_accel"] == -0.05
+    # Accelerating growth → neglected_beat False.
+    sig2 = score_post_earnings_drift("AAA", df, _feat(df), 12.0, revenue_surprise_pct=3.0,
+                                     report_date=rd, revenue_yoy_accel=0.05)
+    assert sig2.components["neglected_beat"] is False
+    # No accel data → not flagged (and does not gate firing).
+    sig3 = score_post_earnings_drift("AAA", df, _feat(df), 12.0, revenue_surprise_pct=3.0,
+                                     report_date=rd, revenue_yoy_accel=None)
+    assert sig3.components["neglected_beat"] is False
+    assert sig3.components["revenue_yoy_accel"] is None

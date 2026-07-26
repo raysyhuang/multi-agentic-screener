@@ -302,6 +302,7 @@ def _render_pead_paper_section(pead_picks: list[dict]) -> list[str]:
         confidence = pick.get("confidence", 0)
         holding = pick.get("holding_period", 20)
         also_in_mas = pick.get("also_in_mas", False)
+        neglected_beat = pick.get("neglected_beat", False)
 
         risk_pct = abs(entry - stop) / entry * 100 if entry > 0 else 0
         reward_pct = abs(target - entry) / entry * 100 if entry > 0 else 0
@@ -309,7 +310,11 @@ def _render_pead_paper_section(pead_picks: list[dict]) -> list[str]:
         dir_arrow = "▲" if direction == "LONG" else "▼"
         conf_bar = _bar(confidence, 100, 10)
 
-        lines.append(f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>pead</code>")
+        # "Neglected beat" = decelerating YoY revenue growth. Backtest: this subset
+        # drifts more (+2.42% vs +1.31% for accelerating growers) and cleared the
+        # validation card — labeled here so its forward record is tracked separately.
+        tag = "  \U0001f3af <i>neglected-beat</i>" if neglected_beat else ""
+        lines.append(f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>pead</code>{tag}")
         if also_in_mas:
             lines.append("   \U0001f501 also an official pick today")
         lines.extend([

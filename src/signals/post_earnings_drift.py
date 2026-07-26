@@ -71,6 +71,37 @@ def _report_day_reaction(df: pd.DataFrame, report_date, max_age: int = 2) -> flo
     return (float(df["close"].iloc[report_i]) / prev - 1) * 100
 
 
+def revenue_growth_acceleration(revenue_by_date) -> float | None:
+    """YoY revenue-growth acceleration for the most recent reported quarter:
+
+        (rev[t] / rev[t-4] − 1) − (rev[t-1] / rev[t-5] − 1)
+
+    > 0 = accelerating growth; <= 0 = decelerating (the validated "neglected beat"
+    cohort — a >10% EPS beat with decelerating revenue growth drifts MORE, since the
+    underreaction lives in the neglected name, not the priced-for-perfection grower).
+    Needs >= 6 clean quarters of positive revenue actuals; None otherwise.
+    Look-ahead-safe when callers pass only revenue reported on/before the event.
+
+    Args:
+        revenue_by_date: iterable of (date, revenue_actual) pairs.
+    """
+    clean: dict = {}
+    for d, v in revenue_by_date:
+        try:
+            fv = float(v)
+        except (TypeError, ValueError):
+            continue
+        if fv > 0:
+            clean[d] = fv
+    seq = [v for _, v in sorted(clean.items())]
+    if len(seq) < 6:
+        return None
+    rev_t, rev_t1, rev_t4, rev_t5 = seq[-1], seq[-2], seq[-5], seq[-6]
+    if min(rev_t, rev_t1, rev_t4, rev_t5) <= 0:
+        return None
+    return (rev_t / rev_t4 - 1) - (rev_t1 / rev_t5 - 1)
+
+
 def score_post_earnings_drift(
     ticker: str,
     df: pd.DataFrame,
@@ -78,6 +109,7 @@ def score_post_earnings_drift(
     earnings_surprise_pct: float | None,
     revenue_surprise_pct: float | None = None,
     report_date=None,
+    revenue_yoy_accel: float | None = None,
     regime: str = "unknown",
     min_surprise: float = 10.0,
     e1_filters: bool = True,
@@ -152,5 +184,10 @@ def score_post_earnings_drift(
             "eps_surprise_pct": round(float(earnings_surprise_pct), 2),
             "revenue_surprise_pct": round(revenue_surprise_pct, 2) if revenue_surprise_pct is not None else None,
             "day1_reaction_pct": round(reaction_pct, 2) if reaction_pct is not None else None,
+            # "Neglected beat" tag (2026-07-26, validated cohort): a beat whose YoY
+            # revenue growth is DECELERATING drifts more. Labels the pick so the
+            # subset accrues its own forward track record; does NOT gate firing.
+            "revenue_yoy_accel": round(revenue_yoy_accel, 4) if revenue_yoy_accel is not None else None,
+            "neglected_beat": bool(revenue_yoy_accel is not None and revenue_yoy_accel <= 0),
         },
     )

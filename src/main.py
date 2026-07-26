@@ -942,6 +942,31 @@ async def _run_pipeline_core(
                     }
             logger.info("PEAD: %d reporters with computable surprise in last 6d (as of %s)",
                         len(pead_events_by_ticker), today)
+
+            # Neglected-beat tag: for reporters that actually beat (eps >= the PEAD
+            # threshold), compute YoY revenue-growth acceleration from their trailing
+            # quarterly revenue actuals. This labels the pick (decelerating growth =
+            # the validated stronger cohort) so its subset accrues a separate forward
+            # track record. Only the handful of qualifying beats are fetched.
+            from src.signals.post_earnings_drift import revenue_growth_acceleration
+            for sym, ev in pead_events_by_ticker.items():
+                ev["rev_accel"] = None
+                if ev["eps"] is None or ev["eps"] < settings.pead_min_surprise:
+                    continue
+                try:
+                    hist = await aggregator.fmp.get_earnings_surprise(sym)
+                    rev_series = []
+                    for r in hist or []:
+                        try:
+                            rd2 = date.fromisoformat(str(r.get("date", ""))[:10])
+                        except ValueError:
+                            continue
+                        rv = r.get("revenueActual")
+                        if rv is not None:
+                            rev_series.append((rd2, rv))
+                    ev["rev_accel"] = revenue_growth_acceleration(rev_series)
+                except Exception as _e:
+                    logger.debug("PEAD rev-accel fetch failed for %s: %s", sym, _e)
         except Exception as e:
             logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
 
@@ -1080,6 +1105,7 @@ async def _run_pipeline_core(
                 earnings_surprise_pct=_pe.get("eps"),
                 revenue_surprise_pct=_pe.get("rev"),
                 report_date=_pe.get("report_date"),
+                revenue_yoy_accel=_pe.get("rev_accel"),
                 regime=regime_assessment.regime.value,
                 min_surprise=settings.pead_min_surprise,
                 e1_filters=settings.pead_e1_filters,
@@ -1881,6 +1907,11 @@ async def _run_pipeline_core(
                 "confidence": pick.confidence,
                 "holding_period": pick.holding_period,
                 "also_in_mas": pick.also_in_mas,
+                # Neglected-beat label (decelerating YoY revenue growth) — read from
+                # the persisted model_components so the subset is visible in the alert.
+                "neglected_beat": bool(
+                    (pick.features or {}).get("model_components", {}).get("neglected_beat")
+                ),
             }
             for pick in pead_result.approved
         ]
