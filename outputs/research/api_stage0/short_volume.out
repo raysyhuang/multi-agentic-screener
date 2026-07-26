@@ -1,0 +1,15 @@
+503 tickers, 2023-07-26..2026-07-24; pulling short volume (cached)...
+
+276981 observations. Base rate: +5d +0.29%  +10d +0.60%  +20d +1.25%
+
+short vol %    +5d edge  +10d edge  +20d edge       N
+-------------------------------------------------------
+<35                11bp       13bp        9bp   38997
+35-45               2bp        3bp       -2bp   57749
+45-50              -0bp       -2bp       -8bp   35647
+50-55              -0bp       -6bp      -11bp   35813
+55-65              -5bp       -7bp      -22bp   62475
+>=65               -5bp       -7bp      -34bp   46290
+
+Edge = forward return above/below base rate by short-volume bucket.
+EXIT=0
