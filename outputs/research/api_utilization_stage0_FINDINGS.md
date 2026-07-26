@@ -108,6 +108,46 @@ Ray: "1 test short signal, 2 use hy oas." Both done.
   `src/features/regime.py` (params + surfaced signal + gated tilt), `src/config.py`,
   `src/main.py` (both regime call sites + log), tests in `test_regime.py`.
 
+## Follow-up 2 (2026-07-26): guidance-raise test — BLOCKED literal, PROXY rejected
+
+Ray: "run the E1/PEAD guidance-raise test next" + "check FMP, I paid $29/mo."
+
+### FMP tier check — $29 Starter is active and correct (no billing/key issue)
+- Receipt confirms **Starter Access, $29, Jul 21–Aug 21 2026.** FMP's own error
+  string names the account "Starter plan." So the paid plan is live and working.
+- Entitlement map on the pipeline key: earnings actuals+revenue ✅ (164 quarters),
+  ratios ✅, key-metrics ✅, insider/screener/news ✅; **analyst_estimates (forward
+  guidance) ❌ plan_gated (0 rows); 13F institutional ❌ 402 Restricted.** Forward
+  estimates/guidance + 13F are simply not part of Starter — they need a higher tier
+  (Premium). Nothing to fix. (Probing the 13F endpoint trips the client's fatal-402
+  self-disable for that process only — a probe artifact, not the pipeline state.)
+- The literal guidance-raise (forward-estimate up-revision) is therefore
+  **untestable on Starter** — confirmed a 3rd way (MCP `financial-estimates` = ACCESS
+  DENIED; pipeline `analyst_estimates` = plan_gated; 13F = 402).
+
+### Achievable proxy — revenue-growth ACCELERATION — REJECTED (inverts)
+Revenue actuals ARE on Starter, so tested the guidance-spirit quality dimension
+point-in-time: does a beat with ACCELERATING YoY revenue growth (yoy_now > yoy_prev)
+drift more? (Orthogonal to the revenue-SURPRISE gate already shipped.)
+`scripts/pead_revaccel_test.py`, Polygon 3Y, unified engine, 7.5bp/side:
+
+| cohort (>10% beat) | N | avg% | Sharpe |
+|---|---|---|---|
+| all beats | 1574 | +1.81 | 1.47 |
+| + rev accel (>0) | 901 | **+1.31** | 1.06 |
+| − rev decel (≤0) | 669 | **+2.42** | 2.02 |
+
+- **INVERTS**: decelerating-growth beats drift MORE; accelerating growers drift LESS.
+  Robust at >2% too (accel +1.02 vs decel +1.64). Textbook PEAD — underreaction lives
+  in the NEGLECTED/surprising beat, not the already-loved momentum grower ("priced
+  for perfection" gets sold). Same lesson as E2: obvious good news is contrarian for
+  drift.
+- **A guidance-raise / accelerating-fundamentals filter would HURT PEAD.** Rejected.
+- Byproduct: the DECELERATING-beat cohort is consistently the BETTER PEAD subset
+  (+2.42%/Sharpe 2.02 at >10%) — a "neglected beat" candidate, OPPOSITE of guidance-
+  raise. One split / multiple-testing-adjacent → would need a validation-card gate
+  before any use. Not shipped.
+
 ## Discipline notes
 - Stage-0 base-rate FIRST, then condition on the actual strategy's trades — the
   conditioning is what caught the short-signal reversal. Unconditional IC ≠ strategy
