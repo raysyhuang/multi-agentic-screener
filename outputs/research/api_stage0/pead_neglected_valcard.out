@@ -1,0 +1,36 @@
+Building >10% beat events + revenue-accel tags...
+Neglected-beat cohort (decelerating growth): 669 events
+
+cohort: N=669  WR=58.0%  avg=+2.418%  raw_sharpe(x50)=2.02
+regime counts: {'bull': 364, 'bear': 132, 'choppy': 166, 'unknown': 7}
+regime WR: {'bull': 0.525, 'bear': 0.712, 'choppy': 0.596, 'unknown': 0.571}
+
+Validation card at several variants_tested (deflated Sharpe is search-sensitive):
+ variants  deflSharpe  fragility  robust?
+-----------------------------------------
+        1       0.000        0.0     True
+        6       1.000       15.0     True
+       12       1.000       15.0     True
+       20       1.000       15.0     True
+
+Primary card (variants_tested=12):
+  total_trades=669  win_rate=0.580  avg_pnl=+2.418%
+  dispersion=0.067  slippage_sensitivity=0.064  deflated_sharpe=1.000
+  fragility_score=15.0  is_robust=True
+    - Multiple testing concern (12 variants)
+    - PASSED: Signal appears robust
+
+Pipeline 8-check gate (NoSilentPass):
+  PASS  timestamp_integrity_check
+  PASS  next_bar_execution_check
+  PASS  future_data_guard_check
+  PASS  slippage_sensitivity_check
+  PASS  threshold_sensitivity_check
+  PASS  confidence_calibration_check
+  PASS  regime_survival_check
+  PASS  risk_reward_floor_check
+
+  validation_status = PASS
+  notes: All 8 validation checks passed
+
+VERDICT: PASS — clears the card + gate

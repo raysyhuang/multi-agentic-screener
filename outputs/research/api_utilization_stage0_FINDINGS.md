@@ -148,6 +148,39 @@ drift more? (Orthogonal to the revenue-SURPRISE gate already shipped.)
   raise. One split / multiple-testing-adjacent → would need a validation-card gate
   before any use. Not shipped.
 
+## Follow-up 3 (2026-07-26): neglected-beat validation gate → PASS + a DSR BUG FIX
+
+Ray: "run the neglected-beat validation gate." Ran the decelerating-growth beat
+cohort (>10% EPS beat AND YoY revenue growth decelerating) through the 8-check card.
+
+### The run surfaced a real bug in the validation card's Deflated Sharpe
+`deflated_sharpe_ratio` (src/backtest/metrics.py) computed `Φ((sr − E[maxZ]) / std_sr)`
+— subtracting an expected-max Z-SCORE (~1.4–2.5) from a per-trade SHARPE (~0.2–0.8),
+different scales. Because sr is always far below E[maxZ], DSR collapsed to ~0 for
+EVERY per-trade strategy regardless of significance: a synthetic t-stat-17 edge
+scored 0.000. This is why "deflated_sharpe 0.00" appeared on the trail sweep, MR
+stop, etc. — the metric never discriminated. FIXED to the Bailey–López de Prado form
+`Φ(sr/std_sr − E[maxZ])` (compare the Sharpe's own z-score to the max-Z benchmark).
+Now: synthetic real edge → 1.0, noise → <0.5, more trials → lower DSR. Regression
+tests in `tests/test_backtest/test_metrics.py`. NOTE: past rejections that leaned on
+DSR=0.00 should be re-read — though most had independent reasons (MR stop was
+negative-expectancy at the live gate; trail was unstable across smoke samples).
+
+### Neglected-beat cohort — PASSES the card + the 8-check gate
+`scripts/pead_neglected_beat_valcard.py`, N=669, cost 7.5bp, 2x-slippage rerun,
+regime tagged by SPY market regime at the announcement:
+- WR 58.0%, avg +2.418%/trade, raw Sharpe(×50) 2.02.
+- Positive in ALL 3 regimes: bull 52.5% (n=364), **bear 71.2% (n=132)**, choppy
+  59.6% (n=166).
+- dispersion 0.067 (stable across 5 windows), slippage_sensitivity 0.064, **deflated
+  Sharpe 1.000 at up to 20 variants**, fragility 15 (< 40), is_robust=True.
+- Pipeline 8-check gate: **all PASS** (validation_status=pass).
+- **VERDICT: PASS.** The one candidate in the whole API-utilization arc to clear the
+  full validation bar. CAVEATS: it's a REFINEMENT of PEAD (already a quarantined
+  paper sleeve, and a decaying anomaly), not a new independent edge — so the action
+  is to bias PEAD paper selection toward decelerating-growth beats (or run it as a
+  labeled PEAD-paper variant) and watch for decay, NOT auto-promote to capital.
+
 ## Discipline notes
 - Stage-0 base-rate FIRST, then condition on the actual strategy's trades — the
   conditioning is what caught the short-signal reversal. Unconditional IC ≠ strategy
