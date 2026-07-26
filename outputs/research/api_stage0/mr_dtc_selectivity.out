@@ -1,0 +1,11 @@
+Loaded 504 tickers
+
+MR 'drop days-to-cover >= 3' filter vs MR score floor (live floor is 50 base / 75 choppy):
+ min_score                              full                      kept (dtc<3)               delta 95%CI
+--------------------------------------------------------------------------------------------------------
+        50   N=27822  WR= 52.2%  exp=+0.039%   N=14782  WR= 53.0%  exp=+0.104%  +0.065 [+0.015,+0.116] HELPS
+        60   N=24163  WR= 51.9%  exp=+0.021%   N=12769  WR= 52.7%  exp=+0.076%  +0.056 [+0.003,+0.108] HELPS
+        70   N=15180  WR= 51.7%  exp=-0.012%   N= 7975  WR= 52.3%  exp=+0.021%  +0.033 [-0.031,+0.095] noise
+        75   N= 7889  WR= 51.7%  exp=-0.028%   N= 4111  WR= 52.1%  exp=+0.006%  +0.034 [-0.046,+0.113] noise
+
+Read: if the kept-full delta decays to noise (CI crosses 0) as min_score rises toward the live floor, the DTC edge is a low-selectivity artifact (same pattern as the rejected MR-stop) and does NOT earn the validation card.
