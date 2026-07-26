@@ -265,6 +265,7 @@ def simulate_trade(
     gap_through: bool = False,
     time_stop_days: int = 0,
     time_stop_eligible: bool = False,
+    same_bar_resolver=None,
 ) -> dict | None:
     """Simulate a LONG trade with T+1 open entry, optional trailing stop, and two-leg exits.
 
@@ -378,6 +379,7 @@ def simulate_trade(
             early_exit_mfe_pct=early_exit_mfe_pct,
             gap_through=gap_through,
             check_entry_bar=False,
+            same_bar_resolver=same_bar_resolver,
         ),
     )
 
@@ -607,12 +609,20 @@ def run_model_backtest(
     params = params or {}
     all_trades: list[Trade] = []
 
+    # Minute-bar fill realism (opt-in): resolve same-bar stop-vs-target ties from
+    # Polygon 1-minute data instead of the conservative stop-first assumption.
+    use_minute_resolver = params.get("use_minute_resolver", False)
+    _mr_stats = {"calls": 0, "resolved": 0, "flipped": 0}
+    if use_minute_resolver:
+        from src.backtest.minute_resolver import make_minute_resolver
+
     for ticker, df in price_data.items():
         if len(df) < MIN_HISTORY_BARS:
             continue
 
         # Classify regime from full history
         regime = classify_regime(df)
+        _resolver = make_minute_resolver(ticker) if use_minute_resolver else None
 
         # Scan for signals
         if model == "breakout":
@@ -700,6 +710,7 @@ def run_model_backtest(
                 gap_through=gap_through,
                 time_stop_days=time_stop_days,
                 time_stop_eligible=(model == "sniper"),
+                same_bar_resolver=_resolver,
             )
             if result is None:
                 continue
@@ -713,6 +724,16 @@ def run_model_backtest(
                 **{k: v for k, v in result.items()
                    if k in Trade.__dataclass_fields__},
             ))
+
+        if _resolver is not None:
+            _mr_stats["calls"] += _resolver.calls
+            _mr_stats["resolved"] += _resolver.resolved
+            _mr_stats["flipped"] += _resolver.flipped
+
+    if use_minute_resolver:
+        print(f"Minute-fill resolver: {_mr_stats['calls']} ambiguous same-bar ties, "
+              f"{_mr_stats['resolved']} resolved from minute data, "
+              f"{_mr_stats['flipped']} flipped stop→target")
 
     # Compute metrics
     returns = [t.pnl_pct for t in all_trades]
