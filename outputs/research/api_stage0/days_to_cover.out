@@ -1,0 +1,15 @@
+503 tickers; pulling short interest (cached)...
+
+98081 settlement observations. Base rate: +5d +0.29%  +10d +0.60%  +20d +1.25%
+
+days-to-cover    +5d edge  +10d edge  +20d edge       N
+---------------------------------------------------------
+<1                      —          —          —       0
+1-2                 -91bp     -270bp     -212bp   23876
+2-3                 -66bp     -234bp     -214bp   30882
+3-5                 -75bp     -247bp     -222bp   28838
+5-8                 -96bp     -291bp     -249bp   10315
+>=8                -147bp     -389bp     -325bp    4170
+
+Edge = forward return vs base by days-to-cover (crowded-short) bucket.
+EXIT=0
