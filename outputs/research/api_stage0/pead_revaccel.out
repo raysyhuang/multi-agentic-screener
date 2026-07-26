@@ -1,0 +1,19 @@
+Building PEAD beat events (>10% EPS surprise)...
+1574 beat events; 1570 tagged with revenue-accel (need 5+ quarters of revenue history)
+
+stop 3.0xATR / target 6.0xATR / hold 20d / cost 7.5bp/side
+cohort                     N      WR    avg%  expect%     PF Sharpe equity×   CAGR%  eqDD%
+------------------------------------------------------------------------------------------
+all beats             1574   57.0%    1.81    1.811   1.73   1.47    1.60    17.4   19.4
++ rev accel (>0)       901   56.2%    1.31    1.310   1.50   1.06    1.28     8.9   16.2
+- rev decel (<=0)      669   58.0%    2.42    2.418   2.07   2.02    1.49    14.4   14.5
+
+Sub-period stability (+ rev accel):
+cohort                     N      WR    avg%  expect%     PF Sharpe equity×   CAGR%  eqDD%
+------------------------------------------------------------------------------------------
+early third            301   62.8%    2.32    2.321   2.26   2.17    1.18    16.3    7.6
+mid third              300   57.7%    1.12    1.122   1.41   0.94    1.07     6.5   16.2
+late third             300   48.0%    0.48    0.482   1.15   0.34    1.02     2.1   15.9
+
+mean YoY-accel: accelerating cohort +0.102, decelerating cohort -0.105
+EXIT=0
