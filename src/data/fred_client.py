@@ -86,6 +86,7 @@ SERIES = {
     "yield_spread": "T10Y2Y",  # 10Y-2Y spread
     "fed_funds": "FEDFUNDS",
     "initial_claims": "ICSA",
+    "hy_oas": "BAMLH0A0HYM2",  # ICE BofA US High-Yield OAS (credit spread, risk-off lead)
 }
 
 
@@ -170,11 +171,35 @@ class FREDClient:
         from_date = date.today() - timedelta(days=lookback_days)
         return await self.get_series(SERIES["yield_spread"], from_date)
 
+    async def get_hy_oas(self, lookback_days: int = 120) -> pd.DataFrame:
+        """ICE BofA US High-Yield OAS (credit spread). Needs enough history for a
+        ~50-obs moving average, so the default lookback is wider than VIX/yields.
+        No yfinance fallback exists for this series — returns empty without a key."""
+        from_date = date.today() - timedelta(days=lookback_days)
+        return await self.get_series(SERIES["hy_oas"], from_date)
+
     async def get_macro_snapshot(self) -> dict:
         """Fetch latest values for key macro indicators."""
         vix = await self.get_vix(lookback_days=5)
         yield_curve = await self.get_yield_curve(lookback_days=5)
+        hy = await self.get_hy_oas(lookback_days=120)
+
+        # Credit-spread state: level, whether above its ~50-obs moving average
+        # (stress), and the 20-obs change (widening > 0). Fail-open to None when the
+        # series is unavailable so the regime classifier simply ignores it.
+        hy_level = hy_stress = hy_chg20 = None
+        if not hy.empty:
+            vals = hy["value"].astype(float)
+            hy_level = float(vals.iloc[-1])
+            if len(vals) >= 20:
+                ma = float(vals.tail(50).mean())
+                hy_stress = bool(hy_level > ma)
+                hy_chg20 = float(hy_level - vals.iloc[-21])
+
         return {
             "vix": float(vix["value"].iloc[-1]) if not vix.empty else None,
             "yield_spread_10y2y": float(yield_curve["value"].iloc[-1]) if not yield_curve.empty else None,
+            "hy_oas": hy_level,
+            "hy_oas_stress": hy_stress,
+            "hy_oas_chg20": hy_chg20,
         }

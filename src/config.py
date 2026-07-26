@@ -143,6 +143,20 @@ class Settings(BaseSettings):
     vix_low_threshold: float = 15.0
     breadth_bullish_threshold: float = 0.60
     breadth_bearish_threshold: float = 0.40
+    # Credit-spread regime input (HY OAS, 2026-07-26). ICE BofA US High-Yield OAS
+    # (FRED BAMLH0A0HYM2, free) is a classic risk-off / credit-stress lead that VIX
+    # (coincident) misses. The level + "stress" flag (above ~50-obs MA) + 20d change
+    # are ALWAYS computed and surfaced in the regime assessment / alerts — HY-OAS is
+    # used as decision CONTEXT on every run.
+    # The optional bear-score TILT is DEFAULT OFF by design: the Stage-1 study
+    # (outputs/research/api_utilization_stage0_FINDINGS.md) found HY-OAS has OPPOSITE
+    # signs across the book — sniper does better in calm credit (not significant),
+    # but MR does *better* in credit stress (significant, +0.21% vs -0.09%). A global
+    # bear tilt would downsize MR exactly when MR is strongest, so it is not enabled
+    # without more evidence. Flip regime_hy_oas_enabled=True to activate the tilt.
+    # Fail-open: no FRED key / no data → hy_oas_stress is None → zero effect.
+    regime_hy_oas_enabled: bool = False
+    regime_hy_oas_bear_weight: float = 0.5
 
     # --- Capital Guardian (portfolio-level risk defense) ---
     guardian_enabled: bool = True

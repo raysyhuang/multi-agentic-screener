@@ -650,8 +650,15 @@ async def _run_pipeline_core(
         qqq_df=qqq_df,
         vix=macro.get("vix"),
         yield_spread=macro.get("yield_spread_10y2y"),
+        hy_oas=macro.get("hy_oas"),
+        hy_oas_stress=macro.get("hy_oas_stress"),
     )
-    logger.info("Regime: %s (confidence: %.2f)", regime_assessment.regime.value, regime_assessment.confidence)
+    logger.info(
+        "Regime: %s (confidence: %.2f) | HY OAS %s (%s)",
+        regime_assessment.regime.value, regime_assessment.confidence,
+        f"{regime_assessment.hy_oas:.2f}" if regime_assessment.hy_oas is not None else "n/a",
+        regime_assessment.details.get("hy_oas", "unknown"),
+    )
 
     regime_context = {
         "regime": regime_assessment.regime.value,
@@ -660,6 +667,8 @@ async def _run_pipeline_core(
         "spy_trend": regime_assessment.spy_trend,
         "qqq_trend": regime_assessment.qqq_trend,
         "yield_spread": regime_assessment.yield_spread,
+        "hy_oas": regime_assessment.hy_oas,
+        "hy_oas_stress": regime_assessment.hy_oas_stress,
     }
 
     # Regime envelope
@@ -784,6 +793,8 @@ async def _run_pipeline_core(
             vix=macro.get("vix"),
             yield_spread=macro.get("yield_spread_10y2y"),
             breadth_score=breadth,
+            hy_oas=macro.get("hy_oas"),
+            hy_oas_stress=macro.get("hy_oas_stress"),
         )
         logger.info("Regime (with breadth): %s (confidence: %.2f)", regime_assessment.regime.value, regime_assessment.confidence)
         regime_context["breadth_score"] = breadth
