@@ -204,6 +204,16 @@ def _annotate_signal_stream(
         )
 
 
+def _pead_variant_source(signal) -> str:
+    """PEAD paper variant, keyed by the neglected-beat tag (decelerating YoY revenue
+    growth). The validated stronger cohort tracks under its own signal_source
+    ("pead_neglected") so it accrues a separate forward record; the rest stay
+    "pead_paper". Both are quarantined — PEAD is never added to the official book.
+    """
+    neglected = bool(getattr(signal, "components", {}).get("neglected_beat"))
+    return "pead_neglected" if neglected else "pead_paper"
+
+
 class RunIDFilter(logging.Filter):
     """Attach run_id to all log records within a pipeline execution."""
 
@@ -942,6 +952,31 @@ async def _run_pipeline_core(
                     }
             logger.info("PEAD: %d reporters with computable surprise in last 6d (as of %s)",
                         len(pead_events_by_ticker), today)
+
+            # Neglected-beat tag: for reporters that actually beat (eps >= the PEAD
+            # threshold), compute YoY revenue-growth acceleration from their trailing
+            # quarterly revenue actuals. This labels the pick (decelerating growth =
+            # the validated stronger cohort) so its subset accrues a separate forward
+            # track record. Only the handful of qualifying beats are fetched.
+            from src.signals.post_earnings_drift import revenue_growth_acceleration
+            for sym, ev in pead_events_by_ticker.items():
+                ev["rev_accel"] = None
+                if ev["eps"] is None or ev["eps"] < settings.pead_min_surprise:
+                    continue
+                try:
+                    hist = await aggregator.fmp.get_earnings_surprise(sym)
+                    rev_series = []
+                    for r in hist or []:
+                        try:
+                            rd2 = date.fromisoformat(str(r.get("date", ""))[:10])
+                        except ValueError:
+                            continue
+                        rv = r.get("revenueActual")
+                        if rv is not None:
+                            rev_series.append((rd2, rv))
+                    ev["rev_accel"] = revenue_growth_acceleration(rev_series)
+                except Exception as _e:
+                    logger.debug("PEAD rev-accel fetch failed for %s: %s", sym, _e)
         except Exception as e:
             logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
 
@@ -1080,6 +1115,7 @@ async def _run_pipeline_core(
                 earnings_surprise_pct=_pe.get("eps"),
                 revenue_surprise_pct=_pe.get("rev"),
                 report_date=_pe.get("report_date"),
+                revenue_yoy_accel=_pe.get("rev_accel"),
                 regime=regime_assessment.regime.value,
                 min_surprise=settings.pead_min_surprise,
                 e1_filters=settings.pead_e1_filters,
@@ -1258,10 +1294,15 @@ async def _run_pipeline_core(
         )
 
     # PEAD paper stream — ranked here (while price_data is still alive) with its
-    # OWN position cap, kept entirely separate from the official `ranked`.
+    # OWN position cap, kept entirely separate from the official `ranked`. Split
+    # into two labeled PAPER variants by the neglected-beat tag (decelerating YoY
+    # revenue growth = the validated stronger cohort) so each accrues its own
+    # forward track record. Both stay quarantined (never added to the book).
     pead_ranked = []
     if pead_signals:
         _annotate_signal_stream(pead_signals, signal_source="pead_paper")
+        for _sig in pead_signals:
+            _sig.signal_source = _pead_variant_source(_sig)
         pead_ranked = rank_candidates(
             pead_signals,
             regime=regime_assessment.regime,
@@ -1270,7 +1311,9 @@ async def _run_pipeline_core(
         )
         pead_ranked = filter_correlated_picks(pead_ranked, price_data)
         pead_ranked = pead_ranked[: settings.pead_max_positions]
-        logger.info("PEAD paper stream selected %d candidates", len(pead_ranked))
+        _n_neg = sum(1 for c in pead_ranked if getattr(c, "signal_source", "") == "pead_neglected")
+        logger.info("PEAD paper stream selected %d candidates (%d neglected-beat variant)",
+                    len(pead_ranked), _n_neg)
 
     # Release OHLCV data — largest memory consumer, no longer needed
     del price_data
@@ -1659,8 +1702,9 @@ async def _run_pipeline_core(
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
         if pead_result:
-            # Paper stream — persisted (signal_source="pead_paper") so outcomes
-            # are tracked separately; never counted in the official book.
+            # Paper stream — persisted under each pick's signal_source ("pead_paper"
+            # or the "pead_neglected" variant) so both variants' outcomes are tracked
+            # separately; never counted in the official book.
             picks_to_persist.extend(pead_result.approved)
 
         _exit_config_snapshot = build_exit_config_snapshot(settings)
@@ -1881,6 +1925,11 @@ async def _run_pipeline_core(
                 "confidence": pick.confidence,
                 "holding_period": pick.holding_period,
                 "also_in_mas": pick.also_in_mas,
+                # Neglected-beat label (decelerating YoY revenue growth) — read from
+                # the persisted model_components so the subset is visible in the alert.
+                "neglected_beat": bool(
+                    (pick.features or {}).get("model_components", {}).get("neglected_beat")
+                ),
             }
             for pick in pead_result.approved
         ]

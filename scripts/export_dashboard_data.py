@@ -122,6 +122,11 @@ BASELINES = {
     # clears ~30 trades / 4-6 weeks live.
     "pead|pead_paper": {"label": "PEAD (paper)", "wr": 0.57, "avg": 1.80,
                         "source": "backtest target — paper, unproven live"},
+    # Neglected-beat variant (>10% beat + DECELERATING YoY revenue growth): the
+    # stronger PEAD cohort that cleared the validation card (N=669, deflated
+    # Sharpe 1.0). Band is the backtest target — paper, forward-testing now.
+    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": 0.58, "avg": 2.42,
+                            "source": "validation card — paper, unproven live"},
 }
 
 
