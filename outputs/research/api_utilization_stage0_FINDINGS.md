@@ -181,6 +181,32 @@ regime tagged by SPY market regime at the announcement:
   is to bias PEAD paper selection toward decelerating-growth beats (or run it as a
   labeled PEAD-paper variant) and watch for decay, NOT auto-promote to capital.
 
+## Follow-up 4 (2026-07-26): MR days-to-cover filter — REJECTED at the selectivity gate
+
+The short-credit byproduct (drop dtc>=3 lifts raw MR +0.039% -> +0.097%/trade, CI
+[+0.005,+0.110]) earned a check — but the project's recurring trap is thin MR edges
+that appear at low selectivity and vanish at the live gate. So gate on SELECTIVITY
+before the validation card (`scripts/mr_dtc_selectivity.py`), sweeping the MR score
+floor toward the live values (50 base / 75 choppy):
+
+| min_score | MR full exp | kept (dtc<3) | delta 95% CI | verdict |
+|---|---|---|---|---|
+| 50 | +0.039% | +0.104% | [+0.015, +0.116] | HELPS |
+| 60 | +0.021% | +0.076% | [+0.003, +0.108] | HELPS |
+| 70 | −0.012% | +0.021% | [−0.031, +0.095] | noise |
+| 75 | −0.028% | +0.006% | [−0.046, +0.113] | noise |
+
+- The kept-full delta DECAYS to noise (CI crosses 0) as the floor rises; raw MR goes
+  negative at 70–75 and the kept cohort is ~0 (+0.006%) at 75. The "+0.097%" only
+  existed at the non-live-selective min_score=50 population. The live-traded MR book
+  is far MORE selective (official dedup + blacklist + top-N — the selection funnel IS
+  the alpha), so the DTC filter is noise where it matters.
+- **REJECTED — did NOT earn the validation card.** Same low-selectivity artifact
+  pattern as the rejected MR-stop (MEMORY project-signal-research §3). The selectivity
+  gate killed it cheaply before building the full card on an unrepresentative pop.
+- Contrast with the neglected-beat PEAD candidate, whose +2.42% held across all 3
+  regimes and cleared the card — a real edge vs an artifact.
+
 ## Discipline notes
 - Stage-0 base-rate FIRST, then condition on the actual strategy's trades — the
   conditioning is what caught the short-signal reversal. Unconditional IC ≠ strategy
