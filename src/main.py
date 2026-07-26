@@ -903,21 +903,34 @@ async def _run_pipeline_core(
         fmp_endpoint_status.get("endpoints", {}),
     )
 
-    # PEAD (paper trial, default off): fetch today's earnings surprises while the
-    # aggregator is still alive, keyed by ticker, for use in Step 5. One calendar
-    # call covers all reporters.
-    pead_surprise_by_ticker: dict[str, float] = {}
+    # PEAD (paper trial): fetch the LAST FEW SESSIONS' earnings while the
+    # aggregator is alive, keyed by ticker, for Step 5. The window (not just today)
+    # lets the scorer use the COMPLETED day-1 reaction of a name that reported the
+    # prior session — the E1 quality filters need it. Carry EPS + revenue surprise
+    # + report date; keep the most recent report per ticker.
+    pead_events_by_ticker: dict[str, dict] = {}
     if settings.pead_enabled:
         try:
             from src.signals.post_earnings_drift import eps_surprise_pct
-            cal = await aggregator.fmp.get_earnings_calendar(today, today)
+            cal = await aggregator.fmp.get_earnings_calendar(today - timedelta(days=6), today)
             for row in cal or []:
                 sym = str(row.get("symbol", "")).upper()
                 sp = eps_surprise_pct(row.get("epsActual"), row.get("epsEstimated"))
-                if sym and sp is not None:
-                    pead_surprise_by_ticker[sym] = sp
-            logger.info("PEAD: %d reporters with computable surprise on %s",
-                        len(pead_surprise_by_ticker), today)
+                if not sym or sp is None:
+                    continue
+                try:
+                    rd = date.fromisoformat(str(row.get("date", ""))[:10])
+                except ValueError:
+                    continue
+                prior = pead_events_by_ticker.get(sym)
+                if prior is None or rd > prior["report_date"]:
+                    pead_events_by_ticker[sym] = {
+                        "eps": sp,
+                        "rev": eps_surprise_pct(row.get("revenueActual"), row.get("revenueEstimated")),
+                        "report_date": rd,
+                    }
+            logger.info("PEAD: %d reporters with computable surprise in last 6d (as of %s)",
+                        len(pead_events_by_ticker), today)
         except Exception as e:
             logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
 
@@ -1045,14 +1058,23 @@ async def _run_pipeline_core(
                 else:
                     all_signals.append(sniper_sig)
 
-        # Post-earnings drift (paper trial, default off): long a fresh earnings beat.
-        if settings.pead_enabled and pead_surprise_by_ticker:
+        # Post-earnings drift (paper trial): long a fresh, high-quality earnings
+        # beat (E1: both beats + reaction band). Fires on names that reported the
+        # prior session (report-day reaction complete), entering T+1.
+        _pe = pead_events_by_ticker.get(ticker.upper()) if settings.pead_enabled else None
+        if _pe:
             from src.signals.post_earnings_drift import score_post_earnings_drift
             pead_sig = score_post_earnings_drift(
                 ticker, df, feat,
-                earnings_surprise_pct=pead_surprise_by_ticker.get(ticker.upper()),
+                earnings_surprise_pct=_pe.get("eps"),
+                revenue_surprise_pct=_pe.get("rev"),
+                report_date=_pe.get("report_date"),
                 regime=regime_assessment.regime.value,
                 min_surprise=settings.pead_min_surprise,
+                e1_filters=settings.pead_e1_filters,
+                min_revenue_surprise=settings.pead_min_revenue_surprise,
+                reaction_min_pct=settings.pead_reaction_min_pct,
+                reaction_max_pct=settings.pead_reaction_max_pct,
                 stop_atr_mult=settings.pead_stop_atr_mult,
                 target_atr_mult=settings.pead_target_atr_mult,
                 holding_period=settings.pead_holding_period,

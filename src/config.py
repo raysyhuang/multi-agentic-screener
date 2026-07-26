@@ -189,6 +189,15 @@ class Settings(BaseSettings):
     pead_target_atr_mult: float = 6.0
     pead_holding_period: int = 20
     pead_max_positions: int = 5
+    # E1 quality filters (2026-07-26 backtest): "both beats + reaction band" lifts
+    # PEAD from +1.76%/Sharpe 1.43/20.8% DD to +2.25%/Sharpe 1.69/6.6% DD, and the
+    # recent-period edge from +1.18% to +1.50%. Require a revenue beat too, and a
+    # day-1 reaction in [min,max]% (below min = market rejected it; above = already
+    # consumed). Set pead_e1_filters=False to fire on the raw EPS-only signal.
+    pead_e1_filters: bool = True
+    pead_min_revenue_surprise: float = 2.0
+    pead_reaction_min_pct: float = 2.0
+    pead_reaction_max_pct: float = 12.0
 
     def validate_keys_for_mode(self) -> None:
         """Validate that required API keys are present.

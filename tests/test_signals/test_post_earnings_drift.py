@@ -5,11 +5,22 @@ from __future__ import annotations
 import pandas as pd
 import pytest
 
+from functools import partial
+
 from src.signals.post_earnings_drift import (
     PEADSignal,
     eps_surprise_pct,
-    score_post_earnings_drift,
 )
+from src.signals.post_earnings_drift import (
+    score_post_earnings_drift as _score_post_earnings_drift,
+)
+
+# These tests characterize the BASE PEAD scorer (EPS surprise → ATR levels, score
+# scaling, price/threshold guards). The E1 quality filters (revenue beat + day-1
+# reaction band) are covered separately in tests/test_pead_e1.py, so default them
+# off here — otherwise every base-scorer call would need revenue + a fresh report
+# bar just to reach the mechanics under test.
+score_post_earnings_drift = partial(_score_post_earnings_drift, e1_filters=False)
 
 
 def _df(close: float = 100.0, n: int = 30) -> pd.DataFrame:

@@ -51,13 +51,39 @@ class PEADSignal:
     max_entry_price: float | None = None
 
 
+def _report_day_reaction(df: pd.DataFrame, report_date, max_age: int = 2) -> float | None:
+    """Day-1 % reaction (report-day close over prior close), or None. Only returns
+    a value when the report bar is among the last ``max_age`` completed bars — the
+    drift entry window must be fresh (report was the prior session, entry is T+1)."""
+    if report_date is None or df is None or "close" not in df.columns or len(df) < 2:
+        return None
+    dates = df["date"].tolist()
+
+    def _d(x):
+        return x.date() if hasattr(x, "date") else x
+
+    report_i = next((i for i, d in enumerate(dates) if _d(d) >= report_date), None)
+    if report_i is None or report_i < 1 or report_i < len(df) - max_age:
+        return None
+    prev = float(df["close"].iloc[report_i - 1])
+    if prev <= 0:
+        return None
+    return (float(df["close"].iloc[report_i]) / prev - 1) * 100
+
+
 def score_post_earnings_drift(
     ticker: str,
     df: pd.DataFrame,
     features: dict,
     earnings_surprise_pct: float | None,
+    revenue_surprise_pct: float | None = None,
+    report_date=None,
     regime: str = "unknown",
     min_surprise: float = 10.0,
+    e1_filters: bool = True,
+    min_revenue_surprise: float = 2.0,
+    reaction_min_pct: float = 2.0,
+    reaction_max_pct: float = 12.0,
     stop_atr_mult: float = 3.0,
     target_atr_mult: float = 6.0,
     holding_period: int = 20,
@@ -77,6 +103,18 @@ def score_post_earnings_drift(
         return None
     if df is None or df.empty:
         return None
+
+    # E1 quality filters (2026-07-26 backtest): require a revenue beat too AND a
+    # day-1 reaction in [min,max]% (below = market rejected the beat; above = the
+    # move is already consumed). This subset backtested +2.25% vs raw +1.76% at a
+    # third of the drawdown. reaction_pct is computed regardless (for components);
+    # e1_filters gates on it.
+    reaction_pct = _report_day_reaction(df, report_date)
+    if e1_filters:
+        if revenue_surprise_pct is None or revenue_surprise_pct < min_revenue_surprise:
+            return None
+        if reaction_pct is None or not (reaction_min_pct <= reaction_pct <= reaction_max_pct):
+            return None
 
     close_price = features.get("close")
     if not _valid(close_price):
@@ -110,5 +148,9 @@ def score_post_earnings_drift(
         target_1=round(target_1, 2),
         target_2=round(target_2, 2),
         holding_period=holding_period,
-        components={"eps_surprise_pct": round(float(earnings_surprise_pct), 2)},
+        components={
+            "eps_surprise_pct": round(float(earnings_surprise_pct), 2),
+            "revenue_surprise_pct": round(revenue_surprise_pct, 2) if revenue_surprise_pct is not None else None,
+            "day1_reaction_pct": round(reaction_pct, 2) if reaction_pct is not None else None,
+        },
     )
