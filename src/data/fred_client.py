@@ -194,6 +194,9 @@ class FREDClient:
             if len(vals) >= 20:
                 ma = float(vals.tail(50).mean())
                 hy_stress = bool(hy_level > ma)
+            # iloc[-21] needs 21 obs — a >=20 guard here raised IndexError at
+            # exactly 20 obs (crashing the macro fetch on a short/gappy series).
+            if len(vals) >= 21:
                 hy_chg20 = float(hy_level - vals.iloc[-21])
 
         return {

@@ -133,3 +133,33 @@ async def test_get_series_uses_retry_path():
                 "T10Y2Y", from_date=date(2026, 4, 22), to_date=date(2026, 4, 27)
             )
     assert mock_client.get.call_count == _FRED_RETRY_MAX_ATTEMPTS
+
+
+@pytest.mark.asyncio
+async def test_macro_snapshot_hy_oas_boundary_lengths(monkeypatch):
+    """Regression: hy_oas_chg20 uses iloc[-21], which needs 21 obs — a >=20 guard
+    raised IndexError at exactly 20 obs and crashed the macro fetch."""
+    import pandas as pd
+    from datetime import date, timedelta
+
+    client = FREDClient(api_key="test_key")
+
+    def _series(n):
+        d0 = date(2026, 6, 1)
+        return pd.DataFrame({
+            "date": [d0 + timedelta(days=i) for i in range(n)],
+            "value": [3.0 + 0.01 * i for i in range(n)],
+        })
+
+    for n, expect_chg in ((20, False), (21, True), (5, False)):
+        async def fake_get_series(series_id, from_date=None, to_date=None, _n=n):
+            if series_id == "BAMLH0A0HYM2":
+                return _series(_n)
+            return _series(5)
+
+        monkeypatch.setattr(client, "get_series", fake_get_series)
+        snap = await client.get_macro_snapshot()  # must not raise at any length
+        assert snap["hy_oas"] is not None
+        assert (snap["hy_oas_chg20"] is not None) == expect_chg
+        if n >= 20:
+            assert snap["hy_oas_stress"] is not None
