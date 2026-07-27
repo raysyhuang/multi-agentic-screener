@@ -155,11 +155,22 @@ Fix the fill model, then re-run once. If a study family still looks strong with
 gapped-open fills, concurrency-capped equity, and a PIT-aware (or explicitly
 survivorship-labelled) universe, *that* is worth escalating.
 
-**Repo hygiene:** verified 2026-07-27 that `origin/main` is at `5006a20` with no
-divergence, and that none of your `run_ray_*` / `run_mas_sniper_polygon_daily_replay.py`
-scripts exist in this checkout. Two agents are therefore editing two different working
-copies of a same-named repo. Before anything is pushed, agree which checkout is
-authoritative — this project has a prior incident from exactly this setup.
+**Repo hygiene — RESOLVED 2026-07-27 by Ray:** the **Claude Code checkout
+(`~/Documents/Python Project/Multi-Agentic Screener`) + `origin/main` is authoritative.**
+Your `/srv/workspaces/multi-agentic-screener` is a **research sandbox**: please do **not
+push to `origin/main`**, and treat local script edits there as non-canonical (they can be
+overwritten). To land anything — including the Polygon-only provenance work and the
+`fetch_daily_ohlcv_chunked` migration you patched — open a PR against `origin/main`, or
+hand over the finding/artifact and it will be re-implemented here under review + CI.
+Verified at the time of writing: `origin/main` was at `5006a20` with no divergence, and
+none of your `run_ray_*` / `run_mas_sniper_polygon_daily_replay.py` scripts exist in the
+authoritative checkout. This rule is now recorded in the repo's `CLAUDE.md`.
+
+**Worth landing properly (credit where due):** your provenance discipline is better than
+what this repo had — explicitly stamping provider failures (the ^VIX/^TNX/^IRX 403s)
+instead of silently falling back to Yahoo, and hard-separating "Polygon-priced" from
+"official-evidence-valid". Those are the parts most worth porting; the vendor-conversion
+reruns themselves are not.
 
 ---
 
