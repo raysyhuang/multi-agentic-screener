@@ -1,10 +1,10 @@
-"""Polygon.io data client — OHLCV, options flow, and news."""
+"""Polygon.io data client — OHLCV (daily + intraday), short data, tickers, and news."""
 
 from __future__ import annotations
 
 import asyncio
 import logging
-from datetime import date, timedelta
+from datetime import date
 
 import httpx
 import pandas as pd
@@ -209,19 +209,22 @@ class PolygonClient:
             df = df.sort_values("settlement_date").reset_index(drop=True)
         return df
 
-    async def get_options_flow(self, ticker: str, on_date: date) -> list[dict]:
-        """Fetch options contracts for unusual activity detection."""
-        url = f"{BASE_URL}/v3/reference/options/contracts"
-        params = self._params(
-            underlying_ticker=ticker,
-            expiration_date_gte=str(on_date),
-            expiration_date_lte=str(on_date + timedelta(days=45)),
-            limit=100,
-        )
-        async with httpx.AsyncClient(timeout=30) as client:
-            resp = await _request_with_backoff(client, url, params)
-            data = resp.json()
-        return data.get("results", [])
+    # get_options_flow() was REMOVED 2026-07-27. It hit
+    # /v3/reference/options/contracts, which returns only contract REFERENCE
+    # metadata (strike_price, expiration_date, contract_type, ...) — no volume and
+    # no open interest — so despite the name it could never detect flow/unusual
+    # activity. It had zero callers anywhere in the repo.
+    #
+    # Entitlement finding (keep — the plan DOES cover options market data):
+    #   * /v3/snapshot/options/{underlying} -> open_interest, greeks, day volume
+    #     (current snapshot only, no history)
+    #   * /v2/aggs/ticker/O:<contract>/range/... -> historical per-CONTRACT daily bars
+    # A real put/call-volume study is nonetheless NOT feasible over this REST API:
+    # a single underlying has >1000 live contracts (paginated), so a 500-ticker x 3Y
+    # history would need millions of calls. Doing it properly requires Polygon flat
+    # files (separate product) or forward-collecting daily snapshots for months.
+    # Deliberately not built: it cannot be Stage-0 base-rate gated first, which is
+    # the discipline that killed 8 of 11 candidates cheaply.
 
     async def get_news(self, ticker: str, limit: int = 20) -> list[dict]:
         """Fetch recent news articles for a ticker."""

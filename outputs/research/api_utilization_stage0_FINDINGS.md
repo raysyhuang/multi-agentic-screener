@@ -264,6 +264,39 @@ case catalyst is ever revived.
 - Still genuinely untested and already paid for: Polygon `get_options_flow` (zero
   callers anywhere).
 
+## Follow-up 6 (2026-07-27): options flow — function was BROKEN, study infeasible
+
+The last already-paid-for, never-tested asset. Two findings:
+
+### 1. `get_options_flow()` could never have worked — REMOVED
+It hit `/v3/reference/options/contracts`, which returns only contract REFERENCE
+metadata — verified live: fields are `cfi, contract_type, exercise_style,
+expiration_date, primary_exchange, shares_per_contract, strike_price, ticker,
+underlying_ticker`. **No volume, no open interest.** Despite the name it could not
+detect flow or unusual activity, and it had zero callers anywhere. Removed, along
+with the stale "options flow" module docstring.
+
+### 2. The plan DOES include options market data (keep this knowledge)
+Probed live, both HTTP 200 with results:
+- `/v3/snapshot/options/{underlying}` → `open_interest`, `greeks`, `day` (volume) —
+  **current snapshot only, no history**.
+- `/v2/aggs/ticker/O:<contract>/range/1/day/...` → historical per-CONTRACT daily bars.
+
+### 3. …but a put/call-volume study is INFEASIBLE over this REST API
+A single underlying has **>1000 live contracts** (AAPL, paginated with next_url).
+Historical put/call volume needs per-contract daily aggregates across the whole
+chain: ~1000s of contracts × ~750 trading days × 500 tickers = millions of calls.
+Options for doing it properly:
+- **Polygon flat files** (S3 day-aggregates) — a separate product/tier.
+- **Forward-collect** daily snapshots (~1-5 paginated calls/ticker/day) and study in
+  3-6 months.
+
+**Decision: NOT built.** It is the one candidate that cannot be Stage-0 base-rate
+gated *before* building — and pre-validation is exactly the discipline that killed
+8 of 11 candidates cheaply this arc. Building a 6-month collector for an unvalidated,
+heavily-arbitraged retail signal inverts that discipline. Revisit only as a
+deliberate strategic choice (see the spend guidance in Follow-up 5).
+
 ## Discipline notes
 - Stage-0 base-rate FIRST, then condition on the actual strategy's trades — the
   conditioning is what caught the short-signal reversal. Unconditional IC ≠ strategy
