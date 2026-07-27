@@ -58,23 +58,54 @@ def _cache_key(tickers: list[str], years: float) -> Path:
     return CACHE_DIR / f"ohlcv_{ticker_hash}_{start}_{end}.parquet"
 
 
+# Provenance of the most recent fetch_ohlcv() call — which provider actually
+# produced the data, and which tickers failed and why. A silent vendor fallback or
+# silently-dropped tickers would let a run be labelled "Polygon-backed" while
+# containing yfinance bars or a quietly shrunken universe; that mixed provenance is
+# exactly what invalidates a backtest claim. Read via get_last_ohlcv_provenance().
+_LAST_PROVENANCE: dict = {}
+
+
+def get_last_ohlcv_provenance() -> dict:
+    """Provider + failure record for the most recent fetch_ohlcv() call.
+
+    Keys: provider ("polygon" | "yfinance" | "polygon_then_yfinance_fallback"),
+    requested, returned, missing, failures {ticker: reason}, fallback_reason.
+    Stamp this into any research artifact that claims a data source.
+    """
+    return dict(_LAST_PROVENANCE)
+
+
 def fetch_ohlcv(tickers: list[str], years: float = 2, no_cache: bool = False,
-                source: str = "polygon") -> dict[str, pd.DataFrame]:
+                source: str = "polygon", strict: bool = False) -> dict[str, pd.DataFrame]:
     """Historical daily OHLCV, disk-cached. Cache keyed on (tickers hash, dates).
 
     source="polygon" (default) uses the paid $199 feed — cleaner/consistent
     adjusted bars (yfinance has occasional glitches, e.g. inconsistent AAPL
     adjustment across windows). Falls back to yfinance if Polygon yields nothing.
     source="yfinance" forces the free path. Pass no_cache=True to force a refetch.
+
+    strict=True disables the yfinance fallback and raises instead, so a run that
+    claims to be Polygon-only cannot silently become mixed-provenance. Either way
+    the actual provider and per-ticker failures are recorded — call
+    get_last_ohlcv_provenance() and stamp it into any published artifact.
     """
+    global _LAST_PROVENANCE
+    fallback_reason = None
     if source == "polygon":
         try:
             res = fetch_ohlcv_polygon(tickers, years, no_cache=no_cache)
             if res:
                 return res
-            print("Polygon returned no data — falling back to yfinance")
+            fallback_reason = "polygon returned no data"
         except Exception as e:  # noqa: BLE001 — research fallback, never hard-fail
-            print(f"Polygon fetch failed ({type(e).__name__}: {e}) — falling back to yfinance")
+            fallback_reason = f"polygon fetch failed ({type(e).__name__}: {e})"
+        if strict:
+            raise RuntimeError(
+                f"strict=True and {fallback_reason}. Refusing to silently fall back to "
+                "yfinance — a Polygon-only claim must not be met with mixed provenance."
+            )
+        print(f"{fallback_reason} — falling back to yfinance")
 
     cache_path = _cache_key(tickers, years)
 
@@ -120,6 +151,14 @@ def fetch_ohlcv(tickers: list[str], years: float = 2, no_cache: bool = False,
                 continue
 
     print(f"Got data for {len(result)}/{len(tickers)} tickers")
+    _LAST_PROVENANCE = {
+        "provider": "polygon_then_yfinance_fallback" if fallback_reason else "yfinance",
+        "fallback_reason": fallback_reason,
+        "requested": len(tickers),
+        "returned": len(result),
+        "missing": sorted(set(tickers) - set(result)),
+        "failures": {},  # yfinance path drops silently; missing[] is the record
+    }
 
     # Save to cache
     if result:
@@ -150,6 +189,8 @@ def fetch_ohlcv_polygon(
     we alias on the fetch and store under the original dash-form key so the rest of
     the pipeline is unchanged (see CLAUDE.md polygon_symbol_candidates note).
     """
+    global _LAST_PROVENANCE
+
     import asyncio
 
     from src.data.polygon_client import PolygonClient
@@ -164,11 +205,30 @@ def fetch_ohlcv_polygon(
         out = {t: g.drop(columns=["_ticker"]).reset_index(drop=True)
                for t, g in combined.groupby("_ticker")}
         print(f"Loaded {len(out)} tickers from Polygon cache")
+        # Restore provenance from the sidecar so a cache hit is not reported as a
+        # clean full fetch (the failures happened, they're just already recorded).
+        import json as _json
+        manifest = cache_path.with_suffix(".provenance.json")
+        if manifest.exists():
+            try:
+                _LAST_PROVENANCE = {**_json.loads(manifest.read_text()), "from_cache": True}
+            except (ValueError, OSError):
+                _LAST_PROVENANCE = {"provider": "polygon", "from_cache": True,
+                                    "manifest": "unreadable"}
+        else:
+            _LAST_PROVENANCE = {"provider": "polygon", "from_cache": True,
+                                "manifest": "absent (cache predates provenance tracking)",
+                                "requested": len(tickers), "returned": len(out)}
         return out
 
     end = date.today()
     start = end - timedelta(days=int(years * 365.25))
     print(f"Fetching {len(tickers)} tickers {start}→{end} from Polygon (adjusted daily)...")
+
+    # Per-ticker failures are RECORDED, never silently swallowed: a quietly
+    # shrunken universe is a provenance defect (it can shift the effective
+    # universe, e.g. if failures correlate with share classes or delistings).
+    failures: dict[str, str] = {}
 
     async def _fetch_all() -> dict[str, pd.DataFrame]:
         client = PolygonClient()
@@ -181,12 +241,14 @@ def fetch_ohlcv_polygon(
             async with sem:
                 try:
                     df = await client.get_ohlcv(poly_sym, start, end)
-                except Exception:
+                except Exception as e:  # noqa: BLE001 — recorded, not swallowed
+                    failures[ticker] = f"{type(e).__name__}: {e}"[:200]
                     df = None
             done += 1
             if done % 100 == 0:
                 print(f"  {done}/{len(tickers)} fetched", flush=True)
             if df is None or df.empty or "close" not in df.columns:
+                failures.setdefault(ticker, "empty_or_malformed_response")
                 return ticker, None
             keep = df[["date", "open", "high", "low", "close", "volume"]].copy()
             return ticker, keep.dropna(subset=["close"]).reset_index(drop=True)
@@ -196,6 +258,20 @@ def fetch_ohlcv_polygon(
 
     result = asyncio.run(_fetch_all())
     print(f"Got Polygon data for {len(result)}/{len(tickers)} tickers")
+    if failures:
+        by_reason: dict[str, int] = {}
+        for reason in failures.values():
+            by_reason[reason.split(":")[0]] = by_reason.get(reason.split(":")[0], 0) + 1
+        print(f"  {len(failures)} Polygon failures (NOT substituted): {by_reason}")
+
+    _LAST_PROVENANCE = {
+        "provider": "polygon",
+        "fallback_reason": None,
+        "requested": len(tickers),
+        "returned": len(result),
+        "missing": sorted(set(tickers) - set(result)),
+        "failures": dict(failures),
+    }
 
     if result:
         cache_path.parent.mkdir(parents=True, exist_ok=True)
@@ -206,6 +282,15 @@ def fetch_ohlcv_polygon(
             frames.append(d)
         pd.concat(frames, ignore_index=True).to_parquet(cache_path, index=False)
         print(f"Cached to {cache_path} ({cache_path.stat().st_size / 1024 / 1024:.1f}MB)")
+        # Provenance manifest travels with the cache, so a dataset read months later
+        # still says which provider produced it and what was missing.
+        import json as _json
+        manifest = cache_path.with_suffix(".provenance.json")
+        manifest.write_text(_json.dumps({
+            **_LAST_PROVENANCE,
+            "window": {"start": str(start), "end": str(end), "years": years},
+            "cache_file": cache_path.name,
+        }, indent=2))
     return result
 
 
