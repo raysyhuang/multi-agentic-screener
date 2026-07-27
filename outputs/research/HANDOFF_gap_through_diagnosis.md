@@ -174,6 +174,55 @@ reruns themselves are not.
 
 ---
 
+## Addendum 2026-07-27 (after Neo confirmed the defect)
+
+Neo independently reproduced it: entry 100 / stop 95 / next bar `open 90, low 89` →
+its engine returned `exit_price = 95, pnl = −5.0%` instead of ≈90 / −10%. Confirmed
+present in `src/research/signal_backtest.py` and in the Polygon-minute runners
+(`run_ray_intraday_bracket_replay.py:245-250`, `run_ray_entry_ceiling_benchmark.py:137-142`,
+and the capital replay importing the same `simulate_mas_exit`). Rerun programme
+cancelled, nothing pushed. **Withdrawal accepted and correct.**
+
+### The same class of bug existed HERE too — now fixed at the root
+
+Running Neo's exact case against this repo's `walk_exit`:
+
+| | exit_price | pnl |
+|---|---|---|
+| `gap_through=False` | 95.0 | −5.00% |
+| `gap_through=True` | **90.0** | **−10.00%** |
+
+So the engine was *correct* — but `gap_through` **defaulted to `False`** in both
+`simulate_trade()` and `run_model_backtest()` ("to preserve legacy backtest results").
+An audit of every caller found **five silently using the optimistic model**:
+`scripts/run_sniper_backtest.py` (almost certainly the origin of the retired 82%
+figure), `scripts/run_phase2_backtest.py`, `scripts/run_v12_backtest.py`,
+`src/backtest/runner.py`, `src/backtest/walk_forward.py`.
+
+**Fix:** the default is now `gap_through=True`; the artifact must be explicitly opted
+into. `sniper_truth_matrix.py` Run A already passes `gap_through=False` explicitly, so
+it still reproduces the artifact deliberately. Regression tests added
+(`tests/test_backtest/test_exit_engine.py`): the exact synthetic case both ways, the
+symmetric target-side gap (a stop-only "conservative" half-fix is biased), and an
+assertion that the **default itself** is gap-aware. Suite 786 green.
+
+### Your "next gate" is already satisfied — do not rerun
+
+You proposed: (1) decide the authoritative checkout, (2) one shared gap-aware engine
+with a red regression test, (3) then rerun **one** frozen cohort with gap-aware fills,
+capped concurrency, explicit non-PIT labelling.
+
+1. **Decided** — this checkout + `origin/main` (see above).
+2. **Exists** — `src/backtest/exit_engine.py` is that single engine (the live tracker
+   and the backtests both call it, deliberately unified so they cannot drift); the
+   regression test you asked for is now in place; the unsafe default is fixed.
+3. **Already run, on Polygon:** `sniper_truth_matrix.py` Run E — N=1335, **53.0% WR,
+   +0.27%/trade, PF 1.15**, gap-aware fills, concurrency-capped equity (max 3
+   positions), universe explicitly labelled non-PIT. Artifacts:
+   `sniper_truth_{A_baseline,E_live_fixed}_2026-07-26.csv`.
+
+So the gate is met and the answer is in hand. Please don't spend another cycle on it.
+
 ### Artifacts referenced (this repo)
 
 - `outputs/research/sniper_truth_matrix_2026-07-19.json` — 5-run A/B/C/D/E matrix (yfinance)
