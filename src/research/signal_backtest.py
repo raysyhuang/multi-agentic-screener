@@ -262,7 +262,7 @@ def simulate_trade(
     confirm_entry: bool = False,
     confirm_mode: str = "close_gt_open",
     early_exit_mfe_pct: float = 0.0,
-    gap_through: bool = False,
+    gap_through: bool = True,
     time_stop_days: int = 0,
     time_stop_eligible: bool = False,
     same_bar_resolver=None,
@@ -286,9 +286,17 @@ def simulate_trade(
     Gap filter (max_entry_price > 0):
       Reject if T+1 open exceeds max_entry_price (reversion already gapped away).
 
-    Live-faithfulness toggles (default off to preserve legacy backtest results):
-      gap_through: model open-gap fills on stop AND target (live behaviour).
-      time_stop_days / time_stop_eligible: sniper time-stop exit.
+    gap_through (DEFAULT TRUE — do not turn off for any real claim): when a bar's
+      OPEN is already beyond the stop (or target), fill at the open, not at the
+      level. This is what live does. Filling at the level is the single largest
+      source of fake backtest edge in this project: on the sniper cohort it alone
+      moves win rate 91.1% -> 53.0% and PF 6.23 -> 1.15 (same data, same params;
+      see outputs/research/HANDOFF_gap_through_diagnosis.md). It defaulted to False
+      until 2026-07-27 "to preserve legacy results", which silently gave five
+      callers the optimistic fill model. Pass gap_through=False ONLY to deliberately
+      reproduce that artifact (e.g. sniper_truth_matrix Run A).
+
+    time_stop_days / time_stop_eligible: sniper time-stop exit (default off).
     """
     future = df[df["date"] > signal_date].sort_values("date")
     if len(future) < 2:
@@ -667,9 +675,11 @@ def run_model_backtest(
         confirm_mode = params.get("confirm_mode", "close_gt_open")
         blocked_weekdays = params.get("blocked_weekdays", set())
         early_exit_mfe = params.get("early_exit_mfe_pct", 0.0)
-        # Live-faithfulness toggles (default off = legacy backtest). The truth
-        # matrix flips these on to measure the true, live-faithful expectancy.
-        gap_through = params.get("gap_through", False)
+        # gap_through defaults TRUE (live behaviour) as of 2026-07-27 — filling at
+        # the stop level when the bar already gapped through it is the project's
+        # biggest source of fake edge (sniper 91.1%->53.0% WR from this flag alone).
+        # Pass gap_through=False only to deliberately reproduce that artifact.
+        gap_through = params.get("gap_through", True)
         time_stop_days = params.get("sniper_time_stop_days", 0)
         # Score-tiered stops: list of (min_score, stop_atr_mult) sorted desc
         score_stop_tiers = params.get("score_stop_tiers", None)

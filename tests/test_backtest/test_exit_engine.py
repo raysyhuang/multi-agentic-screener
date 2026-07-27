@@ -316,3 +316,48 @@ def test_gap_through_false_ignores_open_gap_fill():
     assert gap.exit_price == 96.0   # fills at open
     assert nogap.exit_price == 98.0  # fills at stop, not the gapped-through open
     assert gap.exit_reason == nogap.exit_reason == "stop"
+
+
+# --- Gap-through regression (2026-07-27) ------------------------------------
+# The single largest source of fake backtest edge in this project: filling a stop
+# at the stop level when the bar's OPEN already gapped through it. On the sniper
+# cohort this flag alone moves win rate 91.1% -> 53.0% and PF 6.23 -> 1.15.
+# Cross-verified against an independent agent's checkout, which had the defect.
+# See outputs/research/HANDOFF_gap_through_diagnosis.md.
+
+def test_gap_through_fills_at_open_not_at_stop_level():
+    """entry 100, stop 95, next bar opens 90 (already through) with low 89."""
+    from src.backtest.exit_engine import ExitBar, ExitParams, walk_exit
+
+    bars = [ExitBar(date="d1", open=90.0, high=91.0, low=89.0, close=90.5)]
+    params = dict(target=200.0, max_hold=5, slippage=0.0)
+
+    optimistic = walk_exit(bars, 100.0, ExitParams(stop=95.0, gap_through=False, **params))
+    assert optimistic.exit_price == 95.0          # the artifact: fills at the level
+    assert round(optimistic.pnl_pct, 6) == -5.0
+
+    realistic = walk_exit(bars, 100.0, ExitParams(stop=95.0, gap_through=True, **params))
+    assert realistic.exit_price == 90.0           # live behaviour: fills at the open
+    assert round(realistic.pnl_pct, 6) == -10.0
+
+
+def test_gap_through_is_symmetric_on_the_target_side():
+    """A gap UP through the target must also fill at the open (helps, not hurts) —
+    modelling only the stop side would be a biased 'conservative' half-fix."""
+    from src.backtest.exit_engine import ExitBar, ExitParams, walk_exit
+
+    bars = [ExitBar(date="d1", open=115.0, high=116.0, low=114.0, close=115.5)]
+    out = walk_exit(bars, 100.0, ExitParams(stop=50.0, target=110.0, max_hold=5,
+                                            slippage=0.0, gap_through=True))
+    assert out.exit_price == 115.0
+    assert round(out.pnl_pct, 6) == 15.0
+
+
+def test_simulate_trade_defaults_to_gap_aware_fills():
+    """The DEFAULT must be the realistic fill. It defaulted to False until
+    2026-07-27, which silently gave five callers the optimistic model."""
+    import inspect
+
+    from src.research.signal_backtest import simulate_trade
+
+    assert inspect.signature(simulate_trade).parameters["gap_through"].default is True
