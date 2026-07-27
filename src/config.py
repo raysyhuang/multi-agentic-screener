@@ -117,7 +117,8 @@ class Settings(BaseSettings):
     fmp_fundamentals_max_tickers_per_run: int = 150
     # Comma-separated endpoints considered required for health checks.
     # Keep this aligned with plan-supported endpoints to avoid persistent WARNs.
-    fmp_health_check_endpoints: str = "profile,earnings,insider_trading,screener,ratios,analyst_estimates"
+    # insider_trading dropped 2026-07-27: no longer fetched (no consumer + no IC edge).
+    fmp_health_check_endpoints: str = "profile,earnings,screener,ratios,analyst_estimates"
 
     # --- Execution mode ---
     # Default changed to quant_only: backtest proved mean reversion signal
