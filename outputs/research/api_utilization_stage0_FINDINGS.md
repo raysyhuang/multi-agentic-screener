@@ -207,6 +207,63 @@ floor toward the live values (50 base / 75 choppy):
 - Contrast with the neglected-beat PEAD candidate, whose +2.42% held across all 3
   regimes and cleared the card — a real edge vs an artifact.
 
+## Follow-up 5 (2026-07-27): insider activity — NO EDGE, fetch DROPPED (cost win)
+
+Question that prompted it: "should I upgrade FMP / buy more data?" Answer: exhaust
+what you already pay for first. Audit found insider data was the clearest waste.
+
+### What the audit found (before any study)
+- `score_insider_activity` ran every pipeline run (main.py:884) and
+  `get_insider_trading` was fetched for up to 150 tickers/run — but the **only**
+  consumer is `catalyst.py:119`, and catalyst is **DISABLED** (main.py:66 "disabled:
+  unproven, sparse data"). So ~150 of the 750/day FMP budget (~20%) bought data that
+  reached no scorer. Not a correctness risk (it never touched live picks) — pure cost.
+
+### IC study — `scripts/insider_ic_study.py` (point-in-time safe)
+Keyed strictly on **filingDate** (public disclosure), NOT transactionDate: insiders
+file Form 4 up to 2 business days after the trade, so a transactionDate-keyed window
+is look-ahead in a backtest. Deliberately re-implemented the window as-of each
+observation instead of calling the live function (which uses `date.today()` and is
+not as-of aware). Sampled every 10th trading day (90d windows autocorrelate).
+
+**SMOKE (25 tickers) LOOKED GREAT — AND FULLY REVERSED AT SCALE:**
+
+| bucket (+20d edge) | smoke N=37 | **full N=335** |
+|---|---|---|
+| >=3 distinct buyers | **+497bp** | **−116bp** |
+| mostly buys | +671bp | −166bp |
+| all buys (+1) | −86bp | −165bp |
+| all sells (−1) | −201bp | −33bp |
+
+- Full scale: **1453 point-in-time observations, every net-ratio and cluster bucket
+  flat-to-negative at every horizon (5/10/20d).** No edge, in either direction,
+  including the academically-favored cluster-buy variant.
+- Data is also genuinely sparse: **336 of 503 tickers had no usable filings at all**
+  — corroborating the original "sparse data" reason catalyst was disabled.
+- Textbook tiny-N false signal (CLAUDE.md rule). Flagged as such BEFORE running full
+  scale, and the flag was correct.
+
+### Action taken — DROPPED the fetch
+`aggregator.get_ticker_fundamentals` no longer requests insider transactions; the
+dead `score_insider_activity` call is removed from main.py; `insider_trading` dropped
+from `fmp_health_check_endpoints`. **Reclaims ~20% of the daily FMP budget with zero
+pick impact.** `score_insider_activity()` + the catalyst path are retained intact in
+case catalyst is ever revived.
+
+### Spend guidance that came out of this
+- **Do NOT upgrade FMP.** Its one real unlock (forward guidance/estimates) targets a
+  thesis whose proxy already INVERTED (Follow-up 2). 13F is quarterly/45d stale;
+  analyst grades are already on Starter and E2 rejected them.
+- **Consider DOWNGRADING Polygon $199**: minute bars proved unnecessary (PR #21) and
+  short interest/volume was rejected for both sniper and MR. What's actually used is
+  consistent adjusted daily bars — price-check a lower tier for that.
+- **Bar for any new data spend:** 11 candidates mined from already-owned data →
+  8 rejected, 1 blocked, 1 refinement. The constraint is not data access; it's that
+  retail-reachable anomalies are thin/arbitraged. Don't buy until an existing sleeve
+  proves it can exploit what it has (i.e. PEAD paper confirms its recent edge live).
+- Still genuinely untested and already paid for: Polygon `get_options_flow` (zero
+  callers anywhere).
+
 ## Discipline notes
 - Stage-0 base-rate FIRST, then condition on the actual strategy's trades — the
   conditioning is what caught the short-signal reversal. Unconditional IC ≠ strategy

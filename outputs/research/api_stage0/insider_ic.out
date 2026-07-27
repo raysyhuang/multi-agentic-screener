@@ -1,0 +1,26 @@
+503 tickers; pulling insider filings (cached)...
+  ...100/503
+  ...200/503
+  ...300/503
+  ...400/503
+  ...500/503
+
+1453 point-in-time observations (336 tickers had no usable filings).
+Base rate: +5d +0.29%  +10d +0.60%  +20d +1.25%
+
+insider net ratio      +5d edge  +10d edge  +20d edge       N
+-------------------------------------------------------------
+all sells (-1)            -11bp      -27bp      -33bp     462
+mostly sells               53bp     -108bp      -65bp      84
+mixed                       4bp      -10bp       -4bp     270
+mostly buys               -31bp      -81bp     -166bp     221
+all buys (+1)              32bp      -80bp     -165bp     280
+
+cluster signal         +5d edge  +10d edge  +20d edge       N
+-------------------------------------------------------------
+>=3 distinct buyers        -7bp      -56bp     -116bp     335
+single buyer               24bp      -61bp      -91bp     370
+
+Edge = forward return vs unconditional base rate, in basis points.
+DECISION: a flat/negative table => DROP the insider fetch (reclaims ~20% of
+the FMP daily budget, zero pick impact since catalyst is disabled).

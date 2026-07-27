@@ -297,27 +297,33 @@ class DataAggregator:
             if cached is not None:
                 return json.loads(cached)
 
+        # Insider transactions are deliberately NOT fetched (2026-07-27). The only
+        # consumer was the disabled catalyst model, and the full-scale IC study
+        # (scripts/insider_ic_study.py, 1453 point-in-time observations) found NO
+        # predictive edge — every net-ratio and cluster bucket was flat-to-negative
+        # vs base rate (>=3 distinct buyers: -116bp/20d), and 336/503 tickers had no
+        # usable filings at all. It cost ~150 of the 750/day FMP budget per run for
+        # data that reached no scorer. score_insider_activity() is retained for the
+        # catalyst path should it ever be revived.
         earnings_task = self.fmp.get_earnings_surprise(ticker)
-        insider_task = self.fmp.get_insider_trading(ticker)
         profile_task = self.fmp.get_company_profile(ticker)
         analyst_task = self.fmp.get_analyst_estimates(ticker)
         ratios_task = self.fmp.get_ratios(ticker)
 
         results = await asyncio.gather(
-            earnings_task, insider_task, profile_task, analyst_task, ratios_task,
+            earnings_task, profile_task, analyst_task, ratios_task,
             return_exceptions=True,
         )
         had_failures = any(isinstance(result, Exception) for result in results)
 
         earnings = results[0] if not isinstance(results[0], Exception) else []
-        insiders = results[1] if not isinstance(results[1], Exception) else []
-        profile = results[2] if not isinstance(results[2], Exception) else {}
-        analyst_estimates = results[3] if not isinstance(results[3], Exception) else []
-        ratios = results[4] if not isinstance(results[4], Exception) else {}
+        profile = results[1] if not isinstance(results[1], Exception) else {}
+        analyst_estimates = results[2] if not isinstance(results[2], Exception) else []
+        ratios = results[3] if not isinstance(results[3], Exception) else {}
 
         data = {
             "earnings_surprises": earnings[:4] if earnings else [],
-            "insider_transactions": insiders[:20] if insiders else [],
+            "insider_transactions": [],  # not fetched — see note above
             "profile": profile,
             "analyst_estimates": analyst_estimates[:8] if analyst_estimates else [],
             "ratios": ratios if isinstance(ratios, dict) else {},
@@ -328,7 +334,8 @@ class DataAggregator:
             and bool(profile.get("symbol") or profile.get("companyName"))
         )
         ratios_ok = isinstance(ratios, dict) and any(v is not None for v in ratios.values())
-        all_empty = not earnings and not insiders and not profile_ok and not analyst_estimates and not ratios_ok
+        # Insider is no longer fetched, so it is not evidence of payload health.
+        all_empty = not earnings and not profile_ok and not analyst_estimates and not ratios_ok
         should_cache = not all_empty
 
         if self._cache_enabled and should_cache:

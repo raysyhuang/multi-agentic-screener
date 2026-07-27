@@ -37,7 +37,6 @@ from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import (
     score_earnings_surprise,
-    score_insider_activity,
     score_analyst_estimates,
     score_financial_ratios,
     days_to_next_earnings,
@@ -881,9 +880,9 @@ async def _run_pipeline_core(
                 fund_data["earnings_surprises"] = score_earnings_surprise(
                     fund_data.get("earnings_surprises", [])
                 )
-                fund_data["insider_activity"] = score_insider_activity(
-                    fund_data.get("insider_transactions", [])
-                )
+                # insider_activity intentionally not scored: no consumer (catalyst is
+                # disabled) and the full-scale IC study found no edge — see the note
+                # in aggregator.get_ticker_fundamentals.
                 fund_data["analyst_view"] = score_analyst_estimates(
                     fund_data.get("analyst_estimates", [])
                 )
