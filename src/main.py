@@ -841,8 +841,10 @@ async def _run_pipeline_core(
     prefiltered.sort(key=lambda t: _technical_priority_score(features_by_ticker[t]), reverse=True)
     budget = aggregator.get_fmp_budget_status()
     calls_remaining = budget.get("calls_remaining")
-    # profile + earnings + insider + analyst_estimates + ratios
-    calls_per_fundamentals_ticker = 5
+    # profile + earnings + analyst_estimates + ratios (insider dropped 2026-07-27).
+    # Stale at 5 it over-estimated cost by 25% and under-fetched: Mon 2026-07-27 chose
+    # 135 tickers when the 150 cap was affordable (676 remaining / 5 = 135, / 4 = 169).
+    calls_per_fundamentals_ticker = 4
     max_by_budget = len(prefiltered)
     if isinstance(calls_remaining, int):
         max_by_budget = max(0, calls_remaining // calls_per_fundamentals_ticker)
@@ -956,12 +958,22 @@ async def _run_pipeline_core(
             # threshold), compute YoY revenue-growth acceleration from their trailing
             # quarterly revenue actuals. This labels the pick (decelerating growth =
             # the validated stronger cohort) so its subset accrues a separate forward
-            # track record. Only the handful of qualifying beats are fetched.
+            # track record.
+            # SCOPE MATTERS: only fetch for reporters we can actually SCORE. The
+            # calendar returns the whole market (~657/day in earnings season); a
+            # ticker with no features can never emit a PEAD signal, so fetching its
+            # revenue history is pure FMP budget waste. Unscoped, this consumed ~117
+            # calls/run and ate most of the insider-drop saving (measured 2026-07-28).
             from src.signals.post_earnings_drift import revenue_growth_acceleration
+            _scoreable = {t.upper() for t in features_by_ticker}
+            _accel_fetches = 0
             for sym, ev in pead_events_by_ticker.items():
                 ev["rev_accel"] = None
+                if sym not in _scoreable:
+                    continue
                 if ev["eps"] is None or ev["eps"] < settings.pead_min_surprise:
                     continue
+                _accel_fetches += 1
                 try:
                     hist = await aggregator.fmp.get_earnings_surprise(sym)
                     rev_series = []
@@ -976,6 +988,10 @@ async def _run_pipeline_core(
                     ev["rev_accel"] = revenue_growth_acceleration(rev_series)
                 except Exception as _e:
                     logger.debug("PEAD rev-accel fetch failed for %s: %s", sym, _e)
+            logger.info(
+                "PEAD rev-accel: %d FMP fetches (scoreable reporters that beat), "
+                "from %d calendar reporters", _accel_fetches, len(pead_events_by_ticker),
+            )
         except Exception as e:
             logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
 
