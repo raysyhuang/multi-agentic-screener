@@ -642,7 +642,12 @@ async def build_validation_card_from_history(
         for outcome, signal in model_rows:
             pnl = outcome.pnl_pct or 0.0
             trade_returns.append(pnl)
-            by_regime.setdefault(signal.regime.lower(), []).append(pnl)
+            # Signal.regime is nullable and NULL rows DO exist in the DB (the
+            # dashboard export shows them). Without this guard a single NULL row
+            # entering the window raises AttributeError here, which fails the
+            # validation step CLOSED and blocks every pick for the day.
+            regime_key = (signal.regime or "unknown").lower()
+            by_regime.setdefault(regime_key, []).append(pnl)
 
         slippage_returns = [r - 0.10 for r in trade_returns]
         cards[model] = generate_validation_card(
@@ -651,6 +656,21 @@ async def build_validation_card_from_history(
             trade_returns_by_regime=by_regime,
             slippage_returns=slippage_returns,
             variants_tested=1,
+        )
+
+        # Surface the regime split that drives regime_survival_check. That check
+        # requires min(2, n_sampled_regimes) positive regimes — so with exactly two
+        # sampled regimes it demands BOTH be positive, and a single weak cohort
+        # blocks all picks (observed live 2026-07-29/30 on mean_reversion). Logging
+        # n + win-rate per regime makes that verdict auditable from the run log
+        # instead of inferred from the alert's one-line reason.
+        _split = {
+            r: f"n={len(v)},wr={sum(1 for x in v if x > 0) / len(v):.0%}"
+            for r, v in sorted(by_regime.items()) if v
+        }
+        logger.info(
+            "Validation card [%s]: %d closed trades, regime split %s",
+            model, len(trade_returns), _split or "{}",
         )
 
     return cards
