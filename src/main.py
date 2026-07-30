@@ -1325,6 +1325,19 @@ async def _run_pipeline_core(
             top_n=settings.pead_max_positions,
         )
         pead_ranked = filter_correlated_picks(pead_ranked, price_data)
+        # Drop names we ALREADY hold: the 6-day earnings window vs the 20-day hold
+        # would otherwise re-pick the same beat for ~5-6 consecutive runs, stacking
+        # duplicate positions (observed live 2026-07-30 on BKR/QRVO/LOGI/INCY).
+        _open_pead = await _open_pead_tickers()
+        if _open_pead:
+            _before = len(pead_ranked)
+            pead_ranked = [c for c in pead_ranked if c.ticker.upper() not in _open_pead]
+            if _before != len(pead_ranked):
+                logger.info(
+                    "PEAD dedup: dropped %d already-open ticker(s) from %d candidates "
+                    "(open: %s)", _before - len(pead_ranked), _before,
+                    ",".join(sorted(_open_pead)),
+                )
         pead_ranked = pead_ranked[: settings.pead_max_positions]
         _n_neg = sum(1 for c in pead_ranked if getattr(c, "signal_source", "") == "pead_neglected")
         logger.info("PEAD paper stream selected %d candidates (%d neglected-beat variant)",
@@ -2021,6 +2034,35 @@ async def _count_open_sniper_positions() -> int:
     except Exception as e:
         logger.warning("Failed to count open sniper positions (cap disabled this run): %s", e)
         return 0
+
+
+async def _open_pead_tickers() -> set[str]:
+    """Tickers with an already-open PEAD paper position (either variant).
+
+    PEAD's earnings window is 6 days but its hold is 20, so without this a single
+    beat re-qualifies for ~5-6 consecutive runs and stacks a NEW position each time.
+    Observed live 2026-07-30: BKR / QRVO / LOGI / INCY each held 2 positions. That
+    concentrates a single event AND corrupts the paper track record the promotion
+    gate depends on (duplicate rows are not independent samples).
+
+    Fail-safe: on any DB error return an empty set, so a transient failure lets the
+    run proceed (at worst re-picking) rather than blocking PEAD entirely.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(Signal.ticker)
+                .join(Outcome, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == True,  # noqa: E712
+                    Signal.signal_model == "pead",
+                )
+                .distinct()
+            )
+            return {str(t).upper() for (t,) in result.all() if t}
+    except Exception as e:
+        logger.warning("Failed to load open PEAD tickers (dedup skipped this run): %s", e)
+        return set()
 
 
 async def _check_and_record_decay(gov: GovernanceContext) -> None:
