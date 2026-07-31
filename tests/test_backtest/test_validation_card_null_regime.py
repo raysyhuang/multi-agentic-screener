@@ -36,24 +36,47 @@ def test_card_builds_with_only_null_regimes():
     assert card.bull_trades == card.bear_trades == card.choppy_trades == 0
 
 
-def test_two_sampled_regimes_require_both_positive():
-    """Documents the strict rule behind the live block: with exactly 2 sampled
-    regimes, required_positive = min(2, 2) = 2, so ONE weak cohort blocks all picks."""
+def _payload_for(by_regime, returns):
     from datetime import date
 
-    # >=30 trades, else the check auto-passes as "insufficient data".
-    by_regime = {"bull": [1.0] * 20, "bear": [-1.0] * 20}  # bull positive, bear not
     card = generate_validation_card(
-        "mean_reversion", [1.0] * 20 + [-1.0] * 20, by_regime, [0.9] * 40,
+        "mean_reversion", returns, by_regime, [r - 0.1 for r in returns],
         variants_tested=1,
     )
-    payload = run_validation_checks(
-        run_date=date(2026, 7, 30),
-        signal_dates=[date(2026, 7, 29)] * 40,
-        execution_dates=[date(2026, 7, 30)] * 40,
+    n = len(returns)
+    return card, run_validation_checks(
+        run_date=date(2026, 7, 31),
+        signal_dates=[date(2026, 7, 30)] * n,
+        execution_dates=[date(2026, 7, 31)] * n,
         feature_columns=["rsi_2"],
         validation_card=card,
         allowed_regimes={"bull", "bear", "choppy"},
     )
+
+
+def test_undersampled_regime_cannot_veto():
+    """The live block: bear 8/17 = 47% WR (Wilson CI [26%, 69%]) blocked the whole
+    book for 3 days while live MR ran 75% WR. A cohort that small cannot distinguish
+    a broken model from a healthy one, so it must not gate production."""
+    by_regime = {"bear": [1.0] * 8 + [-1.0] * 9, "choppy": [1.0] * 9 + [-1.0] * 5}
+    returns = by_regime["bear"] + by_regime["choppy"]
+    _, payload = _payload_for(by_regime, returns)
+    assert payload.checks["regime_survival_check"] == "pass"
+
+
+def test_large_negative_regime_still_blocks():
+    """The check must keep its teeth: a genuinely large, genuinely losing cohort
+    (n >= 30) still fails regime survival."""
+    by_regime = {"bear": [1.0] * 12 + [-1.0] * 23, "choppy": [1.0] * 12 + [-1.0] * 23}
+    returns = by_regime["bear"] + by_regime["choppy"]
+    _, payload = _payload_for(by_regime, returns)
     assert payload.checks["regime_survival_check"] == "fail"
-    assert any("1/2" in r for r in payload.key_risks)
+
+
+def test_one_large_positive_regime_passes():
+    """Sniper's live shape: a single well-sampled positive regime (bull n=76, 55%)
+    should pass rather than be penalised for having no bear trades by design."""
+    by_regime = {"bull": [1.0] * 42 + [-1.0] * 34}
+    returns = by_regime["bull"]
+    _, payload = _payload_for(by_regime, returns)
+    assert payload.checks["regime_survival_check"] == "pass"

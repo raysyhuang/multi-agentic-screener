@@ -335,9 +335,29 @@ def run_validation_checks(
         if allowed is not None:
             regime_rows = [row for row in regime_rows if row[0] in allowed]
 
+        # A regime cohort may only VETO if it is large enough to mean something.
+        # Live 2026-07-29..31: mean_reversion was blocked for three days by a bear
+        # cohort of 8/17 = 47% WR — a Wilson 95% CI of [26%, 69%], i.e. a sample
+        # that cannot distinguish a broken model from a healthy one. One additional
+        # winner (9/17 = 53%) would have flipped the entire book back on. Meanwhile
+        # live MR was running 75% WR. Requiring a real sample keeps the check honest
+        # without letting coin-flip noise gate production.
+        min_regime_trades = 30
         has_regime_counts = any(count > 0 for _, _, count in regime_rows)
         if has_regime_counts:
-            evaluated_regimes = [(name, wr) for name, wr, count in regime_rows if count > 0]
+            evaluated_regimes = [
+                (name, wr) for name, wr, count in regime_rows
+                if count >= min_regime_trades
+            ]
+            undersampled = [
+                (name, count) for name, _, count in regime_rows
+                if 0 < count < min_regime_trades
+            ]
+            if undersampled and not evaluated_regimes:
+                notes_parts.append(
+                    "regime_survival: no regime has >= "
+                    f"{min_regime_trades} trades ({undersampled}) — not evaluated"
+                )
         else:
             # Backward-compatible path for hand-built/old ValidationCards.
             evaluated_regimes = [(name, wr) for name, wr, _ in regime_rows]
