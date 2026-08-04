@@ -34,6 +34,25 @@ def pytest_collection_modifyitems(config, items):
             item.add_marker(skip_marker)
 
 
+@pytest.fixture(autouse=True)
+def _deterministic_rng():
+    """Seed numpy's global RNG before every test.
+
+    Synthetic OHLCV is built with `np.random` in conftest and in several test
+    modules. Some of those call `np.random.seed()` and some don't, and numpy's
+    seed is process-global — so whether an unseeded fixture produced repeatable
+    data depended on which seeded fixture happened to run before it. Values
+    derived from those prices (health composite score, regime classification,
+    ranker scores) therefore drifted between runs.
+
+    That made `TestVelocityInHealthCard::test_velocity_warning_forces_watch`
+    fail ~15% of runs (3/20) when the score landed past the EXIT threshold
+    instead of WATCH. Seeding per test keeps the data realistic but makes every
+    test independent of collection order.
+    """
+    np.random.seed(1729)
+
+
 @pytest.fixture
 def sample_ohlcv() -> pd.DataFrame:
     """Generate 100 days of synthetic OHLCV data."""
