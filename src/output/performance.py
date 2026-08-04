@@ -502,17 +502,26 @@ async def _evaluate_position(
             close=float(row["close"]),
         ))
 
+    # Trail width is PER MODEL. One global trail cannot serve a 3-day reversion
+    # strategy and a 20-day drift strategy: PEAD's justifying backtest
+    # (scripts/pead_backtest.py) passed no trail at all, and applying the global
+    # 0.5/0.3 to it collapses median hold from 28d to 1-2d and costs ~2.1pp per
+    # trade — the whole edge. See outputs/research/pead_trail_FINDINGS.md.
+    # MR and sniper keep the global value: sniper without a trail is -1.43%/trade.
+    signal_model = getattr(signal, "signal_model", None)
+    trail_activate, trail_distance = settings.trail_for_model(signal_model)
+
     exit_params = ExitParams(
         stop=base_stop,
         target=target,
         max_hold=signal.holding_period_days,
         slippage=slippage,
-        trail_activate_pct=settings.trail_activate_pct,
-        trail_distance_pct=settings.trail_distance_pct,
+        trail_activate_pct=trail_activate,
+        trail_distance_pct=trail_distance,
         partial_tp_target=partial_target if use_two_leg else 0.0,
         partial_tp_fraction=settings.partial_tp_fraction,
         time_stop_days=settings.sniper_time_stop_days,
-        time_stop_eligible=(getattr(signal, "signal_model", None) == "sniper"),
+        time_stop_eligible=(signal_model == "sniper"),
         early_exit_mfe_pct=0.0,
         gap_through=True,
         check_entry_bar=True,
