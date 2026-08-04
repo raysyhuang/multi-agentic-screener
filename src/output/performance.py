@@ -450,8 +450,12 @@ async def _evaluate_position(
         update = {"entry_price": entry_price}
 
     # --- Compute score-tiered base stop ---
+    # NB the `/ 0.75` below recovers ATR from the stop distance by assuming
+    # mean-reversion's stop convention. It is only correct for models that
+    # actually use 0.75xATR — see Settings.uses_score_tiered_stops.
+    signal_model = getattr(signal, "signal_model", None)
     base_stop = signal.stop_loss
-    if settings.score_tiered_stops_enabled and signal.confidence is not None:
+    if settings.uses_score_tiered_stops(signal_model) and signal.confidence is not None:
         tier_atr = abs(signal.entry_price - signal.stop_loss) / 0.75 if signal.stop_loss else 0
         if tier_atr > 0:
             score = float(signal.confidence)
@@ -508,7 +512,6 @@ async def _evaluate_position(
     # 0.5/0.3 to it collapses median hold from 28d to 1-2d and costs ~2.1pp per
     # trade — the whole edge. See outputs/research/pead_trail_FINDINGS.md.
     # MR and sniper keep the global value: sniper without a trail is -1.43%/trade.
-    signal_model = getattr(signal, "signal_model", None)
     trail_activate, trail_distance = settings.trail_for_model(signal_model)
 
     exit_params = ExitParams(
