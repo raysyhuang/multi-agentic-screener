@@ -109,6 +109,8 @@ def _default_settings(**overrides) -> SimpleNamespace:
     # Bind the REAL Settings.trail_for_model so these tests exercise production
     # logic rather than a reimplementation of it.
     ns.trail_for_model = lambda model, _ns=ns: Settings.trail_for_model(_ns, model)
+    ns.uses_score_tiered_stops = (
+        lambda model, _ns=ns: Settings.uses_score_tiered_stops(_ns, model))
     return ns
 
 
@@ -800,3 +802,47 @@ async def test_pead_survives_pullback_that_would_trail_stop_mean_reversion(monke
     agg2 = _patch_deps(monkeypatch, pead_signal, df2, settings)
     pead_update, _ = await perf._evaluate_position(_make_outcome(), agg2)
     assert "exit_reason" not in pead_update or pead_update.get("exit_reason") is None
+
+
+def test_score_tiers_skip_pead():
+    """Score tiers are an MR construct — they must not touch PEAD's stop."""
+    s = _default_settings(score_tiered_stops_enabled=True)
+    assert s.uses_score_tiered_stops("mean_reversion") is True
+    assert s.uses_score_tiered_stops("sniper") is True
+    assert s.uses_score_tiered_stops("pead") is False
+    # Global kill-switch still wins for every model.
+    off = _default_settings(score_tiered_stops_enabled=False)
+    assert off.uses_score_tiered_stops("mean_reversion") is False
+    assert off.uses_score_tiered_stops("pead") is False
+
+
+@pytest.mark.asyncio
+async def test_pead_keeps_its_designed_stop_not_the_tiered_one(monkeypatch):
+    """PEAD's 3xATR stop must survive untouched.
+
+    entry 100, stop 97 (3xATR with ATR=1). The tier path would infer
+    tier_atr = 3/0.75 = 4 and, at confidence 60, set the stop to 100 - 0.50*4 =
+    98.0 — tighter than designed. A bar dipping to 97.5 must therefore NOT stop
+    a PEAD position out, while the identical mean_reversion signal does exit.
+    """
+    bars = [
+        {"open": 100.0, "high": 100.5, "low": 99.9, "close": 100.2},
+        {"open": 100.0, "high": 100.3, "low": 97.5, "close": 99.0},
+    ]
+    bars += _flat_bars(2, price=99.5)
+    settings = _default_settings(score_tiered_stops_enabled=True)
+
+    pead = _make_signal(signal_model="pead", confidence=60.0, entry_price=100.0,
+                        stop_loss=97.0, target_1=115.0, holding_period_days=20)
+    agg = _patch_deps(monkeypatch, pead,
+                      _make_ohlcv_bars(bars, start_date=date(2026, 3, 10)), settings)
+    pead_update, _ = await perf._evaluate_position(_make_outcome(), agg)
+    assert pead_update.get("exit_reason") != "stop"
+
+    mr = _make_signal(signal_model="mean_reversion", confidence=60.0,
+                      entry_price=100.0, stop_loss=97.0, target_1=115.0,
+                      holding_period_days=20)
+    agg2 = _patch_deps(monkeypatch, mr,
+                       _make_ohlcv_bars(bars, start_date=date(2026, 3, 10)), settings)
+    mr_update, _ = await perf._evaluate_position(_make_outcome(), agg2)
+    assert mr_update["exit_reason"] == "stop"

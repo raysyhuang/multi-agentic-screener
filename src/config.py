@@ -221,6 +221,28 @@ class Settings(BaseSettings):
     pead_reaction_min_pct: float = 2.0
     pead_reaction_max_pct: float = 12.0
 
+    def uses_score_tiered_stops(self, signal_model: str | None) -> bool:
+        """Whether the score-tiered stop applies to a given model.
+
+        The tier multiples (1.25 / 0.85 / 0.50) are a MEAN-REVERSION construct,
+        and the code that applies them recovers ATR as ``|entry - stop| / 0.75``
+        — i.e. it assumes MR's 0.75xATR stop convention. PEAD's stop is 3xATR,
+        so that inference yields ``tier_atr = 4xATR`` and rescales PEAD's stop to
+        2.0x / 3.4x / 5.0x.
+
+        Do NOT "fix" this by using the true ATR: that would apply the raw
+        multiples and give PEAD a 0.50-1.25xATR stop, which is far tighter than
+        its 3xATR design. Measured on 306 E1-gated events, untrailed:
+        designed 3xATR +2.212%/trade (58.8% WR) > the current 2.0-5.0x rescale
+        +2.101% (55.9%) >> the "corrected" 0.5-1.25x +1.089% (**31.7% WR**).
+        The right answer is to leave PEAD's designed stop alone.
+
+        See outputs/research/pead_trail_FINDINGS.md.
+        """
+        if not self.score_tiered_stops_enabled:
+            return False
+        return signal_model != "pead"
+
     def trail_for_model(self, signal_model: str | None) -> tuple[float, float]:
         """Return (trail_activate_pct, trail_distance_pct) for a signal model.
 

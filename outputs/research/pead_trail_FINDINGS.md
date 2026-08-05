@@ -57,14 +57,40 @@ a new strategy is never silently un-trailed.
 entire risk control. One global trail cannot serve a 3-day reversion strategy and
 a 20-day drift strategy; that is the actual lesson.
 
-## Known-remaining, not fixed here
+## The score-tiered stop — and why the "obvious" fix is worse than the bug
 
 `performance.py` computes `tier_atr = abs(entry - stop) / 0.75`, hardcoding
 mean-reversion's 0.75×ATR convention. With PEAD's 3×ATR stop that yields
 `tier_atr = 4×ATR`, rescaling the intended 3×ATR stop to **2.0× (score<70),
-3.4× (70-84), 5.0× (≥85)**. 1073 of 1574 events land in the 2.0× bucket — a stop
-33% tighter than designed. Measured cost is small (config D above), so it is left
-for a separate correctness fix rather than bundled into a P&L change.
+3.4× (70-84), 5.0× (≥85)**. 1073 of 1574 events land in the 2.0× bucket.
+
+The tempting fix is to use the true ATR instead of inferring it. **That would
+have halved the strategy.** The tier multiples are themselves an MR construct, so
+applying them to a true ATR gives PEAD a 0.50–1.25×ATR stop — far tighter than
+its 3×ATR design. Measured on the 306 E1-gated events, all untrailed:
+
+| stop treatment | WR | avg/trade | 95% CI |
+|---|---|---|---|
+| **designed 3.0×ATR, no tiering** | **58.8%** | **+2.212%** | [+1.16,+3.26] |
+| current tiered (buggy `/0.75`) → 2.0–5.0×ATR | 55.9% | +2.101% | [+1.08,+3.13] |
+| naive "fix" (true ATR) → 0.5–1.25×ATR | **31.7%** | +1.089% | [+0.17,+2.01] |
+
+The bug was accidentally *compensating* for the wrong-convention multiples. The
+correct fix is neither divisor: **score tiers simply should not apply to PEAD.**
+Shipped as `Settings.uses_score_tiered_stops(signal_model)`.
+
+> Third instance of the same root cause in one session: an MR-shaped default
+> applied globally (trail width, stop convention, tier multiples). The lesson is
+> not "fix the formula" — it is that a correct component behind wrong wiring
+> looks exactly like a broken component, and the obvious repair can make it worse.
+
+### Latent, NOT changed — sniper has the same mismatch
+
+Sniper's stop is 1.5×ATR, so `tier_atr = 1.5/0.75 = 2×ATR` and the tiers rescale
+it to **1.7×ATR (score 70-84) or 2.5×ATR (≥85)** — wider than designed, not
+tighter. `sniper_min_score=70` means every sniper signal is rescaled. This is
+unmeasured, and sniper is a live book strategy rather than a paper stream, so it
+was deliberately left alone. **Measure before touching it.**
 
 ## Caveats
 
