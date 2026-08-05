@@ -55,6 +55,13 @@ class Settings(BaseSettings):
     commission_per_trade: float = 1.0  # dollars
     trail_activate_pct: float = 0.5   # activate trailing stop after +0.5% MFE
     trail_distance_pct: float = 0.3   # trail 0.3% below high watermark
+    # Per-model trail override. The global 0.5/0.3 suits the 3-day reversion and
+    # 7-day sniper horizons, but PEAD holds 20 days for post-earnings drift and
+    # its justifying backtest ran with NO trail. Applying the global trail to it
+    # collapsed median hold 28d -> 1-2d and cost ~2.1pp/trade on 306 E1-gated
+    # events (+2.21% -> +0.10%). 0.0/0.0 disables trailing, matching that backtest.
+    pead_trail_activate_pct: float = 0.0
+    pead_trail_distance_pct: float = 0.0
 
     # --- Two-Leg Trade Engine (V1.2) ---
     # Disabled: backtest showed partial TP dilutes winners (-0.16% avg return)
@@ -213,6 +220,18 @@ class Settings(BaseSettings):
     pead_min_revenue_surprise: float = 2.0
     pead_reaction_min_pct: float = 2.0
     pead_reaction_max_pct: float = 12.0
+
+    def trail_for_model(self, signal_model: str | None) -> tuple[float, float]:
+        """Return (trail_activate_pct, trail_distance_pct) for a signal model.
+
+        PEAD holds for 20-day post-earnings drift and was validated with no
+        trailing stop; every other model uses the global setting. Unknown models
+        fall back to the global value so a new strategy is never silently
+        un-trailed.
+        """
+        if signal_model == "pead":
+            return self.pead_trail_activate_pct, self.pead_trail_distance_pct
+        return self.trail_activate_pct, self.trail_distance_pct
 
     def validate_keys_for_mode(self) -> None:
         """Validate that required API keys are present.

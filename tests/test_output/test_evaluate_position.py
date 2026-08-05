@@ -19,6 +19,7 @@ if "pandas_ta" not in sys.modules:
     sys.modules["pandas_ta"] = MagicMock()
 
 import src.output.performance as perf
+from src.config import Settings
 
 
 # ---------------------------------------------------------------------------
@@ -95,6 +96,8 @@ def _default_settings(**overrides) -> SimpleNamespace:
         score_tiered_stops_enabled=False,
         trail_activate_pct=100.0,  # disabled by default
         trail_distance_pct=0.3,
+        pead_trail_activate_pct=0.0,  # PEAD runs untrailed (20-day drift hold)
+        pead_trail_distance_pct=0.0,
         partial_tp_enabled=False,
         partial_tp_atr_multiple=1.0,
         partial_tp_fraction=0.5,
@@ -102,7 +105,11 @@ def _default_settings(**overrides) -> SimpleNamespace:
         sniper_time_stop_days=1,
     )
     defaults.update(overrides)
-    return SimpleNamespace(**defaults)
+    ns = SimpleNamespace(**defaults)
+    # Bind the REAL Settings.trail_for_model so these tests exercise production
+    # logic rather than a reimplementation of it.
+    ns.trail_for_model = lambda model, _ns=ns: Settings.trail_for_model(_ns, model)
+    return ns
 
 
 def _patch_deps(monkeypatch, signal, df, settings=None):
@@ -745,3 +752,51 @@ async def test_same_pass_leg1_leg2_exit(monkeypatch):
     assert "partial_exit_price" in update
     # Weighted PnL should blend leg1 and leg2, not just leg2
     assert update.get("leg2_exit_reason") is not None
+
+
+# ---------------------------------------------------------------------------
+# Per-model trail (PEAD holds 20 days for drift and must not be trailed)
+# ---------------------------------------------------------------------------
+
+def test_trail_for_model_pead_is_untrailed():
+    """PEAD resolves to no trail; every other model keeps the global setting."""
+    s = _default_settings(trail_activate_pct=0.5, trail_distance_pct=0.3)
+    assert s.trail_for_model("pead") == (0.0, 0.0)
+    assert s.trail_for_model("mean_reversion") == (0.5, 0.3)
+    assert s.trail_for_model("sniper") == (0.5, 0.3)
+    # Unknown/None must fall back to the global trail, never silently untrail.
+    assert s.trail_for_model(None) == (0.5, 0.3)
+    assert s.trail_for_model("some_future_model") == (0.5, 0.3)
+
+
+@pytest.mark.asyncio
+async def test_pead_survives_pullback_that_would_trail_stop_mean_reversion(monkeypatch):
+    """The regression this fixes.
+
+    A 20-day drift trade that pops +1% then pulls back would be trail-stopped on
+    day 1 under the global 0.5/0.3 trail — that single behaviour cost PEAD ~2.1pp
+    per trade (+2.21% -> +0.10% on 306 E1-gated events). Same bars, same signal,
+    only signal_model differs: mean_reversion exits, pead stays open and runs.
+    """
+    bars = [
+        {"open": 100.0, "high": 101.2, "low": 99.8, "close": 101.0},  # entry, +1%
+        {"open": 100.9, "high": 101.0, "low": 100.2, "close": 100.4},  # pullback
+    ]
+    bars += _flat_bars(3, price=100.5)
+    settings = _default_settings(trail_activate_pct=0.5, trail_distance_pct=0.3)
+
+    # mean_reversion: the global trail arms on the entry bar and fires on the next
+    mr_signal = _make_signal(signal_model="mean_reversion", stop_loss=95.0,
+                             target_1=115.0, holding_period_days=20)
+    df = _make_ohlcv_bars(bars, start_date=date(2026, 3, 10))
+    agg = _patch_deps(monkeypatch, mr_signal, df, settings)
+    mr_update, _ = await perf._evaluate_position(_make_outcome(), agg)
+    assert mr_update["exit_reason"] == "trail_stop"
+
+    # pead: identical bars, untrailed, still open
+    pead_signal = _make_signal(signal_model="pead", stop_loss=95.0,
+                               target_1=115.0, holding_period_days=20)
+    df2 = _make_ohlcv_bars(bars, start_date=date(2026, 3, 10))
+    agg2 = _patch_deps(monkeypatch, pead_signal, df2, settings)
+    pead_update, _ = await perf._evaluate_position(_make_outcome(), agg2)
+    assert "exit_reason" not in pead_update or pead_update.get("exit_reason") is None
