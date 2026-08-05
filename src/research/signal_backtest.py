@@ -737,8 +737,13 @@ def run_model_backtest(
             )
         elif model == "sniper":
             # Fetch SPY data for relative strength — use price_data if available.
-            # use_spy=False models the live production bug (spy_df never passed),
-            # which pins the relative_strength component at its 50 neutral value.
+            # use_spy=False pins the relative_strength component at its neutral
+            # 50 by withholding SPY. This models a HISTORICAL live bug that is
+            # FIXED: main.py:1096 passes spy_df to score_sniper today, and the
+            # macro SPY fetch succeeds in production. Keep it only to reproduce
+            # pre-fix results — use_spy=False does NOT mirror current live, and
+            # running a sniper study with it silently disables one of the five
+            # scoring components relative to production.
             spy_df = price_data.get("SPY") if params.get("use_spy", True) else None
             raw_signals = scan_sniper(
                 ticker, df,

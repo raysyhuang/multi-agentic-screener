@@ -651,6 +651,15 @@ async def _run_pipeline_core(
     if spy_df is None or (isinstance(spy_df, pd.DataFrame) and spy_df.empty):
         logger.warning("SPY price data missing — regime detection may be inaccurate")
         spy_df = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
+    # score_sniper needs >= 11 SPY bars for relative strength; below that it
+    # silently falls back to a neutral 50, disabling one of sniper's five
+    # components with no other signal that it happened. A short-but-non-empty
+    # frame clears the emptiness check above, so warn on the real threshold.
+    if len(spy_df) < 11:
+        logger.warning(
+            "SPY history too short (%d bars, need >=11) — sniper relative_strength "
+            "will fall back to neutral 50", len(spy_df),
+        )
     if qqq_df is None or (isinstance(qqq_df, pd.DataFrame) and qqq_df.empty):
         logger.warning("QQQ price data missing — regime detection may be inaccurate")
         qqq_df = pd.DataFrame(columns=["date", "open", "high", "low", "close", "volume"])
