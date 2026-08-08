@@ -25,12 +25,13 @@ def _make_card(
     threshold_sensitivity: float = 0.1,
     total_trades: int = 50,
     fragility_score: float = 20.0,
+    avg_pnl_pct: float = 1.5,
 ) -> ValidationCard:
     return ValidationCard(
         signal_model="breakout",
         total_trades=total_trades,
         win_rate=win_rate,
-        avg_pnl_pct=1.5,
+        avg_pnl_pct=avg_pnl_pct,
         performance_dispersion=0.1,
         slippage_sensitivity=slippage_sensitivity,
         threshold_sensitivity=threshold_sensitivity,
@@ -126,9 +127,11 @@ def test_future_data_guard_passes_clean_columns():
 # ── Check 4: slippage_sensitivity ──
 
 
-def test_slippage_sensitivity_fails_when_high():
+def test_slippage_check_fails_when_costs_erase_the_edge():
+    """The gate asks whether the edge SURVIVES stressed costs, not how big the
+    ratio-to-own-mean is. avg +0.05%/trade does not survive a 10bp haircut."""
     today = date(2025, 3, 15)
-    card = _make_card(slippage_sensitivity=0.7)
+    card = _make_card(avg_pnl_pct=0.05)
     result = run_validation_checks(
         run_date=today,
         signal_dates=[today],

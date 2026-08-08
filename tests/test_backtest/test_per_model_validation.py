@@ -65,10 +65,15 @@ def test_slippage_high_but_few_trades_passes():
     assert result.checks["slippage_sensitivity_check"] == "pass"
 
 
-def test_slippage_high_with_enough_trades_fails():
-    """With >= 30 trades, high slippage sensitivity correctly fails."""
+def test_slippage_negative_expectancy_with_enough_trades_fails():
+    """With >= 30 trades, an edge that does not survive stressed costs fails.
+
+    Previously this asserted on a ratio-to-own-mean that was sign-blind: a
+    stream LOSING money scored well and passed. The gate now tests the stressed
+    expectancy directly.
+    """
     today = date(2025, 3, 15)
-    card = _make_card(total_trades=30, slippage_sensitivity=0.8)
+    card = _make_card(total_trades=30, avg_pnl_pct=-1.0)
     result = run_validation_checks(
         run_date=today,
         signal_dates=[today],
