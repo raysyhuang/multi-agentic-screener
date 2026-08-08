@@ -210,7 +210,15 @@ class Settings(BaseSettings):
     pead_stop_atr_mult: float = 3.0
     pead_target_atr_mult: float = 6.0
     pead_holding_period: int = 20
-    pead_max_positions: int = 5
+    pead_max_positions: int = 5       # picks admitted per RUN
+    # Concurrent open PEAD positions, book-wide. Distinct from the per-run cap
+    # above: with a 20-day hold (untrailed since PR #43) and ~2.4 qualifying
+    # beats/day in earnings season, admitting 5/run compounds into tens of open
+    # positions — 13 were open on 2026-08-06 against a nominal "cap" of 5, and
+    # the quarantined paper stream would structurally become the book's largest
+    # exposure. Mirrors sniper_max_positions. 10 matches the concurrency slots
+    # the published portfolio sim assumes.
+    pead_max_concurrent: int = 10
     # E1 quality filters (2026-07-26 backtest): "both beats + reaction band" lifts
     # PEAD from +1.76%/Sharpe 1.43/20.8% DD to +2.25%/Sharpe 1.69/6.6% DD, and the
     # recent-period edge from +1.18% to +1.50%. Require a revenue beat too, and a
