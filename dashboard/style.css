@@ -188,3 +188,67 @@ main { overflow-x: clip; }
   .tile { padding: 10px 12px; }
   .pick { grid-template-columns: 1fr; }
 }
+
+/* ── data freshness chip ─────────────────────────────────────────────────
+   Ray reads this from an iOS home-screen app where there is no URL bar and no
+   obvious reload, so "is this current?" has to be answerable at a glance. */
+.freshness { display: flex; align-items: center; gap: 8px; margin-top: 12px; font-size: 13px;
+             color: rgba(255,255,255,0.75); }
+.fresh-dot { width: 8px; height: 8px; border-radius: 50%; background: #15be53; flex: none; }
+.fresh-dot.stale { background: #e0a13a; }
+.fresh-dot.old   { background: #ef4444; }
+.fresh-btn { margin-left: auto; border: 1px solid rgba(255,255,255,0.25); background: transparent;
+             color: #fff; border-radius: 999px; padding: 5px 14px; font-size: 13px;
+             font-family: inherit; cursor: pointer; }
+.fresh-btn:active { background: rgba(255,255,255,0.12); }
+.fresh-btn[disabled] { opacity: 0.5; }
+
+/* ── pull to refresh ─────────────────────────────────────────────────────
+   Standalone PWAs have no browser pull-to-refresh, so it is implemented here. */
+.ptr { position: fixed; top: 0; left: 0; right: 0; display: flex; justify-content: center;
+       pointer-events: none; z-index: 30; transform: translateY(-48px); }
+.ptr-spinner { width: 26px; height: 26px; margin-top: calc(10px + env(safe-area-inset-top));
+               border-radius: 50%; border: 2px solid rgba(255,255,255,0.35);
+               border-top-color: #fff; background: rgba(28,30,84,0.9); }
+.ptr-spinner.spin { animation: ptr-rot 0.7s linear infinite; }
+@keyframes ptr-rot { to { transform: rotate(360deg); } }
+
+/* ── funnel ──────────────────────────────────────────────────────────────── */
+.funnel { display: flex; flex-direction: column; gap: 6px; }
+.fn-row { display: grid; grid-template-columns: 120px 1fr auto; gap: 10px; align-items: center; }
+.fn-name { font-size: 13px; color: var(--label); }
+.fn-bar { height: 26px; background: #eef2f7; border-radius: 5px; overflow: hidden; }
+.fn-fill { height: 100%; border-radius: 5px; }
+.fn-val { font-size: 13px; color: var(--navy); font-feature-settings: "tnum"; min-width: 74px;
+          text-align: right; }
+.fn-drop { font-size: 11px; color: var(--body); }
+
+/* ── data quality ────────────────────────────────────────────────────────── */
+.dq-row { display: flex; gap: 8px; align-items: flex-start; padding: 8px 0;
+          border-bottom: 1px solid var(--border); font-size: 13px; }
+.dq-row:last-child { border-bottom: none; }
+.dq-tag { flex: none; font-size: 11px; border-radius: 4px; padding: 1px 6px; font-weight: 400; }
+.dq-msg { color: var(--body); }
+.dq-date { color: var(--label); font-size: 12px; flex: none; font-feature-settings: "tnum"; }
+
+@media (max-width: 760px) {
+  .freshness { font-size: 12px; }
+  .fn-row { grid-template-columns: 92px 1fr auto; gap: 8px; }
+  .fn-name { font-size: 12px; }
+  .fn-val { min-width: 62px; font-size: 12px; }
+  .dq-row { flex-direction: column; gap: 3px; }
+}
+
+/* ── open-position risk bar: stop —— entry —— target ─────────────────────── */
+.riskbar { margin-top: 9px; }
+.rb-track { position: relative; height: 6px; border-radius: 3px;
+            background: linear-gradient(90deg, rgba(185,28,28,0.28) 0%,
+                        #eef2f7 45%, #eef2f7 55%, rgba(21,190,83,0.28) 100%); }
+.rb-entry { position: absolute; top: -3px; width: 1px; height: 12px; background: var(--label);
+            opacity: 0.55; }
+.rb-mark { position: absolute; top: -3px; width: 10px; height: 12px; margin-left: -5px;
+           border-radius: 3px; border: 2px solid #fff; }
+.rb-mark.up { background: var(--success-tx); }
+.rb-mark.down { background: var(--crit-tx); }
+.rb-ends { display: flex; justify-content: space-between; margin-top: 4px;
+           font-size: 11px; color: var(--body); font-feature-settings: "tnum"; }

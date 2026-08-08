@@ -245,11 +245,19 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
             skip_counts[key] = skip_counts.get(key, 0) + 1
             continue
         if o.still_open:
+            # Carry the levels and the planned horizon so the dashboard can show
+            # how far a live position is from its stop, its target and its expiry
+            # — the three things that decide whether it needs attention today.
+            entry_px = o.entry_price or s.entry_price
             open_positions.append({
                 "ticker": o.ticker, "stream": key,
                 "entry_date": _iso(o.entry_date),
                 "days_held": (date.today() - o.entry_date).days if o.entry_date else None,
                 "unrealized_pnl_pct": o.pnl_pct,
+                "entry_price": entry_px,
+                "stop_loss": s.stop_loss,
+                "target_1": s.target_1,
+                "hold_days": s.holding_period_days,
             })
             continue
         if o.pnl_pct is None:
