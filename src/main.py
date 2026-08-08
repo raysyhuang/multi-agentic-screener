@@ -76,7 +76,7 @@ from src.signals.ranker import (
 from src.pipeline_types import PipelineRun
 from src.backtest.validation_card import run_validation_checks
 from src.output.telegram import send_alert, format_daily_alert
-from src.output.performance import check_open_positions
+from src.output.performance import SHADOW_SKIP_REASON, check_open_positions
 from src.governance.artifacts import GovernanceContext
 from src.governance.performance_monitor import (
     compute_rolling_metrics,
@@ -1590,15 +1590,28 @@ async def _run_pipeline_core(
     # If any structural check failed OR all models failed fragility, block everything.
     structural_failed = structural_result.validation_status == "fail"
     # Only block picks whose specific model failed fragility checks.
+    # Picks the gate removes are SHADOW-BOOKED (persisted with
+    # skip_reason=SHADOW_SKIP_REASON) rather than dropped on the floor. The gate's
+    # demonstrated failure mode is blocking healthy models on small-n noise — two
+    # multi-day outages in 2026-07 — and until now that cost left no record at
+    # all. Shadow rows are tracked by the outcome walker and excluded from every
+    # performance statistic, so they price the gate without polluting the book.
+    blocked_picks: list = []
     if failed_models:
         before_count = len(pipeline_result.approved)
+        blocked_picks.extend(
+            p for p in pipeline_result.approved
+            if getattr(p, "signal_model", "unknown") in failed_models
+        )
         pipeline_result.approved = [
             p for p in pipeline_result.approved
             if getattr(p, "signal_model", "unknown") not in failed_models
         ]
         logger.info(
-            "Per-model fragility filter: %d → %d picks (blocked models: %s)",
+            "Per-model fragility filter: %d → %d picks (blocked models: %s, "
+            "%d shadow-booked)",
             before_count, len(pipeline_result.approved), sorted(failed_models),
+            len(blocked_picks),
         )
 
     # Use structural_result as the validation envelope for downstream logging.
@@ -1619,6 +1632,7 @@ async def _run_pipeline_core(
             "Failed checks: %s",
             [k for k, v in validation_result.checks.items() if v == "fail"],
         )
+        blocked_picks.extend(pipeline_result.approved)
         pipeline_result.approved.clear()
 
     # Final output envelope
@@ -1792,6 +1806,15 @@ async def _run_pipeline_core(
             picks_to_persist.extend(pead_result.approved)
 
         _exit_config_snapshot = build_exit_config_snapshot(settings)
+        _shadow_signal_objs: set = set()
+
+        # Shadow-booked picks ride the same persist path so they get real
+        # Signal rows (and therefore real feature/exit-config provenance); the
+        # Outcome below carries the skip_reason that keeps them out of stats.
+        _shadow_ids: set[int] = set()
+        for pick in list(blocked_picks):
+            _shadow_ids.add(id(pick))
+        picks_to_persist.extend(blocked_picks)
 
         for pick in picks_to_persist:
             signal = Signal(
@@ -1818,6 +1841,8 @@ async def _run_pipeline_core(
             )
             session.add(signal)
             new_signals.append(signal)
+            if id(pick) in _shadow_ids:
+                _shadow_signal_objs.add(signal)
 
         # Flush to get signal IDs before creating outcomes
         await session.flush()
@@ -1832,8 +1857,17 @@ async def _run_pipeline_core(
                 entry_date=next_entry_date,  # T+1 open execution (trading day)
                 entry_price=signal.entry_price,
                 still_open=True,
+                skip_reason=(SHADOW_SKIP_REASON
+                             if signal in _shadow_signal_objs else None),
             )
             session.add(outcome)
+        if _shadow_signal_objs:
+            logger.warning(
+                "Shadow-booked %d gate-blocked pick(s): %s — tracked for cost "
+                "measurement, excluded from all performance stats",
+                len(_shadow_signal_objs),
+                ",".join(sorted(s.ticker for s in _shadow_signal_objs)),
+            )
 
         # Save agent logs
         for log in pipeline_result.agent_logs:
