@@ -1347,7 +1347,28 @@ async def _run_pipeline_core(
                     "(open: %s)", _before - len(pead_ranked), _before,
                     ",".join(sorted(_open_pead)),
                 )
-        pead_ranked = pead_ranked[: settings.pead_max_positions]
+        # Concurrency slot cap. `pead_max_positions` bounds picks PER RUN, which
+        # with a 20-day hold compounds into unbounded open exposure — the paper
+        # stream had 13 positions open against a nominal 5 on 2026-08-06. Admit
+        # only up to the free slots, exactly as sniper does.
+        _open_pead_n = await _count_open_pead_positions()
+        _pead_slots = max(0, settings.pead_max_concurrent - _open_pead_n)
+        _admit = min(settings.pead_max_positions, _pead_slots)
+        if _open_pead_n:
+            logger.info(
+                "PEAD concurrency: %d open, %d of %d slots free (admitting up to %d)",
+                _open_pead_n, _pead_slots, settings.pead_max_concurrent, _admit,
+            )
+        if _admit < min(settings.pead_max_positions, len(pead_ranked)):
+            # Never let the cap bite silently — it changes what the paper record
+            # measures, so it has to be visible in the run log.
+            logger.warning(
+                "PEAD concurrency cap BINDING: %d candidate(s) dropped "
+                "(%d open >= %d max concurrent)",
+                min(settings.pead_max_positions, len(pead_ranked)) - _admit,
+                _open_pead_n, settings.pead_max_concurrent,
+            )
+        pead_ranked = pead_ranked[:_admit]
         _n_neg = sum(1 for c in pead_ranked if getattr(c, "signal_source", "") == "pead_neglected")
         logger.info("PEAD paper stream selected %d candidates (%d neglected-beat variant)",
                     len(pead_ranked), _n_neg)
@@ -2072,6 +2093,35 @@ async def _open_pead_tickers() -> set[str]:
     except Exception as e:
         logger.warning("Failed to load open PEAD tickers (dedup skipped this run): %s", e)
         return set()
+
+
+async def _count_open_pead_positions() -> int:
+    """Count currently-open PEAD paper positions across both variants.
+
+    The per-run `pead_max_positions` cap does NOT bound concurrency: it limits
+    how many picks a single run admits, so with a 20-day hold the stream
+    accumulates. Counts POSITIONS, not distinct tickers — same-ticker dedup
+    (`_open_pead_tickers`) prevents new duplicates, but legacy rows from before
+    PR #38 exist and still consume real exposure.
+
+    Fail-safe matches `_count_open_sniper_positions`: on any DB error return 0
+    so a transient failure widens the cap rather than blocking the paper stream.
+    """
+    try:
+        async with get_session() as session:
+            result = await session.execute(
+                select(func.count())
+                .select_from(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == True,  # noqa: E712
+                    Signal.signal_model == "pead",
+                )
+            )
+            return int(result.scalar() or 0)
+    except Exception as e:
+        logger.warning("Failed to count open PEAD positions (cap skipped this run): %s", e)
+        return 0
 
 
 async def _check_and_record_decay(gov: GovernanceContext) -> None:
