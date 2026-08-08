@@ -41,10 +41,11 @@ const tooltip = {
 function streamMeta(key) {
   return STREAM_META[key] || { label: key, color: "#d94fc6" };
 }
-function legend(container, keys) {
+/* legend accepts stream keys OR {label, color} entries */
+function legend(container, entries) {
   const box = el("div"); box.className = "legend";
-  for (const k of keys) {
-    const m = streamMeta(k);
+  for (const e of entries) {
+    const m = typeof e === "string" ? streamMeta(e) : e;
     const chip = el("span"); chip.className = "chip";
     const dot = el("span"); dot.className = "dot"; dot.style.background = m.color;
     chip.append(dot, document.createTextNode(m.label));
@@ -72,6 +73,10 @@ function measureWidth(container, fallback = 640) {
 }
 function lineChart(container, seriesList, { height = 260, band = null, yFmt = (v) => fmt(v, 1), unit = "", directLabels = true, rightPad = 110 } = {}) {
   const W = measureWidth(container), H = height;
+  // Phone-width containers can't afford a direct-label gutter — fall back to a
+  // legend (callers add one) and give the plot the full width.
+  const narrow = W < 480;
+  if (narrow && rightPad > 16) { rightPad = 12; directLabels = false; }
   const M = { t: 14, r: rightPad, b: 24, l: 44 };
   const allPts = seriesList.flatMap((s) => s.points);
   if (!allPts.length) { container.append(el("p", {}, "No closed trades yet.")); return; }
@@ -130,14 +135,18 @@ function lineChart(container, seriesList, { height = 260, band = null, yFmt = (v
 
 /* ---------- horizontal stacked bar (2px gaps, labels) ---------- */
 function stackedBar(container, rows, order) {
-  const W = Math.max(container.clientWidth || 640, 320), rowH = 30, gap = 14, labelW = 150;
-  const H = rows.length * (rowH + gap) + 24;
+  const W = Math.max(container.clientWidth || 640, 280), rowH = 30, gap = 14;
+  // narrow: label sits ABOVE its bar so the bar gets the full width
+  const narrow = W < 480, labelW = narrow ? 0 : 150, labelH = narrow ? 18 : 0;
+  const stride = rowH + gap + labelH;
+  const H = rows.length * stride + 24;
   const svg = el("svg", { width: W, height: H, viewBox: `0 0 ${W} ${H}` });
   rows.forEach((row, i) => {
     const total = order.reduce((a, k) => a + (row.counts[k] || 0), 0) || 1;
-    const yTop = i * (rowH + gap) + 4;
-    svg.append(el("text", { x: 0, y: yTop + rowH / 2 + 4, class: "axis-label", fill: NAVY,
-      "font-size": 12 }, `${row.label} (${total})`));
+    const yTop = i * stride + 4 + labelH;
+    svg.append(el("text", {
+      x: 0, y: narrow ? yTop - 6 : yTop + rowH / 2 + 4,
+      class: "axis-label", fill: NAVY, "font-size": 12 }, `${row.label} (${total})`));
     let xCur = labelW;
     for (const k of order) {
       const c = row.counts[k] || 0; if (!c) continue;
@@ -272,6 +281,7 @@ async function main() {
   // reports its true width. Measuring mid-build in this same tick gives the
   // grid a stale (too-wide) column count.
   requestAnimationFrame(() => renderCharts(data, streams, keys));
+  initRerenderOnResize(data, streams, keys);
 }
 
 function renderCharts(data, streams, keys) {
@@ -357,8 +367,12 @@ function renderCharts(data, streams, keys) {
       points: pf.equity[k].map((p) => ({ x: Date.parse(p.date), y: p.ret,
         tip: `${p.date} ${p.ret >= 0 ? "+" : ""}${fmt(p.ret, 1)}%` })),
     }));
-    if (pfSeries.length)
+    if (pfSeries.length) {
       lineChart($("portfolio-chart"), pfSeries, { height: 240, unit: "%", yFmt: (v) => `${v >= 0 ? "+" : ""}${fmt(v, 0)}` });
+      // narrow screens drop the direct labels — give them a legend instead
+      if (($("portfolio-chart").clientWidth || 0) < 480)
+        legend($("portfolio-chart"), pfSeries.map((s) => ({ label: s.label, color: s.color })));
+    }
 
     const ov = pf.overlap || {};
     $("portfolio-note").textContent =
@@ -457,8 +471,47 @@ function renderCharts(data, streams, keys) {
   rh.append(tb);
 }
 
+/* ---------- mobile chrome: tab-bar scroll spy + re-render on resize ---------- */
+function initTabbar() {
+  const tabs = [...document.querySelectorAll(".tabbar .tab")];
+  if (!tabs.length) return;
+  const byId = Object.fromEntries(tabs.map((t) => [t.getAttribute("href").slice(1), t]));
+  const setActive = (id) => tabs.forEach((t) => t.classList.toggle("active", t === byId[id]));
+  const obs = new IntersectionObserver((entries) => {
+    const vis = entries.filter((e) => e.isIntersecting)
+      .sort((a, b) => b.intersectionRatio - a.intersectionRatio)[0];
+    if (vis) setActive(vis.target.id);
+  }, { rootMargin: "-30% 0px -55% 0px" });
+  for (const id of Object.keys(byId)) {
+    const s = document.getElementById(id);
+    if (s) obs.observe(s);
+  }
+  tabs.forEach((t) => t.addEventListener("click", () => setActive(t.getAttribute("href").slice(1))));
+}
+
+/* charts measure their container at render time — rebuild them when the width
+   class of the viewport actually changes (rotation, split view), not on every
+   scroll-driven toolbar resize */
+function initRerenderOnResize(data, streams, keys) {
+  const CHART_IDS = ["alpha-tiles", "alpha-chart", "portfolio-table", "portfolio-chart",
+    "equity-chart", "wr-multiples", "exit-mix", "scatter", "open-positions",
+    "trade-filters", "trades-table", "run-history"];
+  let lastW = window.innerWidth, timer = null;
+  window.addEventListener("resize", () => {
+    if (Math.abs(window.innerWidth - lastW) < 80) return;
+    clearTimeout(timer);
+    timer = setTimeout(() => {
+      lastW = window.innerWidth;
+      for (const id of CHART_IDS) { const n = $(id); if (n) n.innerHTML = ""; }
+      const note = $("portfolio-note"); if (note) note.textContent = "";
+      renderCharts(data, streams, keys);
+    }, 250);
+  });
+}
+
 main().catch((e) => {
   document.querySelector("main").prepend(Object.assign(document.createElement("p"), {
     textContent: `Failed to load data.json — ${e}. The first pipeline run after deployment publishes it.`,
   }));
 });
+initTabbar();

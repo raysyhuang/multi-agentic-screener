@@ -106,10 +106,58 @@ svg text { font-family: inherit; }
 }
 footer { margin: 56px 0 40px; border-top: 1px solid var(--border); padding-top: 16px; font-size: 13px; }
 
+/* mobile bottom tab bar — hidden on desktop */
+.tabbar { display: none; }
+
+/* wide tables scroll inside their card, never the page */
+.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
+.scroll-x table { min-width: 520px; }
+/* grid/flex items default to min-width:auto, which lets a wide table blow the
+   card out past the viewport — force them to actually shrink */
+.grid2 > *, .multiples > * { min-width: 0; }
+main { overflow-x: clip; }
+
 @media (max-width: 760px) {
-  .hero h1 { font-size: 32px; letter-spacing: -0.64px; }
+  body { font-size: 15px; }
+  .container { padding: 0 14px; }
+  /* status bar bleed in standalone (black-translucent) mode */
+  .hero { padding-top: env(safe-area-inset-top); padding-bottom: 24px; }
+  .hero h1 { font-size: 28px; letter-spacing: -0.56px; margin-top: 16px; }
+  .hero-sub { font-size: 14px; }
+  h2 { font-size: 24px; }
+  h3 { font-size: 18px; }
+  .hint { display: block; margin-left: 0; margin-top: 2px; }
+  section { margin-top: 32px; scroll-margin-top: 12px; }
+  .card { padding: 14px; border-radius: 8px; }
   .grid2 { grid-template-columns: 1fr; }
-  .pick { grid-template-columns: 90px 1fr; }
+  .multiples { grid-template-columns: 1fr; }
+  .tile-row { grid-template-columns: repeat(2, 1fr); gap: 10px; }
+  .tile .v { font-size: 21px; }
+  .pick { grid-template-columns: 96px 1fr; gap: 10px; }
   .pick .levels { grid-column: 1 / -1; }
+  .comp-row .nm { width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
   .navlinks { display: none; }
+  .fbtn { padding: 8px 14px; }                    /* comfortable touch targets */
+  th, td { padding: 8px 8px; }
+  footer { margin-bottom: 96px; }                 /* clear the tab bar */
+
+  .tabbar {
+    display: flex; position: fixed; left: 0; right: 0; bottom: 0; z-index: 20;
+    background: rgba(255,255,255,0.92); -webkit-backdrop-filter: blur(12px); backdrop-filter: blur(12px);
+    border-top: 1px solid var(--border);
+    padding: 6px 8px calc(6px + env(safe-area-inset-bottom));
+  }
+  .tabbar .tab {
+    flex: 1; text-align: center; text-decoration: none; color: var(--body);
+    font-size: 11px; font-weight: 400; letter-spacing: 0.2px; padding: 4px 0;
+    border-radius: 8px; display: flex; flex-direction: column; align-items: center; gap: 2px;
+  }
+  .tabbar .tab-ic { font-size: 20px; line-height: 1; }
+  .tabbar .tab.active { color: var(--purple); background: rgba(83,58,253,0.07); }
+}
+
+@media (max-width: 400px) {
+  .tile-row { grid-template-columns: repeat(2, 1fr); }
+  .tile { padding: 10px 12px; }
+  .pick { grid-template-columns: 1fr; }
 }
