@@ -689,7 +689,10 @@ async def _run_pipeline_core(
         "hy_oas_stress": regime_assessment.hy_oas_stress,
     }
 
-    # Regime envelope
+    # Regime envelope. NOTE: this is the PRELIMINARY regime — breadth is not
+    # available until OHLCV lands at Step 3b, which recomputes the regime AND
+    # re-derives allowed_models from it (see the re-gate there).
+    _prelim_regime = regime_assessment.regime.value
     allowed_models = get_regime_allowed_models(regime_assessment.regime)
     regime_envelope = StageEnvelope(
         run_id=run_id,
@@ -818,6 +821,29 @@ async def _run_pipeline_core(
         regime_context["breadth_score"] = breadth
         regime_context["regime"] = regime_assessment.regime.value
         regime_context["confidence"] = regime_assessment.confidence
+
+        # Re-gate on the regime we just adopted. `allowed_models` was derived
+        # from the PRELIMINARY (breadth-less) regime at Step 1, but the scorers
+        # read `regime_assessment.regime` directly at Step 5 and the governor
+        # re-derives it at the end — so without this the run gates on TWO
+        # different regimes at once. On a preliminary-bear / final-choppy day
+        # the ranker would drop sniper entirely under a regime the pipeline
+        # itself had already overwritten, while sniper's own bear-block let it
+        # through. Recompute so every layer agrees.
+        _prev_allowed = allowed_models
+        allowed_models = get_regime_allowed_models(regime_assessment.regime)
+        if set(_prev_allowed) != set(allowed_models):
+            # Never silent: this changes which models can trade today.
+            logger.warning(
+                "Breadth changed the regime gate: %s -> %s, allowed models %s -> %s",
+                _prelim_regime, regime_assessment.regime.value,
+                sorted(_prev_allowed), sorted(allowed_models),
+            )
+            # Keep the persisted REGIME envelope truthful — it is the artifact
+            # that documents what the run was allowed to trade.
+            regime_envelope.payload.regime.signals_allowed = list(allowed_models)
+            regime_envelope.payload.regime.label = regime_assessment.regime.value
+            regime_envelope.payload.regime.confidence = regime_assessment.confidence
 
     # --- Step 4: Feature engineering ---
     logger.info("Step 4: Computing features for %d tickers...", len(qualified_tickers))
