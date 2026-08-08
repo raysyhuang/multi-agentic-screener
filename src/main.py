@@ -37,11 +37,9 @@ from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import (
     score_earnings_surprise,
-    score_analyst_estimates,
     score_financial_ratios,
     days_to_next_earnings,
 )
-from src.features.sentiment import score_news_batch
 from src.features.regime import classify_regime, get_regime_allowed_models, compute_breadth_score
 from src.signals.filter import filter_universe, filter_by_ohlcv, FilterFunnel, OHLCVFunnel
 from src.validation.stage_validator import (
@@ -899,15 +897,16 @@ async def _run_pipeline_core(
         str(calls_remaining),
     )
 
-    # Phase 3: news sentiment for full pipeline candidate set using bulk endpoint.
-    news_by_ticker: dict[str, list[dict]] = {}
-    try:
-        news_by_ticker = await aggregator.get_bulk_news(list(features_by_ticker.keys()), per_ticker_limit=20)
-    except Exception as e:
-        logger.warning("Bulk news fetch failed (non-fatal): %s", e)
-        news_by_ticker = {}
+    # Phase 3 (news sentiment) REMOVED 2026-08-08. It bulk-fetched 20 articles for
+    # every candidate on every run and scored them into feat["sentiment"], whose
+    # only consumer was the catalyst model — disabled since the 2026-07 lean strip
+    # (main.py: `# from src.signals.catalyst import score_catalyst`). The fetch has
+    # a 30-minute TTL against a daily cadence, so it was always cold: pure latency
+    # and FMP/Polygon budget for a value nothing read. score_news_batch and the
+    # backtest path (runner.py, which still scores catalyst) are untouched, so
+    # re-enabling catalyst only needs this block restored.
 
-    # Phase 4: fundamentals + sentiment enrichment.
+    # Phase 4: fundamentals enrichment.
     for ticker, feat in features_by_ticker.items():
         degraded_components: list[str] = []
 
@@ -920,9 +919,10 @@ async def _run_pipeline_core(
                 # insider_activity intentionally not scored: no consumer (catalyst is
                 # disabled) and the full-scale IC study found no edge — see the note
                 # in aggregator.get_ticker_fundamentals.
-                fund_data["analyst_view"] = score_analyst_estimates(
-                    fund_data.get("analyst_estimates", [])
-                )
+                # analyst_view scoring REMOVED 2026-08-08: written here, read
+                # nowhere in src/. Same reasoning as insider_activity above — and
+                # the analyst_estimates fetch it consumed was ~1 of the 4 FMP
+                # calls per fundamentals ticker.
                 fund_data["ratio_profile"] = score_financial_ratios(
                     fund_data.get("ratios", {})
                 )
@@ -931,13 +931,6 @@ async def _run_pipeline_core(
                 logger.debug("Fundamental fetch failed for %s: %s", ticker, e)
                 feat["fundamental"] = {}
                 degraded_components.append("fundamentals")
-
-        try:
-            news = news_by_ticker.get(ticker, [])
-            feat["sentiment"] = score_news_batch(news)
-        except Exception:
-            feat["sentiment"] = {}
-            degraded_components.append("sentiment")
 
         if degraded_components:
             feat["_degraded"] = True
@@ -1030,9 +1023,7 @@ async def _run_pipeline_core(
         except Exception as e:
             logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
 
-    # Release news data and aggregator — no longer needed after Step 4
-    del news_by_ticker
-    news_by_ticker = None
+    # Release the aggregator — no longer needed after Step 4
     aggregator.close()
     del aggregator
     aggregator = None

@@ -435,7 +435,7 @@ def validate_features(
         name="degraded_data_rate",
         passed=deg_ok,
         severity=Severity.WARN,
-        message=f"{len(degraded)} tickers ({degraded_rate:.0%}) have degraded fundamentals/sentiment"
+        message=f"{len(degraded)} tickers ({degraded_rate:.0%}) have degraded fundamentals"
             if not deg_ok else f"Degraded: {len(degraded)} ({degraded_rate:.0%})",
         value=round(degraded_rate, 3),
     ))
