@@ -7,6 +7,10 @@ const STREAM_META = {
   "mean_reversion|mas_official":  { label: "MR (official)",        color: "#2874ad" },
   "mean_reversion|mr_manual_sleeve": { label: "MR (manual sleeve)", color: "#ea2261" },
   "pead|pead_paper":              { label: "PEAD (paper)",         color: "#0f8a6d" },
+  // The neglected-beat variant is a SEPARATE stream (its own baseline lives in
+  // export_dashboard_data.py). Without an entry here it fell through to the
+  // raw-key fallback and rendered as "pead|pead_neglected" in tiles and legends.
+  "pead|pead_neglected":          { label: "PEAD (neglected-beat)", color: "#9b6829" },
 };
 const EXIT_COLORS = { trail_stop: "#533afd", stop: "#ea2261", target: "#0f8a6d",
                       time_stop: "#9b6829", expiry: "#2874ad", other: "#d94fc6" };
