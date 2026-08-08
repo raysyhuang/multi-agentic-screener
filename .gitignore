@@ -38,6 +38,11 @@ htmlcov/
 
 # Screenshots & temp images
 *.png
+# ...but the dashboard's PWA icons are SHIPPED ASSETS, not screenshots. The
+# blanket rule above silently dropped all four from `git add dashboard/`, so the
+# deployed manifest referenced icons that 404'd and the iOS home-screen install
+# fell back to a generic glyph. Un-ignore them explicitly.
+!dashboard/icons/*.png
 
 # Backtest result cache
 backtest_results/
