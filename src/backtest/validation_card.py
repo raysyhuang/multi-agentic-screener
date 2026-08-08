@@ -60,6 +60,14 @@ class ValidationCard:
     bear_trades: int = 0
     choppy_trades: int = 0
 
+    # Mean per-trade return under the stressed-cost scenario. This is what the
+    # slippage gate actually asks: does the edge SURVIVE higher costs? The older
+    # `slippage_sensitivity` ratio is kept for reporting but no longer gates —
+    # see check 4 in run_validation_checks for why it was unsafe.
+    # None (not 0.0) when unknown: a card built without stressed returns must not
+    # be read as "zero expectancy" and fail closed. The gate derives it instead.
+    slippage_adjusted_avg: float | None = None
+
 
 def generate_validation_card(
     signal_model: str,
@@ -88,6 +96,10 @@ def generate_validation_card(
     dispersion = float(np.std(window_win_rates)) if len(window_win_rates) > 1 else 0
 
     # --- Slippage sensitivity ---
+    # `slippage_sensitivity` is a RATIO to the stream's own mean, which makes it
+    # sign-blind and unstable near zero — retained for reporting only.
+    # `slippage_adjusted_avg` is the gating statistic: the expectancy that
+    # remains once costs are stressed.
     slippage_arr = np.array(slippage_returns) if slippage_returns else arr
     base_avg = float(np.mean(arr))
     slippage_avg = float(np.mean(slippage_arr))
@@ -186,6 +198,7 @@ def generate_validation_card(
         bull_trades=bull_trades,
         bear_trades=bear_trades,
         choppy_trades=choppy_trades,
+        slippage_adjusted_avg=round(slippage_avg, 4),
     )
 
 
@@ -274,18 +287,45 @@ def run_validation_checks(
         key_risks.append(f"Future-leaking columns found: {future_cols}")
 
     # ── Check 4: slippage_sensitivity_check ──
-    # Signal must survive +50% slippage increase.
-    # Requires >= 30 trades for statistical significance.
+    # The question this gate exists to ask: does the edge SURVIVE higher costs?
+    #
+    # It used to compare `slippage_sensitivity < 0.5`. Because the stressed
+    # returns are a constant haircut, that ratio collapses to
+    # `haircut / |mean| < 0.5`, i.e. "fail when |mean| <= 2x the haircut" —
+    # SIGN-BLIND and unstable near zero. A stream losing 1.0%/trade scored 0.10
+    # and PASSED; a stream earning a real but thin +0.15%/trade scored 0.67 and
+    # FAILED. With live means of +0.48 (MR) and +0.77 (sniper) against a 0.20
+    # fail line, an ordinary bad month would have blocked a healthy stream —
+    # the same false-positive failure mode as the two 2026-07 gate outages.
+    #
+    # Now: fail only when the stressed expectancy is non-positive. Directional,
+    # absolute, and monotone in the thing we actually care about.
+    #
+    # Approximation note (CLAUDE.md): a constant haircut is NOT how slippage
+    # really works — it changes exit PATHS, so this understates the damage. It
+    # is an optimistic lower bound, acceptable for a go/no-go gate; the honest
+    # version re-runs the exit engine at the stressed cost on cached bars.
     min_stat_trades = 30
+    # kept for the reported FragilityMetrics payload, no longer gates
+    slippage_sens = (validation_card.slippage_sensitivity
+                     if validation_card and validation_card.total_trades > 0 else 0.0)
+
+    def _stressed(card: ValidationCard) -> float:
+        """Expectancy under stressed costs, derived when the card predates it."""
+        if card.slippage_adjusted_avg is not None:
+            return card.slippage_adjusted_avg
+        return card.avg_pnl_pct - slippage_bps / 100.0   # bps → percentage points
+
     if validation_card and validation_card.total_trades >= min_stat_trades:
-        slippage_ok = validation_card.slippage_sensitivity < 0.5
-        slippage_sens = validation_card.slippage_sensitivity
+        stressed_avg = _stressed(validation_card)
+        slippage_ok = stressed_avg > 0
     else:
         slippage_ok = True  # insufficient data → pass by default
-        slippage_sens = validation_card.slippage_sensitivity if validation_card and validation_card.total_trades > 0 else 0.0
+        stressed_avg = _stressed(validation_card) if validation_card else 0.0
     checks["slippage_sensitivity_check"] = _PASS if slippage_ok else _FAIL
     if not slippage_ok:
-        key_risks.append(f"Slippage sensitivity too high ({slippage_sens:.2f})")
+        key_risks.append(
+            f"Edge does not survive stressed costs (expectancy {stressed_avg:+.3f}%/trade)")
 
     # ── Check 5: threshold_sensitivity_check ──
     # Score threshold +/- 10% should not flip >30% of signals.
