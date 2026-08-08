@@ -19,7 +19,12 @@ body {
   font-feature-settings: "ss01";
   font-weight: 300; color: var(--body); background: var(--surface);
   line-height: 1.4; font-size: 16px;
+  /* iOS must not re-scale text on rotate, and the page must not rubber-band
+     sideways — together these remove the need to pinch-zoom or pan. */
+  -webkit-text-size-adjust: 100%; text-size-adjust: 100%;
+  overscroll-behavior-x: none;
 }
+html { overflow-x: hidden; }
 .container { max-width: 1080px; margin: 0 auto; padding: 0 20px; }
 
 /* hero — dark brand band */
@@ -60,7 +65,8 @@ h3 { color: var(--navy); font-size: 22px; font-weight: 300; letter-spacing: -0.2
 
 /* series chip */
 .chip { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--label); }
-.chip .dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; }
+/* base rule, not scoped to .chip — record cards use bare .dot too */
+.dot { width: 10px; height: 10px; border-radius: 3px; display: inline-block; flex: none; }
 
 /* tables */
 table { width: 100%; border-collapse: collapse; font-size: 13px; }
@@ -109,9 +115,30 @@ footer { margin: 56px 0 40px; border-top: 1px solid var(--border); padding-top: 
 /* mobile bottom tab bar — hidden on desktop */
 .tabbar { display: none; }
 
-/* wide tables scroll inside their card, never the page */
-.scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; max-width: 100%; }
-.scroll-x table { min-width: 520px; }
+/* Desktop keeps real tables; phones get record cards (see recordList in app.js)
+   so nothing ever scrolls sideways. .scroll-x is a desktop-only safety net. */
+.scroll-x { max-width: 100%; }
+@media (min-width: 761px) {
+  .scroll-x { overflow-x: auto; -webkit-overflow-scrolling: touch; }
+  .scroll-x table { min-width: 520px; }
+}
+
+/* record cards */
+.reclist { display: flex; flex-direction: column; gap: 8px; }
+.rec { border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; background: var(--surface); }
+.rec-head { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.rec-lead { display: flex; align-items: center; gap: 7px; min-width: 0; }
+.rec-title { color: var(--navy); font-size: 16px; font-weight: 400; letter-spacing: -0.1px;
+             overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.rec-value { font-size: 17px; font-weight: 400; color: var(--navy);
+             font-feature-settings: "tnum"; white-space: nowrap; flex: none; }
+.rec-sub { font-size: 12px; color: var(--body); margin-top: 2px; }
+.rec-fields { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr));
+              gap: 2px 12px; margin-top: 8px; }
+.rec-f { display: flex; justify-content: space-between; gap: 8px; font-size: 12px; min-width: 0; }
+.rec-k { color: var(--body); }
+.rec-v { color: var(--label); font-feature-settings: "tnum"; text-align: right;
+         overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
 /* grid/flex items default to min-width:auto, which lets a wide table blow the
    card out past the viewport — force them to actually shrink */
 .grid2 > *, .multiples > * { min-width: 0; }

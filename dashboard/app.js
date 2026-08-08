@@ -201,6 +201,45 @@ function scatter(container, streams) {
   legend(container, Object.keys(streams));
 }
 
+/* ---------- responsive record list ----------
+   Phones get stacked record cards instead of a horizontally scrolling table:
+   a lead line (the identity + the number that matters) and label/value pairs
+   that wrap. Nothing scrolls sideways, nothing needs zooming. */
+const isPhone = () => window.matchMedia("(max-width: 760px)").matches;
+
+function recordList(container, rows) {
+  const box = el("div"); box.className = "reclist";
+  for (const r of rows) {
+    const card = el("div"); card.className = "rec";
+    const head = el("div"); head.className = "rec-head";
+    const lead = el("div"); lead.className = "rec-lead";
+    if (r.dot) {
+      const d = el("span"); d.className = "dot"; d.style.background = r.dot;
+      lead.append(d);
+    }
+    lead.append(Object.assign(el("span"), { className: "rec-title", textContent: r.title }));
+    head.append(lead);
+    if (r.value != null) {
+      const v = Object.assign(el("span"), { className: `rec-value ${r.valueClass || ""}`, textContent: r.value });
+      head.append(v);
+    }
+    card.append(head);
+    if (r.sub) card.append(Object.assign(el("div"), { className: "rec-sub", textContent: r.sub }));
+    if (r.fields?.length) {
+      const grid = el("div"); grid.className = "rec-fields";
+      for (const [k, v, cl] of r.fields) {
+        const f = el("div"); f.className = "rec-f";
+        f.append(Object.assign(el("span"), { className: "rec-k", textContent: k }));
+        f.append(Object.assign(el("span"), { className: `rec-v ${cl || ""}`, textContent: v }));
+        grid.append(f);
+      }
+      card.append(grid);
+    }
+    box.append(card);
+  }
+  container.append(box);
+}
+
 /* ---------- helpers over trades ---------- */
 const cum = (trades) => { let a = 0; return trades.map((t) => ({ x: Date.parse(t.exit_date), y: (a += t.pnl_pct), tip: `${t.exit_date} ${t.ticker}` })); };
 const rollWR = (trades, w = 15) => trades.map((t, i) => {
@@ -334,6 +373,18 @@ function renderCharts(data, streams, keys) {
   } else {
     const pfColor = (k) => k === "sniper" ? streamMeta("sniper|mas_official").color
       : k === "mr" ? streamMeta("mean_reversion|mas_official").color : NAVY;
+    if (isPhone()) {
+      recordList($("portfolio-table"), pf.configs.map((c) => ({
+        title: c.label, dot: pfColor(c.key),
+        value: `${c.return_pct >= 0 ? "+" : ""}${fmt(c.return_pct, 1)}%`,
+        valueClass: cls(c.return_pct),
+        fields: [
+          ["Trades", c.trades + (c.skipped ? ` · ${c.skipped} skip` : "")],
+          ["Max DD", `${fmt(c.max_dd_pct, 1)}%`],
+          ["Sharpe*", c.sharpe == null ? "–" : fmt(c.sharpe, 2)],
+        ],
+      })));
+    } else {
     const tbl = el("table"); tbl.className = "pf-table";
     const head = el("tr");
     for (const h of ["Book", "Trades", "90d return", "Max DD", "Sharpe*"]) {
@@ -360,6 +411,7 @@ function renderCharts(data, streams, keys) {
       tbl.append(tr);
     }
     $("portfolio-table").append(tbl);
+    }
 
     const pfOrder = [["book", "Book (sniper + MR)"], ["sniper", "Sniper only"], ["mr", "MR official only"]];
     const pfSeries = pfOrder.filter(([k]) => pf.equity?.[k]?.length).map(([k, lbl]) => ({
@@ -413,7 +465,15 @@ function renderCharts(data, streams, keys) {
   scatter($("scatter"), Object.fromEntries(keys.map((k) => [k, streams[k]])));
   const op = $("open-positions");
   if (!data.open_positions?.length) op.append(el("p", {}, "None."));
-  else {
+  else if (isPhone()) {
+    recordList(op, data.open_positions.map((o) => ({
+      title: o.ticker, dot: streamMeta(o.stream).color,
+      value: o.unrealized_pnl_pct == null ? "–" : `${o.unrealized_pnl_pct > 0 ? "+" : ""}${fmt(o.unrealized_pnl_pct)}%`,
+      valueClass: cls(o.unrealized_pnl_pct),
+      sub: streamMeta(o.stream).label,
+      fields: [["Entry", o.entry_date], ["Held", `${o.days_held ?? "–"}d`]],
+    })));
+  } else {
     const tb = el("table");
     tb.innerHTML = "<tr><th>Ticker</th><th>Stream</th><th>Entry</th><th class=num>Days</th><th class=num>Unrealized</th></tr>";
     for (const o of data.open_positions) {
@@ -432,6 +492,18 @@ function renderCharts(data, streams, keys) {
     const box = $("trades-table"); box.innerHTML = "";
     const rows = keys.flatMap((k) => (filter === "all" || filter === k) ? streams[k].map((t) => ({ ...t, key: k })) : [])
       .sort((a, b) => (b.exit_date || "").localeCompare(a.exit_date || "")).slice(0, 40);
+    if (isPhone()) {
+      recordList(box, rows.map((t) => ({
+        title: t.ticker, dot: streamMeta(t.key).color,
+        value: `${t.pnl_pct > 0 ? "+" : ""}${fmt(t.pnl_pct)}%`, valueClass: cls(t.pnl_pct),
+        sub: `${streamMeta(t.key).label} · exited ${t.exit_date}`,
+        fields: [
+          ["Reason", t.exit_reason], ["Hold", `${t.hold_days ?? "–"}d`],
+          ["MFE", `+${fmt(t.mfe)}%`], ["MAE", `${fmt(t.mae)}%`],
+        ],
+      })));
+      return;
+    }
     const tb = el("table");
     tb.innerHTML = "<tr><th>Exit</th><th>Ticker</th><th>Stream</th><th>Reason</th><th class=num>Hold</th><th class=num>MFE</th><th class=num>MAE</th><th class=num>PnL</th></tr>";
     for (const t of rows) {
@@ -455,6 +527,20 @@ function renderCharts(data, streams, keys) {
 
   // run history
   const rh = $("run-history");
+  const runs = (data.run_history || []).slice(-14).reverse();
+  if (isPhone()) {
+    recordList(rh, runs.map((r) => ({
+      title: r.date,
+      value: (r.regime || "–").toUpperCase(),
+      sub: (r.warnings || []).length ? `${(r.warnings || []).length} warning(s)` : (r.health || ""),
+      fields: [
+        ["Universe", String(r.universe ?? "–")],
+        ["Candidates", String(r.candidates ?? "–")],
+        ["Duration", r.duration_s ? `${fmt(r.duration_s, 0)}s` : "–"],
+      ],
+    })));
+    return;
+  }
   const tb = el("table");
   tb.innerHTML = "<tr><th>Date</th><th>Regime</th><th class=num>Universe</th><th class=num>Candidates</th><th class=num>Duration</th><th>Health</th></tr>";
   for (const r of (data.run_history || []).slice(-14).reverse()) {
