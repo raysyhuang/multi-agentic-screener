@@ -238,3 +238,17 @@ main { overflow-x: clip; }
   .fn-val { min-width: 62px; font-size: 12px; }
   .dq-row { flex-direction: column; gap: 3px; }
 }
+
+/* ── open-position risk bar: stop —— entry —— target ─────────────────────── */
+.riskbar { margin-top: 9px; }
+.rb-track { position: relative; height: 6px; border-radius: 3px;
+            background: linear-gradient(90deg, rgba(185,28,28,0.28) 0%,
+                        #eef2f7 45%, #eef2f7 55%, rgba(21,190,83,0.28) 100%); }
+.rb-entry { position: absolute; top: -3px; width: 1px; height: 12px; background: var(--label);
+            opacity: 0.55; }
+.rb-mark { position: absolute; top: -3px; width: 10px; height: 12px; margin-left: -5px;
+           border-radius: 3px; border: 2px solid #fff; }
+.rb-mark.up { background: var(--success-tx); }
+.rb-mark.down { background: var(--crit-tx); }
+.rb-ends { display: flex; justify-content: space-between; margin-top: 4px;
+           font-size: 11px; color: var(--body); font-feature-settings: "tnum"; }

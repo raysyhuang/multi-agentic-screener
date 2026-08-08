@@ -229,6 +229,7 @@ function recordList(container, rows) {
     }
     card.append(head);
     if (r.sub) card.append(Object.assign(el("div"), { className: "rec-sub", textContent: r.sub }));
+    if (r.riskBar) card.append(r.riskBar);
     if (r.fields?.length) {
       const grid = el("div"); grid.className = "rec-fields";
       for (const [k, v, cl] of r.fields) {
@@ -242,6 +243,53 @@ function recordList(container, rows) {
     box.append(card);
   }
   container.append(box);
+}
+
+/* ---------- open-position context ----------
+   A live position needs three answers at a glance: how close to the stop, how
+   close to the target, and how close to expiry. The dashboard previously showed
+   only unrealized P&L, which answers none of them. */
+function holdText(o) {
+  const held = o.days_held, plan = o.hold_days;
+  if (held == null) return "–";
+  if (held < 0) return `enters in ${-held}d`;
+  return plan ? `${held}/${plan}d` : `${held}d`;
+}
+
+function positionNote(o) {
+  // Which boundary is nearest, in the position's own terms.
+  if (o.days_held != null && o.days_held < 0) return "not yet entered";
+  if (o.hold_days && o.days_held != null && o.days_held >= o.hold_days) return "at/past planned exit";
+  const p = o.unrealized_pnl_pct;
+  if (p == null || !o.entry_price || !o.stop_loss || !o.target_1) return "open";
+  const cur = o.entry_price * (1 + p / 100);
+  const toStop = (cur - o.stop_loss) / o.entry_price * 100;
+  const toTgt = (o.target_1 - cur) / o.entry_price * 100;
+  return toStop < toTgt ? `${fmt(Math.max(toStop, 0), 1)}% above stop`
+                        : `${fmt(Math.max(toTgt, 0), 1)}% below target`;
+}
+
+/* stop —— entry —— target, with a marker at the current price */
+function riskBar(o) {
+  if (!o.entry_price || !o.stop_loss || !o.target_1 || o.unrealized_pnl_pct == null) return null;
+  const lo = o.stop_loss, hi = o.target_1;
+  if (!(hi > lo)) return null;
+  const cur = o.entry_price * (1 + o.unrealized_pnl_pct / 100);
+  const pos = (x) => Math.max(0, Math.min(100, ((x - lo) / (hi - lo)) * 100));
+  const wrap = el("div"); wrap.className = "riskbar";
+  const track = el("div"); track.className = "rb-track";
+  const entryTick = el("div"); entryTick.className = "rb-entry";
+  entryTick.style.left = `${pos(o.entry_price)}%`;
+  const mark = el("div");
+  mark.className = `rb-mark ${cur >= o.entry_price ? "up" : "down"}`;
+  mark.style.left = `${pos(cur)}%`;
+  track.append(entryTick, mark);
+  wrap.append(track);
+  const ends = el("div"); ends.className = "rb-ends";
+  ends.append(Object.assign(el("span"), { textContent: `stop $${fmt(lo)}` }),
+              Object.assign(el("span"), { textContent: `target $${fmt(hi)}` }));
+  wrap.append(ends);
+  return wrap;
 }
 
 /* ---------- helpers over trades ---------- */
@@ -591,16 +639,18 @@ function renderCharts(data, streams, keys) {
       title: o.ticker, dot: streamMeta(o.stream).color,
       value: o.unrealized_pnl_pct == null ? "–" : `${o.unrealized_pnl_pct > 0 ? "+" : ""}${fmt(o.unrealized_pnl_pct)}%`,
       valueClass: cls(o.unrealized_pnl_pct),
-      sub: streamMeta(o.stream).label,
-      fields: [["Entry", o.entry_date], ["Held", `${o.days_held ?? "–"}d`]],
+      sub: `${streamMeta(o.stream).label} · ${positionNote(o)}`,
+      fields: [["Entry", o.entry_date], ["Held", holdText(o)]],
+      riskBar: riskBar(o),
     })));
   } else {
     const tb = el("table");
-    tb.innerHTML = "<tr><th>Ticker</th><th>Stream</th><th>Entry</th><th class=num>Days</th><th class=num>Unrealized</th></tr>";
+    tb.innerHTML = "<tr><th>Ticker</th><th>Stream</th><th>Entry</th><th class=num>Hold</th><th>Status</th><th class=num>Unrealized</th></tr>";
     for (const o of data.open_positions) {
       const tr = el("tr");
       tr.innerHTML = `<td style="color:${NAVY}">${o.ticker}</td><td>${streamMeta(o.stream).label}</td>` +
-        `<td>${o.entry_date}</td><td class=num>${o.days_held ?? "–"}</td>` +
+        `<td>${o.entry_date}</td><td class=num>${holdText(o)}</td>` +
+        `<td>${positionNote(o)}</td>` +
         `<td class="num ${cls(o.unrealized_pnl_pct)}">${o.unrealized_pnl_pct == null ? "–" : fmt(o.unrealized_pnl_pct) + "%"}</td>`;
       tb.append(tr);
     }

@@ -3,12 +3,12 @@
    data.json: network-first with cache fallback, so the home-screen app opens
    instantly offline with the last-published snapshot. Bump VERSION together
    with the ?v= asset query in index.html. */
-const VERSION = "mas-v13";
+const VERSION = "mas-v14";
 const SHELL = [
   "./",
   "index.html",
-  "style.css?v=13",
-  "app.js?v=13",
+  "style.css?v=14",
+  "app.js?v=14",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",
