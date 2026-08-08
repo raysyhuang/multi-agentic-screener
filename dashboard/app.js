@@ -252,14 +252,137 @@ const rollWR = (trades, w = 15) => trades.map((t, i) => {
 }).slice(Math.min(w, trades.length) - 1);
 
 /* ---------- render ---------- */
+/* ---------- data freshness ----------
+   The app is read from an iOS home screen: no URL bar, no obvious reload. The
+   chip answers "is this current?" without the user having to reason about the
+   pipeline's cron schedule. Thresholds are in RUN terms, not clock terms — the
+   pipeline runs on weekday mornings, so a Sunday snapshot from Friday is fine. */
+function renderFreshness(data) {
+  const box = $("freshness"), dot = $("fresh-dot"), txt = $("fresh-text");
+  if (!box || !data.generated_at) return;
+  const gen = new Date(data.generated_at);
+  const hrs = (Date.now() - gen.getTime()) / 3.6e6;
+  const rel = hrs < 1 ? `${Math.max(1, Math.round(hrs * 60))} min ago`
+    : hrs < 36 ? `${Math.round(hrs)}h ago`
+    : `${Math.round(hrs / 24)}d ago`;
+  // A weekend gap is expected: the last weekday run can be ~60h old on a Sunday.
+  const stale = hrs > 30, old = hrs > 80;
+  dot.className = `fresh-dot${old ? " old" : stale ? " stale" : ""}`;
+  txt.textContent = `Snapshot ${rel} · run ${data.latest_run?.date ?? "–"}`;
+  box.hidden = false;
+}
+
+async function refreshData() {
+  const btn = $("refresh-btn");
+  if (btn) { btn.disabled = true; btn.textContent = "Refreshing…"; }
+  try {
+    // cache-bust AND bypass the service worker's cached copy
+    const resp = await fetch(`data.json?ts=${Date.now()}`, { cache: "reload" });
+    const fresh = await resp.json();
+    rerenderAll(fresh);
+    return true;
+  } catch (e) {
+    if (btn) btn.textContent = "Offline";
+    return false;
+  } finally {
+    if (btn) setTimeout(() => { btn.disabled = false; btn.textContent = "Refresh"; }, 900);
+  }
+}
+
+const RENDER_TARGETS = ["today-tiles", "picks", "alpha-tiles", "alpha-chart",
+  "portfolio-table", "portfolio-chart", "equity-chart", "wr-multiples", "exit-mix",
+  "scatter", "open-positions", "trade-filters", "trades-table", "run-history",
+  "funnel", "data-quality", "cadence-chart"];
+
+function rerenderAll(data) {
+  for (const id of RENDER_TARGETS) { const n = $(id); if (n) n.innerHTML = ""; }
+  const note = $("portfolio-note"); if (note) note.textContent = "";
+  renderStatic(data);
+  requestAnimationFrame(() => {
+    const streams = data.trades || {};
+    const keys = Object.keys(streams).filter((k) => streams[k].length);
+    renderCharts(data, streams, keys);
+  });
+}
+
+/* ---------- pull to refresh ----------
+   A standalone PWA has no browser pull-to-refresh, so the gesture is
+   implemented here: only engages at scroll top, follows the finger with
+   resistance, and fires past a threshold. */
+function initPullToRefresh() {
+  const ptr = $("ptr"), spinner = $("ptr-spinner");
+  if (!ptr) return;
+  const THRESHOLD = 70, MAX = 110;
+  let startY = null, pulled = 0, busy = false;
+
+  const setPull = (px) => {
+    ptr.style.transform = `translateY(${Math.min(px, MAX) - 48}px)`;
+    spinner.style.opacity = String(Math.min(px / THRESHOLD, 1));
+    spinner.style.transform = `rotate(${px * 3}deg)`;
+  };
+  const reset = () => {
+    ptr.style.transition = "transform .25s ease";
+    setPull(0);
+    setTimeout(() => { ptr.style.transition = ""; }, 260);
+    spinner.classList.remove("spin");
+    startY = null; pulled = 0;
+  };
+
+  addEventListener("touchstart", (e) => {
+    if (busy || (document.scrollingElement?.scrollTop ?? 0) > 0) return;
+    startY = e.touches[0].clientY;
+  }, { passive: true });
+
+  addEventListener("touchmove", (e) => {
+    if (startY == null || busy) return;
+    const dy = e.touches[0].clientY - startY;
+    if (dy <= 0) { startY = null; return; }
+    pulled = dy * 0.5;                    // resistance
+    setPull(pulled);
+  }, { passive: true });
+
+  addEventListener("touchend", async () => {
+    if (startY == null || busy) return;
+    if (pulled >= THRESHOLD) {
+      busy = true;
+      spinner.classList.add("spin");
+      setPull(THRESHOLD);
+      await refreshData();
+      busy = false;
+    }
+    reset();
+  }, { passive: true });
+
+  $("refresh-btn")?.addEventListener("click", refreshData);
+}
+
 async function main() {
   tooltip.node = $("tooltip");
   const data = window.__MAS_DATA__ || await (await fetch(`data.json?ts=${Date.now()}`)).json();
+  initPullToRefresh();
+  renderStatic(data);
   const streams = data.trades || {};
   const keys = Object.keys(streams).filter((k) => streams[k].length);
 
+  // Charts render on the NEXT frame — after the browser has done a full layout
+  // pass — so every container reports its true width.
+  requestAnimationFrame(() => renderCharts(data, streams, keys));
+  initRerenderOnResize(data, streams, keys);
+}
+
+/* Everything that does not need a measured container width. Split out of main()
+   so a pull-to-refresh can re-run it against fresh data without a page reload —
+   a standalone PWA has no reload affordance. */
+function renderStatic(data) {
+  const streams = data.trades || {};
+  const keys = Object.keys(streams).filter((k) => streams[k].length);
+
+  renderFreshness(data);
+  // The freshness chip below owns "when"; this line owns "what".
+  const lrH = data.latest_run || {};
   $("hero-sub").textContent =
-    `Snapshot ${data.generated_at?.slice(0, 16).replace("T", " ")} UTC · latest run ${data.latest_run?.date} · regime ${data.latest_run?.regime?.toUpperCase()}`;
+    `${(lrH.regime || "–").toUpperCase()} regime · ${lrH.universe ?? "–"} names scanned · `
+    + `${(data.today_picks || []).length} picks · ${(data.open_positions || []).length} open`;
   $("footer-meta").textContent =
     `Window: last ${data.window_days} days · generated ${data.generated_at} · streams: ${keys.length}`;
 
@@ -319,12 +442,6 @@ async function main() {
     picksBox.append(row);
   }
 
-  // Charts render on the NEXT frame — after the browser has done a full layout
-  // pass — so every container (especially the auto-fit small-multiples grid)
-  // reports its true width. Measuring mid-build in this same tick gives the
-  // grid a stale (too-wide) column count.
-  requestAnimationFrame(() => renderCharts(data, streams, keys));
-  initRerenderOnResize(data, streams, keys);
 }
 
 function renderCharts(data, streams, keys) {
@@ -528,6 +645,89 @@ function renderCharts(data, streams, keys) {
     fr.append(b);
   }
   renderTable();
+
+  // ── Pipeline funnel: market -> universe -> candidates -> picks ──────────
+  // Answers "where did today's 2 picks come from?" in one glance. Widths are
+  // log-scaled: a linear scale at 2595 -> 2 renders every stage after the first
+  // as an invisible sliver.
+  const lr = data.latest_run || {};
+  const nPicks = (data.today_picks || []).length;
+  const stages = [
+    { name: "Universe", v: lr.universe ?? 0, note: "priced, liquid, NYSE/NASDAQ" },
+    { name: "Scanned", v: Math.min(1000, lr.universe ?? 0), note: "OHLCV cap" },
+    { name: "Candidates", v: lr.candidates ?? 0, note: "scored + ranked" },
+    { name: "Picks", v: nPicks, note: "after gates + correlation" },
+  ];
+  const fnBox = $("funnel");
+  if (fnBox) {
+    const wrap = el("div"); wrap.className = "funnel";
+    const lg = (x) => Math.log10(Math.max(x, 1) + 1);
+    const maxL = lg(stages[0].v) || 1;
+    stages.forEach((st, i) => {
+      const row = el("div"); row.className = "fn-row";
+      row.append(Object.assign(el("div"), { className: "fn-name", textContent: st.name }));
+      const bar = el("div"); bar.className = "fn-bar";
+      const fill = el("div"); fill.className = "fn-fill";
+      fill.style.width = `${Math.max((lg(st.v) / maxL) * 100, 2)}%`;
+      fill.style.background = i === stages.length - 1 ? "#533afd" : "#2874ad";
+      fill.style.opacity = String(0.55 + 0.15 * i);
+      bar.append(fill); row.append(bar);
+      const prev = i > 0 ? stages[i - 1].v : null;
+      const drop = prev && prev > 0 ? ` (${((st.v / prev) * 100).toFixed(st.v / prev < 0.01 ? 2 : 0)}%)` : "";
+      const val = el("div"); val.className = "fn-val";
+      val.append(document.createTextNode(String(st.v)));
+      val.append(Object.assign(el("div"), { className: "fn-drop", textContent: drop.trim() }));
+      row.append(val);
+      row.title = st.note;
+      wrap.append(row);
+    });
+    fnBox.append(wrap);
+    const skipped = Object.values(data.skip_counts || {}).reduce((a, b) => a + b, 0);
+    fnBox.append(Object.assign(el("p"), { className: "hint", style: "margin-top:10px",
+      textContent: `Latest run ${lr.date ?? "–"} · regime ${(lr.regime || "–").toUpperCase()}`
+        + (skipped ? ` · ${skipped} historical picks skipped at entry (gapped past the limit)` : "") }));
+  }
+
+  // ── Data quality: the warnings the pipeline raised about its own inputs ──
+  const dq = $("data-quality");
+  if (dq) {
+    const recent = (data.run_history || []).slice(-10).reverse();
+    const rows = [];
+    for (const r of recent) for (const w of (r.warnings || [])) rows.push({ date: r.date, w });
+    if (!rows.length) {
+      dq.append(Object.assign(el("p"), { className: "hint",
+        textContent: "No warnings in the last 10 runs — inputs clean." }));
+    } else {
+      for (const { date: d_, w } of rows.slice(0, 12)) {
+        const m = /^\[([^\]]+)\]\s*(.*)$/.exec(w) || [null, "pipeline", w];
+        const row = el("div"); row.className = "dq-row";
+        const tag = el("span");
+        tag.className = "dq-tag badge warn"; tag.textContent = m[1];
+        row.append(tag);
+        row.append(Object.assign(el("span"), { className: "dq-msg", textContent: m[2] }));
+        row.append(Object.assign(el("span"), { className: "dq-date", textContent: d_ }));
+        dq.append(row);
+      }
+      dq.append(Object.assign(el("p"), { className: "hint", style: "margin-top:8px",
+        textContent: `${rows.length} warning(s) across the last ${recent.length} runs.` }));
+    }
+  }
+
+  // ── Run cadence: duration + candidate count, to spot a degrading pipeline ──
+  const cad = $("cadence-chart");
+  if (cad) {
+    const rh2 = (data.run_history || []).slice(-30);
+    if (rh2.length > 2) {
+      lineChart(cad, [
+        { label: "duration (s)", color: "#9b6829",
+          points: rh2.map((r) => ({ x: Date.parse(r.date), y: r.duration_s ?? 0, tip: r.date })) },
+        { label: "candidates", color: "#0f8a6d",
+          points: rh2.map((r) => ({ x: Date.parse(r.date), y: r.candidates ?? 0, tip: r.date })) },
+      ], { height: 200, yFmt: (v) => fmt(v, 0) });
+      legend(cad, [{ label: "duration (s)", color: "#9b6829" },
+                   { label: "candidates", color: "#0f8a6d" }]);
+    }
+  }
 
   // run history
   const rh = $("run-history");
