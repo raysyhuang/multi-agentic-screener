@@ -2,10 +2,18 @@
 <html lang="en">
 <head>
 <meta charset="utf-8">
-<meta name="viewport" content="width=device-width, initial-scale=1">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
 <title>MAS — Pipeline Dashboard</title>
-<link rel="stylesheet" href="style.css?v=9">
-<link rel="icon" href="data:image/svg+xml,<svg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 100 100'><text y='.9em' font-size='90'>📈</text></svg>">
+<meta name="theme-color" content="#1c1e54">
+<link rel="manifest" href="manifest.webmanifest">
+<!-- iOS home-screen app -->
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<meta name="apple-mobile-web-app-title" content="MAS">
+<link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
+<link rel="stylesheet" href="style.css?v=11">
+<link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
 <header class="hero">
@@ -42,7 +50,7 @@
     </div>
     <div class="card" id="portfolio-card">
       <h3>Portfolio — the book vs each stream alone <span class="hint">sniper + MR official as one concurrency-capped account; the manual sleeve is excluded — it reproduces the official picks and adds only losing breadth</span></h3>
-      <div id="portfolio-table"></div>
+      <div id="portfolio-table" class="scroll-x"></div>
       <h3 style="font-size:16px;margin-top:18px">Compounded account equity <span class="hint">$100k start · 10 concurrent slots · equal-weight · sampled at exits</span></h3>
       <div id="portfolio-chart"></div>
       <p class="hint" id="portfolio-note"></p>
@@ -70,13 +78,13 @@
       </div>
       <div class="card">
         <h3>Open positions</h3>
-        <div id="open-positions"></div>
+        <div id="open-positions" class="scroll-x"></div>
       </div>
     </div>
     <div class="card">
       <h3>Recent closed trades</h3>
       <div class="filter-row" id="trade-filters"></div>
-      <div id="trades-table"></div>
+      <div id="trades-table" class="scroll-x"></div>
     </div>
   </section>
 
@@ -84,7 +92,7 @@
     <h2>System</h2>
     <div class="card">
       <h3>Run history <span class="hint">a missing weekday = the cron did not run</span></h3>
-      <div id="run-history"></div>
+      <div id="run-history" class="scroll-x"></div>
     </div>
   </section>
 
@@ -95,7 +103,18 @@
   </footer>
 </main>
 
+<nav class="tabbar" id="tabbar" aria-label="Sections">
+  <a href="#today" class="tab active"><span class="tab-ic">📌</span>Today</a>
+  <a href="#performance" class="tab"><span class="tab-ic">📈</span>Perf</a>
+  <a href="#trades" class="tab"><span class="tab-ic">🧾</span>Trades</a>
+  <a href="#system" class="tab"><span class="tab-ic">⚙️</span>System</a>
+</nav>
+
 <div id="tooltip" class="tooltip" hidden></div>
-<script type="module" src="app.js?v=9"></script>
+<script type="module" src="app.js?v=11"></script>
+<script>
+  if ("serviceWorker" in navigator)
+    addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
+</script>
 </body>
 </html>
