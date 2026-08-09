@@ -12,21 +12,27 @@
 <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
 <meta name="apple-mobile-web-app-title" content="MAS">
 <link rel="apple-touch-icon" href="icons/apple-touch-icon.png">
-<link rel="stylesheet" href="style.css?v=12">
+<link rel="stylesheet" href="style.css?v=14">
 <link rel="icon" href="icons/icon-192.png">
 </head>
 <body>
+<div class="ptr" id="ptr" aria-hidden="true"><div class="ptr-spinner" id="ptr-spinner"></div></div>
 <header class="hero">
   <div class="container">
     <nav class="topnav">
       <span class="brand">MAS <span class="brand-sub">Multi-Agentic Screener</span></span>
       <div class="navlinks">
         <a href="#today">Today</a><a href="#performance">Performance</a>
-        <a href="#trades">Trades</a><a href="#system">System</a>
+        <a href="#trades">Trades</a><a href="#pipeline">Pipeline</a><a href="#system">System</a>
       </div>
     </nav>
     <h1>Pipeline dashboard</h1>
     <p class="hero-sub" id="hero-sub">Loading snapshot…</p>
+    <div class="freshness" id="freshness" hidden>
+      <span class="fresh-dot" id="fresh-dot"></span>
+      <span id="fresh-text">—</span>
+      <button class="fresh-btn" id="refresh-btn" type="button" aria-label="Refresh data">Refresh</button>
+    </div>
   </div>
 </header>
 
@@ -88,6 +94,24 @@
     </div>
   </section>
 
+  <section id="pipeline">
+    <h2>Pipeline <span class="hint">how today's run narrowed the market down to the picks</span></h2>
+    <div class="card">
+      <h3>Funnel <span class="hint">each stage is what survived the one before it</span></h3>
+      <div id="funnel"></div>
+    </div>
+    <div class="grid2">
+      <div class="card">
+        <h3>Data quality <span class="hint">warnings the pipeline raised about its own inputs</span></h3>
+        <div id="data-quality"></div>
+      </div>
+      <div class="card">
+        <h3>Run cadence <span class="hint">duration and candidate count per run</span></h3>
+        <div id="cadence-chart"></div>
+      </div>
+    </div>
+  </section>
+
   <section id="system">
     <h2>System</h2>
     <div class="card">
@@ -107,11 +131,12 @@
   <a href="#today" class="tab active"><span class="tab-ic">📌</span>Today</a>
   <a href="#performance" class="tab"><span class="tab-ic">📈</span>Perf</a>
   <a href="#trades" class="tab"><span class="tab-ic">🧾</span>Trades</a>
+  <a href="#pipeline" class="tab"><span class="tab-ic">🔎</span>Pipeline</a>
   <a href="#system" class="tab"><span class="tab-ic">⚙️</span>System</a>
 </nav>
 
 <div id="tooltip" class="tooltip" hidden></div>
-<script type="module" src="app.js?v=12"></script>
+<script type="module" src="app.js?v=14"></script>
 <script>
   if ("serviceWorker" in navigator)
     addEventListener("load", () => navigator.serviceWorker.register("sw.js").catch(() => {}));
