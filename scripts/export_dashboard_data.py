@@ -25,7 +25,7 @@ from datetime import date as _date
 from sqlalchemy import select
 
 from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
-from src.db.models import DailyRun, Outcome, Signal
+from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
 
 # The "book" = the two systematic official streams run together. The manual
@@ -189,6 +189,32 @@ def _portfolio(trades: dict[str, list]) -> dict | None:
     }
 
 
+def _candidates_payload(candidates, signals) -> list[dict]:
+    """Ranked candidates per run, tagged with whether each became a pick.
+
+    Rank is assigned by composite_score within a run_date, which is the order the
+    pipeline itself used. `picked` lets the audit compare the chosen top-2
+    against the ranks that were passed over.
+    """
+    picked = {(s.run_date, s.ticker.upper()) for s in signals}
+    by_run: dict = {}
+    for c in candidates:
+        by_run.setdefault(c.run_date, []).append(c)
+    out = []
+    for run_date, rows in sorted(by_run.items()):
+        rows.sort(key=lambda r: (r.composite_score or 0), reverse=True)
+        for i, c in enumerate(rows, start=1):
+            out.append({
+                "run_date": run_date.isoformat(),
+                "rank": i,
+                "ticker": c.ticker,
+                "model": c.signal_model,
+                "score": round(float(c.composite_score), 4) if c.composite_score is not None else None,
+                "picked": (run_date, c.ticker.upper()) in picked,
+            })
+    return out
+
+
 async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> dict:
     cutoff = date.today() - timedelta(days=days)
     if bench_closes is None:
@@ -207,6 +233,17 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         outcomes = (await session.execute(
             select(Outcome).where(Outcome.signal_id.in_(sig_ids))
         )).scalars().all() if sig_ids else []
+
+        # Ranked candidates per run — the input to the top-2-of-N choice. The
+        # pipeline has persisted these all along (main.py: "Save candidates"),
+        # but nothing ever read them back, so the question "does our rank
+        # ordering predict outcomes, or are we picking noise?" was unanswerable
+        # on live data. Exporting them makes the selection-quality audit
+        # runnable (see scripts/rank_quality_audit.py).
+        candidates = (await session.execute(
+            select(Candidate).where(Candidate.run_date >= cutoff)
+            .order_by(Candidate.run_date, Candidate.composite_score.desc())
+        )).scalars().all()
 
     sig_by_id = {s.id: s for s in signals}
     latest_run = runs[-1] if runs else None
@@ -327,6 +364,7 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         "benchmark_available": any(bench_closes.get(k) for k in BENCHMARKS),
         "alpha_summary": alpha_summary,
         "portfolio": _portfolio(trades),
+        "candidates": _candidates_payload(candidates, signals),
     }
 
 
