@@ -6,7 +6,7 @@ import logging
 import math
 from datetime import date, timedelta
 
-from sqlalchemy import select
+from sqlalchemy import or_, select
 
 import pandas as pd
 
@@ -16,6 +16,13 @@ from src.db.session import get_session
 from src.data.aggregator import DataAggregator
 
 logger = logging.getLogger(__name__)
+
+# Outcomes persisted for picks the validation gate BLOCKED. They are tracked and
+# evaluated like real positions but excluded from every performance statistic
+# (all stats queries filter `skip_reason.is_(None)`), so they answer one
+# question the system could not previously answer at all: what did the gate cost
+# when it fired? Both 2026-07 outages left zero record of foregone P&L.
+SHADOW_SKIP_REASON = "validation_blocked"
 
 DEFAULT_SIGNAL_SOURCE = "mas_official"
 
@@ -55,11 +62,17 @@ async def check_open_positions() -> tuple[
         logger.warning("Regime fetch failed (non-fatal): %s", e)
 
     async with get_session() as session:
-        # Get all open outcomes (exclude skipped trades)
+        # Open outcomes to walk. Skipped trades are excluded EXCEPT shadow-booked
+        # ones: picks the validation gate blocked are persisted with
+        # skip_reason=SHADOW_SKIP_REASON so the gate's false-positive cost is
+        # measurable. They must be evaluated like any other position — every
+        # stats consumer still filters `skip_reason.is_(None)`, so they never
+        # enter the official record; they only answer "what did blocking cost?".
         result = await session.execute(
             select(Outcome).where(
                 Outcome.still_open == True,  # noqa: E712
-                Outcome.skip_reason.is_(None),
+                or_(Outcome.skip_reason.is_(None),
+                    Outcome.skip_reason == SHADOW_SKIP_REASON),
             )
         )
         open_outcomes = result.scalars().all()
@@ -439,7 +452,12 @@ async def _evaluate_position(
         max_entry = getattr(signal, "max_entry_price", None)
         if max_entry is not None and bar_open > max_entry:
             return {
-                "skip_reason": "gap_above_limit",
+                # Keep the shadow label: a blocked pick that ALSO gapped away
+                # is still a blocked pick, and relabelling would silently drop
+                # it back into the official stats' `skip_reason.is_(None)` net.
+                "skip_reason": (SHADOW_SKIP_REASON
+                                if outcome.skip_reason == SHADOW_SKIP_REASON
+                                else "gap_above_limit"),
                 "still_open": False,
                 "exit_reason": "skipped",
                 "exit_date": outcome.entry_date,
