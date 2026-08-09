@@ -138,8 +138,10 @@ src/
 ├── worker.py                   # Worker process
 ├── data/                       # Data ingestion
 │   ├── aggregator.py           # Unified interface with fallback chains
-│   ├── polygon_client.py       # OHLCV, news, minute bars (windowed intraday cache)
-│   ├── fmp_client.py           # Fundamentals, earnings, insider transactions (/stable endpoints)
+│   ├── polygon_client.py       # OHLCV + minute bars (windowed intraday cache).
+│   │                           # News fetching exists but has no live consumer.
+│   ├── fmp_client.py           # Fundamentals + earnings (/stable). Insider and analyst
+│   │                           # endpoints are unused by any live signal.
 │   ├── yfinance_client.py      # Fallback price data
 │   └── fred_client.py          # VIX, yield curve, macro indicators
 ├── features/                   # technical.py, fundamental.py, sentiment.py, regime.py
@@ -178,7 +180,7 @@ src/
 
 scripts/                        # Backtesters, probes, evaluators, backfills
 api/app.py                      # FastAPI dashboard — reports, signals, outcomes
-tests/                          # 913+ tests across all modules
+tests/                          # 832 tests across all modules
 ```
 
 ## Daily Orchestration
@@ -223,8 +225,8 @@ cp .env.example .env
 
 ```
 # API Keys (required)
-POLYGON_API_KEY            # Market data — OHLCV, news, minute bars
-FMP_API_KEY                # Fundamentals, earnings, insider transactions
+POLYGON_API_KEY            # Market data — OHLCV, minute bars
+FMP_API_KEY                # Universe screener, fundamentals, earnings calendar
 FRED_API_KEY               # Macro indicators (VIX, yield curve)
 FINNHUB_API_KEY            # Earnings calendar
 

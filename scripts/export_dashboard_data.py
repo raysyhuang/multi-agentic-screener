@@ -189,14 +189,32 @@ def _portfolio(trades: dict[str, list]) -> dict | None:
     }
 
 
-def _candidates_payload(candidates, signals) -> list[dict]:
-    """Ranked candidates per run, tagged with whether each became a pick.
+def _candidates_payload(candidates, signals, outcome_by_sig) -> list[dict]:
+    """Ranked candidates per run, tagged with whether each became an official pick.
 
     Rank is assigned by composite_score within a run_date, which is the order the
-    pipeline itself used. `picked` lets the audit compare the chosen top-2
-    against the ranks that were passed over.
+    pipeline itself used. `picked` lets the audit compare the chosen top-2 against
+    the ranks that were passed over.
+
+    Identity must be (run_date, ticker, MODEL) and must count only OFFICIAL,
+    non-shadow signals. Keying on (run_date, ticker) alone silently corrupted the
+    audit three ways:
+      * a shadow-booked, validation-BLOCKED signal marked its candidate "picked"
+        — inverting the exact quantity the audit measures;
+      * a same-ticker manual-sleeve or PEAD paper signal marked an official
+        candidate picked;
+      * two models proposing one ticker collapsed into a single identity.
+    `Candidate` rows come from the OFFICIAL ranked list, so the pick side has to
+    be restricted the same way.
     """
-    picked = {(s.run_date, s.ticker.upper()) for s in signals}
+    picked = set()
+    for s in signals:
+        if s.signal_source != "mas_official":
+            continue                      # manual sleeve + PEAD paper are separate books
+        o = outcome_by_sig.get(s.id)
+        if o is not None and o.skip_reason:
+            continue                      # shadow-booked / gap-rejected: never taken
+        picked.add((s.run_date, s.ticker.upper(), s.signal_model))
     by_run: dict = {}
     for c in candidates:
         by_run.setdefault(c.run_date, []).append(c)
@@ -210,7 +228,7 @@ def _candidates_payload(candidates, signals) -> list[dict]:
                 "ticker": c.ticker,
                 "model": c.signal_model,
                 "score": round(float(c.composite_score), 4) if c.composite_score is not None else None,
-                "picked": (run_date, c.ticker.upper()) in picked,
+                "picked": (run_date, c.ticker.upper(), c.signal_model) in picked,
             })
     return out
 
@@ -246,6 +264,9 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         )).scalars().all()
 
     sig_by_id = {s.id: s for s in signals}
+    # One outcome per signal — used to tell a taken pick from a shadow-booked or
+    # gap-rejected one when tagging candidates.
+    outcome_by_sig = {o.signal_id: o for o in outcomes}
     latest_run = runs[-1] if runs else None
 
     # --- Today: picks of the latest run date ---
@@ -364,7 +385,7 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         "benchmark_available": any(bench_closes.get(k) for k in BENCHMARKS),
         "alpha_summary": alpha_summary,
         "portfolio": _portfolio(trades),
-        "candidates": _candidates_payload(candidates, signals),
+        "candidates": _candidates_payload(candidates, signals, outcome_by_sig),
     }
 
 

@@ -62,3 +62,9 @@ data/cache/
 # Debug outputs
 outputs/
 dashboard/data.json
+
+# Local agent/tool scratch dirs (Playwright MCP traces, editor agents)
+.playwright-mcp/
+.agents/
+.continue/
+.trae/

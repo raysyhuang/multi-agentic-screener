@@ -29,6 +29,12 @@ def test_shadow_skip_reason_fits_the_column():
     assert len(SHADOW_SKIP_REASON) <= 30
 
 
+# NOTE: the SQL behaviour these used to assert by grepping function source now
+# has real DB-backed coverage in tests/test_db/test_shadow_and_candidates.py —
+# a source grep passes whether or not the query is correct, which is exactly the
+# failure mode it was meant to guard against.
+
+
 def test_shadow_rows_are_excluded_from_stats_by_the_existing_convention():
     """Every stats query filters `skip_reason.is_(None)`. Shadow rows carry a
     non-null reason, so they are excluded for free — that is the whole reason
@@ -37,28 +43,8 @@ def test_shadow_rows_are_excluded_from_stats_by_the_existing_convention():
     assert SHADOW_SKIP_REASON != ""
 
 
-def test_tracker_query_admits_shadow_rows_but_not_other_skips():
-    """The outcome walker must evaluate shadow rows (otherwise they never get a
-    P&L and measure nothing) while still ignoring gap-rejected trades."""
-    import inspect
-
-    from src.output import performance as perf
-
-    src = inspect.getsource(perf.check_open_positions)
-    assert "SHADOW_SKIP_REASON" in src, "tracker must admit shadow-booked rows"
-    assert "or_(" in src, "admission must be an OR against skip_reason.is_(None)"
 
 
-def test_gap_rejection_preserves_the_shadow_label():
-    """A blocked pick that also gaps away is still a blocked pick. Relabelling it
-    'gap_above_limit' would keep it out of stats too, but would lose the record
-    of WHY it was never taken."""
-    import inspect
-
-    from src.output import performance as perf
-
-    src = inspect.getsource(perf._evaluate_position)
-    assert "SHADOW_SKIP_REASON" in src
 
 
 # ── Drift monitor ──────────────────────────────────────────────────────────
