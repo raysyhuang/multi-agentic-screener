@@ -13,12 +13,12 @@
    never served against a new document.
 
    Bump VERSION together with the ?v= asset query in index.html. */
-const VERSION = "mas-v15";
+const VERSION = "mas-v16";
 const SHELL = [
   "./",
   "index.html",
-  "style.css?v=15",
-  "app.js?v=15",
+  "style.css?v=16",
+  "app.js?v=16",
   "manifest.webmanifest",
   "icons/icon-192.png",
   "icons/icon-512.png",
@@ -45,8 +45,13 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       fetch(e.request)
         .then((resp) => {
-          const copy = resp.clone();
-          caches.open(VERSION).then((c) => c.put("index.html", copy));
+          // Only cache a GOOD response. Pages can 404/500 transiently, and
+          // caching one would overwrite the working offline shell with an error
+          // page that then persists across launches.
+          if (resp.ok) {
+            const copy = resp.clone();
+            e.waitUntil(caches.open(VERSION).then((c) => c.put("index.html", copy)));
+          }
           return resp;
         })
         .catch(() => caches.match("index.html").then((hit) => hit || caches.match("./")))
@@ -59,8 +64,12 @@ self.addEventListener("fetch", (e) => {
     e.respondWith(
       fetch(e.request)
         .then((resp) => {
-          const copy = resp.clone();
-          caches.open(VERSION).then((c) => c.put("data.json", copy));
+          // Same rule as the document: a bad response must not replace the last
+          // good snapshot, or the app opens offline showing an error body.
+          if (resp.ok) {
+            const copy = resp.clone();
+            e.waitUntil(caches.open(VERSION).then((c) => c.put("data.json", copy)));
+          }
           return resp;
         })
         .catch(() => caches.match("data.json"))
@@ -73,7 +82,9 @@ self.addEventListener("fetch", (e) => {
     caches.match(e.request).then((hit) => {
       const refresh = fetch(e.request)
         .then((resp) => {
-          if (resp.ok) caches.open(VERSION).then((c) => c.put(e.request, resp.clone()));
+          // waitUntil so a cache HIT cannot let the worker terminate before the
+          // background refresh finishes writing.
+          if (resp.ok) e.waitUntil(caches.open(VERSION).then((c) => c.put(e.request, resp.clone())));
           return resp;
         })
         .catch(() => hit);
