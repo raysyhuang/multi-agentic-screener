@@ -44,9 +44,23 @@ Read them here for history; write new migrations against `0001_baseline`.
 
 ## Databases created before the squash
 
-They already have this schema. Stamp, do not upgrade:
+**No action needed.** They are stamped at `1c2d3e4f5a6b`, the old head, and that
+id is still on the version path — as `1c2d3e4f5a6b_bridge_from_pre_squash_history.py`,
+a no-op successor to the baseline. `alembic upgrade head` finds them already at
+head and does nothing.
 
-    alembic stamp 0001_baseline
+That was deliberate rather than a stamp. A stamp has to be run by hand against
+every existing database between merge and the next scheduled run, and
+`alembic upgrade head` runs ahead of the morning pipeline — so forgetting it
+would take the book dark rather than print a warning. Keeping the old id also
+preserves the one durable record of where those databases came from: their
+`alembic_version` still says, truthfully, that they descend from this chain and
+were not built from the baseline.
+
+A database stamped at some *intermediate* revision from this directory rather
+than the old head is **not** covered. None are known to exist; one would fail
+with `Can't locate revision identified by ...` and should be diffed against the
+baseline and stamped deliberately.
 
 Long-lived databases also carry `cross_engine_synthesis` and
 `multi_engine_backtest_runs`, created by archived revisions and orphaned by the

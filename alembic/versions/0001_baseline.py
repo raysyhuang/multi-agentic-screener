@@ -23,13 +23,11 @@ the version path and are never executed.
 
 Existing databases
 ------------------
-A database already at the old head (`1c2d3e4f5a6b`) has this exact schema
-already. It must be stamped once, not upgraded:
-
-    alembic stamp 0001_baseline
-
-Only do that after the `migrations` CI job proves the baseline is byte-identical
-to `create_all` output. Note that long-lived databases additionally carry
+A database already at the old head (`1c2d3e4f5a6b`) has this exact schema and
+needs no action: that id remains on the version path as a no-op successor to
+this revision (see `1c2d3e4f5a6b_bridge_from_pre_squash_history.py`), so
+`alembic upgrade head` finds it already at head. Note that long-lived databases
+additionally carry
 `cross_engine_synthesis` and `multi_engine_backtest_runs`, left behind by the
 2026-07 cross-engine strip. No code reads them and the ORM does not declare
 them, so the baseline does not create them; the stamp asserts that the
