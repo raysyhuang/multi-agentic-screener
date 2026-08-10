@@ -262,13 +262,22 @@ class FMPClient:
         exchange: str = "NYSE,NASDAQ",
         limit: int = 5000,
     ) -> list[dict]:
-        """Screen stocks by basic criteria — used for universe construction."""
+        """Screen stocks by basic criteria — used for universe construction.
+
+        `isEtf`/`isFund` are sent as lowercase strings because that is what the
+        API expects; Python's `False` would serialize to "False". They are
+        defence in depth only — `filter_universe` also drops these rows using
+        the same flags on the response, so the universe stays clean even if the
+        endpoint ignores the parameters.
+        """
         url = f"{BASE_URL}/company-screener"
         params = self._params(
             marketCapMoreThan=market_cap_more_than,
             volumeMoreThan=volume_more_than,
             priceMoreThan=price_more_than,
             exchange=exchange,
+            isEtf="false",
+            isFund="false",
             limit=limit,
         )
         resp = await self._request(url, params)

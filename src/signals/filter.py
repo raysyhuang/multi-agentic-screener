@@ -156,8 +156,22 @@ def filter_universe(
             funnel.failed_suffix += 1
             continue
 
-        # Type exclusion
-        if any(t in stock_type for t in EXCLUDED_TYPES):
+        # Type exclusion.
+        #
+        # `type` is the Polygon-shaped field. The FMP screener — the PRIMARY
+        # universe source — does not return it at all; it reports `isEtf` /
+        # `isFund` booleans instead. So for six months this gate read None on
+        # every FMP row, `stock_type` was "", and nothing was ever excluded.
+        # TQQQ (a 3x leveraged ETF, beta 3.7) reached the official candidate
+        # pool with a sniper score of 97.5 — leveraged products clear the
+        # sniper's ATR% >= 5 floor structurally, and their "relative strength
+        # vs SPY" is leveraged beta, not the idiosyncratic strength the signal
+        # is trying to measure.
+        if (
+            any(t in stock_type for t in EXCLUDED_TYPES)
+            or stock.get("isEtf")
+            or stock.get("isFund")
+        ):
             funnel.failed_type += 1
             continue
 
