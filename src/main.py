@@ -717,6 +717,7 @@ async def _run_pipeline_core(
 
     # --- Step 2: Build universe ---
     logger.info("Step 2: Building universe...")
+    aggregator.reset_data_provenance()
     raw_universe = await aggregator.get_universe()
     universe_funnel = FilterFunnel()
     filtered = filter_universe(raw_universe, funnel=universe_funnel)
@@ -734,7 +735,9 @@ async def _run_pipeline_core(
                     last_price=s.get("lastSale", s.get("price", 0.0)),
                     volume=int(s.get("volume", 0)),
                     market_cap=s.get("marketCap"),
-                    source_provenance="polygon",
+                    # Was hardcoded "polygon" — an outright false claim on the
+                    # FMP path, which is the one that normally serves.
+                    source_provenance=aggregator.get_data_provenance()["universe_source"],
                 )
                 for s in filtered[:50]  # log first 50 for envelope size
             ],
@@ -1934,6 +1937,24 @@ async def _run_pipeline_core(
         candidates_scored=len(ranked),
         picks_approved=len(pipeline_result.approved),
         duration_s=elapsed,
+    )
+    provenance = aggregator.get_data_provenance()
+    gov.set_data_provenance(provenance)
+    gov.set_funnels(universe=universe_funnel, ohlcv=ohlcv_funnel)
+    # One line that answers "what data did this run actually use, and where did
+    # the universe go" without reading the whole log.
+    logger.info(
+        "Run provenance: universe=%s ohlcv_by_source=%s failed=%d circuits_open=%s | "
+        "funnel %d raw → %d filtered → %d qualified → %d scored → %d approved",
+        provenance["universe_source"],
+        provenance["ohlcv_by_source"],
+        len(provenance["ohlcv_failed_tickers"]),
+        provenance["circuits_open"] or "none",
+        universe_funnel.total_input,
+        universe_funnel.passed,
+        ohlcv_funnel.passed,
+        len(ranked),
+        len(pipeline_result.approved),
     )
 
     # Decay detection: compare recent live performance against baseline

@@ -17,6 +17,7 @@ import asyncio
 import gc
 import json
 import logging
+from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -62,6 +63,14 @@ class DataAggregator:
         self._cache = DataCache()
         self._cache_enabled = True
         self._circuit_breaker = APICircuitBreaker()
+        # Which provider actually served each bar this run. The fallback chain
+        # is Polygon -> FMP -> yfinance and it is silent: a Polygon outage
+        # degrades the whole run to yfinance data with nothing in the record to
+        # say so. `get_last_ohlcv_provenance()` covers the research path only
+        # (src/research/signal_backtest.py); this is its live-path counterpart.
+        self._ohlcv_sources: Counter[str] = Counter()
+        self._ohlcv_failures: list[str] = []
+        self._universe_source: str = ""
 
     async def get_ohlcv(
         self,
@@ -81,7 +90,9 @@ class DataAggregator:
             cached = self._cache.get(key)
             if cached is not None:
                 try:
-                    return json_to_df(cached)
+                    df = json_to_df(cached)
+                    self._ohlcv_sources["cache"] += 1
+                    return df
                 except Exception as e:
                     logger.warning("Cache deserialization failed for %s, treating as miss: %s", ticker, e)
 
@@ -91,6 +102,7 @@ class DataAggregator:
                     df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
                     if not df.empty:
                         self._circuit_breaker.record_success("polygon")
+                        self._ohlcv_sources["polygon"] += 1
                         if self._cache_enabled:
                             ttl = classify_ohlcv_ttl(to_date)
                             self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
@@ -106,6 +118,7 @@ class DataAggregator:
                     df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
                     if not df.empty:
                         self._circuit_breaker.record_success("fmp")
+                        self._ohlcv_sources["fmp"] += 1
                         if self._cache_enabled:
                             ttl = classify_ohlcv_ttl(to_date)
                             self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
@@ -118,12 +131,17 @@ class DataAggregator:
 
             try:
                 df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)
-                if self._cache_enabled and not df.empty:
-                    ttl = classify_ohlcv_ttl(to_date)
-                    self._cache.put(key, df_to_json(df), ttl, source="yfinance", ticker=ticker, endpoint="ohlcv")
+                if df.empty:
+                    self._ohlcv_failures.append(ticker)
+                else:
+                    self._ohlcv_sources["yfinance"] += 1
+                    if self._cache_enabled:
+                        ttl = classify_ohlcv_ttl(to_date)
+                        self._cache.put(key, df_to_json(df), ttl, source="yfinance", ticker=ticker, endpoint="ohlcv")
                 return df
             except Exception as e:
                 logger.error("All OHLCV sources failed for %s: %s", ticker, e)
+                self._ohlcv_failures.append(ticker)
                 return pd.DataFrame()
 
     async def get_bulk_ohlcv(
@@ -166,18 +184,44 @@ class DataAggregator:
         logger.info("Bulk OHLCV complete: %d/%d tickers fetched", len(out), len(tickers))
         return out
 
+    def get_data_provenance(self) -> dict:
+        """Which providers actually served this run's data.
+
+        The OHLCV fallback chain (Polygon -> FMP -> yfinance) is silent, so a
+        provider outage changes the data underneath a run without changing
+        anything visible in its output. Recording the tally makes a degraded run
+        distinguishable from a healthy one after the fact, which is the whole
+        point of the provenance rule in CLAUDE.md.
+        """
+        return {
+            "ohlcv_by_source": dict(self._ohlcv_sources),
+            "ohlcv_failed_tickers": sorted(self._ohlcv_failures),
+            "universe_source": self._universe_source,
+            "circuits_open": sorted(
+                p for p in ("polygon", "fmp") if self._circuit_breaker.is_open(p)
+            ),
+        }
+
+    def reset_data_provenance(self) -> None:
+        """Clear counters so a long-lived aggregator reports per-run figures."""
+        self._ohlcv_sources.clear()
+        self._ohlcv_failures.clear()
+        self._universe_source = ""
+
     async def get_universe(self) -> list[dict]:
         """Build initial universe from FMP screener, falling back to Polygon."""
         if self._cache_enabled:
             key = DataCache.build_key("universe", "", "screener")
             cached = self._cache.get(key)
             if cached is not None:
+                self._universe_source = "cache"
                 return json.loads(cached)
 
         # Try FMP first
         try:
             result = await self.fmp.get_stock_screener()
             if result:
+                self._universe_source = "fmp"
                 if self._cache_enabled:
                     self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
                 return result
@@ -187,6 +231,8 @@ class DataAggregator:
         # Fallback: Polygon tickers reference + grouped daily bars
         try:
             result = await self._build_polygon_universe()
+            if result:
+                self._universe_source = "polygon"
             if self._cache_enabled and result:
                 self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
             return result

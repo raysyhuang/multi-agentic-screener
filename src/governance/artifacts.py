@@ -40,6 +40,16 @@ class GovernanceRecord:
     candidates_scored: int = 0
     picks_approved: int = 0
     pipeline_duration_s: float = 0.0
+    # Which providers actually served the run's data, and where the universe
+    # attrited. Both were computed already and thrown away: the funnels were
+    # logged and discarded, and the OHLCV fallback chain recorded nothing at
+    # all. Without them a zero-pick run is indistinguishable from a run whose
+    # data silently degraded to yfinance, and the only way to tell was to find
+    # the log lines for that specific run. These ride in the existing JSONB
+    # payload, so they need no migration.
+    data_provenance: dict = field(default_factory=dict)
+    universe_funnel: dict = field(default_factory=dict)
+    ohlcv_funnel: dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     def to_dict(self) -> dict:
@@ -96,6 +106,25 @@ class GovernanceContext:
 
     def set_eligibility(self, passed: bool) -> None:
         self._record.eligibility_passed = passed
+
+    def set_data_provenance(self, provenance: dict) -> None:
+        """Record which providers served this run (see DataAggregator)."""
+        self._record.data_provenance = dict(provenance)
+
+    def set_funnels(self, universe: Any = None, ohlcv: Any = None) -> None:
+        """Record where the universe attrited.
+
+        Accepts the funnel dataclasses directly, or plain dicts. This is what
+        makes "picks=0" attributable to a stage instead of a mystery.
+        """
+        if universe is not None:
+            self._record.universe_funnel = (
+                universe if isinstance(universe, dict) else asdict(universe)
+            )
+        if ohlcv is not None:
+            self._record.ohlcv_funnel = (
+                ohlcv if isinstance(ohlcv, dict) else asdict(ohlcv)
+            )
 
     def set_config_hash(self, config: dict[str, Any]) -> None:
         serialized = json.dumps(config, sort_keys=True, default=str)
