@@ -2,10 +2,13 @@
 
 from __future__ import annotations
 
+import logging
+import os
 from contextlib import asynccontextmanager
 from typing import AsyncGenerator
 from urllib.parse import parse_qsl, urlencode, urlsplit, urlunsplit
 
+from sqlalchemy import inspect as sa_inspect
 from sqlalchemy.ext.asyncio import (
     AsyncSession,
     async_sessionmaker,
@@ -14,6 +17,8 @@ from sqlalchemy.ext.asyncio import (
 
 from src.config import get_settings
 from src.db.models import Base
+
+logger = logging.getLogger(__name__)
 
 _engine = None
 _session_factory = None
@@ -100,10 +105,45 @@ async def get_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 async def init_db() -> None:
-    """Create all tables (for dev/first run)."""
+    """Verify the schema exists and is migration-managed.
+
+    This used to call ``Base.metadata.create_all``, which is precisely how the
+    schema came to exist without any migration having built it: the first run
+    against an empty database created every table from the ORM, alembic was
+    pointed at the result months later, and from then on the migration chain
+    only ever ran against a database it had not built. `alembic upgrade head`
+    on an empty database failed, and no environment could be rebuilt from
+    source. Two schema authorities is one too many.
+
+    Alembic is now the only one. A database with no ``alembic_version`` table
+    has not been migrated, and silently creating tables here would hide that
+    again — so it raises instead. Set ``MAS_DB_ALLOW_CREATE_ALL=1`` for a
+    throwaway local database you do not intend to keep; anything whose schema
+    matters should be built by ``alembic upgrade head``.
+    """
     engine = get_engine()
     async with engine.begin() as conn:
-        await conn.run_sync(Base.metadata.create_all)
+        migrated = await conn.run_sync(
+            lambda sync_conn: sa_inspect(sync_conn).has_table("alembic_version")
+        )
+        if migrated:
+            return
+
+        if os.getenv("MAS_DB_ALLOW_CREATE_ALL") == "1":
+            logger.warning(
+                "MAS_DB_ALLOW_CREATE_ALL=1 — building the schema from ORM metadata "
+                "instead of migrations. This database will have no migration "
+                "provenance and must not be promoted to anything durable."
+            )
+            await conn.run_sync(Base.metadata.create_all)
+            return
+
+        raise RuntimeError(
+            "Database has no alembic_version table — it has never been migrated. "
+            "Run `alembic upgrade head` against it first. (For a throwaway local "
+            "database, set MAS_DB_ALLOW_CREATE_ALL=1 to build from ORM metadata "
+            "instead, accepting that it will have no migration provenance.)"
+        )
 
 
 async def close_db() -> None:

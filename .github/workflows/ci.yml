@@ -36,3 +36,52 @@ jobs:
         run: |
           pytest --cov=src --cov-report=term-missing \
             -m "not integration" -q
+
+  # Proves the migration chain can build the schema from nothing. Nothing tested
+  # this before, which is how the repo went six months with no baseline: the old
+  # root migration opened with a foreign key to `signals.id` and no migration
+  # anywhere created `signals`, so `alembic upgrade head` only ever worked on a
+  # database that `create_all` had already built. Production's schema was not
+  # reproducible from source and no CI signal said so.
+  migrations:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16
+        env:
+          POSTGRES_USER: postgres
+          POSTGRES_PASSWORD: postgres
+          POSTGRES_DB: mas_ci
+        ports:
+          - 5432:5432
+        options: >-
+          --health-cmd pg_isready
+          --health-interval 10s
+          --health-timeout 5s
+          --health-retries 5
+    env:
+      DATABASE_URL: postgresql://postgres:postgres@localhost:5432/mas_ci
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+          cache: pip
+      - name: Install dependencies
+        run: pip install -e ".[dev]"
+
+      - name: Build schema from an empty database
+        run: alembic upgrade head
+
+      - name: Migrated schema must match the ORM exactly
+        # `alembic check` diffs the live database against Base.metadata and exits
+        # non-zero on any difference. This is the assertion that the baseline is
+        # faithful, and it is what justifies stamping an existing database
+        # instead of upgrading it.
+        run: alembic check
+
+      - name: Downgrade must be reversible
+        run: |
+          alembic downgrade base
+          alembic upgrade head
+          alembic check
