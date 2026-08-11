@@ -85,3 +85,15 @@ jobs:
           alembic downgrade base
           alembic upgrade head
           alembic check
+
+      # The unit suite covers components; every bug that reached production this
+      # month lived in the wiring between them, where nothing executed the
+      # pipeline at all. This runs it end to end against stubbed providers and
+      # the migrated database above.
+      - name: Pipeline smoke test
+        env:
+          TRADING_MODE: PAPER
+          EXECUTION_MODE: quant_only
+          TELEGRAM_BOT_TOKEN: ""
+          TELEGRAM_CHAT_ID: ""
+        run: pytest -m integration tests/integration -q
