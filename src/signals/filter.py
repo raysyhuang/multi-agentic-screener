@@ -24,6 +24,39 @@ _SPLIT_DROP_RATIOS = (0.50, 0.333, 0.25, 0.20)  # 2:1, 3:1, 4:1, 5:1
 _SPLIT_RATIO_TOLERANCE = 0.05
 
 
+_TRUE_TOKENS = frozenset({"true", "1", "yes", "y", "t"})
+_FALSE_TOKENS = frozenset({"false", "0", "no", "n", "f", ""})
+
+
+def _as_bool(value: object) -> tuple[bool, bool]:
+    """Coerce a provider's boolean-ish flag. Returns (value, recognised).
+
+    JSON booleans, the strings "true"/"false", and 0/1 are all encodings a
+    provider may use, and they are not interchangeable in Python: `bool("false")`
+    is True. A gate that reads such a flag raw flips to rejecting everything the
+    moment the encoding changes.
+
+    An unrecognised value returns ``(False, False)`` — do not exclude, but say
+    so. For this gate that is the safe direction: wrongly admitting an ETF costs
+    one bad candidate, wrongly excluding everything costs the whole day's
+    universe. The caller counts the unrecognised ones so the condition surfaces
+    in the funnel instead of being absorbed.
+    """
+    if value is None:
+        return False, True
+    if isinstance(value, bool):
+        return value, True
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value), True
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _TRUE_TOKENS:
+            return True, True
+        if token in _FALSE_TOKENS:
+            return False, True
+    return False, False
+
+
 def _is_valid_ticker(ticker: str) -> bool:
     """Allow normal US symbols, including class shares like BRK.B/BF-B."""
     if not ticker:
@@ -46,6 +79,10 @@ class FilterFunnel:
     failed_suffix: int = 0
     failed_type: int = 0
     failed_ticker_format: int = 0
+    # Rows whose isEtf/isFund arrived in an encoding we do not recognise. These
+    # are NOT excluded (see _as_bool); a non-zero count means the provider
+    # changed shape and the ETF gate is running blind on those rows.
+    unrecognized_type_flags: int = 0
     passed: int = 0
 
     def log_summary(self) -> None:
@@ -62,6 +99,12 @@ class FilterFunnel:
             self.failed_type,
             self.failed_ticker_format,
         )
+        if self.unrecognized_type_flags:
+            logger.warning(
+                "Filter funnel: %d rows had unrecognised isEtf/isFund encodings — "
+                "the ETF gate did not evaluate them. Provider shape may have changed.",
+                self.unrecognized_type_flags,
+            )
 
     def to_dict(self) -> dict:
         return {
@@ -72,6 +115,7 @@ class FilterFunnel:
             "failed_suffix": self.failed_suffix,
             "failed_type": self.failed_type,
             "failed_ticker_format": self.failed_ticker_format,
+            "unrecognized_type_flags": self.unrecognized_type_flags,
             "passed": self.passed,
         }
 
@@ -167,11 +211,18 @@ def filter_universe(
         # sniper's ATR% >= 5 floor structurally, and their "relative strength
         # vs SPY" is leveraged beta, not the idiosyncratic strength the signal
         # is trying to measure.
-        if (
-            any(t in stock_type for t in EXCLUDED_TYPES)
-            or stock.get("isEtf")
-            or stock.get("isFund")
-        ):
+        # The flags are coerced, never read for raw truthiness: JSON `false` and
+        # the STRING "false" are both plausible encodings, and `bool("false")` is
+        # True. Reading them raw would drop every FMP row on the day the provider
+        # changed encoding — a silent zero-universe run, which is far worse than
+        # admitting an ETF. Unrecognised values are counted and reported rather
+        # than silently deciding either way.
+        is_etf, etf_known = _as_bool(stock.get("isEtf"))
+        is_fund, fund_known = _as_bool(stock.get("isFund"))
+        if not (etf_known and fund_known):
+            funnel.unrecognized_type_flags += 1
+
+        if any(t in stock_type for t in EXCLUDED_TYPES) or is_etf or is_fund:
             funnel.failed_type += 1
             continue
 

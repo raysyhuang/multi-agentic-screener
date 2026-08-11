@@ -83,6 +83,54 @@ def test_polygon_style_type_field_still_works(stock_type: str) -> None:
     assert filter_universe([row]) == []
 
 
+@pytest.mark.parametrize(
+    "encoding",
+    [True, "true", "True", "TRUE", " true ", 1, "1", "yes"],
+)
+def test_truthy_encodings_all_exclude(encoding) -> None:
+    assert filter_universe([{**AAPL_FMP, "isEtf": encoding}]) == []
+
+
+@pytest.mark.parametrize(
+    "encoding",
+    [False, "false", "False", "FALSE", " false ", 0, "0", "no", "", None],
+)
+def test_falsey_encodings_never_exclude(encoding) -> None:
+    """The fail-closed risk: `bool("false")` is True.
+
+    Reading these flags for raw truthiness would drop EVERY FMP row the day the
+    provider switched from JSON booleans to strings — a silent zero-universe
+    run, which is far worse than admitting an ETF. Caught in review by Hawk.
+    """
+    funnel = FilterFunnel()
+    passed = filter_universe([{**AAPL_FMP, "isEtf": encoding}], funnel=funnel)
+
+    assert [s["symbol"] for s in passed] == ["AAPL"]
+    assert funnel.failed_type == 0
+    assert funnel.unrecognized_type_flags == 0, f"{encoding!r} should be recognised"
+
+
+def test_unrecognised_encoding_admits_the_row_and_is_counted() -> None:
+    """Unknown shape must not silently decide either way — it must be visible."""
+    funnel = FilterFunnel()
+    passed = filter_universe([{**AAPL_FMP, "isEtf": "maybe"}], funnel=funnel)
+
+    assert [s["symbol"] for s in passed] == ["AAPL"], "must not fail closed"
+    assert funnel.unrecognized_type_flags == 1, "but the operator must be told"
+
+
+def test_a_string_false_universe_is_not_wiped_out() -> None:
+    """End-to-end shape of the regression: a whole screener page of "false"."""
+    # Tickers must be alphabetic — `_is_valid_ticker` rejects digits, so a
+    # "TIC0"-style symbol would fail the format gate and mask what this asserts.
+    symbols = [f"{a}{b}" for a in "ABCDEFGHIJ" for b in "ABCDE"]
+    rows = [
+        {**AAPL_FMP, "symbol": s, "isEtf": "false", "isFund": "false"}
+        for s in symbols
+    ]
+    assert len(filter_universe(rows)) == 50
+
+
 def test_rows_with_neither_field_are_not_dropped() -> None:
     """Absent flags must not become an accidental reject-everything gate.
 
