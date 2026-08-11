@@ -25,7 +25,7 @@ _SPLIT_RATIO_TOLERANCE = 0.05
 
 
 _TRUE_TOKENS = frozenset({"true", "1", "yes", "y", "t"})
-_FALSE_TOKENS = frozenset({"false", "0", "no", "n", "f", ""})
+_FALSE_TOKENS = frozenset({"false", "0", "no", "n", "f"})
 
 
 def _as_bool(value: object) -> tuple[bool, bool]:
@@ -36,14 +36,18 @@ def _as_bool(value: object) -> tuple[bool, bool]:
     is True. A gate that reads such a flag raw flips to rejecting everything the
     moment the encoding changes.
 
+    ``None`` and ``""`` are NOT false — they are *unknown*. Treating them as a
+    recognised false is how a provider quietly dropping the field would admit
+    products with neither an exclusion nor a warning: the gate would report
+    itself healthy while evaluating nothing. Only an explicit false-like value
+    counts as false.
+
     An unrecognised value returns ``(False, False)`` — do not exclude, but say
     so. For this gate that is the safe direction: wrongly admitting an ETF costs
     one bad candidate, wrongly excluding everything costs the whole day's
     universe. The caller counts the unrecognised ones so the condition surfaces
     in the funnel instead of being absorbed.
     """
-    if value is None:
-        return False, True
     if isinstance(value, bool):
         return value, True
     if isinstance(value, (int, float)) and value in (0, 1):
@@ -55,6 +59,28 @@ def _as_bool(value: object) -> tuple[bool, bool]:
         if token in _FALSE_TOKENS:
             return False, True
     return False, False
+
+
+def _fund_flags(stock: dict) -> tuple[bool, bool, bool]:
+    """Read isEtf/isFund from a row. Returns (is_etf, is_fund, evaluated).
+
+    Whether an absent flag is a problem depends on which provider shaped the
+    row. The Polygon builder always sets ``type`` (to ``""`` for common stock,
+    since its query is already restricted to CS) and never sets these flags —
+    there, absence is correct and the ``type`` field is authoritative. An
+    FMP-shaped row has no ``type`` key at all, so the flags are the only thing
+    standing between an ETF and the universe; absent or empty there means the
+    gate evaluated nothing and must say so.
+    """
+    polygon_shaped = "type" in stock
+
+    is_etf, etf_known = _as_bool(stock.get("isEtf"))
+    is_fund, fund_known = _as_bool(stock.get("isFund"))
+
+    if polygon_shaped and "isEtf" not in stock and "isFund" not in stock:
+        return is_etf, is_fund, True  # `type` carries the decision
+
+    return is_etf, is_fund, etf_known and fund_known
 
 
 def _is_valid_ticker(ticker: str) -> bool:
@@ -217,9 +243,8 @@ def filter_universe(
         # changed encoding — a silent zero-universe run, which is far worse than
         # admitting an ETF. Unrecognised values are counted and reported rather
         # than silently deciding either way.
-        is_etf, etf_known = _as_bool(stock.get("isEtf"))
-        is_fund, fund_known = _as_bool(stock.get("isFund"))
-        if not (etf_known and fund_known):
+        is_etf, is_fund, evaluated = _fund_flags(stock)
+        if not evaluated:
             funnel.unrecognized_type_flags += 1
 
         if any(t in stock_type for t in EXCLUDED_TYPES) or is_etf or is_fund:

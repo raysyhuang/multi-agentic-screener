@@ -93,9 +93,9 @@ def test_truthy_encodings_all_exclude(encoding) -> None:
 
 @pytest.mark.parametrize(
     "encoding",
-    [False, "false", "False", "FALSE", " false ", 0, "0", "no", "", None],
+    [False, "false", "False", "FALSE", " false ", 0, "0", "no"],
 )
-def test_falsey_encodings_never_exclude(encoding) -> None:
+def test_explicit_false_encodings_are_recognised_and_admit(encoding) -> None:
     """The fail-closed risk: `bool("false")` is True.
 
     Reading these flags for raw truthiness would drop EVERY FMP row the day the
@@ -110,13 +110,50 @@ def test_falsey_encodings_never_exclude(encoding) -> None:
     assert funnel.unrecognized_type_flags == 0, f"{encoding!r} should be recognised"
 
 
-def test_unrecognised_encoding_admits_the_row_and_is_counted() -> None:
-    """Unknown shape must not silently decide either way — it must be visible."""
+@pytest.mark.parametrize("encoding", ["maybe", "", "  ", None, 7, [], {}])
+def test_unknown_values_admit_the_row_and_are_counted(encoding) -> None:
+    """Unknown must not masquerade as false.
+
+    `None` and `""` are the ones that matter: if a future FMP schema drops the
+    field or starts sending it empty, treating that as a recognised false would
+    admit every product with neither an exclusion nor a warning — the gate would
+    report itself healthy while evaluating nothing. Second review catch.
+    """
     funnel = FilterFunnel()
-    passed = filter_universe([{**AAPL_FMP, "isEtf": "maybe"}], funnel=funnel)
+    passed = filter_universe([{**AAPL_FMP, "isEtf": encoding}], funnel=funnel)
 
     assert [s["symbol"] for s in passed] == ["AAPL"], "must not fail closed"
     assert funnel.unrecognized_type_flags == 1, "but the operator must be told"
+
+
+def test_fmp_shaped_row_missing_the_flags_entirely_is_unknown() -> None:
+    """The schema-omission regression: no `type`, no flags, nothing evaluated."""
+    row = {k: v for k, v in AAPL_FMP.items() if k not in ("isEtf", "isFund")}
+    funnel = FilterFunnel()
+    passed = filter_universe([row], funnel=funnel)
+
+    assert [s["symbol"] for s in passed] == ["AAPL"], "must not fail closed"
+    assert funnel.unrecognized_type_flags == 1
+
+
+def test_polygon_shaped_row_without_flags_is_not_flagged_unknown() -> None:
+    """Absent flags are correct on the Polygon path — `type` is authoritative.
+
+    The Polygon builder restricts its query to common stock and sets `type` to
+    "" deliberately. Counting those as unknown would fire the warning on every
+    single row of a Polygon-fallback run and drown the real signal.
+    """
+    row = {
+        "symbol": "MSFT",
+        "price": 400.0,
+        "volume": 20_000_000,
+        "exchangeShortName": "NASDAQ",
+        "type": "",
+    }
+    funnel = FilterFunnel()
+
+    assert [s["symbol"] for s in filter_universe([row], funnel=funnel)] == ["MSFT"]
+    assert funnel.unrecognized_type_flags == 0
 
 
 def test_a_string_false_universe_is_not_wiped_out() -> None:
