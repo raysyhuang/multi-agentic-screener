@@ -293,11 +293,20 @@ def _trading_date_et(now: datetime | None = None) -> date:
     return current.date()
 
 
-async def run_morning_pipeline() -> None:
+async def run_morning_pipeline() -> bool:
     """Main daily pipeline — runs at 6:00 AM ET.
 
     Fail-closed: any unhandled exception guarantees a NoTrade DB record
     and Telegram alert rather than a silent abort.
+
+    Returns True if the run completed, False if it fail-closed. Swallowing the
+    exception is deliberate — the record and the alert must both be written —
+    but swallowing it *silently* meant the process exited 0 and the workflow
+    went green. On 2026-08-11 the run that took the book to NoTrade reported
+    `conclusion: success`, and `pipeline-failure-alert.yml` (which fires only on
+    a failed conclusion) stayed quiet on the one day it was needed. The caller
+    decides what to do with the signal; the scheduler keeps running, the one-off
+    CI path exits non-zero.
     """
     import uuid
 
@@ -318,6 +327,7 @@ async def run_morning_pipeline() -> None:
     settings = None
 
     _state: dict = {}
+    fail_closed = False
     try:
         today = _trading_date_et()
         settings = get_settings()
@@ -329,6 +339,7 @@ async def run_morning_pipeline() -> None:
 
         await _run_pipeline_core(today, settings, run_id, start_time, _state=_state)
     except Exception as exc:
+        fail_closed = True
         elapsed = time.monotonic() - start_time
         # A crash before `today` was resolved still needs a date to file under.
         today = today or date.today()
@@ -444,6 +455,32 @@ async def run_morning_pipeline() -> None:
         import gc
         gc.collect()
         _log_memory("run_morning_pipeline_exit")
+
+    # Outside the finally deliberately: returning from a finally block would
+    # discard any exception raised during cleanup.
+    return not fail_closed
+
+
+async def scheduled_morning_pipeline() -> None:
+    """Scheduler-facing wrapper: turn a fail-closed run into a job error.
+
+    APScheduler treats a normal return as a successful execution, so registering
+    `run_morning_pipeline` directly meant a fail-closed run never reached the
+    EVENT_JOB_ERROR listener and its alert stayed silent — the long-running
+    equivalent of the exit-0 problem this contract exists to close. Raising here
+    surfaces it; APScheduler logs the error, fires the listener, and carries on
+    with future jobs.
+
+    Only a literal `False` raises. `run_afternoon_check` and anything else
+    returning `None` must not be treated as failure — those already propagate
+    their own exceptions, and coercing `None` would make every healthy run an
+    alert.
+    """
+    if await run_morning_pipeline() is False:
+        raise RuntimeError(
+            "Morning pipeline fail-closed — a NoTrade record and alert were "
+            "written; see the governance artifact for this run"
+        )
 
 
 async def _check_paper_gate(settings) -> bool:
@@ -2410,7 +2447,7 @@ def start_scheduler() -> None:
 
     # Morning pipeline
     scheduler.add_job(
-        run_morning_pipeline,
+        scheduled_morning_pipeline,
         CronTrigger(
             hour=settings.morning_run_hour,
             minute=settings.morning_run_minute,
@@ -2491,7 +2528,14 @@ async def main():
                 return
 
     if "--run-now" in sys.argv:
-        await run_morning_pipeline()
+        # Mirrors src.worker: a fail-closed run must not exit 0. This is the
+        # documented direct entrypoint, so leaving it silent would keep the
+        # contract true only for the Actions route and false for anyone
+        # invoking the module — including a human checking after an incident.
+        # The record and alert are already written by the time this returns.
+        if await run_morning_pipeline() is False:
+            logger.error("Morning pipeline fail-closed; exiting non-zero")
+            sys.exit(3)
         return
 
     if "--check-now" in sys.argv:

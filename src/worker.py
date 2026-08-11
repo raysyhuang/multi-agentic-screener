@@ -15,7 +15,8 @@ import sys
 from src.config import get_settings
 from src.db.session import init_db
 from src.main import (
-    run_morning_pipeline, run_afternoon_check, _setup_logging,
+    run_morning_pipeline, run_afternoon_check, scheduled_morning_pipeline,
+    _setup_logging,
 )
 from src.output.telegram import send_alert
 
@@ -46,7 +47,20 @@ async def start_worker() -> None:
     for flag, job in one_off_jobs.items():
         if flag in sys.argv:
             logger.info("Running one-off job %s", flag)
-            await job()
+            ok = await job()
+            if ok is False:
+                # The morning pipeline fails closed: it catches the exception,
+                # writes the NoTrade record and alerts, then returns. That kept
+                # the process exit code at 0, so the workflow went green and
+                # `pipeline-failure-alert.yml` — which fires only on a failed
+                # conclusion — stayed silent. On 2026-08-11 the run that took
+                # the book to NoTrade reported success. Surface it here, after
+                # the fail-closed record has already been written.
+                logger.error(
+                    "One-off job %s fail-closed; exiting non-zero so the run is "
+                    "visible as failed", flag,
+                )
+                sys.exit(3)
             logger.info("One-off job %s complete; exiting worker", flag)
             return
 
@@ -83,7 +97,7 @@ async def start_worker() -> None:
 
     # Morning pipeline — 1h grace so R14 restarts don't silently skip the run
     scheduler.add_job(
-        run_morning_pipeline,
+        scheduled_morning_pipeline,
         CronTrigger(
             hour=settings.morning_run_hour,
             minute=settings.morning_run_minute,
