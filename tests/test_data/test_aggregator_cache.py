@@ -123,7 +123,9 @@ async def test_cache_disabled_bypasses(aggregator, ohlcv_df):
     df = await aggregator.get_ohlcv("AAPL", date(2024, 1, 1), date(2024, 1, 5))
 
     assert not df.empty
-    aggregator._cache.get.assert_not_called()
+    # The OHLCV path reads get_with_source, so asserting on the legacy `get`
+    # would pass even if the cache were being consulted.
+    aggregator._cache.get_with_source.assert_not_called()
     aggregator._cache.put.assert_not_called()
 
 

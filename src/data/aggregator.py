@@ -83,6 +83,13 @@ class DataAggregator:
         self._universe_cache_hit: bool = False
         self._macro_source: str = ""
         self._macro_cache_hit: bool = False
+        # Latched: a provider whose breaker opened at ANY point in the run stays
+        # here. The breaker's own cooldown is 5 minutes, and scoring runs longer
+        # than that, so reading current state when the record is written would
+        # report an empty set for a run that spent its universe fetch bypassing
+        # Polygon entirely — a disclosure field denying the outage it exists to
+        # disclose.
+        self._circuits_opened: set[str] = set()
 
     async def get_ohlcv(
         self,
@@ -126,8 +133,10 @@ class DataAggregator:
                         return df
                 except Exception as e:
                     self._circuit_breaker.record_failure("polygon")
+                    self._latch_circuit("polygon")
                     logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
             else:
+                self._circuits_opened.add("polygon")
                 logger.debug("Polygon circuit open, skipping for %s", ticker)
 
             if not self._circuit_breaker.is_open("fmp"):
@@ -141,8 +150,10 @@ class DataAggregator:
                         return df
                 except Exception as e:
                     self._circuit_breaker.record_failure("fmp")
+                    self._latch_circuit("fmp")
                     logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
             else:
+                self._circuits_opened.add("fmp")
                 logger.debug("FMP circuit open, skipping for %s", ticker)
 
             try:
@@ -160,6 +171,17 @@ class DataAggregator:
                 self._ohlcv_failures.append(ticker)
                 self._ohlcv_ticker_source[ticker] = ""
                 return pd.DataFrame()
+
+    def _latch_circuit(self, provider: str) -> None:
+        """Record that this failure tripped the breaker, at the moment it did.
+
+        Checked immediately after `record_failure` because that is the only
+        instant the transition is observable — the cooldown expires well inside
+        a single run, so asking later gets "closed" for a provider that was cut
+        out of most of it.
+        """
+        if self._circuit_breaker.is_open(provider):
+            self._circuits_opened.add(provider)
 
     def _store_ohlcv(
         self,
@@ -262,9 +284,9 @@ class DataAggregator:
             # eligibility, and its SPY/QQQ bars are folded into ohlcv_by_source.
             "macro_source": self._macro_source,
             "macro_cache_hit": self._macro_cache_hit,
-            "circuits_open": sorted(
-                p for p in ("polygon", "fmp") if self._circuit_breaker.is_open(p)
-            ),
+            # Latched across the run, not sampled at report time — see
+            # _circuits_opened. Named for what it actually asserts.
+            "circuits_opened_during_run": sorted(self._circuits_opened),
         }
 
     def reset_data_provenance(self) -> None:
@@ -283,6 +305,7 @@ class DataAggregator:
         self._universe_cache_hit = False
         self._macro_source = ""
         self._macro_cache_hit = False
+        self._circuits_opened.clear()
 
     async def get_universe(self) -> list[dict]:
         """Build initial universe from FMP screener, falling back to Polygon."""
@@ -290,11 +313,18 @@ class DataAggregator:
             key = DataCache.build_key("universe", "", "screener")
             cached, cached_source = self._cache.get_with_source(key)
             if cached is not None:
-                # "cache" is not an answer to "where did the universe come
-                # from" — the stored row knows whether FMP or Polygon built it.
-                self._universe_source = cached_source or "unknown"
-                self._universe_cache_hit = True
-                return json.loads(cached)
+                try:
+                    universe = json.loads(cached)
+                except Exception as e:
+                    # Corrupt cached JSON is a miss, not a pipeline failure —
+                    # the same tolerance the OHLCV path already has.
+                    logger.warning("Universe cache deserialization failed, treating as miss: %s", e)
+                else:
+                    # "cache" is not an answer to "where did the universe come
+                    # from" — the stored row knows whether FMP or Polygon built it.
+                    self._universe_source = cached_source or "unknown"
+                    self._universe_cache_hit = True
+                    return universe
 
         # Try FMP first
         try:
@@ -639,7 +669,13 @@ class DataAggregator:
             cache_payload["spy_prices"] = df_to_json(spy_df)
             cache_payload["qqq_prices"] = df_to_json(qqq_df)
             cache_payload["_benchmark_provenance"] = benchmark_provenance
-            self._cache.put(key, json.dumps(cache_payload), TTL_MACRO, source="macro", endpoint="snapshot")
+            try:
+                self._cache.put(key, json.dumps(cache_payload), TTL_MACRO, source="macro", endpoint="snapshot")
+            except Exception as e:
+                # Last of the "cache bookkeeping decides the pipeline outcome"
+                # shapes: an unserializable macro payload would have thrown out
+                # of a macro fetch that had already succeeded.
+                logger.warning("Macro cache write failed: %s", e)
 
         return macro
 

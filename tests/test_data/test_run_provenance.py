@@ -288,6 +288,87 @@ async def test_fmp_universe_survives_a_failed_cache_write(agg, monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_an_opened_circuit_survives_its_own_cooldown(agg, monkeypatch) -> None:
+    """The disclosure field must not deny the outage it exists to disclose.
+
+    The breaker's cooldown is 5 minutes; scoring and downstream stages run
+    longer than that. Sampling `is_open()` when the governance record is written
+    reports an empty set for a run that spent its entire universe fetch
+    bypassing Polygon. Here the breaker is opened, then the cooldown is expired
+    outright, and the run provenance must still name Polygon.
+    """
+
+    async def boom(*a, **k):
+        raise RuntimeError("polygon down")
+
+    async def ok(*a, **k):
+        return _bars()
+
+    monkeypatch.setattr(agg.polygon, "get_ohlcv", boom)
+    monkeypatch.setattr(agg.fmp, "get_daily_prices", ok)
+
+    # Trip it: the breaker opens after `_threshold` consecutive failures.
+    for i in range(agg._circuit_breaker._threshold):
+        await agg.get_ohlcv(f"TIC{chr(65 + i)}", date(2026, 1, 1), date(2026, 8, 10))
+
+    assert agg._circuit_breaker.is_open("polygon"), "precondition: breaker tripped"
+    assert agg.get_data_provenance()["circuits_opened_during_run"] == ["polygon"]
+
+    # Now let the cooldown lapse, as it would during a long scoring stage.
+    agg._circuit_breaker._get("polygon").open_until = 0.0
+    assert not agg._circuit_breaker.is_open("polygon"), "precondition: cooled down"
+
+    assert agg.get_data_provenance()["circuits_opened_during_run"] == ["polygon"], (
+        "the outage happened; a later sample of the breaker cannot unhappen it"
+    )
+
+
+@pytest.mark.asyncio
+async def test_a_bypassed_provider_is_latched_even_without_a_local_failure(
+    agg, monkeypatch
+) -> None:
+    """A breaker already open on entry still means this run bypassed it."""
+
+    async def ok(*a, **k):
+        return _bars()
+
+    monkeypatch.setattr(agg.fmp, "get_daily_prices", ok)
+    monkeypatch.setattr(agg._circuit_breaker, "is_open", lambda p: p == "polygon")
+
+    await agg.get_ohlcv("AAPL", date(2026, 1, 1), date(2026, 8, 10))
+
+    prov = agg.get_data_provenance()
+    assert prov["circuits_opened_during_run"] == ["polygon"]
+    assert prov["ohlcv_by_source"] == {"fmp": 1}
+
+
+@pytest.mark.asyncio
+async def test_a_clean_run_reports_no_circuits(agg, monkeypatch) -> None:
+    async def ok(*a, **k):
+        return _bars()
+
+    monkeypatch.setattr(agg.polygon, "get_ohlcv", ok)
+    await agg.get_ohlcv("AAPL", date(2026, 1, 1), date(2026, 8, 10))
+
+    assert agg.get_data_provenance()["circuits_opened_during_run"] == []
+
+
+@pytest.mark.asyncio
+async def test_latched_circuits_are_scoped_to_the_run(agg, monkeypatch) -> None:
+    monkeypatch.setattr(agg._circuit_breaker, "is_open", lambda p: p == "polygon")
+
+    async def ok(*a, **k):
+        return _bars()
+
+    monkeypatch.setattr(agg.fmp, "get_daily_prices", ok)
+    await agg.get_ohlcv("AAPL", date(2026, 1, 1), date(2026, 8, 10))
+    assert agg.get_data_provenance()["circuits_opened_during_run"] == ["polygon"]
+
+    agg.reset_data_provenance()
+    assert agg.get_data_provenance()["circuits_opened_during_run"] == []
+
+
+@pytest.mark.asyncio
 async def test_universe_cache_hit_reports_the_origin_provider(agg, monkeypatch) -> None:
     """"cache" is not an answer to "where did the universe come from"."""
     agg._cache_enabled = True

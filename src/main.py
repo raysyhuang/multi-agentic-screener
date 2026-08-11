@@ -1951,13 +1951,13 @@ async def _run_pipeline_core(
     # the universe go" without reading the whole log.
     logger.info(
         "Run provenance: universe=%s ohlcv_by_source=%s cache_hits=%d failed=%d "
-        "circuits_open=%s | "
+        "circuits_opened=%s | "
         "funnel %d raw → %d filtered → %d qualified → %d scored → %d approved",
         provenance["universe_source"],
         provenance["ohlcv_by_source"],
         provenance["ohlcv_cache_hits"],
         len(provenance["ohlcv_failed_tickers"]),
-        provenance["circuits_open"] or "none",
+        provenance["circuits_opened_during_run"] or "none",
         universe_funnel.total_input,
         universe_funnel.passed,
         ohlcv_funnel.passed,
