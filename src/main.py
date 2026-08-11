@@ -625,6 +625,10 @@ async def _run_pipeline_core(
     # for the regime and eligibility decisions, and resetting after that dropped
     # the provenance for the very data those decisions rest on.
     aggregator.reset_data_provenance()
+    # Bound to an empty dict from the start so any path reaching the governance
+    # record without passing the Step 4 teardown reports an empty provenance
+    # rather than raising NameError.
+    data_provenance: dict = {}
     if _state is not None:
         _state["aggregator"] = aggregator
 
@@ -1031,6 +1035,14 @@ async def _run_pipeline_core(
             )
         except Exception as e:
             logger.warning("PEAD earnings-calendar fetch failed (no PEAD signals this run): %s", e)
+
+    # Snapshot provenance BEFORE the aggregator is released. The governance
+    # record is written ~900 lines below, long after this teardown, and reading
+    # it from the aggregator there raised
+    # `AttributeError: 'NoneType' object has no attribute 'get_data_provenance'`
+    # — a fail-closed NoTrade for the whole book. All fetching is finished by
+    # this point, so the snapshot is complete.
+    data_provenance = aggregator.get_data_provenance()
 
     # Release the aggregator — no longer needed after Step 4
     aggregator.close()
@@ -1944,20 +1956,24 @@ async def _run_pipeline_core(
         picks_approved=len(pipeline_result.approved),
         duration_s=elapsed,
     )
-    provenance = aggregator.get_data_provenance()
+    # Snapshotted before the Step 4 teardown, not read from the aggregator —
+    # it no longer exists here. Read defensively: a diagnostic must never be the
+    # reason a run fails closed, which is exactly what happened when this line
+    # dereferenced the released aggregator.
+    provenance = data_provenance
     gov.set_data_provenance(provenance)
     gov.set_funnels(universe=universe_funnel, ohlcv=ohlcv_funnel)
     # One line that answers "what data did this run actually use, and where did
     # the universe go" without reading the whole log.
     logger.info(
         "Run provenance: universe=%s ohlcv_by_source=%s cache_hits=%d failed=%d "
-        "circuits_opened=%s | "
+        "circuits_opened_during_run=%s | "
         "funnel %d raw → %d filtered → %d qualified → %d scored → %d approved",
-        provenance["universe_source"],
-        provenance["ohlcv_by_source"],
-        provenance["ohlcv_cache_hits"],
-        len(provenance["ohlcv_failed_tickers"]),
-        provenance["circuits_opened_during_run"] or "none",
+        provenance.get("universe_source", "unknown"),
+        provenance.get("ohlcv_by_source", {}),
+        provenance.get("ohlcv_cache_hits", 0),
+        len(provenance.get("ohlcv_failed_tickers", [])),
+        provenance.get("circuits_opened_during_run") or "none",
         universe_funnel.total_input,
         universe_funnel.passed,
         ohlcv_funnel.passed,
