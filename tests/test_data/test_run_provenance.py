@@ -12,6 +12,7 @@ These tests pin the live-path counterpart.
 
 from __future__ import annotations
 
+import json
 from datetime import date
 
 import pandas as pd
@@ -189,6 +190,93 @@ async def test_bulk_task_exception_names_the_ticker(agg, monkeypatch) -> None:
 
     assert all(df.empty for df in out.values())
     assert agg.get_data_provenance()["ohlcv_failed_tickers"] == ["AAPL", "MSFT"]
+
+
+@pytest.mark.asyncio
+async def test_universe_cache_hit_reports_the_origin_provider(agg, monkeypatch) -> None:
+    """"cache" is not an answer to "where did the universe come from"."""
+    agg._cache_enabled = True
+    monkeypatch.setattr(
+        agg._cache, "get_with_source", lambda key: (json.dumps([{"symbol": "AAPL"}]), "fmp")
+    )
+
+    assert await agg.get_universe() == [{"symbol": "AAPL"}]
+
+    prov = agg.get_data_provenance()
+    assert prov["universe_source"] == "fmp"
+    assert prov["universe_cache_hit"] is True
+
+
+@pytest.mark.asyncio
+async def test_cached_macro_still_attributes_the_benchmark_bars(agg, monkeypatch) -> None:
+    """SPY/QQQ drive regime — a cached snapshot must not erase where they came from.
+
+    Returning the payload early skips the provenance-aware OHLCV path entirely,
+    so without rehydration the record would claim no benchmark data was used
+    while the regime decision rested on exactly that data.
+    """
+    agg._cache_enabled = True
+    payload = {
+        "vix": 15.0,
+        "spy_prices": df_to_json(_bars()),
+        "qqq_prices": df_to_json(_bars()),
+        "_benchmark_provenance": {"yfinance": 2},
+    }
+    monkeypatch.setattr(agg._cache, "get", lambda key: json.dumps(payload))
+
+    macro = await agg.get_macro_context()
+
+    assert not macro["spy_prices"].empty
+    assert "_benchmark_provenance" not in macro, "internal key must not leak out"
+
+    prov = agg.get_data_provenance()
+    assert prov["macro_source"] == "cache"
+    assert prov["macro_cache_hit"] is True
+    assert prov["ohlcv_by_source"] == {"yfinance": 2}
+
+
+@pytest.mark.asyncio
+async def test_legacy_macro_snapshot_without_attribution_is_marked_unknown(
+    agg, monkeypatch
+) -> None:
+    """Snapshots cached before the field existed: unknown, never silent."""
+    agg._cache_enabled = True
+    payload = {
+        "vix": 15.0,
+        "spy_prices": df_to_json(_bars()),
+        "qqq_prices": df_to_json(_bars()),
+    }
+    monkeypatch.setattr(agg._cache, "get", lambda key: json.dumps(payload))
+
+    await agg.get_macro_context()
+
+    assert agg.get_data_provenance()["ohlcv_by_source"] == {"unknown": 2}
+
+
+@pytest.mark.asyncio
+async def test_live_macro_records_its_benchmarks_and_caches_them(agg, monkeypatch) -> None:
+    async def ok(*a, **k):
+        return _bars()
+
+    async def snapshot():
+        return {"vix": 15.0}
+
+    stored: dict = {}
+    agg._cache_enabled = True
+    monkeypatch.setattr(agg._cache, "get", lambda key: None)
+    monkeypatch.setattr(
+        agg._cache, "put", lambda key, data, ttl, **kw: stored.update(json.loads(data))
+    )
+    monkeypatch.setattr(agg.polygon, "get_ohlcv", ok)
+    monkeypatch.setattr(agg.fred, "get_macro_snapshot", snapshot)
+
+    await agg.get_macro_context()
+
+    prov = agg.get_data_provenance()
+    assert prov["macro_source"] == "live"
+    assert prov["macro_cache_hit"] is False
+    assert prov["ohlcv_by_source"] == {"polygon": 2}, "SPY + QQQ"
+    assert stored["_benchmark_provenance"] == {"polygon": 2}, "stored for the next hit"
 
 
 @pytest.mark.asyncio

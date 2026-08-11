@@ -73,6 +73,9 @@ class DataAggregator:
         self._ohlcv_cache_hits: int = 0
         self._universe_source: str = ""
         self._universe_errors: list[str] = []
+        self._universe_cache_hit: bool = False
+        self._macro_source: str = ""
+        self._macro_cache_hit: bool = False
 
     async def get_ohlcv(
         self,
@@ -215,7 +218,12 @@ class DataAggregator:
             # provider failed, which is a different fact and must not read as
             # "not yet attempted".
             "universe_source": self._universe_source,
+            "universe_cache_hit": self._universe_cache_hit,
             "universe_errors": list(self._universe_errors),
+            # "live" or "cache" — a cached snapshot still drives regime and
+            # eligibility, and its SPY/QQQ bars are folded into ohlcv_by_source.
+            "macro_source": self._macro_source,
+            "macro_cache_hit": self._macro_cache_hit,
             "circuits_open": sorted(
                 p for p in ("polygon", "fmp") if self._circuit_breaker.is_open(p)
             ),
@@ -233,14 +241,20 @@ class DataAggregator:
         self._ohlcv_cache_hits = 0
         self._universe_source = ""
         self._universe_errors.clear()
+        self._universe_cache_hit = False
+        self._macro_source = ""
+        self._macro_cache_hit = False
 
     async def get_universe(self) -> list[dict]:
         """Build initial universe from FMP screener, falling back to Polygon."""
         if self._cache_enabled:
             key = DataCache.build_key("universe", "", "screener")
-            cached = self._cache.get(key)
+            cached, cached_source = self._cache.get_with_source(key)
             if cached is not None:
-                self._universe_source = "cache"
+                # "cache" is not an answer to "where did the universe come
+                # from" — the stored row knows whether FMP or Polygon built it.
+                self._universe_source = cached_source or "unknown"
+                self._universe_cache_hit = True
                 return json.loads(cached)
 
         # Try FMP first
@@ -523,6 +537,15 @@ class DataAggregator:
                     # Restore DataFrames from serialized form
                     payload["spy_prices"] = json_to_df(payload["spy_prices"])
                     payload["qqq_prices"] = json_to_df(payload["qqq_prices"])
+                    # A cached macro snapshot returns without touching the
+                    # provenance-aware OHLCV path, so the SPY/QQQ bars that
+                    # drive the regime and eligibility decisions would leave no
+                    # trace — the record would claim no benchmark data was used
+                    # at all. Rehydrate the provenance stored alongside them.
+                    self._macro_source = "cache"
+                    self._rehydrate_benchmark_provenance(
+                        payload.pop("_benchmark_provenance", None)
+                    )
                     return payload
                 except Exception as e:
                     logger.warning("Macro cache deserialization failed, treating as miss: %s", e)
@@ -537,8 +560,13 @@ class DataAggregator:
         spy_task = self.get_ohlcv("SPY", from_date, to_date)
         qqq_task = self.get_ohlcv("QQQ", from_date, to_date)
 
+        # Snapshot the counter so the benchmark bars' provenance can be stored
+        # with the snapshot and restored on a later hit.
+        before = Counter(self._ohlcv_sources)
         spy_df, qqq_df = await asyncio.gather(spy_task, qqq_task)
+        benchmark_provenance = dict(self._ohlcv_sources - before)
 
+        self._macro_source = "live"
         macro["spy_prices"] = spy_df
         macro["qqq_prices"] = qqq_df
 
@@ -547,9 +575,27 @@ class DataAggregator:
             cache_payload = {**macro}
             cache_payload["spy_prices"] = df_to_json(spy_df)
             cache_payload["qqq_prices"] = df_to_json(qqq_df)
+            cache_payload["_benchmark_provenance"] = benchmark_provenance
             self._cache.put(key, json.dumps(cache_payload), TTL_MACRO, source="macro", endpoint="snapshot")
 
         return macro
+
+    def _rehydrate_benchmark_provenance(self, stored: dict | None) -> None:
+        """Restore SPY/QQQ attribution from a cached macro snapshot.
+
+        A snapshot written before this field existed has no attribution to
+        restore. Record the two benchmarks as "unknown" rather than omitting
+        them: the run genuinely did use benchmark data, and silence would read
+        as "none was used" — the same ambiguity fixed for the universe source.
+        """
+        self._macro_cache_hit = True
+        if stored:
+            for provider, count in stored.items():
+                self._ohlcv_sources[provider] += count
+            self._ohlcv_cache_hits += sum(stored.values())
+        else:
+            self._ohlcv_sources["unknown"] += 2  # SPY + QQQ
+            self._ohlcv_cache_hits += 2
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         """Earnings calendar for catalyst detection."""

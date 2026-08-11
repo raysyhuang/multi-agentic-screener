@@ -176,7 +176,9 @@ async def test_macro_cache_preserves_dataframes(aggregator):
 @pytest.mark.asyncio
 async def test_universe_cache_hit(aggregator):
     cached = json.dumps([{"symbol": "AAPL"}, {"symbol": "MSFT"}])
-    aggregator._cache.get.return_value = cached
+    # The universe path reads `get_with_source` so a hit is attributed to the
+    # provider that built it rather than to "cache".
+    aggregator._cache.get_with_source.return_value = (cached, "fmp")
 
     result = await aggregator.get_universe()
 
