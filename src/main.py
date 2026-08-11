@@ -2531,7 +2531,14 @@ async def main():
                 return
 
     if "--run-now" in sys.argv:
-        await run_morning_pipeline()
+        # Mirrors src.worker: a fail-closed run must not exit 0. This is the
+        # documented direct entrypoint, so leaving it silent would keep the
+        # contract true only for the Actions route and false for anyone
+        # invoking the module — including a human checking after an incident.
+        # The record and alert are already written by the time this returns.
+        if await run_morning_pipeline() is False:
+            logger.error("Morning pipeline fail-closed; exiting non-zero")
+            sys.exit(3)
         return
 
     if "--check-now" in sys.argv:
