@@ -302,33 +302,53 @@ async def run_morning_pipeline() -> None:
     import uuid
 
     start_time = time.monotonic()
-    today = _trading_date_et()
-    settings = get_settings()
     run_id = uuid.uuid4().hex[:12]
 
     # Attach run_id to all log records for this pipeline execution
     run_id_filter = RunIDFilter(run_id)
     logging.getLogger().addFilter(run_id_filter)
 
-    logger.info("=" * 60)
-    logger.info("Starting morning pipeline for %s (run_id=%s)", today, run_id)
-    logger.info("Trading mode: %s", settings.trading_mode)
-    logger.info("=" * 60)
+    # Resolved inside the try below, but bound here so the failure handler can
+    # rely on them existing. `_trading_date_et()` and `get_settings()` were
+    # previously OUTSIDE the try, so a bad TZ database or an unparseable .env
+    # escaped the fail-closed path entirely — no DB record, no alert, the run
+    # simply vanished. The one class of failure most likely to hit every run at
+    # once was the one class that produced no evidence.
+    today: date | None = None
+    settings = None
 
     _state: dict = {}
     try:
+        today = _trading_date_et()
+        settings = get_settings()
+
+        logger.info("=" * 60)
+        logger.info("Starting morning pipeline for %s (run_id=%s)", today, run_id)
+        logger.info("Trading mode: %s", settings.trading_mode)
+        logger.info("=" * 60)
+
         await _run_pipeline_core(today, settings, run_id, start_time, _state=_state)
     except Exception as exc:
         elapsed = time.monotonic() - start_time
+        # A crash before `today` was resolved still needs a date to file under.
+        today = today or date.today()
         logger.exception("PIPELINE FAILED — fail-closed with NoTrade (run_id=%s): %s", run_id, exc)
 
-        # Finalize governance context if it was created (captures exception)
+        # Finalize the governance context, synthesizing one if the crash landed
+        # before the core created it. `_check_paper_gate()` and the DB setup
+        # ahead of it are fallible, so "governance exists on every crash" was
+        # not true — those failures produced a final_output artifact and no
+        # governance record at all. A synthesized record carries the run id,
+        # date and exception rather than nothing.
         gov = _state.get("gov")
-        if gov:
-            try:
-                gov.__exit__(type(exc), exc, exc.__traceback__)
-            except Exception:
-                logger.error("Failed to finalize governance context on failure")
+        if gov is None:
+            gov = GovernanceContext(run_id=run_id, run_date=str(today))
+            gov.__enter__()
+            gov.add_flag("governance_synthesized_after_early_crash")
+        try:
+            gov.__exit__(type(exc), exc, exc.__traceback__)
+        except Exception:
+            logger.error("Failed to finalize governance context on failure")
 
         # Guarantee a DailyRun + NoTrade artifact in DB
         try:
@@ -368,14 +388,33 @@ async def run_morning_pipeline() -> None:
                 # run left no regime, provenance, funnels or flags — discarding
                 # the diagnostic record precisely on the runs that need one. The
                 # record is partial by definition here; partial beats absent.
-                if gov is not None:
+                #
+                # UPSERT, not append. A crash AFTER the core already wrote its
+                # governance: success artifact would otherwise leave two rows
+                # for the same run with opposite statuses and no uniqueness
+                # constraint to arbitrate — a consumer reading "did this run
+                # succeed" would get whichever it happened to select. The
+                # failure record is the truthful one, so it replaces.
+                existing_gov = (await session.execute(
+                    select(PipelineArtifact).where(
+                        PipelineArtifact.run_id == run_id,
+                        PipelineArtifact.stage == "governance",
+                    )
+                )).scalars().all()
+                crash_error = [{"code": "PIPELINE_CRASH", "message": str(exc)}]
+                if existing_gov:
+                    for row in existing_gov:
+                        row.status = StageStatus.FAILED.value
+                        row.payload = _json_safe(gov.record.to_dict())
+                        row.errors = crash_error
+                else:
                     session.add(PipelineArtifact(
                         run_id=run_id,
                         run_date=today,
                         stage="governance",
                         status=StageStatus.FAILED.value,
                         payload=_json_safe(gov.record.to_dict()),
-                        errors=[{"code": "PIPELINE_CRASH", "message": str(exc)}],
+                        errors=crash_error,
                     ))
         except Exception as db_exc:
             logger.error("Failed to write fail-closed record: %s", db_exc)
