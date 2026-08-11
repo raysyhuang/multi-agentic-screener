@@ -17,11 +17,30 @@ the fail-closed NoTrade here.
 
 from __future__ import annotations
 
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, MagicMock
 
 import pytest
 
 from src import main as main_mod
+
+
+@pytest.fixture
+def worker_without_key_validation(monkeypatch):
+    """Stub the worker's startup key check.
+
+    `start_worker()` calls `settings.validate_keys_for_mode()`, which passes on
+    a developer machine holding a populated `.env` and raises in CI where none
+    exists — so these tests would pass locally and fail on the runner. Same
+    `.env`-precedence trap that made "TELEGRAM_BOT_TOKEN unset" an unreliable
+    guarantee on the VPS mirror.
+    """
+    import src.worker as worker_mod
+
+    settings = MagicMock()
+    settings.validate_keys_for_mode.return_value = None
+    monkeypatch.setattr(worker_mod, "get_settings", lambda: settings)
+    monkeypatch.setattr(worker_mod, "init_db", AsyncMock())
+    return worker_mod
 
 
 @pytest.mark.asyncio
@@ -76,12 +95,13 @@ async def test_a_fail_closed_run_reports_false(monkeypatch) -> None:
 
 
 @pytest.mark.asyncio
-async def test_the_one_off_worker_exits_non_zero_on_fail_closed(monkeypatch) -> None:
+async def test_the_one_off_worker_exits_non_zero_on_fail_closed(
+    monkeypatch, worker_without_key_validation
+) -> None:
     """This is what turns the workflow red and fires the failure alert."""
-    import src.worker as worker_mod
+    worker_mod = worker_without_key_validation
 
     monkeypatch.setattr(worker_mod.sys, "argv", ["worker", "--run-now"])
-    monkeypatch.setattr(worker_mod, "init_db", AsyncMock())
     monkeypatch.setattr(worker_mod, "run_morning_pipeline", AsyncMock(return_value=False))
 
     with pytest.raises(SystemExit) as exc:
@@ -91,19 +111,22 @@ async def test_the_one_off_worker_exits_non_zero_on_fail_closed(monkeypatch) -> 
 
 
 @pytest.mark.asyncio
-async def test_the_one_off_worker_exits_zero_on_success(monkeypatch) -> None:
+async def test_the_one_off_worker_exits_zero_on_success(
+    monkeypatch, worker_without_key_validation
+) -> None:
     """The happy path must stay quiet — no false alarms on healthy runs."""
-    import src.worker as worker_mod
+    worker_mod = worker_without_key_validation
 
     monkeypatch.setattr(worker_mod.sys, "argv", ["worker", "--run-now"])
-    monkeypatch.setattr(worker_mod, "init_db", AsyncMock())
     monkeypatch.setattr(worker_mod, "run_morning_pipeline", AsyncMock(return_value=True))
 
     await worker_mod.start_worker()  # returns normally, no SystemExit
 
 
 @pytest.mark.asyncio
-async def test_a_job_returning_none_is_not_treated_as_failure(monkeypatch) -> None:
+async def test_a_job_returning_none_is_not_treated_as_failure(
+    monkeypatch, worker_without_key_validation
+) -> None:
     """`run_afternoon_check` returns None and raises on error — leave it alone.
 
     Testing `if ok is False` rather than `if not ok` matters: the afternoon
@@ -111,10 +134,9 @@ async def test_a_job_returning_none_is_not_treated_as_failure(monkeypatch) -> No
     and exits non-zero. Treating its `None` as failure would make every healthy
     afternoon run red.
     """
-    import src.worker as worker_mod
+    worker_mod = worker_without_key_validation
 
     monkeypatch.setattr(worker_mod.sys, "argv", ["worker", "--check-now"])
-    monkeypatch.setattr(worker_mod, "init_db", AsyncMock())
     monkeypatch.setattr(worker_mod, "run_afternoon_check", AsyncMock(return_value=None))
 
     await worker_mod.start_worker()  # must not raise SystemExit
