@@ -146,3 +146,56 @@ def test_selection_behaviour_is_unchanged_by_recording() -> None:
     )
 
     assert [p.ticker for p in without.approved] == [p.ticker for p in with_ledger.approved]
+
+
+def test_correlation_drops_record_rank_and_counterpart() -> None:
+    """A correlation row with NULL rank and NULL counterpart answers nothing.
+
+    Both facts exist inside the filter at decision time and were previously
+    only logged. A drop at rank 2 is a materially different fact from one at
+    rank 9, and "correlated with what?" is the whole content of the decision.
+    """
+    import numpy as np
+    import pandas as pd
+
+    from src.signals.ranker import filter_correlated_picks
+
+    # Two tickers that move together, one that does not.
+    rng = np.random.default_rng(7)
+    base = rng.normal(0, 0.02, 60)
+    price_data = {
+        "LEAD": pd.DataFrame({"close": 100 * np.cumprod(1 + base)}),
+        "TWIN": pd.DataFrame({"close": 100 * np.cumprod(1 + base)}),  # identical
+        "INDY": pd.DataFrame({"close": 100 * np.cumprod(1 + rng.normal(0, 0.02, 60))}),
+    }
+    ranked = [
+        _Candidate("LEAD", "sniper"),
+        _Candidate("TWIN", "sniper"),
+        _Candidate("INDY", "sniper"),
+    ]
+
+    rejections: dict = {}
+    kept = filter_correlated_picks(ranked, price_data, rejections=rejections)
+
+    assert [c.ticker for c in kept] == ["LEAD", "INDY"], "TWIN should be dropped"
+    assert "TWIN" in rejections, "the drop must be reported, not only logged"
+    assert rejections["TWIN"]["correlated_with"] == "LEAD"
+    assert rejections["TWIN"]["pre_filter_rank"] == 2
+    assert rejections["TWIN"]["correlation"] > 0.9
+
+
+def test_the_rejections_out_parameter_is_optional() -> None:
+    """Existing callers pass none and must behave identically."""
+    import numpy as np
+    import pandas as pd
+
+    from src.signals.ranker import filter_correlated_picks
+
+    rng = np.random.default_rng(3)
+    price_data = {
+        t: pd.DataFrame({"close": 100 * np.cumprod(1 + rng.normal(0, 0.02, 60))})
+        for t in ("AAA", "BBB")
+    }
+    ranked = [_Candidate("AAA", "sniper"), _Candidate("BBB", "sniper")]
+
+    assert filter_correlated_picks(ranked, price_data) is not None

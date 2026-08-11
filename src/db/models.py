@@ -15,7 +15,6 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
-    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -70,13 +69,14 @@ class Candidate(Base):
     #
     # Stage is kept separate from reason deliberately: a single free-text
     # reason blurs facts that need counting apart.
-    selection_stage_reached: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    # Nullable with NO server default, deliberately. A NOT NULL DEFAULT false
+    # would rewrite every legacy row as "observed, and not selected" when the
+    # truth is that nothing was recorded. Unknown must stay unknown — the same
+    # confusion that made an empty attestation indistinguishable from a missing
+    # one. New code writes True/False explicitly; old rows remain NULL.
+    selection_stage_reached: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     strategy_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
-    selected: Mapped[bool] = mapped_column(
-        Boolean, nullable=False, server_default=text("false")
-    )
+    selected: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
     # eligibility | ranking | quota | correlation | capacity | execution
     rejection_stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
     # capacity_censored | below_quota | correlation_filtered | ...
@@ -87,6 +87,7 @@ class Candidate(Base):
     slots_available: Mapped[int | None] = mapped_column(Integer, nullable=True)
     # The already-accepted ticker this candidate correlated with, when dropped.
     correlated_with: Mapped[str | None] = mapped_column(String(10), nullable=True)
+    correlation: Mapped[float | None] = mapped_column(Float, nullable=True)
 
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()

@@ -26,25 +26,27 @@ depends_on: Union[str, Sequence[str], None] = None
 
 
 def upgrade() -> None:
+    # Nullable, no server default: legacy rows predate the ledger and nothing
+    # was observed about them. NOT NULL DEFAULT false would fabricate a fact —
+    # every historical candidate would read as "reached selection and was not
+    # picked", which is a measurement we never made.
     op.add_column("candidates", sa.Column(
-        "selection_stage_reached", sa.Boolean(), nullable=False,
-        server_default=sa.text("false"),
+        "selection_stage_reached", sa.Boolean(), nullable=True,
     ))
     op.add_column("candidates", sa.Column("strategy_rank", sa.Integer(), nullable=True))
-    op.add_column("candidates", sa.Column(
-        "selected", sa.Boolean(), nullable=False, server_default=sa.text("false"),
-    ))
+    op.add_column("candidates", sa.Column("selected", sa.Boolean(), nullable=True))
     op.add_column("candidates", sa.Column("rejection_stage", sa.String(length=20), nullable=True))
     op.add_column("candidates", sa.Column("rejection_reason", sa.String(length=40), nullable=True))
     op.add_column("candidates", sa.Column("slots_total", sa.Integer(), nullable=True))
     op.add_column("candidates", sa.Column("slots_occupied", sa.Integer(), nullable=True))
     op.add_column("candidates", sa.Column("slots_available", sa.Integer(), nullable=True))
     op.add_column("candidates", sa.Column("correlated_with", sa.String(length=10), nullable=True))
+    op.add_column("candidates", sa.Column("correlation", sa.Float(), nullable=True))
 
 
 def downgrade() -> None:
     for col in (
-        "correlated_with", "slots_available", "slots_occupied", "slots_total",
+        "correlation", "correlated_with", "slots_available", "slots_occupied", "slots_total",
         "rejection_reason", "rejection_stage", "selected", "strategy_rank",
         "selection_stage_reached",
     ):

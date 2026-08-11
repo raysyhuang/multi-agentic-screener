@@ -1456,7 +1456,10 @@ async def _run_pipeline_core(
 
     # Correlation filter: drop highly-correlated picks
     pre_correlation = list(ranked)
-    ranked = filter_correlated_picks(ranked, price_data)
+    correlation_rejections: dict = {}
+    ranked = filter_correlated_picks(
+        ranked, price_data, rejections=correlation_rejections
+    )
     logger.info("Top %d candidates after correlation filter", len(ranked))
     # Correlation drops happen before selection, so without keeping the
     # pre-filter list these names vanish entirely — no row, no reason.
@@ -1596,13 +1599,20 @@ async def _run_pipeline_core(
             "slots_available": sniper_slots,
         })
     for _c in correlation_dropped:
+        _rej = correlation_rejections.get(_c.ticker, {})
         selection_ledger[_c.ticker] = {
+            # Dropped BEFORE selection, so it never reached that stage — but it
+            # was observed, so False is a real measurement here, not a guess.
             "selection_stage_reached": False,
-            "strategy_rank": None,
+            # The rank it held in the pre-filter ordering. A correlation drop at
+            # rank 2 is a materially different fact from one at rank 9, and
+            # storing NULL would have thrown that away.
+            "strategy_rank": _rej.get("pre_filter_rank"),
             "selected": False,
             "rejection_stage": "correlation",
             "rejection_reason": "correlation_filtered",
-            "correlated_with": getattr(_c, "correlated_with", None),
+            "correlated_with": _rej.get("correlated_with"),
+            "correlation": _rej.get("correlation"),
         }
 
     if mr_manual_ranked:
@@ -1966,6 +1976,7 @@ async def _run_pipeline_core(
                 slots_occupied=entry.get("slots_occupied"),
                 slots_available=entry.get("slots_available"),
                 correlated_with=entry.get("correlated_with"),
+                correlation=entry.get("correlation"),
             ))
 
         # Save official MAS picks plus the parallel MR manual sleeve
