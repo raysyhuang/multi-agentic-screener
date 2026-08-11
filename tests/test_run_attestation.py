@@ -150,3 +150,52 @@ def test_the_workflow_wires_identity_attestation_and_upload() -> None:
     assert "mas-run-attestation" in workflow, (
         "the artifact name is the mirror's lookup key"
     )
+    assert "if-no-files-found: error" in workflow, (
+        "a missing attestation must never upload green — with `warn` a crashed "
+        "script leaves no artifact and the mirror sees a successful upload"
+    )
+    assert "AttestationScriptFailed" in workflow, (
+        "the step must write a canonical unhealthy fallback if the script "
+        "cannot run at all"
+    )
+
+
+def test_a_database_error_never_leaks_its_message(monkeypatch, tmp_path) -> None:
+    """Only the exception class reaches the artifact.
+
+    Connection and config failures routinely carry the DSN — host, database,
+    username, sometimes the password — and this file is downloadable by anyone
+    with repo read access.
+    """
+    import asyncio
+    import importlib.util
+    import json
+
+    spec = importlib.util.spec_from_file_location(
+        "attest",
+        Path(__file__).resolve().parents[1] / "scripts" / "assert_run_attestation.py",
+    )
+    attest = importlib.util.module_from_spec(spec)
+    spec.loader.exec_module(attest)
+
+    secret = "postgresql://mas_user:hunter2@db.internal:5432/mas"
+
+    class _Boom:
+        async def __aenter__(self):
+            raise RuntimeError(f"could not connect to {secret}")
+
+        async def __aexit__(self, *a):
+            return False
+
+    monkeypatch.setattr(attest, "get_session", lambda: _Boom())
+
+    out = tmp_path / "attestation.json"
+    rc = asyncio.run(attest._check("run123", out))
+
+    assert rc == 1
+    payload = out.read_text()
+    assert secret not in payload, "the DSN reached the downloadable artifact"
+    assert "hunter2" not in payload
+    record = json.loads(payload)
+    assert record["db_error"] == "RuntimeError", record["db_error"]
+    assert record["attested"] is False

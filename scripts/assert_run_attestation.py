@@ -66,11 +66,22 @@ async def _check(run_id: str, out_path: Path | None) -> int:
             artifacts = (await session.execute(
                 select(PipelineArtifact).where(PipelineArtifact.run_id == run_id)
             )).scalars().all()
-        db_error = ""
+        db_error = None
     except Exception as e:
         # The database being unreachable is itself a fact the consumer needs,
         # and is distinct from "the run left no record".
-        artifacts, db_error = [], f"{type(e).__name__}: {e}"
+        #
+        # ONLY the exception class reaches the artifact. Connection and config
+        # errors routinely carry the DSN — host, database, username, sometimes
+        # the password — and this file is downloadable by anyone with repo read
+        # access. The class name is enough to distinguish "cannot reach the
+        # database" from "the run left no record", which is all the gate needs.
+        artifacts, db_error = [], type(e).__name__
+        print(
+            f"::error::could not query run {run_id}: {type(e).__name__} "
+            "(detail withheld — it can contain connection credentials)",
+            file=sys.stderr,
+        )
 
     stages = {a.stage: a.status for a in artifacts}
     governance = next((a for a in artifacts if a.stage == "governance"), None)
@@ -113,8 +124,7 @@ async def _check(run_id: str, out_path: Path | None) -> int:
             return 1
 
     if db_error:
-        print(f"::error::could not verify run {run_id}: {db_error}", file=sys.stderr)
-        return 1
+        return 1  # already reported above, without the detail
 
     if governance is None:
         print(
@@ -162,7 +172,7 @@ def main() -> None:
                         "run_id": "", "attested": False, "healthy": False,
                         "governance_status": "missing",
                         "final_output_status": "missing",
-                        "artifact_stages": [], "db_error": "",
+                        "artifact_stages": [], "db_error": None,
                         "note": "no run id was ever written; the process died "
                                 "before the pipeline started",
                         "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),

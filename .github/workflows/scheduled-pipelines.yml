@@ -172,10 +172,27 @@ jobs:
         id: attest
         if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
         continue-on-error: true
+        env:
+          OUT: ${{ runner.temp }}/mas-attestation.json
+          RUN_ID: ${{ steps.identity.outputs.run_id }}
         run: |
-          python scripts/assert_run_attestation.py \
-            --run-id "${{ steps.identity.outputs.run_id }}" \
-            --out "${{ runner.temp }}/mas-attestation.json"
+          set +e
+          python scripts/assert_run_attestation.py --run-id "$RUN_ID" --out "$OUT"
+          rc=$?
+          # The script writes the attestation itself; this covers the case where
+          # it could not run at all (import error, interpreter gone, OOM). An
+          # absent artifact and an unhealthy one must not look the same to the
+          # mirror, and `continue-on-error` above means a crash here would
+          # otherwise produce a green upload of nothing.
+          if [ ! -s "$OUT" ]; then
+            printf '{"run_id":"%s","attested":false,"healthy":false,' "$RUN_ID" > "$OUT"
+            printf '"governance_status":"unknown","final_output_status":"unknown",' >> "$OUT"
+            printf '"artifact_stages":[],"db_error":"AttestationScriptFailed",' >> "$OUT"
+            printf '"github_run_id":"%s","github_run_attempt":"%s","commit":"%s"}' \
+              "${GITHUB_RUN_ID:-}" "${GITHUB_RUN_ATTEMPT:-}" "${GITHUB_SHA:-}" >> "$OUT"
+            echo "::error::attestation script exited $rc without writing a file; wrote an unhealthy fallback"
+          fi
+          exit $rc
 
       # The durable, externally readable half. Job outputs only reach downstream
       # jobs in this workflow — the REST API does not expose them — so the VPS
@@ -187,7 +204,10 @@ jobs:
         with:
           name: mas-run-attestation
           path: ${{ runner.temp }}/mas-attestation.json
-          if-no-files-found: warn
+          # error, not warn: a missing attestation is the one outcome the mirror
+          # must never see as a successful upload. The step above guarantees a
+          # file exists, so reaching this is itself a fault worth failing on.
+          if-no-files-found: error
           retention-days: 30
 
   publish-dashboard:
