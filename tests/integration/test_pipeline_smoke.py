@@ -129,6 +129,16 @@ class FakeAggregator:
         return {"endpoints": {}, "health_checked_endpoints": []}
 
     def get_data_provenance(self) -> dict:
+        # Refuses once released, mirroring the real lifetime. Returning the
+        # sentinel here regardless would let the test pass on code that reads
+        # provenance AFTER teardown — the #64 defect itself — proving only that
+        # the value propagated, not that it was captured while it could be.
+        if self.closed:
+            raise AssertionError(
+                "get_data_provenance() called after close(); the real aggregator "
+                "is None by this point and this is exactly how the 2026-08-11 "
+                "outage happened"
+            )
         return dict(SENTINEL_PROVENANCE)
 
     def reset_data_provenance(self) -> None:
@@ -136,6 +146,22 @@ class FakeAggregator:
 
     def close(self) -> None:
         self.closed = True
+
+
+@pytest.fixture
+def pinned_run_id(monkeypatch) -> str:
+    """Force a known run_id so assertions target this invocation specifically.
+
+    `run_morning_pipeline` generates its own uuid, so without this every query
+    has to guess ("the newest row"), and a run that wrote nothing is
+    indistinguishable from one that wrote correctly — the previous version of
+    the failure test had exactly that hole.
+    """
+    import uuid
+
+    fixed = uuid.UUID(int=0x5A0CE7E5_7000_4000_8000_000000000001)
+    monkeypatch.setattr(uuid, "uuid4", lambda: fixed)
+    return fixed.hex[:12]
 
 
 @pytest.fixture
@@ -207,14 +233,18 @@ async def test_injected_provenance_reaches_the_governance_artifact(
     assert payload.get("ohlcv_funnel"), "ohlcv funnel must be persisted"
 
 
-async def test_the_pipeline_does_not_report_success_on_a_failed_run(
-    monkeypatch, stubbed_pipeline
+async def test_a_failed_run_records_its_own_failure(
+    monkeypatch, stubbed_pipeline, pinned_run_id
 ) -> None:
-    """Fail-closed must still hold once the pipeline is exercised end to end.
+    """Fail-closed must be verified on THIS invocation, not on any row existing.
+
+    Asserting merely that some DailyRun exists is far too weak: the successful
+    smoke tests above already create one, so an invocation that persisted
+    nothing at all would still pass. The run id is pinned so every assertion
+    below is about this run and no other.
 
     The #64 outage produced exactly this shape — an exception deep in the run
-    turning into NoTrade — so the smoke harness should be able to reproduce it
-    deliberately, not just the happy path.
+    becoming a NoTrade — so the harness must reproduce it deliberately.
     """
     from src import main as main_mod
 
@@ -226,8 +256,23 @@ async def test_the_pipeline_does_not_report_success_on_a_failed_run(
     await main_mod.run_morning_pipeline()  # fail-closed: must not raise
 
     async with get_session() as session:
+        artifacts = (await session.execute(
+            select(PipelineArtifact).where(PipelineArtifact.run_id == pinned_run_id)
+        )).scalars().all()
         run = (await session.execute(
-            select(DailyRun).order_by(DailyRun.id.desc()).limit(1)
+            select(DailyRun).where(DailyRun.run_date == date.today())
         )).scalar_one_or_none()
 
-    assert run is not None, "a failed run must still leave a record"
+    assert artifacts, f"run {pinned_run_id} persisted nothing at all"
+
+    final = [a for a in artifacts if a.stage == "final_output"]
+    assert final, "a failed run must persist a final_output artifact"
+    assert final[0].status == "failed", f"expected failed, got {final[0].status!r}"
+
+    codes = {e.get("code") for e in (final[0].errors or [])}
+    assert "PIPELINE_CRASH" in codes, f"crash marker missing; got {codes!r}"
+    assert final[0].payload.get("decision") == "NoTrade"
+
+    assert run is not None, "the failed run must still leave a DailyRun row"
+    assert run.regime == "unknown", "a crashed run must not claim a regime"
+    assert "smoke-test induced failure" in str(run.regime_details)
