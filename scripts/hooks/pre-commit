@@ -1,0 +1,94 @@
+#!/usr/bin/env bash
+# Reject accidental staging of local-only files.
+#
+# Why this exists: `git add -A` swept unrelated files into PRs under review
+# twice in one session — seven research scripts, then backups/, deploy profile
+# .env templates and a lock artifact. The second sweep put trade-level exit and
+# P&L records into a public repository's commit history, where they remain
+# retrievable by SHA even after branch deletion.
+#
+# A rule that has to be remembered at commit time already failed both times it
+# mattered, so this makes the unsafe action mechanically difficult instead.
+#
+# It inspects the STAGED INDEX, not the working tree: the working tree is
+# allowed to be full of scratch files, and only what is about to be committed
+# is the hook's business.
+#
+# Bypass is deliberate and must be justified:
+#     ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: <reason>)"
+# `--no-verify` also works but leaves no record, which is the point of not
+# using it.
+
+set -euo pipefail
+
+# Paths that are local-only by nature. Anchored so they match from the repo root.
+BLOCKED_PREFIXES=(
+    "backups/"
+    "deploy/"
+    "outputs/"          # research output; force-add deliberately per CLAUDE.md
+)
+
+# Extensions and names that should essentially never be committed.
+BLOCKED_PATTERNS=(
+    '\.env$'
+    '\.env\..*$'
+    '\.dump$'
+    '\.sql$'
+    '\.sql\.gz$'
+    '\.pem$'
+    '\.key$'
+    '\.p12$'
+    '(^|/)skills-lock\.json$'
+    '(^|/)id_(rsa|ed25519)$'
+    '[ ][0-9]+\.(py|json|md|yml|csv)$'   # "foo 2.py" sync duplicates
+)
+
+staged=$(git diff --cached --name-only --diff-filter=A || true)
+[ -z "$staged" ] && exit 0
+
+offenders=()
+while IFS= read -r file; do
+    [ -z "$file" ] && continue
+    for prefix in "${BLOCKED_PREFIXES[@]}"; do
+        case "$file" in
+            "$prefix"*) offenders+=("$file  [local-only path: $prefix]"); continue 2 ;;
+        esac
+    done
+    for pattern in "${BLOCKED_PATTERNS[@]}"; do
+        if printf '%s' "$file" | grep -Eq "$pattern"; then
+            offenders+=("$file  [blocked pattern: $pattern]")
+            continue 2
+        fi
+    done
+done <<< "$staged"
+
+[ ${#offenders[@]} -eq 0 ] && exit 0
+
+if [ "${ALLOW_LOCAL_FILES:-}" = "1" ]; then
+    echo "pre-commit: ALLOW_LOCAL_FILES=1 — permitting ${#offenders[@]} normally-blocked file(s):" >&2
+    printf '  %s\n' "${offenders[@]}" >&2
+    echo "pre-commit: state the reason in the commit message." >&2
+    exit 0
+fi
+
+cat >&2 <<EOF
+
+pre-commit: refusing to commit local-only files.
+
+$(printf '  %s\n' "${offenders[@]}")
+
+These are newly ADDED to the index. Two sweeps like this reached PRs under
+review; one put trade-level P&L into public history that cannot be fully
+withdrawn.
+
+Fix: stage explicit paths rather than 'git add -A'.
+
+    git restore --staged <file>...
+
+If a file genuinely belongs in the repo (a research doc under outputs/, say),
+say so on the record:
+
+    ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: why)"
+
+EOF
+exit 1
