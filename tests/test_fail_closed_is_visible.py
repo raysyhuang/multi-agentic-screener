@@ -17,6 +17,7 @@ the fail-closed NoTrade here.
 
 from __future__ import annotations
 
+import sys
 from unittest.mock import AsyncMock, MagicMock
 
 import pytest
@@ -107,7 +108,10 @@ async def test_the_one_off_worker_exits_non_zero_on_fail_closed(
     with pytest.raises(SystemExit) as exc:
         await worker_mod.start_worker()
 
-    assert exc.value.code != 0, "a fail-closed run must exit non-zero"
+    assert exc.value.code == 3, (
+        "the documented fail-closed code is 3; asserting merely non-zero would "
+        "let it drift and silently break anything keying on the value"
+    )
 
 
 @pytest.mark.asyncio
@@ -121,6 +125,65 @@ async def test_the_one_off_worker_exits_zero_on_success(
     monkeypatch.setattr(worker_mod, "run_morning_pipeline", AsyncMock(return_value=True))
 
     await worker_mod.start_worker()  # returns normally, no SystemExit
+
+
+@pytest.fixture
+def direct_entrypoint(monkeypatch):
+    """`main()` opens the database before dispatching flags — stub that out.
+
+    Without it these tests reach for a real Postgres, which passes or fails
+    depending on whatever DATABASE_URL the machine happens to carry.
+    """
+    monkeypatch.setattr(main_mod, "init_db", AsyncMock())
+    monkeypatch.setattr(main_mod, "_setup_logging", lambda *a, **k: None)
+    return main_mod
+
+
+@pytest.mark.asyncio
+async def test_the_direct_module_entrypoint_also_exits_three(
+    monkeypatch, direct_entrypoint
+) -> None:
+    """`python -m src.main --run-now` is documented and must honour the contract.
+
+    Fixing only src.worker would make the guarantee true for the Actions route
+    and false for anyone invoking the module directly — including a human
+    re-running by hand after an incident, which is exactly when a misleading
+    exit code does the most damage.
+    """
+    monkeypatch.setattr(sys, "argv", ["main", "--run-now"])
+    monkeypatch.setattr(
+        main_mod, "run_morning_pipeline", AsyncMock(return_value=False)
+    )
+
+    with pytest.raises(SystemExit) as exc:
+        await main_mod.main()
+
+    assert exc.value.code == 3
+
+
+@pytest.mark.asyncio
+async def test_the_direct_entrypoint_exits_zero_when_clean(
+    monkeypatch, direct_entrypoint
+) -> None:
+    monkeypatch.setattr(sys, "argv", ["main", "--run-now"])
+    monkeypatch.setattr(
+        main_mod, "run_morning_pipeline", AsyncMock(return_value=True)
+    )
+
+    await main_mod.main()  # returns normally
+
+
+@pytest.mark.asyncio
+async def test_the_direct_afternoon_entrypoint_is_unaffected(
+    monkeypatch, direct_entrypoint
+) -> None:
+    """It returns None and raises on error — already surfaces, leave it be."""
+    monkeypatch.setattr(sys, "argv", ["main", "--check-now"])
+    monkeypatch.setattr(
+        main_mod, "run_afternoon_check", AsyncMock(return_value=None)
+    )
+
+    await main_mod.main()  # must not raise SystemExit
 
 
 @pytest.mark.asyncio
