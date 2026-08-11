@@ -171,7 +171,6 @@ jobs:
       - name: Attest the run recorded itself
         id: attest
         if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
-        continue-on-error: true
         env:
           OUT: ${{ runner.temp }}/mas-attestation.json
           RUN_ID: ${{ steps.identity.outputs.run_id }}
@@ -182,8 +181,9 @@ jobs:
           # The script writes the attestation itself; this covers the case where
           # it could not run at all (import error, interpreter gone, OOM). An
           # absent artifact and an unhealthy one must not look the same to the
-          # mirror, and `continue-on-error` above means a crash here would
-          # otherwise produce a green upload of nothing.
+          # mirror. The non-zero exit below then fails the job — the upload step
+          # runs under always(), so the fallback still reaches the mirror while
+          # the run is correctly marked failed.
           if [ ! -s "$OUT" ]; then
             printf '{"run_id":"%s","attested":false,"healthy":false,' "$RUN_ID" > "$OUT"
             printf '"governance_status":"unknown","final_output_status":"unknown",' >> "$OUT"
