@@ -15,7 +15,8 @@ import sys
 from src.config import get_settings
 from src.db.session import init_db
 from src.main import (
-    run_morning_pipeline, run_afternoon_check, _setup_logging,
+    run_morning_pipeline, run_afternoon_check, scheduled_morning_pipeline,
+    _setup_logging,
 )
 from src.output.telegram import send_alert
 
@@ -96,7 +97,7 @@ async def start_worker() -> None:
 
     # Morning pipeline — 1h grace so R14 restarts don't silently skip the run
     scheduler.add_job(
-        run_morning_pipeline,
+        scheduled_morning_pipeline,
         CronTrigger(
             hour=settings.morning_run_hour,
             minute=settings.morning_run_minute,

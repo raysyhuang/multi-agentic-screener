@@ -486,6 +486,28 @@ async def run_morning_pipeline() -> bool:
     return not fail_closed
 
 
+async def scheduled_morning_pipeline() -> None:
+    """Scheduler-facing wrapper: turn a fail-closed run into a job error.
+
+    APScheduler treats a normal return as a successful execution, so registering
+    `run_morning_pipeline` directly meant a fail-closed run never reached the
+    EVENT_JOB_ERROR listener and its alert stayed silent — the long-running
+    equivalent of the exit-0 problem this contract exists to close. Raising here
+    surfaces it; APScheduler logs the error, fires the listener, and carries on
+    with future jobs.
+
+    Only a literal `False` raises. `run_afternoon_check` and anything else
+    returning `None` must not be treated as failure — those already propagate
+    their own exceptions, and coercing `None` would make every healthy run an
+    alert.
+    """
+    if await run_morning_pipeline() is False:
+        raise RuntimeError(
+            "Morning pipeline fail-closed — a NoTrade record and alert were "
+            "written; see the governance artifact for this run"
+        )
+
+
 async def _check_paper_gate(settings) -> bool:
     """Enforce 30-day paper trading gate before allowing LIVE mode.
 
@@ -2450,7 +2472,7 @@ def start_scheduler() -> None:
 
     # Morning pipeline
     scheduler.add_job(
-        run_morning_pipeline,
+        scheduled_morning_pipeline,
         CronTrigger(
             hour=settings.morning_run_hour,
             minute=settings.morning_run_minute,

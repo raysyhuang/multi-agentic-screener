@@ -195,6 +195,53 @@ async def test_the_direct_afternoon_entrypoint_is_unaffected(
 
 
 @pytest.mark.asyncio
+async def test_the_scheduler_wrapper_raises_on_fail_closed(monkeypatch) -> None:
+    """APScheduler counts a normal return as success.
+
+    Registering `run_morning_pipeline` directly meant a fail-closed run never
+    reached the EVENT_JOB_ERROR listener, so the scheduler's own alert stayed
+    silent — the long-running equivalent of exiting 0.
+    """
+    monkeypatch.setattr(
+        main_mod, "run_morning_pipeline", AsyncMock(return_value=False)
+    )
+
+    with pytest.raises(RuntimeError, match="fail-closed"):
+        await main_mod.scheduled_morning_pipeline()
+
+
+@pytest.mark.parametrize("returned", [True, None, 0, "", []])
+@pytest.mark.asyncio
+async def test_only_a_literal_false_raises(monkeypatch, returned) -> None:
+    """`is False`, not truthiness.
+
+    Falsey-but-not-False values must pass through: coercing them would turn
+    healthy runs into scheduler alerts, and `run_afternoon_check` returns None
+    on every successful execution.
+    """
+    monkeypatch.setattr(
+        main_mod, "run_morning_pipeline", AsyncMock(return_value=returned)
+    )
+
+    await main_mod.scheduled_morning_pipeline()  # must not raise
+
+
+def test_both_schedulers_register_the_wrapper() -> None:
+    """Two registrations exist; fixing one and missing the other is the bug."""
+    from pathlib import Path
+
+    for module in ("src/main.py", "src/worker.py"):
+        source = Path(module).read_text()
+        assert "scheduled_morning_pipeline,\n" in source, (
+            f"{module} does not register the wrapper — a fail-closed run there "
+            "would still be recorded by APScheduler as a success"
+        )
+        assert "        run_morning_pipeline,\n" not in source, (
+            f"{module} still registers run_morning_pipeline directly"
+        )
+
+
+@pytest.mark.asyncio
 async def test_a_job_returning_none_is_not_treated_as_failure(
     monkeypatch, worker_without_key_validation
 ) -> None:
