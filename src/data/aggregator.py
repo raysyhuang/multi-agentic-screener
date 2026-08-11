@@ -94,6 +94,7 @@ class DataAggregator:
 
         Cache is checked before acquiring the semaphore.
         """
+        key = None
         if self._cache_enabled:
             key = DataCache.build_key(
                 "ohlcv", ticker, "daily",
@@ -121,9 +122,7 @@ class DataAggregator:
                         self._circuit_breaker.record_success("polygon")
                         self._ohlcv_sources["polygon"] += 1
                         self._ohlcv_ticker_source[ticker] = "polygon"
-                        if self._cache_enabled:
-                            ttl = classify_ohlcv_ttl(to_date)
-                            self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
+                        self._store_ohlcv(key, df, to_date, source="polygon", ticker=ticker)
                         return df
                 except Exception as e:
                     self._circuit_breaker.record_failure("polygon")
@@ -138,9 +137,7 @@ class DataAggregator:
                         self._circuit_breaker.record_success("fmp")
                         self._ohlcv_sources["fmp"] += 1
                         self._ohlcv_ticker_source[ticker] = "fmp"
-                        if self._cache_enabled:
-                            ttl = classify_ohlcv_ttl(to_date)
-                            self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
+                        self._store_ohlcv(key, df, to_date, source="fmp", ticker=ticker)
                         return df
                 except Exception as e:
                     self._circuit_breaker.record_failure("fmp")
@@ -156,15 +153,42 @@ class DataAggregator:
                 else:
                     self._ohlcv_sources["yfinance"] += 1
                     self._ohlcv_ticker_source[ticker] = "yfinance"
-                    if self._cache_enabled:
-                        ttl = classify_ohlcv_ttl(to_date)
-                        self._cache.put(key, df_to_json(df), ttl, source="yfinance", ticker=ticker, endpoint="ohlcv")
+                    self._store_ohlcv(key, df, to_date, source="yfinance", ticker=ticker)
                 return df
             except Exception as e:
                 logger.error("All OHLCV sources failed for %s: %s", ticker, e)
                 self._ohlcv_failures.append(ticker)
                 self._ohlcv_ticker_source[ticker] = ""
                 return pd.DataFrame()
+
+    def _store_ohlcv(
+        self,
+        key: str | None,
+        df: pd.DataFrame,
+        to_date: date,
+        *,
+        source: str,
+        ticker: str,
+    ) -> None:
+        """Persist a fetched frame. Never raises.
+
+        A cache write is bookkeeping about a fetch that has already succeeded.
+        Performing it inside the provider's `try` made a failed serialization or
+        a locked SQLite file indistinguishable from the provider being down: the
+        handler recorded a circuit failure, execution fell through to the next
+        provider, and that one incremented the counter too. One ticker ended up
+        attributed to two providers and the totals exceeded the ticker count —
+        corrupting precisely the record this is meant to make trustworthy.
+        """
+        if not self._cache_enabled or key is None:
+            return
+        try:
+            self._cache.put(
+                key, df_to_json(df), classify_ohlcv_ttl(to_date),
+                source=source, ticker=ticker, endpoint="ohlcv",
+            )
+        except Exception as e:
+            logger.warning("OHLCV cache write failed for %s (%s): %s", ticker, source, e)
 
     async def get_bulk_ohlcv(
         self,
@@ -300,7 +324,14 @@ class DataAggregator:
             if result:
                 self._universe_source = "polygon"
                 if self._cache_enabled:
-                    self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
+                    # Same isolation as the FMP branch above: a failed cache
+                    # write here would be caught as a provider failure, flip the
+                    # source to "unavailable" and return [] — a false
+                    # zero-universe run off a universe that was fetched fine.
+                    try:
+                        self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
+                    except Exception as cache_err:
+                        logger.warning("Universe cache write failed: %s", cache_err)
                 return result
             self._universe_errors.append("polygon: returned no rows")
         except Exception as e:
@@ -594,7 +625,11 @@ class DataAggregator:
             t: self._ohlcv_ticker_source.get(t, "") for t in _BENCHMARK_TICKERS
         }
 
+        # Explicitly clear the cache flag: a malformed cached payload can set it
+        # partway through before falling back here, and a run that fetched live
+        # must not report itself as cache-served.
         self._macro_source = "live"
+        self._macro_cache_hit = False
         macro["spy_prices"] = spy_df
         macro["qqq_prices"] = qqq_df
 
@@ -630,12 +665,15 @@ class DataAggregator:
         every time, so the failure has to persist with it rather than
         disappearing after the first run.
         """
-        self._macro_cache_hit = True
-
         if stored is None:
             self._ohlcv_sources["unknown"] += len(_BENCHMARK_TICKERS)
             self._ohlcv_cache_hits += len(_BENCHMARK_TICKERS)
+            self._macro_cache_hit = True
             return
+
+        # Not a mapping at all — same treatment as an unreadable source.
+        if not isinstance(stored, dict):
+            stored = {}
 
         for ticker in _BENCHMARK_TICKERS:
             source = stored.get(ticker)
@@ -647,6 +685,11 @@ class DataAggregator:
             else:
                 self._ohlcv_failures.append(ticker)
                 self._ohlcv_ticker_source[ticker] = ""
+
+        # Set last: if anything above raised, the caller falls through to a live
+        # fetch, and a flag claiming the macro came from cache would contradict
+        # the run that actually happened.
+        self._macro_cache_hit = True
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         """Earnings calendar for catalyst detection."""

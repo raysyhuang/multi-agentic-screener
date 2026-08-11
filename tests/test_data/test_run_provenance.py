@@ -17,6 +17,7 @@ from datetime import date
 
 import pandas as pd
 import pytest
+from unittest.mock import AsyncMock
 
 from src.data.aggregator import DataAggregator
 from src.data.cache import df_to_json
@@ -192,6 +193,100 @@ async def test_bulk_task_exception_names_the_ticker(agg, monkeypatch) -> None:
     assert agg.get_data_provenance()["ohlcv_failed_tickers"] == ["AAPL", "MSFT"]
 
 
+@pytest.mark.parametrize("failing_provider", ["polygon", "fmp", "yfinance"])
+@pytest.mark.asyncio
+async def test_a_failed_cache_write_never_double_counts_a_ticker(
+    monkeypatch, failing_provider
+) -> None:
+    """A cache write is bookkeeping about a fetch that already succeeded.
+
+    Performing it inside the provider's try made a failed serialization or a
+    locked SQLite file indistinguishable from the provider being down: the
+    handler recorded a circuit failure, execution fell through, and the NEXT
+    provider incremented the counter too. One ticker attributed to two
+    providers, totals exceeding the ticker count — corruption of the exact
+    record this work exists to make trustworthy.
+    """
+    agg = DataAggregator()
+    agg._cache_enabled = True
+
+    async def ok(*a, **k):
+        return _bars()
+
+    def exploding_put(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(agg._cache, "get_with_source", lambda key: (None, ""))
+    monkeypatch.setattr(agg._cache, "put", exploding_put)
+    monkeypatch.setattr(agg.polygon, "get_ohlcv", ok)
+    monkeypatch.setattr(agg.fmp, "get_daily_prices", ok)
+    monkeypatch.setattr(agg.yfinance, "get_ohlcv", ok)
+    if failing_provider != "polygon":
+        monkeypatch.setattr(agg.polygon, "get_ohlcv", AsyncMock(side_effect=RuntimeError("down")))
+    if failing_provider == "yfinance":
+        monkeypatch.setattr(agg.fmp, "get_daily_prices", AsyncMock(side_effect=RuntimeError("down")))
+
+    df = await agg.get_ohlcv("AAPL", date(2026, 1, 1), date(2026, 8, 10))
+
+    assert not df.empty, "a cache-write failure must not lose the fetched data"
+    prov = agg.get_data_provenance()
+    assert sum(prov["ohlcv_by_source"].values()) == 1, (
+        f"one ticker, one attribution — got {prov['ohlcv_by_source']}"
+    )
+    assert prov["ohlcv_by_source"] == {failing_provider: 1}
+    assert prov["ohlcv_failed_tickers"] == []
+
+
+@pytest.mark.asyncio
+async def test_polygon_universe_survives_a_failed_cache_write(agg, monkeypatch) -> None:
+    """Blocker mirror of the FMP branch: a good universe must not be discarded.
+
+    The write failure was caught by the provider handler, flipping the source to
+    "unavailable" and returning [] — a false zero-universe run off a universe
+    that had been fetched perfectly well.
+    """
+    agg._cache_enabled = True
+    universe = [{"symbol": "AAPL"}, {"symbol": "MSFT"}]
+
+    async def fmp_down(*a, **k):
+        raise RuntimeError("fmp down")
+
+    async def polygon_universe():
+        return universe
+
+    def exploding_put(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(agg._cache, "get_with_source", lambda key: (None, ""))
+    monkeypatch.setattr(agg._cache, "put", exploding_put)
+    monkeypatch.setattr(agg.fmp, "get_stock_screener", fmp_down)
+    monkeypatch.setattr(agg, "_build_polygon_universe", polygon_universe)
+
+    assert await agg.get_universe() == universe
+
+    prov = agg.get_data_provenance()
+    assert prov["universe_source"] == "polygon", "not 'unavailable'"
+
+
+@pytest.mark.asyncio
+async def test_fmp_universe_survives_a_failed_cache_write(agg, monkeypatch) -> None:
+    agg._cache_enabled = True
+    universe = [{"symbol": "AAPL"}]
+
+    async def screener(*a, **k):
+        return universe
+
+    def exploding_put(*a, **k):
+        raise RuntimeError("disk full")
+
+    monkeypatch.setattr(agg._cache, "get_with_source", lambda key: (None, ""))
+    monkeypatch.setattr(agg._cache, "put", exploding_put)
+    monkeypatch.setattr(agg.fmp, "get_stock_screener", screener)
+
+    assert await agg.get_universe() == universe
+    assert agg.get_data_provenance()["universe_source"] == "fmp"
+
+
 @pytest.mark.asyncio
 async def test_universe_cache_hit_reports_the_origin_provider(agg, monkeypatch) -> None:
     """"cache" is not an answer to "where did the universe come from"."""
@@ -347,6 +442,9 @@ async def test_benchmark_attribution_survives_concurrent_fetching(
     stored: dict = {}
     agg._cache_enabled = True
     monkeypatch.setattr(agg._cache, "get", lambda key: None)
+    # Stub the OHLCV cache read too — otherwise SPY/QQQ/NVDA fall through to the
+    # real repo-root SQLite cache and the result depends on what is on disk.
+    monkeypatch.setattr(agg._cache, "get_with_source", lambda key: (None, ""))
     monkeypatch.setattr(
         agg._cache, "put", lambda key, data, ttl, **kw: stored.update(json.loads(data))
     )
@@ -389,6 +487,9 @@ async def test_live_macro_records_its_benchmarks_and_caches_them(agg, monkeypatc
     stored: dict = {}
     agg._cache_enabled = True
     monkeypatch.setattr(agg._cache, "get", lambda key: None)
+    # Stub the OHLCV cache read too — otherwise SPY/QQQ/NVDA fall through to the
+    # real repo-root SQLite cache and the result depends on what is on disk.
+    monkeypatch.setattr(agg._cache, "get_with_source", lambda key: (None, ""))
     monkeypatch.setattr(
         agg._cache, "put", lambda key, data, ttl, **kw: stored.update(json.loads(data))
     )
