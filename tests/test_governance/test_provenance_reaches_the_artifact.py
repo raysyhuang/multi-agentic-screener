@@ -1,0 +1,103 @@
+"""Gate attribution and provenance must survive all the way to the stored payload.
+
+The funnels were always computed — they were logged and dropped. A counter that
+reaches a log line and not the artifact is only marginally better than no
+counter, because answering "why did this run pick nothing" then still means
+locating that run's log output. These tests pin the serialization boundary the
+data has to cross: `GovernanceRecord.to_dict()`, which is what
+`main.py` writes into `pipeline_artifacts.payload`.
+
+Round-trip equality is asserted against the funnel's own `to_dict()` rather than
+a fixed set of keys, so a counter added to a funnel later reaches the artifact
+without anyone having to remember this file. That is deliberate: the ETF gate's
+`unrecognized_type_flags` (PR #63) is exactly such a counter.
+"""
+
+from __future__ import annotations
+
+import json
+
+from src.governance.artifacts import GovernanceContext
+from src.signals.filter import FilterFunnel, OHLCVFunnel, filter_universe
+
+SPY_ETF = {
+    "symbol": "SPY",
+    "price": 500.0,
+    "volume": 70_000_000,
+    "exchangeShortName": "NYSE",
+    "type": "ETF",
+}
+AAPL = {
+    "symbol": "AAPL",
+    "price": 220.0,
+    "volume": 50_000_000,
+    "exchangeShortName": "NASDAQ",
+    "type": "",
+}
+
+
+def test_etf_rejection_reaches_the_persisted_record() -> None:
+    funnel = FilterFunnel()
+    passed = filter_universe([SPY_ETF, AAPL], funnel=funnel)
+    assert [s["symbol"] for s in passed] == ["AAPL"]
+
+    with GovernanceContext(run_id="r1", run_date="2026-08-11") as gov:
+        gov.set_funnels(universe=funnel)
+
+    payload = gov.record.to_dict()
+    assert payload["universe_funnel"]["failed_type"] == 1
+    assert payload["universe_funnel"]["passed"] == 1
+
+
+def test_the_whole_funnel_round_trips_not_a_hand_picked_subset() -> None:
+    """Future counters must arrive without an edit here — see module docstring."""
+    funnel = FilterFunnel()
+    filter_universe([SPY_ETF, AAPL], funnel=funnel)
+
+    with GovernanceContext(run_id="r2", run_date="2026-08-11") as gov:
+        gov.set_funnels(universe=funnel, ohlcv=OHLCVFunnel(total_input=9, passed=4))
+
+    payload = gov.record.to_dict()
+    assert payload["universe_funnel"] == funnel.to_dict()
+    assert payload["ohlcv_funnel"]["total_input"] == 9
+
+
+def test_data_provenance_reaches_the_persisted_record() -> None:
+    provenance = {
+        "ohlcv_by_source": {"polygon": 800, "yfinance": 41},
+        "ohlcv_cache_hits": 141,
+        "ohlcv_failed_tickers": ["ZZZZ"],
+        "universe_source": "fmp",
+        "universe_errors": [],
+        "circuits_open": ["polygon"],
+    }
+
+    with GovernanceContext(run_id="r3", run_date="2026-08-11") as gov:
+        gov.set_data_provenance(provenance)
+
+    assert gov.record.to_dict()["data_provenance"] == provenance
+
+
+def test_the_payload_is_json_serializable() -> None:
+    """It is written to a JSONB column — a non-serializable value fails the run."""
+    funnel = FilterFunnel()
+    filter_universe([SPY_ETF, AAPL], funnel=funnel)
+
+    with GovernanceContext(run_id="r4", run_date="2026-08-11") as gov:
+        gov.set_funnels(universe=funnel, ohlcv=OHLCVFunnel())
+        gov.set_data_provenance(
+            {"ohlcv_by_source": {"polygon": 1}, "circuits_open": []}
+        )
+
+    json.dumps(gov.record.to_dict())
+
+
+def test_absent_provenance_defaults_to_empty_not_missing() -> None:
+    """A run that never set them must still produce the keys, not KeyError."""
+    with GovernanceContext(run_id="r5", run_date="2026-08-11") as gov:
+        pass
+
+    payload = gov.record.to_dict()
+    assert payload["data_provenance"] == {}
+    assert payload["universe_funnel"] == {}
+    assert payload["ohlcv_funnel"] == {}

@@ -620,6 +620,11 @@ async def _run_pipeline_core(
         logger.info("PAPER MODE — all picks are recommendations only, not live trades")
 
     aggregator = DataAggregator()
+    # Reset at the true start of the run, before ANY fetching. Doing it later
+    # erases what has already been fetched — Step 1 pulls SPY/QQQ benchmark bars
+    # for the regime and eligibility decisions, and resetting after that dropped
+    # the provenance for the very data those decisions rest on.
+    aggregator.reset_data_provenance()
     if _state is not None:
         _state["aggregator"] = aggregator
 
@@ -717,7 +722,6 @@ async def _run_pipeline_core(
 
     # --- Step 2: Build universe ---
     logger.info("Step 2: Building universe...")
-    aggregator.reset_data_provenance()
     raw_universe = await aggregator.get_universe()
     universe_funnel = FilterFunnel()
     filtered = filter_universe(raw_universe, funnel=universe_funnel)
@@ -1944,10 +1948,12 @@ async def _run_pipeline_core(
     # One line that answers "what data did this run actually use, and where did
     # the universe go" without reading the whole log.
     logger.info(
-        "Run provenance: universe=%s ohlcv_by_source=%s failed=%d circuits_open=%s | "
+        "Run provenance: universe=%s ohlcv_by_source=%s cache_hits=%d failed=%d "
+        "circuits_open=%s | "
         "funnel %d raw → %d filtered → %d qualified → %d scored → %d approved",
         provenance["universe_source"],
         provenance["ohlcv_by_source"],
+        provenance["ohlcv_cache_hits"],
         len(provenance["ohlcv_failed_tickers"]),
         provenance["circuits_open"] or "none",
         universe_funnel.total_input,

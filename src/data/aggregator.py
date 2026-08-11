@@ -70,7 +70,9 @@ class DataAggregator:
         # (src/research/signal_backtest.py); this is its live-path counterpart.
         self._ohlcv_sources: Counter[str] = Counter()
         self._ohlcv_failures: list[str] = []
+        self._ohlcv_cache_hits: int = 0
         self._universe_source: str = ""
+        self._universe_errors: list[str] = []
 
     async def get_ohlcv(
         self,
@@ -87,11 +89,15 @@ class DataAggregator:
                 "ohlcv", ticker, "daily",
                 from_date=str(from_date), to_date=str(to_date),
             )
-            cached = self._cache.get(key)
+            cached, cached_source = self._cache.get_with_source(key)
             if cached is not None:
                 try:
                     df = json_to_df(cached)
-                    self._ohlcv_sources["cache"] += 1
+                    # Attribute to the provider that ORIGINALLY served the row —
+                    # a hit is a delivery mechanism, not a data source. Hits are
+                    # counted separately so cache reliance stays visible too.
+                    self._ohlcv_sources[cached_source or "unknown"] += 1
+                    self._ohlcv_cache_hits += 1
                     return df
                 except Exception as e:
                     logger.warning("Cache deserialization failed for %s, treating as miss: %s", ticker, e)
@@ -173,6 +179,12 @@ class DataAggregator:
             for ticker, result in zip(batch, results):
                 if isinstance(result, Exception):
                     logger.error("Failed to fetch %s: %s", ticker, result)
+                    # get_ohlcv swallows provider errors itself, so reaching here
+                    # means the task died outside that handling (cancellation,
+                    # semaphore teardown, a bug). Without this the ticker is
+                    # dropped to an empty frame and the provenance record claims
+                    # nothing failed.
+                    self._ohlcv_failures.append(ticker)
                     out[ticker] = pd.DataFrame()
                 else:
                     out[ticker] = result
@@ -194,19 +206,33 @@ class DataAggregator:
         point of the provenance rule in CLAUDE.md.
         """
         return {
+            # Keyed by the provider that ORIGINALLY served each bar, cache hits
+            # included — a hit is a delivery mechanism, not a data source.
             "ohlcv_by_source": dict(self._ohlcv_sources),
-            "ohlcv_failed_tickers": sorted(self._ohlcv_failures),
+            "ohlcv_cache_hits": self._ohlcv_cache_hits,
+            "ohlcv_failed_tickers": sorted(set(self._ohlcv_failures)),
+            # "" only before the universe step runs; "unavailable" means every
+            # provider failed, which is a different fact and must not read as
+            # "not yet attempted".
             "universe_source": self._universe_source,
+            "universe_errors": list(self._universe_errors),
             "circuits_open": sorted(
                 p for p in ("polygon", "fmp") if self._circuit_breaker.is_open(p)
             ),
         }
 
     def reset_data_provenance(self) -> None:
-        """Clear counters so a long-lived aggregator reports per-run figures."""
+        """Clear counters so a long-lived aggregator reports per-run figures.
+
+        Call this at the START of a run, before any fetching. Calling it partway
+        through erases the evidence for whatever was already fetched — the
+        benchmark bars behind the regime and eligibility decisions, for one.
+        """
         self._ohlcv_sources.clear()
         self._ohlcv_failures.clear()
+        self._ohlcv_cache_hits = 0
         self._universe_source = ""
+        self._universe_errors.clear()
 
     async def get_universe(self) -> list[dict]:
         """Build initial universe from FMP screener, falling back to Polygon."""
@@ -227,18 +253,29 @@ class DataAggregator:
                 return result
         except Exception as e:
             logger.warning("FMP screener failed: %s — falling back to Polygon", e)
+            self._universe_errors.append(f"fmp: {e}")
+        else:
+            if not result:
+                self._universe_errors.append("fmp: returned no rows")
 
         # Fallback: Polygon tickers reference + grouped daily bars
         try:
             result = await self._build_polygon_universe()
             if result:
                 self._universe_source = "polygon"
-            if self._cache_enabled and result:
-                self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
-            return result
+                if self._cache_enabled:
+                    self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
+                return result
+            self._universe_errors.append("polygon: returned no rows")
         except Exception as e:
             logger.error("Polygon universe fallback also failed: %s", e)
-            return []
+            self._universe_errors.append(f"polygon: {e}")
+
+        # Both providers are gone. An empty list with a blank source reads
+        # identically to "the universe step has not run yet"; say which it is.
+        self._universe_source = "unavailable"
+        logger.error("Universe unavailable — every provider failed: %s", self._universe_errors)
+        return []
 
     async def _build_polygon_universe(self) -> list[dict]:
         """Build universe from Polygon reference tickers + grouped daily bars."""

@@ -118,13 +118,9 @@ class GovernanceContext:
         makes "picks=0" attributable to a stage instead of a mystery.
         """
         if universe is not None:
-            self._record.universe_funnel = (
-                universe if isinstance(universe, dict) else asdict(universe)
-            )
+            self._record.universe_funnel = _funnel_to_dict(universe)
         if ohlcv is not None:
-            self._record.ohlcv_funnel = (
-                ohlcv if isinstance(ohlcv, dict) else asdict(ohlcv)
-            )
+            self._record.ohlcv_funnel = _funnel_to_dict(ohlcv)
 
     def set_config_hash(self, config: dict[str, Any]) -> None:
         serialized = json.dumps(config, sort_keys=True, default=str)
@@ -144,6 +140,20 @@ class GovernanceContext:
 
     def add_flag(self, flag: str) -> None:
         self._record.governance_flags.append(flag)
+
+
+def _funnel_to_dict(funnel: Any) -> dict:
+    """Serialize a funnel, preferring its own ``to_dict`` over generic asdict.
+
+    Both pick up newly added counters automatically, which is what matters: a
+    counter added to a funnel should reach the persisted artifact without anyone
+    remembering to update this file.
+    """
+    if isinstance(funnel, dict):
+        return dict(funnel)
+    if hasattr(funnel, "to_dict"):
+        return funnel.to_dict()
+    return asdict(funnel)
 
 
 def _get_git_commit() -> str:
