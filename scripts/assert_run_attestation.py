@@ -24,6 +24,7 @@ from __future__ import annotations
 
 import argparse
 import asyncio
+import json
 import os
 import sys
 from pathlib import Path
@@ -37,28 +38,83 @@ from src.db.session import close_db, get_session  # noqa: E402
 
 
 def _emit(name: str, value: str) -> None:
-    """Publish a GitHub Actions job output, and echo for the log."""
+    """Publish a GitHub Actions job output, and echo for the log.
+
+    Genuinely non-throwing — the previous version claimed that while opening a
+    file. A health check that can crash the run it is describing is the
+    2026-08-11 outage in miniature, and a docstring asserting safety it does not
+    implement is worse than no docstring.
+
+    Job outputs are only visible to downstream jobs in the same workflow; the
+    REST API does not expose them. They remain useful inside the run, but the
+    artifact written by `--out` is what an external consumer reads.
+    """
     print(f"{name}={value}")
     out = os.environ.get("GITHUB_OUTPUT")
-    if out:
+    if not out:
+        return
+    try:
         with open(out, "a", encoding="utf-8") as fh:
             fh.write(f"{name}={value}\n")
+    except Exception as e:  # pragma: no cover - defensive
+        print(f"::warning::could not write job output {name}: {e}", file=sys.stderr)
 
 
-async def _check(run_id: str) -> int:
-    async with get_session() as session:
-        artifacts = (await session.execute(
-            select(PipelineArtifact).where(PipelineArtifact.run_id == run_id)
-        )).scalars().all()
+async def _check(run_id: str, out_path: Path | None) -> int:
+    try:
+        async with get_session() as session:
+            artifacts = (await session.execute(
+                select(PipelineArtifact).where(PipelineArtifact.run_id == run_id)
+            )).scalars().all()
+        db_error = ""
+    except Exception as e:
+        # The database being unreachable is itself a fact the consumer needs,
+        # and is distinct from "the run left no record".
+        artifacts, db_error = [], f"{type(e).__name__}: {e}"
 
     stages = {a.stage: a.status for a in artifacts}
     governance = next((a for a in artifacts if a.stage == "governance"), None)
     final = next((a for a in artifacts if a.stage == "final_output"), None)
 
-    _emit("run_id", run_id)
-    _emit("artifact_stages", ",".join(sorted(stages)) or "none")
-    _emit("governance_status", governance.status if governance else "missing")
-    _emit("final_output_status", final.status if final else "missing")
+    attested = bool(governance) and not db_error
+    healthy = (
+        attested
+        and governance.status != "failed"
+        and (final is None or final.status != "failed")
+    )
+
+    record = {
+        "run_id": run_id,
+        "attested": attested,
+        "healthy": healthy,
+        "governance_status": governance.status if governance else "missing",
+        "final_output_status": final.status if final else "missing",
+        "artifact_stages": sorted(stages),
+        "db_error": db_error,
+        "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+        "github_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
+        "commit": os.environ.get("GITHUB_SHA", ""),
+    }
+
+    for key in ("run_id", "governance_status", "final_output_status"):
+        _emit(key, str(record[key]))
+    _emit("attested", "true" if attested else "false")
+    _emit("healthy", "true" if healthy else "false")
+
+    if out_path is not None:
+        # The durable half. Job outputs reach downstream jobs in this workflow
+        # only — the REST API does not expose them — so an external consumer
+        # (the VPS mirror) reads this file, uploaded as a named artifact.
+        try:
+            out_path.write_text(json.dumps(record, indent=2), encoding="utf-8")
+            print(f"wrote attestation to {out_path}")
+        except Exception as e:
+            print(f"::error::could not write attestation file: {e}", file=sys.stderr)
+            return 1
+
+    if db_error:
+        print(f"::error::could not verify run {run_id}: {db_error}", file=sys.stderr)
+        return 1
 
     if governance is None:
         print(
@@ -67,11 +123,7 @@ async def _check(run_id: str) -> int:
             "core starts, so absence means the run did not record itself.",
             file=sys.stderr,
         )
-        _emit("attested", "false")
         return 1
-
-    healthy = governance.status != "failed" and (final is None or final.status != "failed")
-    _emit("attested", "true" if healthy else "false")
 
     if not healthy:
         print(
@@ -90,6 +142,7 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id")
     ap.add_argument("--run-id-file", help="file the pipeline wrote its run id to")
+    ap.add_argument("--out", help="write the attestation JSON here (uploaded as an artifact)")
     args = ap.parse_args()
 
     run_id = args.run_id
@@ -103,17 +156,35 @@ def main() -> None:
             )
             _emit("attested", "false")
             _emit("governance_status", "missing")
+            if args.out:
+                try:
+                    Path(args.out).write_text(json.dumps({
+                        "run_id": "", "attested": False, "healthy": False,
+                        "governance_status": "missing",
+                        "final_output_status": "missing",
+                        "artifact_stages": [], "db_error": "",
+                        "note": "no run id was ever written; the process died "
+                                "before the pipeline started",
+                        "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
+                    }, indent=2), encoding="utf-8")
+                except Exception:
+                    pass
             sys.exit(1)
         run_id = path.read_text().strip()
 
     if not run_id:
         ap.error("one of --run-id or --run-id-file is required")
 
+    out_path = Path(args.out) if args.out else None
+
     async def _run() -> int:
         try:
-            return await _check(run_id)
+            return await _check(run_id, out_path)
         finally:
-            await close_db()
+            try:
+                await close_db()
+            except Exception:
+                pass
 
     sys.exit(asyncio.run(_run()))
 

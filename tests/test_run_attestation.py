@@ -100,16 +100,53 @@ def test_an_unwritable_path_never_fails_the_run(monkeypatch, tmp_path) -> None:
     main_mod._publish_run_id("abc123")  # must not raise
 
 
-def test_the_attestation_script_exists_and_is_runnable() -> None:
-    """The workflow references it by path; a rename would break the gate."""
-    script = Path(__file__).resolve().parents[1] / "scripts" / "assert_run_attestation.py"
-    assert script.exists(), "workflow step 'Attest the run recorded itself' needs this"
+def test_an_externally_minted_run_id_is_honoured(monkeypatch) -> None:
+    """Identity must be ownable before anything fallible starts.
+
+    init_db(), get_settings() and validate_keys_for_mode() all run before the
+    pipeline, so an id minted inside it does not exist for a run that dies in
+    startup — and the attestation would have nothing to query. The workflow
+    mints it first and passes it in.
+    """
+    import asyncio
+
+    monkeypatch.setenv("MAS_RUN_ID", "deadbeefcafe")
+    captured = {}
+
+    async def capture(today, settings, run_id, start_time, _state=None):
+        captured["run_id"] = run_id
+
+    monkeypatch.setattr(main_mod, "_run_pipeline_core", capture)
+    asyncio.get_event_loop_policy()  # keep pytest-asyncio's loop handling happy
+    asyncio.run(main_mod.run_morning_pipeline())
+
+    assert captured["run_id"] == "deadbeefcafe"
+
+
+def test_the_workflow_wires_identity_attestation_and_upload() -> None:
+    """The gate depends on all three; any one missing silently breaks it."""
+    root = Path(__file__).resolve().parents[1]
+    assert (root / "scripts" / "assert_run_attestation.py").exists()
 
     workflow = (
-        Path(__file__).resolve().parents[1]
-        / ".github" / "workflows" / "scheduled-pipelines.yml"
+        root / ".github" / "workflows" / "scheduled-pipelines.yml"
     ).read_text()
+
+    # Identity minted before the fallible steps.
+    assert "Mint run identity" in workflow
+    minted = workflow.index("Mint run identity")
+    for later in ("Apply database migrations", "Run ${{ steps.resolve.outputs.pipeline }} pipeline"):
+        assert workflow.index(later) > minted, (
+            f"'{later}' runs before identity is minted; a failure there would "
+            "leave nothing to attest against"
+        )
+
     assert "assert_run_attestation.py" in workflow
-    assert "MAS_RUN_ID_FILE" in workflow, "the worker step must publish the id"
-    for output in ("run_id:", "attested:", "governance_status:"):
-        assert output in workflow, f"job output {output!r} missing — the mirror reads it"
+    assert "--run-id " in workflow, "the minted id must be passed in"
+
+    # The externally readable half. Job outputs are NOT exposed by the REST API,
+    # so without the artifact the VPS mirror cannot read the attestation at all.
+    assert "actions/upload-artifact" in workflow
+    assert "mas-run-attestation" in workflow, (
+        "the artifact name is the mirror's lookup key"
+    )

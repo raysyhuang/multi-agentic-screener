@@ -142,14 +142,27 @@ jobs:
             echo "run=$RUN"
           } >> "$GITHUB_OUTPUT"
 
+      # Mint the run identity BEFORE anything that can fail. Migrations,
+      # init_db(), get_settings() and validate_keys_for_mode() all run ahead of
+      # the pipeline, so an id created inside the pipeline does not exist for a
+      # run that dies during startup — and the attestation would then have
+      # nothing to query. Whoever owns identity must own it first.
+      - name: Mint run identity
+        id: identity
+        if: steps.resolve.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          RUN_ID="$(openssl rand -hex 6)"
+          echo "MAS_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "minted MAS_RUN_ID=$RUN_ID"
+
       - name: Apply database migrations
         if: steps.resolve.outputs.run == 'true'
         run: alembic upgrade head
 
       - name: Run ${{ steps.resolve.outputs.pipeline }} pipeline
         if: steps.resolve.outputs.run == 'true'
-        env:
-          MAS_RUN_ID_FILE: ${{ runner.temp }}/mas_run_id
         run: python -m src.worker ${{ steps.resolve.outputs.flag }}
 
       # Runs even when the pipeline failed — a fail-closed run still records
@@ -158,9 +171,24 @@ jobs:
       - name: Attest the run recorded itself
         id: attest
         if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
+        continue-on-error: true
         run: |
           python scripts/assert_run_attestation.py \
-            --run-id-file "${{ runner.temp }}/mas_run_id"
+            --run-id "${{ steps.identity.outputs.run_id }}" \
+            --out "${{ runner.temp }}/mas-attestation.json"
+
+      # The durable, externally readable half. Job outputs only reach downstream
+      # jobs in this workflow — the REST API does not expose them — so the VPS
+      # mirror cannot read them at all. An artifact can be listed and downloaded
+      # via /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts.
+      - name: Upload attestation
+        if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mas-run-attestation
+          path: ${{ runner.temp }}/mas-attestation.json
+          if-no-files-found: warn
+          retention-days: 30
 
   publish-dashboard:
     name: Publish dashboard to GitHub Pages
