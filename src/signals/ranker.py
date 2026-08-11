@@ -204,11 +204,20 @@ def filter_correlated_picks(
     candidates: list[RankedCandidate],
     price_data: dict[str, "pd.DataFrame"],
     max_correlation: float = 0.75,
+    rejections: dict | None = None,
 ) -> list[RankedCandidate]:
     """Remove highly-correlated candidates to prevent concentrated risk.
 
     Iterates top-down by score. If a candidate's 20-day return correlation
     with any already-accepted candidate exceeds max_correlation, it is dropped.
+
+    ``rejections`` is an optional out-parameter collecting the structured
+    decision for each dropped candidate: its rank in the PRE-filter ordering,
+    the accepted ticker it correlated against, and the observed coefficient.
+    Both facts exist here and were previously only logged, which left the
+    persisted ledger unable to answer why a name disappeared — a row saying
+    "correlation_filtered" with a NULL counterpart and NULL rank is barely
+    better than no row.
     """
     import math
     import pandas as pd
@@ -220,7 +229,7 @@ def filter_correlated_picks(
     accepted: list[RankedCandidate] = []
     accepted_returns: dict[str, pd.Series] = {}
 
-    for candidate in candidates:
+    for pre_filter_rank, candidate in enumerate(candidates, start=1):
         df = price_data.get(candidate.ticker)
         if df is None or df.empty or len(df) < 20:
             accepted.append(candidate)
@@ -251,6 +260,12 @@ def filter_correlated_picks(
                     "Correlation filter: dropping %s (corr=%.2f with %s)",
                     candidate.ticker, corr, acc_ticker,
                 )
+                if rejections is not None:
+                    rejections[candidate.ticker] = {
+                        "pre_filter_rank": pre_filter_rank,
+                        "correlated_with": acc_ticker,
+                        "correlation": round(corr, 4),
+                    }
                 is_correlated = True
                 break
 

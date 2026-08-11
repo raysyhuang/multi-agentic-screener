@@ -148,24 +148,6 @@ class FakeAggregator:
         self.closed = True
 
 
-@pytest.fixture(autouse=True)
-async def _engine_per_test():
-    """Dispose the database engine between tests.
-
-    `get_engine()` caches a module-level singleton and pytest-asyncio gives each
-    test its own event loop, so from the second test onwards every connection
-    belongs to a closed loop. Writes then fail with `RuntimeError: Event loop is
-    closed` — and the pipeline's failure handler swallows DB errors by design,
-    so a run persisted nothing while still reporting itself fail-closed.
-    Disposing here, while the loop is still alive, gives each test a working
-    engine.
-    """
-    yield
-    from src.db.session import close_db
-
-    await close_db()
-
-
 @pytest.fixture
 def pinned_run_id(monkeypatch, request) -> str:
     """Force a per-test run_id so assertions target this invocation only.
