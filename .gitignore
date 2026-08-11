@@ -68,3 +68,9 @@ dashboard/data.json
 .agents/
 .continue/
 .trae/
+
+# macOS/cloud-sync duplicate copies ("foo 2.py", "foo 3.py"). Never source —
+# they are byte-identical strays that Python cannot even import, and a careless
+# `git add -A` sweeps them into a PR (caught in review on #64).
+*[ ][0-9].py
+*[ ][0-9].json
