@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 import subprocess
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, is_dataclass
 from datetime import datetime
 from typing import Any
 
@@ -143,17 +143,18 @@ class GovernanceContext:
 
 
 def _funnel_to_dict(funnel: Any) -> dict:
-    """Serialize a funnel, preferring its own ``to_dict`` over generic asdict.
+    """Serialize a funnel from its dataclass fields, not its ``to_dict``.
 
-    Both pick up newly added counters automatically, which is what matters: a
-    counter added to a funnel should reach the persisted artifact without anyone
-    remembering to update this file.
+    ``asdict`` picks up every field automatically. A hand-written ``to_dict``
+    lists them, so a counter added to the funnel and forgotten there would be
+    logged but never persisted — silently, and in exactly the place where the
+    missing counter is the thing someone is looking for.
     """
     if isinstance(funnel, dict):
         return dict(funnel)
-    if hasattr(funnel, "to_dict"):
-        return funnel.to_dict()
-    return asdict(funnel)
+    if is_dataclass(funnel):
+        return asdict(funnel)
+    return funnel.to_dict()
 
 
 def _get_git_commit() -> str:

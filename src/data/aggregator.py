@@ -201,6 +201,7 @@ class DataAggregator:
                     # dropped to an empty frame and the provenance record claims
                     # nothing failed.
                     self._ohlcv_failures.append(ticker)
+                    self._ohlcv_ticker_source[ticker] = ""
                     out[ticker] = pd.DataFrame()
                 else:
                     out[ticker] = result
@@ -277,7 +278,14 @@ class DataAggregator:
             if result:
                 self._universe_source = "fmp"
                 if self._cache_enabled:
-                    self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+                    # A failed cache WRITE is not a failed fetch. Letting it
+                    # reach the handler below would label a perfectly good FMP
+                    # universe a provider failure and throw it away in favour of
+                    # the Polygon fallback.
+                    try:
+                        self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+                    except Exception as cache_err:
+                        logger.warning("Universe cache write failed: %s", cache_err)
                 return result
         except Exception as e:
             logger.warning("FMP screener failed: %s — falling back to Polygon", e)
@@ -608,11 +616,19 @@ class DataAggregator:
         them, since the run genuinely did use benchmark data and silence would
         read as "none was used".
 
-        An *empty* or all-empty mapping is a different fact — the benchmarks
-        were attempted and failed — and must not be conflated with the legacy
-        case. Testing truthiness rather than ``is not None`` would fabricate two
-        "unknown" bars for a snapshot that recorded a genuine failure, inventing
-        provenance for data that does not exist.
+        Anything else is driven by the known benchmark set, never by iterating
+        whatever the cache happens to hold. Cached JSON is untrusted input here:
+        it can predate a shape change — an earlier revision stored
+        ``{"polygon": 2}`` rather than ``{"SPY": "polygon", ...}`` — and
+        iterating its items would turn the count ``2`` into a provider label.
+        A benchmark with no readable string source is recorded as failed, which
+        also gives ``{}`` the meaning the shape implies rather than silently
+        recording nothing.
+
+        A benchmark that failed when the snapshot was built is still failed on
+        replay: the cached empty frame goes on feeding the regime calculation
+        every time, so the failure has to persist with it rather than
+        disappearing after the first run.
         """
         self._macro_cache_hit = True
 
@@ -621,16 +637,16 @@ class DataAggregator:
             self._ohlcv_cache_hits += len(_BENCHMARK_TICKERS)
             return
 
-        for ticker, source in stored.items():
+        for ticker in _BENCHMARK_TICKERS:
+            source = stored.get(ticker)
+            source = source if isinstance(source, str) else ""
             if source:
                 self._ohlcv_sources[source] += 1
+                self._ohlcv_ticker_source[ticker] = source
                 self._ohlcv_cache_hits += 1
             else:
-                # A benchmark that failed when the snapshot was built is still
-                # failed on replay — the cached empty frame goes on feeding the
-                # regime calculation either way, so the failure has to persist
-                # with it rather than disappearing after the first run.
                 self._ohlcv_failures.append(ticker)
+                self._ohlcv_ticker_source[ticker] = ""
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         """Earnings calendar for catalyst detection."""

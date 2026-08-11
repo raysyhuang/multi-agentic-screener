@@ -728,6 +728,7 @@ async def _run_pipeline_core(
     logger.info("Universe: %d raw → %d filtered", len(raw_universe), len(filtered))
 
     # Data ingest envelope
+    universe_provenance = aggregator.get_data_provenance()["universe_source"]
     ingest_envelope = StageEnvelope(
         run_id=run_id,
         stage=StageName.DATA_INGEST,
@@ -740,8 +741,9 @@ async def _run_pipeline_core(
                     volume=int(s.get("volume", 0)),
                     market_cap=s.get("marketCap"),
                     # Was hardcoded "polygon" — an outright false claim on the
-                    # FMP path, which is the one that normally serves.
-                    source_provenance=aggregator.get_data_provenance()["universe_source"],
+                    # FMP path, which is the one that normally serves. Resolved
+                    # once above rather than per row.
+                    source_provenance=universe_provenance,
                 )
                 for s in filtered[:50]  # log first 50 for envelope size
             ],

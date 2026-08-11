@@ -16,6 +16,7 @@ without anyone having to remember this file. That is deliberate: the ETF gate's
 from __future__ import annotations
 
 import json
+from dataclasses import asdict, fields
 
 from src.governance.artifacts import GovernanceContext
 from src.signals.filter import FilterFunnel, OHLCVFunnel, filter_universe
@@ -49,8 +50,15 @@ def test_etf_rejection_reaches_the_persisted_record() -> None:
     assert payload["universe_funnel"]["passed"] == 1
 
 
-def test_the_whole_funnel_round_trips_not_a_hand_picked_subset() -> None:
-    """Future counters must arrive without an edit here — see module docstring."""
+def test_every_dataclass_field_reaches_the_payload() -> None:
+    """Compared against `asdict`, deliberately — not the funnel's own to_dict.
+
+    Comparing to `funnel.to_dict()` would be tautological when the persistence
+    path also calls `to_dict()`: a counter added to the dataclass and forgotten
+    in that hand-written method would be missing from both sides and the test
+    would still pass, while the artifact silently lost the field. `asdict`
+    enumerates the dataclass itself, so omission fails here.
+    """
     funnel = FilterFunnel()
     filter_universe([SPY_ETF, AAPL], funnel=funnel)
 
@@ -58,8 +66,9 @@ def test_the_whole_funnel_round_trips_not_a_hand_picked_subset() -> None:
         gov.set_funnels(universe=funnel, ohlcv=OHLCVFunnel(total_input=9, passed=4))
 
     payload = gov.record.to_dict()
-    assert payload["universe_funnel"] == funnel.to_dict()
-    assert payload["ohlcv_funnel"]["total_input"] == 9
+    assert payload["universe_funnel"] == asdict(funnel)
+    assert set(payload["universe_funnel"]) == {f.name for f in fields(FilterFunnel)}
+    assert payload["ohlcv_funnel"] == asdict(OHLCVFunnel(total_input=9, passed=4))
 
 
 def test_data_provenance_reaches_the_persisted_record() -> None:

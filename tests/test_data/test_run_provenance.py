@@ -265,7 +265,11 @@ async def test_failed_benchmarks_stay_failed_across_a_cache_replay(
 
 @pytest.mark.asyncio
 async def test_empty_attribution_dict_is_not_treated_as_legacy(agg, monkeypatch) -> None:
-    """`{}` is falsey but is not `None` — it must not trigger the legacy path."""
+    """`{}` is falsey but is not `None` — it must not trigger the legacy path.
+
+    And it must not quietly record nothing either: a benchmark with no readable
+    source is a failed benchmark, which is what the shape implies.
+    """
     agg._cache_enabled = True
     payload = {
         "vix": 15.0,
@@ -277,7 +281,44 @@ async def test_empty_attribution_dict_is_not_treated_as_legacy(agg, monkeypatch)
 
     await agg.get_macro_context()
 
-    assert agg.get_data_provenance()["ohlcv_by_source"] == {}
+    prov = agg.get_data_provenance()
+    assert prov["ohlcv_by_source"] == {}, "no fabricated bars"
+    assert prov["ohlcv_failed_tickers"] == ["QQQ", "SPY"], "but the gap is recorded"
+
+
+@pytest.mark.parametrize(
+    "hostile",
+    [
+        {"polygon": 2},                    # the shape a previous revision wrote
+        {"SPY": 2, "QQQ": 3},              # non-string values
+        {"SPY": None, "QQQ": ["polygon"]},
+        {"evil": {"nested": "thing"}},
+    ],
+)
+@pytest.mark.asyncio
+async def test_unrecognised_cached_shapes_cannot_become_provider_labels(
+    agg, monkeypatch, hostile
+) -> None:
+    """Cached JSON is untrusted input — never iterate whatever it holds.
+
+    An earlier revision of this branch stored `{provider: count}`. Iterating a
+    cached mapping's items would turn the count `2` into a provider label and
+    write fabricated provenance into the run record.
+    """
+    agg._cache_enabled = True
+    payload = {
+        "vix": 15.0,
+        "spy_prices": df_to_json(_bars()),
+        "qqq_prices": df_to_json(_bars()),
+        "_benchmark_provenance": hostile,
+    }
+    monkeypatch.setattr(agg._cache, "get", lambda key: json.dumps(payload))
+
+    await agg.get_macro_context()
+
+    prov = agg.get_data_provenance()
+    assert prov["ohlcv_by_source"] == {}, f"{hostile} leaked a provider label"
+    assert prov["ohlcv_failed_tickers"] == ["QQQ", "SPY"]
 
 
 @pytest.mark.asyncio
@@ -293,13 +334,14 @@ async def test_benchmark_attribution_survives_concurrent_fetching(
     """
 
     async def by_ticker(ticker, *a, **k):
+        # Fetch an unrelated ticker from INSIDE the SPY fetch, so NVDA is in
+        # flight during the SPY/QQQ gather rather than merely before it — the
+        # ordering a counter diff taken around the gather would get wrong.
         if ticker == "SPY":
-            return _bars()
+            await agg.get_ohlcv("NVDA", date(2026, 1, 1), date(2026, 8, 10))
         return _bars()
 
     async def snapshot():
-        # Fetch an unrelated ticker WHILE the macro snapshot is being built.
-        await agg.get_ohlcv("NVDA", date(2026, 1, 1), date(2026, 8, 10))
         return {"vix": 15.0}
 
     stored: dict = {}
