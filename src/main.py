@@ -586,6 +586,7 @@ def _build_quant_only_result(
     regime_context: dict,
     max_picks: int = 2,
     max_sniper: int | None = None,
+    ledger: dict | None = None,
 ) -> PipelineRun:
     """Build a PipelineResult from ranked candidates without any LLM calls.
 
@@ -609,8 +610,20 @@ def _build_quant_only_result(
 
     approved: list[PipelineResult] = []
     sniper_taken = 0
-    for candidate in ranked:
+    for rank, candidate in enumerate(ranked, start=1):
         if len(approved) >= max_picks:
+            # Everything from here down lost to the daily quota, not to
+            # capacity — a distinction the ledger has to keep, because
+            # conflating them is what made the capacity question unanswerable.
+            if ledger is not None:
+                for later_rank, later in enumerate(ranked[rank - 1:], start=rank):
+                    ledger[later.ticker] = {
+                        "selection_stage_reached": True,
+                        "strategy_rank": later_rank,
+                        "selected": False,
+                        "rejection_stage": "quota",
+                        "rejection_reason": "below_quota",
+                    }
             break
         # Concurrent sniper-position risk cap: skip sniper candidates once the
         # available slots are used, but keep scanning for non-sniper picks.
@@ -619,8 +632,24 @@ def _build_quant_only_result(
             and getattr(candidate, "signal_model", None) == "sniper"
         ):
             if sniper_taken >= max_sniper:
+                if ledger is not None:
+                    ledger[candidate.ticker] = {
+                        "selection_stage_reached": True,
+                        "strategy_rank": rank,
+                        "selected": False,
+                        "rejection_stage": "capacity",
+                        "rejection_reason": "capacity_censored",
+                    }
                 continue
             sniper_taken += 1
+        if ledger is not None:
+            ledger[candidate.ticker] = {
+                "selection_stage_reached": True,
+                "strategy_rank": rank,
+                "selected": True,
+                "rejection_stage": None,
+                "rejection_reason": None,
+            }
         stub_interp = SignalInterpretation(
             ticker=candidate.ticker,
             thesis=f"Quant-only pick: {candidate.signal_model} score={candidate.raw_score:.2f}",
@@ -1426,8 +1455,13 @@ async def _run_pipeline_core(
     ranked = apply_confluence_bonus(ranked, confluence_map)
 
     # Correlation filter: drop highly-correlated picks
+    pre_correlation = list(ranked)
     ranked = filter_correlated_picks(ranked, price_data)
     logger.info("Top %d candidates after correlation filter", len(ranked))
+    # Correlation drops happen before selection, so without keeping the
+    # pre-filter list these names vanish entirely — no row, no reason.
+    _survivors = {c.ticker for c in ranked}
+    correlation_dropped = [c for c in pre_correlation if c.ticker not in _survivors]
 
     mr_manual_ranked = []
     if mr_manual_signals:
@@ -1548,10 +1582,28 @@ async def _run_pipeline_core(
             "Sniper concurrency: %d open, %d of %d slots free",
             open_sniper, sniper_slots, settings.sniper_max_positions,
         )
+    selection_ledger: dict = {}
     pipeline_result = _build_quant_only_result(
         ranked, regime_context, max_picks=settings.max_final_picks,
-        max_sniper=sniper_slots,
+        max_sniper=sniper_slots, ledger=selection_ledger,
     )
+    # Slot state as it was AT SELECTION, not re-read later: the whole point is
+    # to know what the book looked like when the decision was made.
+    for _entry in selection_ledger.values():
+        _entry.update({
+            "slots_total": settings.sniper_max_positions,
+            "slots_occupied": open_sniper,
+            "slots_available": sniper_slots,
+        })
+    for _c in correlation_dropped:
+        selection_ledger[_c.ticker] = {
+            "selection_stage_reached": False,
+            "strategy_rank": None,
+            "selected": False,
+            "rejection_stage": "correlation",
+            "rejection_reason": "correlation_filtered",
+            "correlated_with": getattr(_c, "correlated_with", None),
+        }
 
     if mr_manual_ranked:
         # mr_manual sleeve is mean-reversion only — no sniper cap needed.
@@ -1892,8 +1944,11 @@ async def _run_pipeline_core(
             )
             session.add(daily_run)
 
-        # Save candidates
-        for c in ranked:
+        # Save candidates, including those dropped by the correlation filter —
+        # a name with no row cannot be counted, and the rank-quality audit was
+        # previously blind to correlation drops entirely.
+        for c in list(ranked) + list(correlation_dropped):
+            entry = selection_ledger.get(c.ticker, {})
             session.add(Candidate(
                 run_date=today,
                 ticker=c.ticker,
@@ -1902,6 +1957,15 @@ async def _run_pipeline_core(
                 composite_score=c.regime_adjusted_score,
                 signal_model=c.signal_model,
                 features=_json_safe(c.features),
+                selection_stage_reached=entry.get("selection_stage_reached", False),
+                strategy_rank=entry.get("strategy_rank"),
+                selected=entry.get("selected", False),
+                rejection_stage=entry.get("rejection_stage"),
+                rejection_reason=entry.get("rejection_reason"),
+                slots_total=entry.get("slots_total"),
+                slots_occupied=entry.get("slots_occupied"),
+                slots_available=entry.get("slots_available"),
+                correlated_with=entry.get("correlated_with"),
             ))
 
         # Save official MAS picks plus the parallel MR manual sleeve

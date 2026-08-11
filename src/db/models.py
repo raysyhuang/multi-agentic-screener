@@ -15,6 +15,7 @@ from sqlalchemy import (
     Text,
     UniqueConstraint,
     func,
+    text,
 )
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.orm import DeclarativeBase, Mapped, mapped_column
@@ -59,6 +60,34 @@ class Candidate(Base):
     composite_score: Mapped[float] = mapped_column(Float, nullable=False)
     signal_model: Mapped[str] = mapped_column(String(30), nullable=False)  # breakout / mean_rev / catalyst
     features: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+    # --- Selection ledger -------------------------------------------------
+    # Why a candidate was or was not picked, recorded at the moment of the
+    # decision. Previously the sniper concurrency cap was a bare `continue`
+    # (main.py), so a candidate dropped for a full book was indistinguishable
+    # from one ranked below the quota — which made "how often does capacity
+    # censor a valid signal?" unanswerable from stored data.
+    #
+    # Stage is kept separate from reason deliberately: a single free-text
+    # reason blurs facts that need counting apart.
+    selection_stage_reached: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    strategy_rank: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    selected: Mapped[bool] = mapped_column(
+        Boolean, nullable=False, server_default=text("false")
+    )
+    # eligibility | ranking | quota | correlation | capacity | execution
+    rejection_stage: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    # capacity_censored | below_quota | correlation_filtered | ...
+    rejection_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    # Contemporaneous slot state — read at selection time, not inferred later.
+    slots_total: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    slots_occupied: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    slots_available: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    # The already-accepted ticker this candidate correlated with, when dropped.
+    correlated_with: Mapped[str | None] = mapped_column(String(10), nullable=True)
+
     created_at: Mapped[datetime] = mapped_column(
         DateTime(timezone=True), server_default=func.now()
     )

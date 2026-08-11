@@ -68,16 +68,34 @@ def test_archived_migrations_are_off_the_version_path() -> None:
     assert not (VERSIONS_DIR / "e9b5089b0025_add_position_daily_metrics_and_signal_.py").exists()
 
 
-def test_head_is_the_revision_existing_databases_already_hold() -> None:
-    """Head must stay `1c2d3e4f5a6b` — the id production and the mirror are stamped with.
+def test_the_pre_squash_revision_stays_on_the_version_path() -> None:
+    """`1c2d3e4f5a6b` must remain reachable — production and the mirror hold it.
 
-    Squashing removed every revision id those databases could be at. If head
-    were the baseline instead, `alembic upgrade head` would fail with
+    Squashing removed every revision id those databases could be stamped with.
+    If that id leaves the version path, `alembic upgrade head` fails with
     `Can't locate revision identified by '1c2d3e4f5a6b'` — and that command runs
-    ahead of the morning pipeline in scheduled-pipelines.yml, so the book would
-    go dark rather than warn. The bridge revision keeps the old head's id on the
-    path as a no-op successor to the baseline.
+    ahead of the morning pipeline, so the book would go dark rather than warn.
+
+    Note the invariant is *reachable*, not *head*. An earlier version of this
+    test asserted it must BE head, which was true when the bridge was the only
+    revision above the baseline but would have blocked every migration written
+    afterwards. Pinning an accident of the moment rather than the property that
+    matters is its own kind of bug.
     """
+    revisions: set[str] = set()
+    for path in VERSIONS_DIR.glob("*.py"):
+        text = path.read_text()
+        if m := re.search(r"^revision:?\s*(?::\s*str\s*)?=\s*['\"]([^'\"]+)['\"]", text, re.M):
+            revisions.add(m.group(1))
+
+    assert "1c2d3e4f5a6b" in revisions, (
+        "the pre-squash head left the version path; every existing database "
+        f"would fail to upgrade. Revisions present: {sorted(revisions)}"
+    )
+
+
+def test_the_version_path_is_a_single_linear_chain() -> None:
+    """Exactly one head. Two heads mean a database can be 'at head' twice over."""
     down_revisions: set[str] = set()
     revisions: set[str] = set()
     for path in VERSIONS_DIR.glob("*.py"):
@@ -88,10 +106,7 @@ def test_head_is_the_revision_existing_databases_already_hold() -> None:
             down_revisions.add(d)
 
     heads = revisions - down_revisions
-    assert heads == {"1c2d3e4f5a6b"}, (
-        "head changed; existing databases stamped at 1c2d3e4f5a6b would fail to "
-        f"upgrade. Found heads: {sorted(heads)}"
-    )
+    assert len(heads) == 1, f"expected one head, found {sorted(heads)}"
 
 
 def test_version_path_has_exactly_one_root() -> None:
