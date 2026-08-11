@@ -31,6 +31,14 @@ _LEGACY_TABLES = frozenset({
     "tickers",
     "screener_signals",
     "reversion_signals",
+    # Orphaned by the 2026-07 cross-engine strip: created by archived migrations
+    # (a1b2c3d4e5f6, a7b8c9d0e1f2), still present on any database built before
+    # the squash, and no longer declared by the ORM. Without them here, the next
+    # `alembic revision --autogenerate` run against such a database emits
+    # `op.drop_table(...)` for both into whatever unrelated migration is being
+    # written — a destructive operation smuggled in as a side effect.
+    "cross_engine_synthesis",
+    "multi_engine_backtest_runs",
 })
 
 

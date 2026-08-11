@@ -13,7 +13,7 @@ import hashlib
 import json
 import logging
 import subprocess
-from dataclasses import dataclass, field, asdict
+from dataclasses import dataclass, field, asdict, is_dataclass
 from datetime import datetime
 from typing import Any
 
@@ -40,6 +40,16 @@ class GovernanceRecord:
     candidates_scored: int = 0
     picks_approved: int = 0
     pipeline_duration_s: float = 0.0
+    # Which providers actually served the run's data, and where the universe
+    # attrited. Both were computed already and thrown away: the funnels were
+    # logged and discarded, and the OHLCV fallback chain recorded nothing at
+    # all. Without them a zero-pick run is indistinguishable from a run whose
+    # data silently degraded to yfinance, and the only way to tell was to find
+    # the log lines for that specific run. These ride in the existing JSONB
+    # payload, so they need no migration.
+    data_provenance: dict = field(default_factory=dict)
+    universe_funnel: dict = field(default_factory=dict)
+    ohlcv_funnel: dict = field(default_factory=dict)
     created_at: str = field(default_factory=lambda: datetime.utcnow().isoformat())
 
     def to_dict(self) -> dict:
@@ -97,6 +107,21 @@ class GovernanceContext:
     def set_eligibility(self, passed: bool) -> None:
         self._record.eligibility_passed = passed
 
+    def set_data_provenance(self, provenance: dict) -> None:
+        """Record which providers served this run (see DataAggregator)."""
+        self._record.data_provenance = dict(provenance)
+
+    def set_funnels(self, universe: Any = None, ohlcv: Any = None) -> None:
+        """Record where the universe attrited.
+
+        Accepts the funnel dataclasses directly, or plain dicts. This is what
+        makes "picks=0" attributable to a stage instead of a mystery.
+        """
+        if universe is not None:
+            self._record.universe_funnel = _funnel_to_dict(universe)
+        if ohlcv is not None:
+            self._record.ohlcv_funnel = _funnel_to_dict(ohlcv)
+
     def set_config_hash(self, config: dict[str, Any]) -> None:
         serialized = json.dumps(config, sort_keys=True, default=str)
         self._record.config_hash = hashlib.sha256(serialized.encode()).hexdigest()[:16]
@@ -115,6 +140,21 @@ class GovernanceContext:
 
     def add_flag(self, flag: str) -> None:
         self._record.governance_flags.append(flag)
+
+
+def _funnel_to_dict(funnel: Any) -> dict:
+    """Serialize a funnel from its dataclass fields, not its ``to_dict``.
+
+    ``asdict`` picks up every field automatically. A hand-written ``to_dict``
+    lists them, so a counter added to the funnel and forgotten there would be
+    logged but never persisted — silently, and in exactly the place where the
+    missing counter is the thing someone is looking for.
+    """
+    if isinstance(funnel, dict):
+        return dict(funnel)
+    if is_dataclass(funnel):
+        return asdict(funnel)
+    return funnel.to_dict()
 
 
 def _get_git_commit() -> str:

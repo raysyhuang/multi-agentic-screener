@@ -620,6 +620,11 @@ async def _run_pipeline_core(
         logger.info("PAPER MODE — all picks are recommendations only, not live trades")
 
     aggregator = DataAggregator()
+    # Reset at the true start of the run, before ANY fetching. Doing it later
+    # erases what has already been fetched — Step 1 pulls SPY/QQQ benchmark bars
+    # for the regime and eligibility decisions, and resetting after that dropped
+    # the provenance for the very data those decisions rest on.
+    aggregator.reset_data_provenance()
     if _state is not None:
         _state["aggregator"] = aggregator
 
@@ -723,6 +728,7 @@ async def _run_pipeline_core(
     logger.info("Universe: %d raw → %d filtered", len(raw_universe), len(filtered))
 
     # Data ingest envelope
+    universe_provenance = aggregator.get_data_provenance()["universe_source"]
     ingest_envelope = StageEnvelope(
         run_id=run_id,
         stage=StageName.DATA_INGEST,
@@ -734,7 +740,10 @@ async def _run_pipeline_core(
                     last_price=s.get("lastSale", s.get("price", 0.0)),
                     volume=int(s.get("volume", 0)),
                     market_cap=s.get("marketCap"),
-                    source_provenance="polygon",
+                    # Was hardcoded "polygon" — an outright false claim on the
+                    # FMP path, which is the one that normally serves. Resolved
+                    # once above rather than per row.
+                    source_provenance=universe_provenance,
                 )
                 for s in filtered[:50]  # log first 50 for envelope size
             ],
@@ -1934,6 +1943,26 @@ async def _run_pipeline_core(
         candidates_scored=len(ranked),
         picks_approved=len(pipeline_result.approved),
         duration_s=elapsed,
+    )
+    provenance = aggregator.get_data_provenance()
+    gov.set_data_provenance(provenance)
+    gov.set_funnels(universe=universe_funnel, ohlcv=ohlcv_funnel)
+    # One line that answers "what data did this run actually use, and where did
+    # the universe go" without reading the whole log.
+    logger.info(
+        "Run provenance: universe=%s ohlcv_by_source=%s cache_hits=%d failed=%d "
+        "circuits_opened=%s | "
+        "funnel %d raw → %d filtered → %d qualified → %d scored → %d approved",
+        provenance["universe_source"],
+        provenance["ohlcv_by_source"],
+        provenance["ohlcv_cache_hits"],
+        len(provenance["ohlcv_failed_tickers"]),
+        provenance["circuits_opened_during_run"] or "none",
+        universe_funnel.total_input,
+        universe_funnel.passed,
+        ohlcv_funnel.passed,
+        len(ranked),
+        len(pipeline_result.approved),
     )
 
     # Decay detection: compare recent live performance against baseline

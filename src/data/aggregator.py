@@ -17,6 +17,7 @@ import asyncio
 import gc
 import json
 import logging
+from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -47,6 +48,10 @@ logger = logging.getLogger(__name__)
 MAX_CONCURRENCY = 20   # Max simultaneous API requests
 OHLCV_BATCH_SIZE = 50  # Tickers per batch in bulk fetch
 
+# Benchmarks fetched by the macro snapshot; their provenance is stored with
+# the cached snapshot so a hit can replay it (see get_macro_context).
+_BENCHMARK_TICKERS = ("SPY", "QQQ")
+
 
 class DataAggregator:
     """Orchestrates data fetching across all providers with fallback logic."""
@@ -62,6 +67,29 @@ class DataAggregator:
         self._cache = DataCache()
         self._cache_enabled = True
         self._circuit_breaker = APICircuitBreaker()
+        # Which provider actually served each bar this run. The fallback chain
+        # is Polygon -> FMP -> yfinance and it is silent: a Polygon outage
+        # degrades the whole run to yfinance data with nothing in the record to
+        # say so. `get_last_ohlcv_provenance()` covers the research path only
+        # (src/research/signal_backtest.py); this is its live-path counterpart.
+        self._ohlcv_sources: Counter[str] = Counter()
+        self._ohlcv_failures: list[str] = []
+        self._ohlcv_cache_hits: int = 0
+        # ticker -> provider that served it ("" = failed). Lets the macro
+        # snapshot attribute SPY/QQQ without diffing a shared counter.
+        self._ohlcv_ticker_source: dict[str, str] = {}
+        self._universe_source: str = ""
+        self._universe_errors: list[str] = []
+        self._universe_cache_hit: bool = False
+        self._macro_source: str = ""
+        self._macro_cache_hit: bool = False
+        # Latched: a provider whose breaker opened at ANY point in the run stays
+        # here. The breaker's own cooldown is 5 minutes, and scoring runs longer
+        # than that, so reading current state when the record is written would
+        # report an empty set for a run that spent its universe fetch bypassing
+        # Polygon entirely — a disclosure field denying the outage it exists to
+        # disclose.
+        self._circuits_opened: set[str] = set()
 
     async def get_ohlcv(
         self,
@@ -73,15 +101,23 @@ class DataAggregator:
 
         Cache is checked before acquiring the semaphore.
         """
+        key = None
         if self._cache_enabled:
             key = DataCache.build_key(
                 "ohlcv", ticker, "daily",
                 from_date=str(from_date), to_date=str(to_date),
             )
-            cached = self._cache.get(key)
+            cached, cached_source = self._cache.get_with_source(key)
             if cached is not None:
                 try:
-                    return json_to_df(cached)
+                    df = json_to_df(cached)
+                    # Attribute to the provider that ORIGINALLY served the row —
+                    # a hit is a delivery mechanism, not a data source. Hits are
+                    # counted separately so cache reliance stays visible too.
+                    self._ohlcv_sources[cached_source or "unknown"] += 1
+                    self._ohlcv_ticker_source[ticker] = cached_source or "unknown"
+                    self._ohlcv_cache_hits += 1
+                    return df
                 except Exception as e:
                     logger.warning("Cache deserialization failed for %s, treating as miss: %s", ticker, e)
 
@@ -91,14 +127,16 @@ class DataAggregator:
                     df = await self.polygon.get_ohlcv(ticker, from_date, to_date)
                     if not df.empty:
                         self._circuit_breaker.record_success("polygon")
-                        if self._cache_enabled:
-                            ttl = classify_ohlcv_ttl(to_date)
-                            self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
+                        self._ohlcv_sources["polygon"] += 1
+                        self._ohlcv_ticker_source[ticker] = "polygon"
+                        self._store_ohlcv(key, df, to_date, source="polygon", ticker=ticker)
                         return df
                 except Exception as e:
                     self._circuit_breaker.record_failure("polygon")
+                    self._latch_circuit("polygon")
                     logger.warning("Polygon OHLCV failed for %s: %s", ticker, e)
             else:
+                self._circuits_opened.add("polygon")
                 logger.debug("Polygon circuit open, skipping for %s", ticker)
 
             if not self._circuit_breaker.is_open("fmp"):
@@ -106,25 +144,73 @@ class DataAggregator:
                     df = await self.fmp.get_daily_prices(ticker, from_date, to_date)
                     if not df.empty:
                         self._circuit_breaker.record_success("fmp")
-                        if self._cache_enabled:
-                            ttl = classify_ohlcv_ttl(to_date)
-                            self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
+                        self._ohlcv_sources["fmp"] += 1
+                        self._ohlcv_ticker_source[ticker] = "fmp"
+                        self._store_ohlcv(key, df, to_date, source="fmp", ticker=ticker)
                         return df
                 except Exception as e:
                     self._circuit_breaker.record_failure("fmp")
+                    self._latch_circuit("fmp")
                     logger.warning("FMP OHLCV failed for %s: %s", ticker, e)
             else:
+                self._circuits_opened.add("fmp")
                 logger.debug("FMP circuit open, skipping for %s", ticker)
 
             try:
                 df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)
-                if self._cache_enabled and not df.empty:
-                    ttl = classify_ohlcv_ttl(to_date)
-                    self._cache.put(key, df_to_json(df), ttl, source="yfinance", ticker=ticker, endpoint="ohlcv")
+                if df.empty:
+                    self._ohlcv_failures.append(ticker)
+                    self._ohlcv_ticker_source[ticker] = ""
+                else:
+                    self._ohlcv_sources["yfinance"] += 1
+                    self._ohlcv_ticker_source[ticker] = "yfinance"
+                    self._store_ohlcv(key, df, to_date, source="yfinance", ticker=ticker)
                 return df
             except Exception as e:
                 logger.error("All OHLCV sources failed for %s: %s", ticker, e)
+                self._ohlcv_failures.append(ticker)
+                self._ohlcv_ticker_source[ticker] = ""
                 return pd.DataFrame()
+
+    def _latch_circuit(self, provider: str) -> None:
+        """Record that this failure tripped the breaker, at the moment it did.
+
+        Checked immediately after `record_failure` because that is the only
+        instant the transition is observable — the cooldown expires well inside
+        a single run, so asking later gets "closed" for a provider that was cut
+        out of most of it.
+        """
+        if self._circuit_breaker.is_open(provider):
+            self._circuits_opened.add(provider)
+
+    def _store_ohlcv(
+        self,
+        key: str | None,
+        df: pd.DataFrame,
+        to_date: date,
+        *,
+        source: str,
+        ticker: str,
+    ) -> None:
+        """Persist a fetched frame. Never raises.
+
+        A cache write is bookkeeping about a fetch that has already succeeded.
+        Performing it inside the provider's `try` made a failed serialization or
+        a locked SQLite file indistinguishable from the provider being down: the
+        handler recorded a circuit failure, execution fell through to the next
+        provider, and that one incremented the counter too. One ticker ended up
+        attributed to two providers and the totals exceeded the ticker count —
+        corrupting precisely the record this is meant to make trustworthy.
+        """
+        if not self._cache_enabled or key is None:
+            return
+        try:
+            self._cache.put(
+                key, df_to_json(df), classify_ohlcv_ttl(to_date),
+                source=source, ticker=ticker, endpoint="ohlcv",
+            )
+        except Exception as e:
+            logger.warning("OHLCV cache write failed for %s (%s): %s", ticker, source, e)
 
     async def get_bulk_ohlcv(
         self,
@@ -155,6 +241,13 @@ class DataAggregator:
             for ticker, result in zip(batch, results):
                 if isinstance(result, Exception):
                     logger.error("Failed to fetch %s: %s", ticker, result)
+                    # get_ohlcv swallows provider errors itself, so reaching here
+                    # means the task died outside that handling (cancellation,
+                    # semaphore teardown, a bug). Without this the ticker is
+                    # dropped to an empty frame and the provenance record claims
+                    # nothing failed.
+                    self._ohlcv_failures.append(ticker)
+                    self._ohlcv_ticker_source[ticker] = ""
                     out[ticker] = pd.DataFrame()
                 else:
                     out[ticker] = result
@@ -166,33 +259,120 @@ class DataAggregator:
         logger.info("Bulk OHLCV complete: %d/%d tickers fetched", len(out), len(tickers))
         return out
 
+    def get_data_provenance(self) -> dict:
+        """Which providers actually served this run's data.
+
+        The OHLCV fallback chain (Polygon -> FMP -> yfinance) is silent, so a
+        provider outage changes the data underneath a run without changing
+        anything visible in its output. Recording the tally makes a degraded run
+        distinguishable from a healthy one after the fact, which is the whole
+        point of the provenance rule in CLAUDE.md.
+        """
+        return {
+            # Keyed by the provider that ORIGINALLY served each bar, cache hits
+            # included — a hit is a delivery mechanism, not a data source.
+            "ohlcv_by_source": dict(self._ohlcv_sources),
+            "ohlcv_cache_hits": self._ohlcv_cache_hits,
+            "ohlcv_failed_tickers": sorted(set(self._ohlcv_failures)),
+            # "" only before the universe step runs; "unavailable" means every
+            # provider failed, which is a different fact and must not read as
+            # "not yet attempted".
+            "universe_source": self._universe_source,
+            "universe_cache_hit": self._universe_cache_hit,
+            "universe_errors": list(self._universe_errors),
+            # "live" or "cache" — a cached snapshot still drives regime and
+            # eligibility, and its SPY/QQQ bars are folded into ohlcv_by_source.
+            "macro_source": self._macro_source,
+            "macro_cache_hit": self._macro_cache_hit,
+            # Latched across the run, not sampled at report time — see
+            # _circuits_opened. Named for what it actually asserts.
+            "circuits_opened_during_run": sorted(self._circuits_opened),
+        }
+
+    def reset_data_provenance(self) -> None:
+        """Clear counters so a long-lived aggregator reports per-run figures.
+
+        Call this at the START of a run, before any fetching. Calling it partway
+        through erases the evidence for whatever was already fetched — the
+        benchmark bars behind the regime and eligibility decisions, for one.
+        """
+        self._ohlcv_sources.clear()
+        self._ohlcv_failures.clear()
+        self._ohlcv_cache_hits = 0
+        self._ohlcv_ticker_source.clear()
+        self._universe_source = ""
+        self._universe_errors.clear()
+        self._universe_cache_hit = False
+        self._macro_source = ""
+        self._macro_cache_hit = False
+        self._circuits_opened.clear()
+
     async def get_universe(self) -> list[dict]:
         """Build initial universe from FMP screener, falling back to Polygon."""
         if self._cache_enabled:
             key = DataCache.build_key("universe", "", "screener")
-            cached = self._cache.get(key)
+            cached, cached_source = self._cache.get_with_source(key)
             if cached is not None:
-                return json.loads(cached)
+                try:
+                    universe = json.loads(cached)
+                except Exception as e:
+                    # Corrupt cached JSON is a miss, not a pipeline failure —
+                    # the same tolerance the OHLCV path already has.
+                    logger.warning("Universe cache deserialization failed, treating as miss: %s", e)
+                else:
+                    # "cache" is not an answer to "where did the universe come
+                    # from" — the stored row knows whether FMP or Polygon built it.
+                    self._universe_source = cached_source or "unknown"
+                    self._universe_cache_hit = True
+                    return universe
 
         # Try FMP first
         try:
             result = await self.fmp.get_stock_screener()
             if result:
+                self._universe_source = "fmp"
                 if self._cache_enabled:
-                    self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+                    # A failed cache WRITE is not a failed fetch. Letting it
+                    # reach the handler below would label a perfectly good FMP
+                    # universe a provider failure and throw it away in favour of
+                    # the Polygon fallback.
+                    try:
+                        self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="fmp", endpoint="universe")
+                    except Exception as cache_err:
+                        logger.warning("Universe cache write failed: %s", cache_err)
                 return result
         except Exception as e:
             logger.warning("FMP screener failed: %s — falling back to Polygon", e)
+            self._universe_errors.append(f"fmp: {e}")
+        else:
+            if not result:
+                self._universe_errors.append("fmp: returned no rows")
 
         # Fallback: Polygon tickers reference + grouped daily bars
         try:
             result = await self._build_polygon_universe()
-            if self._cache_enabled and result:
-                self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
-            return result
+            if result:
+                self._universe_source = "polygon"
+                if self._cache_enabled:
+                    # Same isolation as the FMP branch above: a failed cache
+                    # write here would be caught as a provider failure, flip the
+                    # source to "unavailable" and return [] — a false
+                    # zero-universe run off a universe that was fetched fine.
+                    try:
+                        self._cache.put(key, json.dumps(result), TTL_UNIVERSE, source="polygon", endpoint="universe")
+                    except Exception as cache_err:
+                        logger.warning("Universe cache write failed: %s", cache_err)
+                return result
+            self._universe_errors.append("polygon: returned no rows")
         except Exception as e:
             logger.error("Polygon universe fallback also failed: %s", e)
-            return []
+            self._universe_errors.append(f"polygon: {e}")
+
+        # Both providers are gone. An empty list with a blank source reads
+        # identically to "the universe step has not run yet"; say which it is.
+        self._universe_source = "unavailable"
+        logger.error("Universe unavailable — every provider failed: %s", self._universe_errors)
+        return []
 
     async def _build_polygon_universe(self) -> list[dict]:
         """Build universe from Polygon reference tickers + grouped daily bars."""
@@ -440,6 +620,15 @@ class DataAggregator:
                     # Restore DataFrames from serialized form
                     payload["spy_prices"] = json_to_df(payload["spy_prices"])
                     payload["qqq_prices"] = json_to_df(payload["qqq_prices"])
+                    # A cached macro snapshot returns without touching the
+                    # provenance-aware OHLCV path, so the SPY/QQQ bars that
+                    # drive the regime and eligibility decisions would leave no
+                    # trace — the record would claim no benchmark data was used
+                    # at all. Rehydrate the provenance stored alongside them.
+                    self._macro_source = "cache"
+                    self._rehydrate_benchmark_provenance(
+                        payload.pop("_benchmark_provenance", None)
+                    )
                     return payload
                 except Exception as e:
                     logger.warning("Macro cache deserialization failed, treating as miss: %s", e)
@@ -456,6 +645,21 @@ class DataAggregator:
 
         spy_df, qqq_df = await asyncio.gather(spy_task, qqq_task)
 
+        # Read per-ticker attribution rather than diffing the shared counter
+        # before and after. A diff silently assumes nothing else fetches during
+        # the gather; that holds today only because macro runs first, and it
+        # would start attributing other tickers' providers to the benchmarks the
+        # moment anything ran alongside it. Per-ticker is correct regardless of
+        # ordering. "" means the fetch failed, which is itself worth replaying.
+        benchmark_provenance = {
+            t: self._ohlcv_ticker_source.get(t, "") for t in _BENCHMARK_TICKERS
+        }
+
+        # Explicitly clear the cache flag: a malformed cached payload can set it
+        # partway through before falling back here, and a run that fetched live
+        # must not report itself as cache-served.
+        self._macro_source = "live"
+        self._macro_cache_hit = False
         macro["spy_prices"] = spy_df
         macro["qqq_prices"] = qqq_df
 
@@ -464,9 +668,64 @@ class DataAggregator:
             cache_payload = {**macro}
             cache_payload["spy_prices"] = df_to_json(spy_df)
             cache_payload["qqq_prices"] = df_to_json(qqq_df)
-            self._cache.put(key, json.dumps(cache_payload), TTL_MACRO, source="macro", endpoint="snapshot")
+            cache_payload["_benchmark_provenance"] = benchmark_provenance
+            try:
+                self._cache.put(key, json.dumps(cache_payload), TTL_MACRO, source="macro", endpoint="snapshot")
+            except Exception as e:
+                # Last of the "cache bookkeeping decides the pipeline outcome"
+                # shapes: an unserializable macro payload would have thrown out
+                # of a macro fetch that had already succeeded.
+                logger.warning("Macro cache write failed: %s", e)
 
         return macro
+
+    def _rehydrate_benchmark_provenance(self, stored: dict | None) -> None:
+        """Restore SPY/QQQ attribution from a cached macro snapshot.
+
+        ``None`` means the snapshot predates this field and has no attribution
+        to restore: record the two benchmarks as "unknown" rather than omitting
+        them, since the run genuinely did use benchmark data and silence would
+        read as "none was used".
+
+        Anything else is driven by the known benchmark set, never by iterating
+        whatever the cache happens to hold. Cached JSON is untrusted input here:
+        it can predate a shape change — an earlier revision stored
+        ``{"polygon": 2}`` rather than ``{"SPY": "polygon", ...}`` — and
+        iterating its items would turn the count ``2`` into a provider label.
+        A benchmark with no readable string source is recorded as failed, which
+        also gives ``{}`` the meaning the shape implies rather than silently
+        recording nothing.
+
+        A benchmark that failed when the snapshot was built is still failed on
+        replay: the cached empty frame goes on feeding the regime calculation
+        every time, so the failure has to persist with it rather than
+        disappearing after the first run.
+        """
+        if stored is None:
+            self._ohlcv_sources["unknown"] += len(_BENCHMARK_TICKERS)
+            self._ohlcv_cache_hits += len(_BENCHMARK_TICKERS)
+            self._macro_cache_hit = True
+            return
+
+        # Not a mapping at all — same treatment as an unreadable source.
+        if not isinstance(stored, dict):
+            stored = {}
+
+        for ticker in _BENCHMARK_TICKERS:
+            source = stored.get(ticker)
+            source = source if isinstance(source, str) else ""
+            if source:
+                self._ohlcv_sources[source] += 1
+                self._ohlcv_ticker_source[ticker] = source
+                self._ohlcv_cache_hits += 1
+            else:
+                self._ohlcv_failures.append(ticker)
+                self._ohlcv_ticker_source[ticker] = ""
+
+        # Set last: if anything above raised, the caller falls through to a live
+        # fetch, and a flag claiming the macro came from cache would contradict
+        # the run that actually happened.
+        self._macro_cache_hit = True
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         """Earnings calendar for catalyst detection."""

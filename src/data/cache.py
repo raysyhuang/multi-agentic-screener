@@ -121,26 +121,38 @@ class DataCache:
 
     def get(self, key: str) -> str | None:
         """Return cached JSON if within TTL, else None (deletes expired)."""
+        return self.get_with_source(key)[0]
+
+    def get_with_source(self, key: str) -> tuple[str | None, str]:
+        """Like ``get``, but also returns the provider that originally served it.
+
+        A cache hit is not a provenance answer — the row was fetched from
+        Polygon, FMP or yfinance at some earlier point, and that is the fact a
+        provenance record needs. Reporting hits as source "cache" would hide a
+        run built entirely on bars that yfinance served during an outage. The
+        origin is already stored in ``cache_entries.source``; it was simply
+        never read back.
+        """
         now = time.time()
         row = self._conn.execute(
-            "SELECT data_json, expires_at FROM cache_entries WHERE key = ?",
+            "SELECT data_json, expires_at, source FROM cache_entries WHERE key = ?",
             (key,),
         ).fetchone()
 
         if row is None:
             self._misses += 1
-            return None
+            return None, ""
 
-        data_json, expires_at = row
+        data_json, expires_at, source = row
         if now > expires_at:
             self._conn.execute("DELETE FROM cache_entries WHERE key = ?", (key,))
             self._conn.commit()
             self._misses += 1
             self._evictions += 1
-            return None
+            return None, ""
 
         self._hits += 1
-        return data_json
+        return data_json, source or ""
 
     def put(
         self,

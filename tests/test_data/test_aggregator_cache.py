@@ -25,6 +25,10 @@ def aggregator(tmp_path):
     ):
         mock_cache = MagicMock(spec=DataCache)
         mock_cache.get.return_value = None
+        # The OHLCV path reads `get_with_source` so a cache hit can be
+        # attributed to the provider that originally served it rather than to
+        # "cache". Other endpoints still use plain `get`.
+        mock_cache.get_with_source.return_value = (None, "")
         mock_cache.get_stats.return_value = {
             "hits": 0, "misses": 0, "stores": 0,
             "evictions": 0, "hit_rate": 0.0, "total_entries": 0,
@@ -52,7 +56,7 @@ def ohlcv_df():
 async def test_ohlcv_cache_hit_skips_api(aggregator, ohlcv_df):
     """When cache has data, the fallback chain should not be called."""
     cached_json = df_to_json(ohlcv_df)
-    aggregator._cache.get.return_value = cached_json
+    aggregator._cache.get_with_source.return_value = (cached_json, "polygon")
 
     df = await aggregator.get_ohlcv("AAPL", date(2024, 1, 1), date(2024, 1, 5))
 
@@ -86,7 +90,7 @@ async def test_fundamentals_cache_hit_skips_api(aggregator):
 @pytest.mark.asyncio
 async def test_ohlcv_cache_miss_calls_api_and_stores(aggregator, ohlcv_df):
     """On cache miss, API is called and result is stored."""
-    aggregator._cache.get.return_value = None
+    aggregator._cache.get_with_source.return_value = (None, "")
     aggregator.polygon.get_ohlcv = AsyncMock(return_value=ohlcv_df)
 
     df = await aggregator.get_ohlcv("AAPL", date(2024, 1, 1), date(2024, 1, 5))
@@ -119,7 +123,9 @@ async def test_cache_disabled_bypasses(aggregator, ohlcv_df):
     df = await aggregator.get_ohlcv("AAPL", date(2024, 1, 1), date(2024, 1, 5))
 
     assert not df.empty
-    aggregator._cache.get.assert_not_called()
+    # The OHLCV path reads get_with_source, so asserting on the legacy `get`
+    # would pass even if the cache were being consulted.
+    aggregator._cache.get_with_source.assert_not_called()
     aggregator._cache.put.assert_not_called()
 
 
@@ -172,7 +178,9 @@ async def test_macro_cache_preserves_dataframes(aggregator):
 @pytest.mark.asyncio
 async def test_universe_cache_hit(aggregator):
     cached = json.dumps([{"symbol": "AAPL"}, {"symbol": "MSFT"}])
-    aggregator._cache.get.return_value = cached
+    # The universe path reads `get_with_source` so a hit is attributed to the
+    # provider that built it rather than to "cache".
+    aggregator._cache.get_with_source.return_value = (cached, "fmp")
 
     result = await aggregator.get_universe()
 
