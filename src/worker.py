@@ -46,7 +46,20 @@ async def start_worker() -> None:
     for flag, job in one_off_jobs.items():
         if flag in sys.argv:
             logger.info("Running one-off job %s", flag)
-            await job()
+            ok = await job()
+            if ok is False:
+                # The morning pipeline fails closed: it catches the exception,
+                # writes the NoTrade record and alerts, then returns. That kept
+                # the process exit code at 0, so the workflow went green and
+                # `pipeline-failure-alert.yml` — which fires only on a failed
+                # conclusion — stayed silent. On 2026-08-11 the run that took
+                # the book to NoTrade reported success. Surface it here, after
+                # the fail-closed record has already been written.
+                logger.error(
+                    "One-off job %s fail-closed; exiting non-zero so the run is "
+                    "visible as failed", flag,
+                )
+                sys.exit(3)
             logger.info("One-off job %s complete; exiting worker", flag)
             return
 

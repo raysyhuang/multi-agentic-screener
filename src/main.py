@@ -293,11 +293,20 @@ def _trading_date_et(now: datetime | None = None) -> date:
     return current.date()
 
 
-async def run_morning_pipeline() -> None:
+async def run_morning_pipeline() -> bool:
     """Main daily pipeline — runs at 6:00 AM ET.
 
     Fail-closed: any unhandled exception guarantees a NoTrade DB record
     and Telegram alert rather than a silent abort.
+
+    Returns True if the run completed, False if it fail-closed. Swallowing the
+    exception is deliberate — the record and the alert must both be written —
+    but swallowing it *silently* meant the process exited 0 and the workflow
+    went green. On 2026-08-11 the run that took the book to NoTrade reported
+    `conclusion: success`, and `pipeline-failure-alert.yml` (which fires only on
+    a failed conclusion) stayed quiet on the one day it was needed. The caller
+    decides what to do with the signal; the scheduler keeps running, the one-off
+    CI path exits non-zero.
     """
     import uuid
 
@@ -318,6 +327,7 @@ async def run_morning_pipeline() -> None:
     settings = None
 
     _state: dict = {}
+    fail_closed = False
     try:
         today = _trading_date_et()
         settings = get_settings()
@@ -329,6 +339,7 @@ async def run_morning_pipeline() -> None:
 
         await _run_pipeline_core(today, settings, run_id, start_time, _state=_state)
     except Exception as exc:
+        fail_closed = True
         elapsed = time.monotonic() - start_time
         # A crash before `today` was resolved still needs a date to file under.
         today = today or date.today()
@@ -444,6 +455,10 @@ async def run_morning_pipeline() -> None:
         import gc
         gc.collect()
         _log_memory("run_morning_pipeline_exit")
+
+    # Outside the finally deliberately: returning from a finally block would
+    # discard any exception raised during cleanup.
+    return not fail_closed
 
 
 async def _check_paper_gate(settings) -> bool:
