@@ -218,8 +218,19 @@ def validate_universe(
     raw_count: int,
     filtered_count: int,
     filtered: list[dict],
+    unrecognized_type_flags: int = 0,
 ) -> StageValidation:
-    """Validate the universe building and filtering stage."""
+    """Validate the universe building and filtering stage.
+
+    ``unrecognized_type_flags`` counts rows whose isEtf/isFund classification
+    arrived in a shape the ETF gate could not read. Those rows are deliberately
+    admitted rather than dropped — failing closed on an unknown provider
+    encoding would cost the whole day's universe — but that trade is only
+    defensible if the condition is *visible*. Left in a log line it is not: a
+    provider schema drift could quietly admit ETFs, ETNs and funds for weeks
+    with nothing but a warning nobody reads. Surfacing it here puts it in
+    pipeline health, which reaches the stored artifact and the dashboard.
+    """
     sv = StageValidation(stage_name="universe", executed=True)
 
     # Raw universe should be non-trivial
@@ -253,6 +264,25 @@ def validate_universe(
             message=f"Aggressive filtering: {drop_rate:.0%} dropped" if not drop_ok else f"Filter rate: {drop_rate:.0%}",
             value=round(drop_rate, 3),
         ))
+
+    # Security-type classification legibility. WARN, not FAIL: the run is still
+    # usable and blocking it would hand a provider hiccup the power to stop the
+    # book. But it must not be silent — an ETF admitted because the gate could
+    # not read its classification is exactly the failure this check exists for.
+    flags_ok = unrecognized_type_flags == 0
+    sv.checks.append(StageCheck(
+        name="security_type_classification",
+        passed=flags_ok,
+        severity=Severity.WARN,
+        message=(
+            f"{unrecognized_type_flags} rows had unreadable isEtf/isFund "
+            "classification and were admitted unchecked — provider shape may "
+            "have changed"
+            if not flags_ok
+            else "Security type classification readable on all rows"
+        ),
+        value=unrecognized_type_flags,
+    ))
 
     return sv
 
