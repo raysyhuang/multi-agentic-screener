@@ -42,6 +42,8 @@ PROVENANCE = {
     "ohlcv_by_source": {"polygon": 800, "yfinance": 41},
     "ohlcv_cache_hits": 141,
     "ohlcv_failed_tickers": ["ZZZZ"],
+    "ohlcv_failed_count": 1,
+    "ohlcv_failures_truncated": False,
     "universe_source": "fmp",
     "universe_cache_hit": False,
     "universe_errors": [],

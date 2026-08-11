@@ -52,6 +52,10 @@ OHLCV_BATCH_SIZE = 50  # Tickers per batch in bulk fetch
 # the cached snapshot so a hit can replay it (see get_macro_context).
 _BENCHMARK_TICKERS = ("SPY", "QQQ")
 
+# Cap on failed tickers listed in the provenance record. The count is reported
+# separately and is never truncated.
+_MAX_REPORTED_FAILURES = 50
+
 
 class DataAggregator:
     """Orchestrates data fetching across all providers with fallback logic."""
@@ -273,7 +277,14 @@ class DataAggregator:
             # included — a hit is a delivery mechanism, not a data source.
             "ohlcv_by_source": dict(self._ohlcv_sources),
             "ohlcv_cache_hits": self._ohlcv_cache_hits,
-            "ohlcv_failed_tickers": sorted(set(self._ohlcv_failures)),
+            # Bounded: a total provider outage fails every ticker, and
+            # max_ohlcv_tickers is 1000, so the unbounded list could put a
+            # multi-kilobyte array into every governance artifact — largest on
+            # exactly the runs already in trouble. The count is always exact;
+            # the sample is enough to recognise a pattern.
+            "ohlcv_failed_tickers": sorted(set(self._ohlcv_failures))[:_MAX_REPORTED_FAILURES],
+            "ohlcv_failed_count": len(set(self._ohlcv_failures)),
+            "ohlcv_failures_truncated": len(set(self._ohlcv_failures)) > _MAX_REPORTED_FAILURES,
             # "" only before the universe step runs; "unavailable" means every
             # provider failed, which is a different fact and must not read as
             # "not yet attempted".
