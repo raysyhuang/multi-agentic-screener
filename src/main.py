@@ -760,6 +760,7 @@ async def _run_pipeline_core(
         raw_count=len(raw_universe),
         filtered_count=len(filtered),
         filtered=filtered,
+        unrecognized_type_flags=universe_funnel.unrecognized_type_flags,
     ))
 
     # --- Step 3: Fetch OHLCV for filtered universe ---

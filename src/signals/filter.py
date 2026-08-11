@@ -24,6 +24,72 @@ _SPLIT_DROP_RATIOS = (0.50, 0.333, 0.25, 0.20)  # 2:1, 3:1, 4:1, 5:1
 _SPLIT_RATIO_TOLERANCE = 0.05
 
 
+_TRUE_TOKENS = frozenset({"true", "1", "yes", "y", "t"})
+_FALSE_TOKENS = frozenset({"false", "0", "no", "n", "f"})
+
+
+def _as_bool(value: object) -> tuple[bool, bool]:
+    """Coerce a provider's boolean-ish flag. Returns (value, recognised).
+
+    JSON booleans, the strings "true"/"false", and 0/1 are all encodings a
+    provider may use, and they are not interchangeable in Python: `bool("false")`
+    is True. A gate that reads such a flag raw flips to rejecting everything the
+    moment the encoding changes.
+
+    ``None`` and ``""`` are NOT false — they are *unknown*. Treating them as a
+    recognised false is how a provider quietly dropping the field would admit
+    products with neither an exclusion nor a warning: the gate would report
+    itself healthy while evaluating nothing. Only an explicit false-like value
+    counts as false.
+
+    An unrecognised value returns ``(False, False)`` — do not exclude, but say
+    so. For this gate that is the safe direction: wrongly admitting an ETF costs
+    one bad candidate, wrongly excluding everything costs the whole day's
+    universe. The caller counts the unrecognised ones so the condition surfaces
+    in the funnel instead of being absorbed.
+    """
+    if isinstance(value, bool):
+        return value, True
+    if isinstance(value, (int, float)) and value in (0, 1):
+        return bool(value), True
+    if isinstance(value, str):
+        token = value.strip().lower()
+        if token in _TRUE_TOKENS:
+            return True, True
+        if token in _FALSE_TOKENS:
+            return False, True
+    return False, False
+
+
+def _fund_flags(stock: dict) -> tuple[bool, bool, bool]:
+    """Read isEtf/isFund from a row. Returns (is_etf, is_fund, evaluated).
+
+    Whether an absent flag is a problem depends on which provider shaped the
+    row. The Polygon builder always sets ``type`` (to ``""`` for common stock,
+    since its query is already restricted to CS) and never sets these flags —
+    there, absence is correct and the ``type`` field is authoritative. An
+    FMP-shaped row has no ``type`` key at all, so the flags are the only thing
+    standing between an ETF and the universe; absent or empty there means the
+    gate evaluated nothing and must say so.
+
+    The Polygon shape is identified by an *empty* ``type``, not merely by the
+    key being present. Presence alone would hand any future FMP security-type
+    field the Polygon exemption: an unfamiliar value like "TRUST" or "CEF" would
+    suppress the unknown warning and admit the row silently — the exact
+    failure this counter exists to expose. An unfamiliar non-empty type falls
+    through to the visible unknown path instead.
+    """
+    polygon_shaped = "type" in stock and not str(stock["type"]).strip()
+
+    is_etf, etf_known = _as_bool(stock.get("isEtf"))
+    is_fund, fund_known = _as_bool(stock.get("isFund"))
+
+    if polygon_shaped and "isEtf" not in stock and "isFund" not in stock:
+        return is_etf, is_fund, True  # `type` carries the decision
+
+    return is_etf, is_fund, etf_known and fund_known
+
+
 def _is_valid_ticker(ticker: str) -> bool:
     """Allow normal US symbols, including class shares like BRK.B/BF-B."""
     if not ticker:
@@ -46,6 +112,10 @@ class FilterFunnel:
     failed_suffix: int = 0
     failed_type: int = 0
     failed_ticker_format: int = 0
+    # Rows whose isEtf/isFund arrived in an encoding we do not recognise. These
+    # are NOT excluded (see _as_bool); a non-zero count means the provider
+    # changed shape and the ETF gate is running blind on those rows.
+    unrecognized_type_flags: int = 0
     passed: int = 0
 
     def log_summary(self) -> None:
@@ -62,6 +132,12 @@ class FilterFunnel:
             self.failed_type,
             self.failed_ticker_format,
         )
+        if self.unrecognized_type_flags:
+            logger.warning(
+                "Filter funnel: %d rows had unrecognised isEtf/isFund encodings — "
+                "the ETF gate did not evaluate them. Provider shape may have changed.",
+                self.unrecognized_type_flags,
+            )
 
     def to_dict(self) -> dict:
         return {
@@ -72,6 +148,7 @@ class FilterFunnel:
             "failed_suffix": self.failed_suffix,
             "failed_type": self.failed_type,
             "failed_ticker_format": self.failed_ticker_format,
+            "unrecognized_type_flags": self.unrecognized_type_flags,
             "passed": self.passed,
         }
 
@@ -156,8 +233,33 @@ def filter_universe(
             funnel.failed_suffix += 1
             continue
 
-        # Type exclusion
-        if any(t in stock_type for t in EXCLUDED_TYPES):
+        # Type exclusion.
+        #
+        # `type` is the Polygon-shaped field. The FMP screener — the PRIMARY
+        # universe source — does not return it at all; it reports `isEtf` /
+        # `isFund` booleans instead. So for six months this gate read None on
+        # every FMP row, `stock_type` was "", and nothing was ever excluded.
+        # TQQQ (a 3x leveraged ETF, beta 3.7) reached the official candidate
+        # pool with a sniper score of 97.5 — leveraged products clear the
+        # sniper's ATR% >= 5 floor structurally, and their "relative strength
+        # vs SPY" is leveraged beta, not the idiosyncratic strength the signal
+        # is trying to measure.
+        # The flags are coerced, never read for raw truthiness: JSON `false` and
+        # the STRING "false" are both plausible encodings, and `bool("false")` is
+        # True. Reading them raw would drop every FMP row on the day the provider
+        # changed encoding — a silent zero-universe run, which is far worse than
+        # admitting an ETF. Unrecognised values are counted and reported rather
+        # than silently deciding either way.
+        is_etf, is_fund, flags_evaluated = _fund_flags(stock)
+        # A `type` that matches a known excluded category IS a decision, so the
+        # gate is not blind on that row even though the flags told us nothing.
+        # Without this, tightening the Polygon heuristic above would count every
+        # explicitly-typed ETF as "unknown" while also excluding it.
+        type_excluded = any(t in stock_type for t in EXCLUDED_TYPES)
+        if not (flags_evaluated or type_excluded):
+            funnel.unrecognized_type_flags += 1
+
+        if type_excluded or is_etf or is_fund:
             funnel.failed_type += 1
             continue
 
