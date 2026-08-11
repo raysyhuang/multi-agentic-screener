@@ -129,13 +129,21 @@ async def test_the_one_off_worker_exits_zero_on_success(
 
 @pytest.fixture
 def direct_entrypoint(monkeypatch):
-    """`main()` opens the database before dispatching flags — stub that out.
+    """Neutralize everything `main()` does before it dispatches the flag.
 
-    Without it these tests reach for a real Postgres, which passes or fails
-    depending on whatever DATABASE_URL the machine happens to carry.
+    It opens the database and calls `settings.validate_keys_for_mode()` first,
+    so without stubbing both, these tests depend on whatever DATABASE_URL and
+    API keys the machine happens to carry — passing against a populated local
+    `.env` and failing on a bare CI runner. That is the third time in this
+    session the same `.env`-precedence trap has produced a green local run and a
+    red remote one; the environment a test needs has to be stated, not
+    inherited.
     """
+    settings = MagicMock()
+    settings.validate_keys_for_mode.return_value = None
+    settings.execution_mode = "quant_only"
     monkeypatch.setattr(main_mod, "init_db", AsyncMock())
-    monkeypatch.setattr(main_mod, "_setup_logging", lambda *a, **k: None)
+    monkeypatch.setattr(main_mod, "get_settings", lambda: settings)
     return main_mod
 
 
