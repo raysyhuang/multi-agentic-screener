@@ -1951,7 +1951,7 @@ async def _run_pipeline_core(
     # the universe go" without reading the whole log.
     logger.info(
         "Run provenance: universe=%s ohlcv_by_source=%s cache_hits=%d failed=%d "
-        "circuits_opened=%s | "
+        "circuits_opened_during_run=%s | "
         "funnel %d raw → %d filtered → %d qualified → %d scored → %d approved",
         provenance["universe_source"],
         provenance["ohlcv_by_source"],

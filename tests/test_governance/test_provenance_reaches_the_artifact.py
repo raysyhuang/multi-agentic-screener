@@ -36,6 +36,20 @@ AAPL = {
     "type": "",
 }
 
+# A realistic run's provenance. Its key set is pinned against the aggregator's
+# real output below, so this cannot quietly rot into a shape nothing produces.
+PROVENANCE = {
+    "ohlcv_by_source": {"polygon": 800, "yfinance": 41},
+    "ohlcv_cache_hits": 141,
+    "ohlcv_failed_tickers": ["ZZZZ"],
+    "universe_source": "fmp",
+    "universe_cache_hit": False,
+    "universe_errors": [],
+    "macro_source": "live",
+    "macro_cache_hit": False,
+    "circuits_opened_during_run": ["polygon"],
+}
+
 
 def test_etf_rejection_reaches_the_persisted_record() -> None:
     funnel = FilterFunnel()
@@ -71,20 +85,29 @@ def test_every_dataclass_field_reaches_the_payload() -> None:
     assert payload["ohlcv_funnel"] == asdict(OHLCVFunnel(total_input=9, passed=4))
 
 
+def test_the_provenance_fixture_matches_the_real_shape() -> None:
+    """Hand-written fixtures drift from the thing they stand in for.
+
+    `circuits_open` was renamed to `circuits_opened_during_run` when it stopped
+    being a point-in-time sample, and the fixtures below kept the retired key —
+    passing happily while asserting against a shape the aggregator no longer
+    produces. Pin the fixture to the real one so the next rename cannot leave a
+    fossil behind.
+    """
+    from src.data.aggregator import DataAggregator
+
+    real = DataAggregator().get_data_provenance()
+    assert set(PROVENANCE) == set(real), (
+        "fixture keys have drifted from get_data_provenance(); "
+        f"missing={set(real) - set(PROVENANCE)}, stale={set(PROVENANCE) - set(real)}"
+    )
+
+
 def test_data_provenance_reaches_the_persisted_record() -> None:
-    provenance = {
-        "ohlcv_by_source": {"polygon": 800, "yfinance": 41},
-        "ohlcv_cache_hits": 141,
-        "ohlcv_failed_tickers": ["ZZZZ"],
-        "universe_source": "fmp",
-        "universe_errors": [],
-        "circuits_open": ["polygon"],
-    }
-
     with GovernanceContext(run_id="r3", run_date="2026-08-11") as gov:
-        gov.set_data_provenance(provenance)
+        gov.set_data_provenance(PROVENANCE)
 
-    assert gov.record.to_dict()["data_provenance"] == provenance
+    assert gov.record.to_dict()["data_provenance"] == PROVENANCE
 
 
 def test_the_payload_is_json_serializable() -> None:
@@ -95,7 +118,7 @@ def test_the_payload_is_json_serializable() -> None:
     with GovernanceContext(run_id="r4", run_date="2026-08-11") as gov:
         gov.set_funnels(universe=funnel, ohlcv=OHLCVFunnel())
         gov.set_data_provenance(
-            {"ohlcv_by_source": {"polygon": 1}, "circuits_open": []}
+            {"ohlcv_by_source": {"polygon": 1}, "circuits_opened_during_run": []}
         )
 
     json.dumps(gov.record.to_dict())
