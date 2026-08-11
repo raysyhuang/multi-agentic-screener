@@ -311,11 +311,17 @@ async def run_morning_pipeline() -> bool:
     import uuid
 
     start_time = time.monotonic()
-    run_id = uuid.uuid4().hex[:12]
+    # Accept an externally minted id. The workflow generates one BEFORE
+    # migrations and worker startup, because init_db(), get_settings() and
+    # validate_keys_for_mode() all run ahead of this function and can fail —
+    # and a run that died there would have had no identity to attest against.
+    # Whoever owns the identity must own it before anything fallible starts.
+    run_id = os.environ.get("MAS_RUN_ID") or uuid.uuid4().hex[:12]
 
     # Attach run_id to all log records for this pipeline execution
     run_id_filter = RunIDFilter(run_id)
     logging.getLogger().addFilter(run_id_filter)
+
 
     # Resolved inside the try below, but bound here so the failure handler can
     # rely on them existing. `_trading_date_et()` and `get_settings()` were

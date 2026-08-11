@@ -57,6 +57,15 @@ jobs:
       # Whether the pipeline actually ran (vs a DST-guard skip on the duplicate
       # cron line) — gates the dashboard publish so Pages deploys once per slot.
       ran: ${{ steps.resolve.outputs.run }}
+      # Attestation read from the database inside the workflow, where it is
+      # reachable. External health checks (the VPS mirror) cannot query Neon and
+      # the dashboard snapshot exports DailyRun health but not per-run
+      # artifacts, so without this they can only infer health from a green
+      # conclusion — which has been green on a broken run twice.
+      run_id: ${{ steps.attest.outputs.run_id }}
+      attested: ${{ steps.attest.outputs.attested }}
+      governance_status: ${{ steps.attest.outputs.governance_status }}
+      final_output_status: ${{ steps.attest.outputs.final_output_status }}
     env:
       # --- Database (external managed Postgres — replaces Heroku Postgres) ---
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -133,6 +142,21 @@ jobs:
             echo "run=$RUN"
           } >> "$GITHUB_OUTPUT"
 
+      # Mint the run identity BEFORE anything that can fail. Migrations,
+      # init_db(), get_settings() and validate_keys_for_mode() all run ahead of
+      # the pipeline, so an id created inside the pipeline does not exist for a
+      # run that dies during startup — and the attestation would then have
+      # nothing to query. Whoever owns identity must own it first.
+      - name: Mint run identity
+        id: identity
+        if: steps.resolve.outputs.run == 'true'
+        run: |
+          set -euo pipefail
+          RUN_ID="$(openssl rand -hex 6)"
+          echo "MAS_RUN_ID=$RUN_ID" >> "$GITHUB_ENV"
+          echo "run_id=$RUN_ID" >> "$GITHUB_OUTPUT"
+          echo "minted MAS_RUN_ID=$RUN_ID"
+
       - name: Apply database migrations
         if: steps.resolve.outputs.run == 'true'
         run: alembic upgrade head
@@ -140,6 +164,51 @@ jobs:
       - name: Run ${{ steps.resolve.outputs.pipeline }} pipeline
         if: steps.resolve.outputs.run == 'true'
         run: python -m src.worker ${{ steps.resolve.outputs.flag }}
+
+      # Runs even when the pipeline failed — a fail-closed run still records
+      # itself, and that record is precisely what an external health check needs
+      # to distinguish "recorded its own failure" from "vanished".
+      - name: Attest the run recorded itself
+        id: attest
+        if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
+        env:
+          OUT: ${{ runner.temp }}/mas-attestation.json
+          RUN_ID: ${{ steps.identity.outputs.run_id }}
+        run: |
+          set +e
+          python scripts/assert_run_attestation.py --run-id "$RUN_ID" --out "$OUT"
+          rc=$?
+          # The script writes the attestation itself; this covers the case where
+          # it could not run at all (import error, interpreter gone, OOM). An
+          # absent artifact and an unhealthy one must not look the same to the
+          # mirror. The non-zero exit below then fails the job — the upload step
+          # runs under always(), so the fallback still reaches the mirror while
+          # the run is correctly marked failed.
+          if [ ! -s "$OUT" ]; then
+            printf '{"run_id":"%s","attested":false,"healthy":false,' "$RUN_ID" > "$OUT"
+            printf '"governance_status":"unknown","final_output_status":"unknown",' >> "$OUT"
+            printf '"artifact_stages":[],"db_error":"AttestationScriptFailed",' >> "$OUT"
+            printf '"github_run_id":"%s","github_run_attempt":"%s","commit":"%s"}' \
+              "${GITHUB_RUN_ID:-}" "${GITHUB_RUN_ATTEMPT:-}" "${GITHUB_SHA:-}" >> "$OUT"
+            echo "::error::attestation script exited $rc without writing a file; wrote an unhealthy fallback"
+          fi
+          exit $rc
+
+      # The durable, externally readable half. Job outputs only reach downstream
+      # jobs in this workflow — the REST API does not expose them — so the VPS
+      # mirror cannot read them at all. An artifact can be listed and downloaded
+      # via /repos/{owner}/{repo}/actions/runs/{run_id}/artifacts.
+      - name: Upload attestation
+        if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: mas-run-attestation
+          path: ${{ runner.temp }}/mas-attestation.json
+          # error, not warn: a missing attestation is the one outcome the mirror
+          # must never see as a successful upload. The step above guarantees a
+          # file exists, so reaching this is itself a fault worth failing on.
+          if-no-files-found: error
+          retention-days: 30
 
   publish-dashboard:
     name: Publish dashboard to GitHub Pages
