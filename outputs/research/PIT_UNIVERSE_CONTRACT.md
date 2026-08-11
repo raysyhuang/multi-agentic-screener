@@ -105,3 +105,104 @@ Must **fail** if the loader leaks the future:
 ## 10. Explicit non-goals
 
 No strategy change. No parameter tuning. No performance claim. No backtest result in the delivery. The output is data plus evidence that the data is sound.
+
+---
+
+# Appendix A — acquisition budget and call plan
+
+Required before implementation. Frozen rulings from Neo are recorded in §11.
+
+## A.1 What each endpoint can and cannot supply
+
+Probed 2026-08-11 UTC:
+
+| Endpoint | Returns | Cost shape |
+|---|---|---|
+| `/v2/aggs/grouped/.../{date}` | price + share volume for **every** ticker that traded | **1 call per market date** |
+| `/v3/reference/tickers?date=` | ticker, `type`, `primary_exchange`, name, figi — **no market cap, no shares outstanding** | paginated, ~1000/page |
+| `/v3/reference/tickers/{t}?date=` | `market_cap`, `weighted_shares_outstanding` | **1 call per ticker per date** |
+
+The middle row is the constraint that shapes everything: classification is cheap and bulk, **market cap is not available in bulk at all**. A naive per-ticker-per-date build is ~2,500 × 750 ≈ **1.9M calls** and is simply off the table.
+
+## A.2 Staged plan, with a hard gate
+
+**Phase A — spine (cheap, proceed without further approval)**
+
+| Item | Calls |
+|---|---|
+| Grouped daily, 3Y ≈ 750 market dates | **750** |
+| Reference list, monthly as-of, ~6 pages each × 36 | **~216** |
+| **Phase A total** | **≈ 1,000** |
+
+Yields price, share volume, exchange and security type for every date.
+
+**Classification cadence is monthly, applied forward-only.** A snapshot taken on the first market date of month M is valid for dates ≥ that date and < the next snapshot. This is lookahead-free — no label is ever taken from the future — and the staleness is bounded at one month and disclosed. Daily classification would cost ~4,500 calls for information that changes a handful of times a year; the trade is bounded staleness for a 20× saving, and it is Neo's to accept or reject.
+
+**Gate.** Phase A ends by reporting the exact count of distinct tickers that pass price + volume + exchange + type. Phase B does not begin until that number is known and approved.
+
+**Phase B — market cap (requires explicit approval)**
+
+Estimated from live universe size (~2,500/day, expected ~4,000–6,000 distinct over 3Y) at **quarterly** shares-outstanding cadence, forward-only like classification, since shares outstanding move on corporate actions and buyback reporting rather than daily:
+
+```
+12 quarters × ~5,000 tickers ≈ 60,000 calls
+```
+
+Monthly cadence would be ~180,000. **Quarterly is the proposal; the count is an estimate until Phase A reports the real figure.**
+
+**Abort threshold:** if the Phase A gate shows Phase B would exceed **75,000 calls**, stop and return to Neo/Ray with options rather than proceeding. Do not spend the budget and report afterwards.
+
+## A.3 Rate limits and failure handling
+
+- One request in flight per endpoint family; no burst parallelism.
+- Retry on 429/5xx with exponential backoff, capped; a ticker-date that still fails is recorded as an explicit fetch failure, never silently skipped.
+- The run is **resumable**: every raw response is written before being parsed, so an interrupted build restarts from the last completed unit rather than re-spending calls.
+- The existing FMP daily-budget accounting (`fmp_daily_call_budget`) is the precedent; Polygon needs the equivalent counter for this build.
+
+## A.4 Raw snapshot and cache layout
+
+Feeds §5's replay determinism — the raw layer is the immutable input, and the normalized dataset is a pure function of it.
+
+```
+outputs/pit_universe/<vintage>/
+  raw/
+    grouped/<YYYY-MM-DD>.json.gz
+    reference/<YYYY-MM>/page-<n>.json.gz
+    details/<YYYY-Qn>/<TICKER>.json.gz
+  normalized/
+    membership/<YYYY-MM-DD>.parquet
+  manifest.json          # raw hashes, normalization version, config hash, code SHA, ET range, counts
+```
+
+`<vintage>` is the retrieval date. A rebuild writes a new vintage and diffs against the previous one; it never overwrites.
+
+## A.5 Quantified acceptance thresholds
+
+Replaces "a large or trending unknown rate invalidates the dataset", which cannot survive as an interpretation after the build.
+
+Report **every** rate unconditionally. **Halt research consumption** — the dataset is not signed off — if any of:
+
+| Metric | Halt threshold |
+|---|---|
+| Security-type unknown, share of daily traded set passing price+volume | **> 1%** on any month |
+| Exchange unknown, same denominator | **> 1%** on any month |
+| Market-cap unknown (no as-of value and no shares × close) | **> 5%** on any month |
+| Monthly unknown rate vs the trailing-12-month median for that metric | **> 2×** |
+| PIT daily count vs contemporaneous live eligible count, on dates where live observations exist | **> 15%** divergence, median over the overlap |
+
+The last row is measurable only where live records exist — the candidate table and dashboard history, i.e. recent months — so it validates the recent end of the series and cannot speak for 2023. That limitation is a reported fact, not a caveat to be discovered later.
+
+## §11 — Frozen rulings (Neo, 2026-08-11)
+
+```
+Range/frequency: 3 years, daily ET market dates
+Price/volume:    D close and D share volume; decision after D close, entry T+1
+Market cap:      as-of Polygon market_cap, else weighted shares × D close;
+                 otherwise exclude and count unknown
+Exchange/type:   as-of Polygon reference only; unknown excludes and is counted
+Corporate acts:  split-adjusted prices; no dividend/total-return adjustment
+Aliases:         native Polygon symbol + explicit dated alias mapping; never drop
+History:         minimum 200 prior bars available as of D
+Delisting:       include through final trading day; never forward-fill after
+Volume:          single-day share volume, matching live screener semantics
+```
