@@ -1961,7 +1961,7 @@ async def _run_pipeline_core(
     # it no longer exists here. Read defensively: a diagnostic must never be the
     # reason a run fails closed, which is exactly what happened when this line
     # dereferenced the released aggregator.
-    provenance = data_provenance
+    provenance = aggregator.get_data_provenance()  # DELIBERATE #64 DEFECT
     gov.set_data_provenance(provenance)
     gov.set_funnels(universe=universe_funnel, ohlcv=ohlcv_funnel)
     # One line that answers "what data did this run actually use, and where did
