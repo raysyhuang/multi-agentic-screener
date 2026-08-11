@@ -48,6 +48,10 @@ logger = logging.getLogger(__name__)
 MAX_CONCURRENCY = 20   # Max simultaneous API requests
 OHLCV_BATCH_SIZE = 50  # Tickers per batch in bulk fetch
 
+# Benchmarks fetched by the macro snapshot; their provenance is stored with
+# the cached snapshot so a hit can replay it (see get_macro_context).
+_BENCHMARK_TICKERS = ("SPY", "QQQ")
+
 
 class DataAggregator:
     """Orchestrates data fetching across all providers with fallback logic."""
@@ -71,6 +75,9 @@ class DataAggregator:
         self._ohlcv_sources: Counter[str] = Counter()
         self._ohlcv_failures: list[str] = []
         self._ohlcv_cache_hits: int = 0
+        # ticker -> provider that served it ("" = failed). Lets the macro
+        # snapshot attribute SPY/QQQ without diffing a shared counter.
+        self._ohlcv_ticker_source: dict[str, str] = {}
         self._universe_source: str = ""
         self._universe_errors: list[str] = []
         self._universe_cache_hit: bool = False
@@ -100,6 +107,7 @@ class DataAggregator:
                     # a hit is a delivery mechanism, not a data source. Hits are
                     # counted separately so cache reliance stays visible too.
                     self._ohlcv_sources[cached_source or "unknown"] += 1
+                    self._ohlcv_ticker_source[ticker] = cached_source or "unknown"
                     self._ohlcv_cache_hits += 1
                     return df
                 except Exception as e:
@@ -112,6 +120,7 @@ class DataAggregator:
                     if not df.empty:
                         self._circuit_breaker.record_success("polygon")
                         self._ohlcv_sources["polygon"] += 1
+                        self._ohlcv_ticker_source[ticker] = "polygon"
                         if self._cache_enabled:
                             ttl = classify_ohlcv_ttl(to_date)
                             self._cache.put(key, df_to_json(df), ttl, source="polygon", ticker=ticker, endpoint="ohlcv")
@@ -128,6 +137,7 @@ class DataAggregator:
                     if not df.empty:
                         self._circuit_breaker.record_success("fmp")
                         self._ohlcv_sources["fmp"] += 1
+                        self._ohlcv_ticker_source[ticker] = "fmp"
                         if self._cache_enabled:
                             ttl = classify_ohlcv_ttl(to_date)
                             self._cache.put(key, df_to_json(df), ttl, source="fmp", ticker=ticker, endpoint="ohlcv")
@@ -142,8 +152,10 @@ class DataAggregator:
                 df = await self.yfinance.get_ohlcv(ticker, from_date, to_date)
                 if df.empty:
                     self._ohlcv_failures.append(ticker)
+                    self._ohlcv_ticker_source[ticker] = ""
                 else:
                     self._ohlcv_sources["yfinance"] += 1
+                    self._ohlcv_ticker_source[ticker] = "yfinance"
                     if self._cache_enabled:
                         ttl = classify_ohlcv_ttl(to_date)
                         self._cache.put(key, df_to_json(df), ttl, source="yfinance", ticker=ticker, endpoint="ohlcv")
@@ -151,6 +163,7 @@ class DataAggregator:
             except Exception as e:
                 logger.error("All OHLCV sources failed for %s: %s", ticker, e)
                 self._ohlcv_failures.append(ticker)
+                self._ohlcv_ticker_source[ticker] = ""
                 return pd.DataFrame()
 
     async def get_bulk_ohlcv(
@@ -239,6 +252,7 @@ class DataAggregator:
         self._ohlcv_sources.clear()
         self._ohlcv_failures.clear()
         self._ohlcv_cache_hits = 0
+        self._ohlcv_ticker_source.clear()
         self._universe_source = ""
         self._universe_errors.clear()
         self._universe_cache_hit = False
@@ -560,11 +574,17 @@ class DataAggregator:
         spy_task = self.get_ohlcv("SPY", from_date, to_date)
         qqq_task = self.get_ohlcv("QQQ", from_date, to_date)
 
-        # Snapshot the counter so the benchmark bars' provenance can be stored
-        # with the snapshot and restored on a later hit.
-        before = Counter(self._ohlcv_sources)
         spy_df, qqq_df = await asyncio.gather(spy_task, qqq_task)
-        benchmark_provenance = dict(self._ohlcv_sources - before)
+
+        # Read per-ticker attribution rather than diffing the shared counter
+        # before and after. A diff silently assumes nothing else fetches during
+        # the gather; that holds today only because macro runs first, and it
+        # would start attributing other tickers' providers to the benchmarks the
+        # moment anything ran alongside it. Per-ticker is correct regardless of
+        # ordering. "" means the fetch failed, which is itself worth replaying.
+        benchmark_provenance = {
+            t: self._ohlcv_ticker_source.get(t, "") for t in _BENCHMARK_TICKERS
+        }
 
         self._macro_source = "live"
         macro["spy_prices"] = spy_df
@@ -583,19 +603,34 @@ class DataAggregator:
     def _rehydrate_benchmark_provenance(self, stored: dict | None) -> None:
         """Restore SPY/QQQ attribution from a cached macro snapshot.
 
-        A snapshot written before this field existed has no attribution to
-        restore. Record the two benchmarks as "unknown" rather than omitting
-        them: the run genuinely did use benchmark data, and silence would read
-        as "none was used" — the same ambiguity fixed for the universe source.
+        ``None`` means the snapshot predates this field and has no attribution
+        to restore: record the two benchmarks as "unknown" rather than omitting
+        them, since the run genuinely did use benchmark data and silence would
+        read as "none was used".
+
+        An *empty* or all-empty mapping is a different fact — the benchmarks
+        were attempted and failed — and must not be conflated with the legacy
+        case. Testing truthiness rather than ``is not None`` would fabricate two
+        "unknown" bars for a snapshot that recorded a genuine failure, inventing
+        provenance for data that does not exist.
         """
         self._macro_cache_hit = True
-        if stored:
-            for provider, count in stored.items():
-                self._ohlcv_sources[provider] += count
-            self._ohlcv_cache_hits += sum(stored.values())
-        else:
-            self._ohlcv_sources["unknown"] += 2  # SPY + QQQ
-            self._ohlcv_cache_hits += 2
+
+        if stored is None:
+            self._ohlcv_sources["unknown"] += len(_BENCHMARK_TICKERS)
+            self._ohlcv_cache_hits += len(_BENCHMARK_TICKERS)
+            return
+
+        for ticker, source in stored.items():
+            if source:
+                self._ohlcv_sources[source] += 1
+                self._ohlcv_cache_hits += 1
+            else:
+                # A benchmark that failed when the snapshot was built is still
+                # failed on replay — the cached empty frame goes on feeding the
+                # regime calculation either way, so the failure has to persist
+                # with it rather than disappearing after the first run.
+                self._ohlcv_failures.append(ticker)
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         """Earnings calendar for catalyst detection."""

@@ -220,7 +220,7 @@ async def test_cached_macro_still_attributes_the_benchmark_bars(agg, monkeypatch
         "vix": 15.0,
         "spy_prices": df_to_json(_bars()),
         "qqq_prices": df_to_json(_bars()),
-        "_benchmark_provenance": {"yfinance": 2},
+        "_benchmark_provenance": {"SPY": "yfinance", "QQQ": "yfinance"},
     }
     monkeypatch.setattr(agg._cache, "get", lambda key: json.dumps(payload))
 
@@ -233,6 +233,89 @@ async def test_cached_macro_still_attributes_the_benchmark_bars(agg, monkeypatch
     assert prov["macro_source"] == "cache"
     assert prov["macro_cache_hit"] is True
     assert prov["ohlcv_by_source"] == {"yfinance": 2}
+
+
+@pytest.mark.asyncio
+async def test_failed_benchmarks_stay_failed_across_a_cache_replay(
+    agg, monkeypatch
+) -> None:
+    """An empty attribution is a recorded FAILURE, not a missing legacy field.
+
+    Truthiness testing (`if stored:`) conflated the two and fabricated two
+    "unknown" benchmark bars for a snapshot that had recorded a genuine SPY/QQQ
+    failure — inventing provenance for data that does not exist. The cached
+    empty frames go on feeding the regime calculation on every replay, so the
+    failure has to persist with them rather than vanishing after the first run.
+    """
+    agg._cache_enabled = True
+    payload = {
+        "vix": 15.0,
+        "spy_prices": df_to_json(_bars()),
+        "qqq_prices": df_to_json(_bars()),
+        "_benchmark_provenance": {"SPY": "", "QQQ": ""},
+    }
+    monkeypatch.setattr(agg._cache, "get", lambda key: json.dumps(payload))
+
+    await agg.get_macro_context()
+
+    prov = agg.get_data_provenance()
+    assert prov["ohlcv_by_source"] == {}, "must not invent 'unknown' bars"
+    assert prov["ohlcv_failed_tickers"] == ["QQQ", "SPY"]
+
+
+@pytest.mark.asyncio
+async def test_empty_attribution_dict_is_not_treated_as_legacy(agg, monkeypatch) -> None:
+    """`{}` is falsey but is not `None` — it must not trigger the legacy path."""
+    agg._cache_enabled = True
+    payload = {
+        "vix": 15.0,
+        "spy_prices": df_to_json(_bars()),
+        "qqq_prices": df_to_json(_bars()),
+        "_benchmark_provenance": {},
+    }
+    monkeypatch.setattr(agg._cache, "get", lambda key: json.dumps(payload))
+
+    await agg.get_macro_context()
+
+    assert agg.get_data_provenance()["ohlcv_by_source"] == {}
+
+
+@pytest.mark.asyncio
+async def test_benchmark_attribution_survives_concurrent_fetching(
+    agg, monkeypatch
+) -> None:
+    """Per-ticker attribution, not a counter diff taken around the gather.
+
+    A diff assumes nothing else fetches during the macro gather — true today
+    only because macro runs first. If anything ran alongside it, the other
+    tickers' providers would be attributed to the benchmarks. This fetches a
+    third ticker concurrently and pins that the benchmarks keep their own.
+    """
+
+    async def by_ticker(ticker, *a, **k):
+        if ticker == "SPY":
+            return _bars()
+        return _bars()
+
+    async def snapshot():
+        # Fetch an unrelated ticker WHILE the macro snapshot is being built.
+        await agg.get_ohlcv("NVDA", date(2026, 1, 1), date(2026, 8, 10))
+        return {"vix": 15.0}
+
+    stored: dict = {}
+    agg._cache_enabled = True
+    monkeypatch.setattr(agg._cache, "get", lambda key: None)
+    monkeypatch.setattr(
+        agg._cache, "put", lambda key, data, ttl, **kw: stored.update(json.loads(data))
+    )
+    monkeypatch.setattr(agg.polygon, "get_ohlcv", by_ticker)
+    monkeypatch.setattr(agg.fred, "get_macro_snapshot", snapshot)
+
+    await agg.get_macro_context()
+
+    assert stored["_benchmark_provenance"] == {"SPY": "polygon", "QQQ": "polygon"}, (
+        "NVDA must not be attributed to the benchmarks"
+    )
 
 
 @pytest.mark.asyncio
@@ -276,7 +359,9 @@ async def test_live_macro_records_its_benchmarks_and_caches_them(agg, monkeypatc
     assert prov["macro_source"] == "live"
     assert prov["macro_cache_hit"] is False
     assert prov["ohlcv_by_source"] == {"polygon": 2}, "SPY + QQQ"
-    assert stored["_benchmark_provenance"] == {"polygon": 2}, "stored for the next hit"
+    assert stored["_benchmark_provenance"] == {"SPY": "polygon", "QQQ": "polygon"}, (
+        "stored per ticker for the next hit"
+    )
 
 
 @pytest.mark.asyncio
