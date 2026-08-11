@@ -1,0 +1,9 @@
+=== Pre-state for 4 target rows ===
+  QXO    entry=2026-04-22  open=False  exit=2026-04-22@time_stop  pnl=-9.56%
+  LEU    entry=2026-04-24  open=False  exit=2026-04-24@time_stop  pnl=-9.26%
+  NXT    entry=2026-04-27  open=False  exit=2026-04-27@trail_stop  pnl=-0.20%
+  OII    entry=2026-04-27  open=False  exit=2026-04-27@trail_stop  pnl=-0.20%
+
+Snapshot written: backups/phantom_backfill/reopen_snapshot_20260428_070957.json
+
+Applied: reopened 4 outcome(s).

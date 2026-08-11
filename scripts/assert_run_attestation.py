@@ -17,8 +17,11 @@ guaranteed on every path including early crashes — so its absence is a genuine
 fault, not an expected state.
 
 Usage:
-    python scripts/assert_run_attestation.py --run-id <id>
-    python scripts/assert_run_attestation.py --run-id-file "$RUNNER_TEMP/run_id"
+    python scripts/assert_run_attestation.py --run-id <id> --out attestation.json
+
+The caller owns the run id: the workflow mints MAS_RUN_ID before anything
+fallible and passes the same value here, so a run that dies during startup can
+still be attested against.
 """
 from __future__ import annotations
 
@@ -151,39 +154,13 @@ async def _check(run_id: str, out_path: Path | None) -> int:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--run-id")
-    ap.add_argument("--run-id-file", help="file the pipeline wrote its run id to")
     ap.add_argument("--out", help="write the attestation JSON here (uploaded as an artifact)")
     args = ap.parse_args()
 
     run_id = args.run_id
-    if not run_id and args.run_id_file:
-        path = Path(args.run_id_file)
-        if not path.exists():
-            print(
-                f"::error::{path} does not exist — the pipeline never recorded a "
-                "run id, so it did not get far enough to identify itself.",
-                file=sys.stderr,
-            )
-            _emit("attested", "false")
-            _emit("governance_status", "missing")
-            if args.out:
-                try:
-                    Path(args.out).write_text(json.dumps({
-                        "run_id": "", "attested": False, "healthy": False,
-                        "governance_status": "missing",
-                        "final_output_status": "missing",
-                        "artifact_stages": [], "db_error": None,
-                        "note": "no run id was ever written; the process died "
-                                "before the pipeline started",
-                        "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
-                    }, indent=2), encoding="utf-8")
-                except Exception:
-                    pass
-            sys.exit(1)
-        run_id = path.read_text().strip()
 
     if not run_id:
-        ap.error("one of --run-id or --run-id-file is required")
+        ap.error("--run-id is required")
 
     out_path = Path(args.out) if args.out else None
 
