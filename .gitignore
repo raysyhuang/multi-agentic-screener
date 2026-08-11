@@ -74,3 +74,19 @@ dashboard/data.json
 # `git add -A` sweeps them into a PR (caught in review on #64).
 *[ ][0-9].py
 *[ ][0-9].json
+
+# Local-only trees. These are working artifacts, not repo content, and a
+# careless `git add -A` has swept them into a PR under review — the second time
+# putting trade-level P&L into public history. scripts/hooks/pre-commit is the
+# mechanical guard; this list is the first line.
+backups/
+deploy/
+skills-lock.json
+
+# Credentials and database dumps — never, under any circumstances.
+*.dump
+*.sql
+*.sql.gz
+*.pem
+*.key
+*.p12
