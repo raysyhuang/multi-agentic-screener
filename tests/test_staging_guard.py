@@ -19,7 +19,8 @@ from pathlib import Path
 
 import pytest
 
-HOOK = Path(__file__).resolve().parents[1] / "scripts" / "hooks" / "pre-commit"
+HOOKS_SRC = Path(__file__).resolve().parents[1] / "scripts" / "hooks"
+HOOK = HOOKS_SRC / "pre-commit"
 
 
 def _repo(tmp_path: Path) -> Path:
@@ -29,18 +30,19 @@ def _repo(tmp_path: Path) -> Path:
     subprocess.run(["git", "config", "user.name", "t"], cwd=tmp_path, check=True)
     hooks = tmp_path / ".githooks"
     hooks.mkdir()
-    (hooks / "pre-commit").write_text(HOOK.read_text())
-    (hooks / "pre-commit").chmod(0o755)
+    for name in ("pre-commit", "commit-msg", "lib-blocked-paths.sh"):
+        (hooks / name).write_text((HOOKS_SRC / name).read_text())
+        (hooks / name).chmod(0o755)
     subprocess.run(
         ["git", "config", "core.hooksPath", ".githooks"], cwd=tmp_path, check=True
     )
     return tmp_path
 
 
-def _commit(repo: Path, *files: str, env: dict | None = None):
+def _commit(repo: Path, *files: str, env: dict | None = None, message: str = "test"):
     subprocess.run(["git", "add", "-f", *files], cwd=repo, check=True)
     return subprocess.run(
-        ["git", "commit", "-m", "test"],
+        ["git", "commit", "-m", message],
         cwd=repo, capture_output=True, text=True, env=env,
     )
 
@@ -113,7 +115,9 @@ def test_the_override_is_explicit_and_works(tmp_path) -> None:
     assert blocked.returncode != 0, "outputs/ is force-added deliberately, so it prompts"
 
     allowed = _commit(
-        repo, "outputs/FINDINGS.md", env={**os.environ, "ALLOW_LOCAL_FILES": "1"}
+        repo, "outputs/FINDINGS.md",
+        env={**os.environ, "ALLOW_LOCAL_FILES": "1"},
+        message="add findings (ALLOW_LOCAL_FILES: research doc, force-added per convention)",
     )
     assert allowed.returncode == 0, allowed.stderr
     assert "permitting" in allowed.stderr
@@ -132,10 +136,109 @@ def test_modifying_an_already_tracked_file_is_not_blocked(tmp_path) -> None:
     (repo / "deploy").mkdir()
     (repo / "deploy" / "profile.env").write_text("A=1\n")
     first = _commit(
-        repo, "deploy/profile.env", env={**os.environ, "ALLOW_LOCAL_FILES": "1"}
+        repo, "deploy/profile.env",
+        env={**os.environ, "ALLOW_LOCAL_FILES": "1"},
+        message="seed profile (ALLOW_LOCAL_FILES: intentional fixture for this test)",
     )
     assert first.returncode == 0
 
     (repo / "deploy" / "profile.env").write_text("A=2\n")
     second = _commit(repo, "deploy/profile.env")
     assert second.returncode == 0, second.stderr
+
+
+def test_a_rename_into_a_protected_path_is_refused(tmp_path) -> None:
+    """The hole: `--diff-filter=A` alone misses renames.
+
+    A tracked, unremarkable file moved to `deploy/profile.env` is recorded by
+    git as R, not A — so the guard never saw it and the commit went through
+    with no override at all.
+    """
+    import os
+
+    repo = _repo(tmp_path)
+    (repo / "notes.txt").write_text("hello\n")
+    assert _commit(repo, "notes.txt").returncode == 0
+
+    (repo / "deploy").mkdir()
+    subprocess.run(
+        ["git", "mv", "notes.txt", "deploy/profile.env"], cwd=repo, check=True
+    )
+    result = subprocess.run(
+        ["git", "commit", "-m", "move it"],
+        cwd=repo, capture_output=True, text=True, env={**os.environ},
+    )
+
+    assert result.returncode != 0, "a rename slipped a file into a protected path"
+    assert "deploy/profile.env" in result.stderr
+
+
+def test_the_override_without_a_reason_is_refused(tmp_path) -> None:
+    """`ALLOW_LOCAL_FILES=1` alone leaves nothing in git history.
+
+    A reviewer then sees a commit containing a protected file and no
+    explanation. The environment variable permits; the message must justify.
+    """
+    import os
+
+    repo = _repo(tmp_path)
+    (repo / "backups").mkdir()
+    (repo / "backups" / "snap.json").write_text("{}")
+
+    result = _commit(
+        repo, "backups/snap.json",
+        env={**os.environ, "ALLOW_LOCAL_FILES": "1"},
+        message="add snapshot",           # no marker
+    )
+
+    assert result.returncode != 0, "override was accepted with no recorded reason"
+    assert "gives no reason" in result.stderr
+
+
+def test_a_token_reason_is_not_enough(tmp_path) -> None:
+    """'ALLOW_LOCAL_FILES: x' is compliance theatre, not a justification."""
+    import os
+
+    repo = _repo(tmp_path)
+    (repo / "backups").mkdir()
+    (repo / "backups" / "snap.json").write_text("{}")
+
+    result = _commit(
+        repo, "backups/snap.json",
+        env={**os.environ, "ALLOW_LOCAL_FILES": "1"},
+        message="add snapshot (ALLOW_LOCAL_FILES: x)",
+    )
+
+    assert result.returncode != 0
+    assert "too short" in result.stderr
+
+
+def test_the_reason_survives_into_git_history(tmp_path) -> None:
+    """The point of the marker: a reviewer can read why, months later."""
+    import os
+
+    repo = _repo(tmp_path)
+    (repo / "outputs").mkdir()
+    (repo / "outputs" / "FINDINGS.md").write_text("# r\n")
+
+    reason = "research doc under the gitignored outputs tree, per convention"
+    ok = _commit(
+        repo, "outputs/FINDINGS.md",
+        env={**os.environ, "ALLOW_LOCAL_FILES": "1"},
+        message=f"add findings (ALLOW_LOCAL_FILES: {reason})",
+    )
+    assert ok.returncode == 0, ok.stderr
+
+    logged = subprocess.run(
+        ["git", "log", "-1", "--pretty=%B"], cwd=repo, capture_output=True, text=True
+    ).stdout
+    assert reason in logged, "the justification must be readable from history"
+
+
+def test_both_hooks_share_one_detection_source() -> None:
+    """If the two disagree, the override requirement silently stops applying."""
+    for name in ("pre-commit", "commit-msg"):
+        text = (HOOKS_SRC / name).read_text()
+        assert "lib-blocked-paths.sh" in text, f"{name} must use the shared library"
+    lib = (HOOKS_SRC / "lib-blocked-paths.sh").read_text()
+    assert "BLOCKED_PREFIXES" in lib and "BLOCKED_PATTERNS" in lib

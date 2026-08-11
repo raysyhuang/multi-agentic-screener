@@ -14,60 +14,27 @@
 # allowed to be full of scratch files, and only what is about to be committed
 # is the hook's business.
 #
-# Bypass is deliberate and must be justified:
-#     ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: <reason>)"
-# `--no-verify` also works but leaves no record, which is the point of not
-# using it.
+# Bypassing requires BOTH the environment override and a written reason in the
+# commit message (enforced by the commit-msg hook):
+#
+#     ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: <why>)"
+#
+# The environment variable alone leaves nothing in git history, which is the
+# whole point of also demanding the message marker.
 
 set -euo pipefail
 
-# Paths that are local-only by nature. Anchored so they match from the repo root.
-BLOCKED_PREFIXES=(
-    "backups/"
-    "deploy/"
-    "outputs/"          # research output; force-add deliberately per CLAUDE.md
-)
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-blocked-paths.sh
+source "$HOOK_DIR/lib-blocked-paths.sh"
 
-# Extensions and names that should essentially never be committed.
-BLOCKED_PATTERNS=(
-    '\.env$'
-    '\.env\..*$'
-    '\.dump$'
-    '\.sql$'
-    '\.sql\.gz$'
-    '\.pem$'
-    '\.key$'
-    '\.p12$'
-    '(^|/)skills-lock\.json$'
-    '(^|/)id_(rsa|ed25519)$'
-    '[ ][0-9]+\.(py|json|md|yml|csv)$'   # "foo 2.py" sync duplicates
-)
-
-staged=$(git diff --cached --name-only --diff-filter=A || true)
-[ -z "$staged" ] && exit 0
-
-offenders=()
-while IFS= read -r file; do
-    [ -z "$file" ] && continue
-    for prefix in "${BLOCKED_PREFIXES[@]}"; do
-        case "$file" in
-            "$prefix"*) offenders+=("$file  [local-only path: $prefix]"); continue 2 ;;
-        esac
-    done
-    for pattern in "${BLOCKED_PATTERNS[@]}"; do
-        if printf '%s' "$file" | grep -Eq "$pattern"; then
-            offenders+=("$file  [blocked pattern: $pattern]")
-            continue 2
-        fi
-    done
-done <<< "$staged"
-
-[ ${#offenders[@]} -eq 0 ] && exit 0
+offenders="$(blocked_staged_paths)"
+[ -z "$offenders" ] && exit 0
 
 if [ "${ALLOW_LOCAL_FILES:-}" = "1" ]; then
-    echo "pre-commit: ALLOW_LOCAL_FILES=1 — permitting ${#offenders[@]} normally-blocked file(s):" >&2
-    printf '  %s\n' "${offenders[@]}" >&2
-    echo "pre-commit: state the reason in the commit message." >&2
+    echo "pre-commit: ALLOW_LOCAL_FILES=1 — permitting normally-blocked file(s):" >&2
+    printf '  %s\n' "$offenders" >&2
+    echo "pre-commit: the commit message must carry 'ALLOW_LOCAL_FILES: <why>'." >&2
     exit 0
 fi
 
@@ -75,18 +42,18 @@ cat >&2 <<EOF
 
 pre-commit: refusing to commit local-only files.
 
-$(printf '  %s\n' "${offenders[@]}")
+$(printf '  %s\n' "$offenders")
 
-These are newly ADDED to the index. Two sweeps like this reached PRs under
-review; one put trade-level P&L into public history that cannot be fully
-withdrawn.
+These are newly added or renamed into a protected location. Two sweeps like
+this reached PRs under review; one put trade-level P&L into public history that
+cannot be fully withdrawn.
 
 Fix: stage explicit paths rather than 'git add -A'.
 
     git restore --staged <file>...
 
 If a file genuinely belongs in the repo (a research doc under outputs/, say),
-say so on the record:
+say so on the record — both are required:
 
     ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: why)"
 

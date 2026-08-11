@@ -10,12 +10,13 @@
 ```bash
 git config core.hooksPath scripts/hooks
 ```
-`scripts/hooks/pre-commit` refuses newly staged local-only files — `backups/`, `deploy/`, `skills-lock.json`, `*.env`, dumps, keys, and `"foo 2.py"` sync duplicates. It reads the **staged index**, so a messy working tree is fine; only what you are about to commit is checked.
+`scripts/hooks/pre-commit` refuses newly staged **or renamed-into** local-only files — `backups/`, `deploy/`, `skills-lock.json`, `*.env`, dumps, keys, and `"foo 2.py"` sync duplicates. It reads the **staged index**, so a messy working tree is fine; only what you are about to commit is checked.
 
 Two `git add -A` sweeps reached PRs under review in one session; the second put trade-level exit prices and P&L into public history, where the commit stays retrievable by SHA even after the branch is deleted. Stage explicit paths. When a blocked file genuinely belongs, say so on the record:
 ```bash
-ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: why)"
+ALLOW_LOCAL_FILES=1 git commit -m "... (ALLOW_LOCAL_FILES: why this path belongs)"
 ```
+Both halves are required: the environment variable permits the commit, and `scripts/hooks/commit-msg` demands the written reason — the variable alone leaves nothing in git history, so a reviewer would see the file and not the justification.
 
 ## Authoritative checkout (decided 2026-07-27 by Ray)
 - **The Claude Code checkout (`~/Documents/Python Project/Multi-Agentic Screener`) plus `origin/main` is the single source of truth for this repo.**
