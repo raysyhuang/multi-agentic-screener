@@ -57,6 +57,15 @@ jobs:
       # Whether the pipeline actually ran (vs a DST-guard skip on the duplicate
       # cron line) — gates the dashboard publish so Pages deploys once per slot.
       ran: ${{ steps.resolve.outputs.run }}
+      # Attestation read from the database inside the workflow, where it is
+      # reachable. External health checks (the VPS mirror) cannot query Neon and
+      # the dashboard snapshot exports DailyRun health but not per-run
+      # artifacts, so without this they can only infer health from a green
+      # conclusion — which has been green on a broken run twice.
+      run_id: ${{ steps.attest.outputs.run_id }}
+      attested: ${{ steps.attest.outputs.attested }}
+      governance_status: ${{ steps.attest.outputs.governance_status }}
+      final_output_status: ${{ steps.attest.outputs.final_output_status }}
     env:
       # --- Database (external managed Postgres — replaces Heroku Postgres) ---
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
@@ -139,7 +148,19 @@ jobs:
 
       - name: Run ${{ steps.resolve.outputs.pipeline }} pipeline
         if: steps.resolve.outputs.run == 'true'
+        env:
+          MAS_RUN_ID_FILE: ${{ runner.temp }}/mas_run_id
         run: python -m src.worker ${{ steps.resolve.outputs.flag }}
+
+      # Runs even when the pipeline failed — a fail-closed run still records
+      # itself, and that record is precisely what an external health check needs
+      # to distinguish "recorded its own failure" from "vanished".
+      - name: Attest the run recorded itself
+        id: attest
+        if: ${{ always() && steps.resolve.outputs.run == 'true' && steps.resolve.outputs.pipeline == 'morning' }}
+        run: |
+          python scripts/assert_run_attestation.py \
+            --run-id-file "${{ runner.temp }}/mas_run_id"
 
   publish-dashboard:
     name: Publish dashboard to GitHub Pages

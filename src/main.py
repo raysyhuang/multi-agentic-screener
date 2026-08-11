@@ -6,6 +6,7 @@ import asyncio
 import logging
 import os
 import time
+from pathlib import Path
 from datetime import date, datetime, timedelta
 from zoneinfo import ZoneInfo
 
@@ -293,6 +294,22 @@ def _trading_date_et(now: datetime | None = None) -> date:
     return current.date()
 
 
+def _publish_run_id(run_id: str) -> None:
+    """Write the run id to MAS_RUN_ID_FILE, if the environment asked for it.
+
+    Never raises: publishing an id for a health check must not be able to fail
+    the run it is describing. That inversion — diagnostics taking down the thing
+    they observe — is exactly what the 2026-08-11 outage was.
+    """
+    path = os.environ.get("MAS_RUN_ID_FILE")
+    if not path:
+        return
+    try:
+        Path(path).write_text(run_id, encoding="utf-8")
+    except Exception as e:
+        logger.warning("Could not publish run id to %s: %s", path, e)
+
+
 async def run_morning_pipeline() -> bool:
     """Main daily pipeline — runs at 6:00 AM ET.
 
@@ -316,6 +333,14 @@ async def run_morning_pipeline() -> bool:
     # Attach run_id to all log records for this pipeline execution
     run_id_filter = RunIDFilter(run_id)
     logging.getLogger().addFilter(run_id_filter)
+
+    # Publish the run id for out-of-process verification. The workflow points
+    # MAS_RUN_ID_FILE at a temp path and then asserts this exact run left its
+    # governance artifact — an attestation the VPS mirror can read as a job
+    # output, since it cannot reach the database and the dashboard snapshot
+    # exports DailyRun health but not per-run artifacts. Written before any
+    # fallible work so a crash still identifies itself.
+    _publish_run_id(run_id)
 
     # Resolved inside the try below, but bound here so the failure handler can
     # rely on them existing. `_trading_date_et()` and `get_settings()` were
