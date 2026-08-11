@@ -148,18 +148,43 @@ class FakeAggregator:
         self.closed = True
 
 
+@pytest.fixture(autouse=True)
+async def _engine_per_test():
+    """Dispose the database engine between tests.
+
+    `get_engine()` caches a module-level singleton and pytest-asyncio gives each
+    test its own event loop, so from the second test onwards every connection
+    belongs to a closed loop. Writes then fail with `RuntimeError: Event loop is
+    closed` — and the pipeline's failure handler swallows DB errors by design,
+    so a run persisted nothing while still reporting itself fail-closed.
+    Disposing here, while the loop is still alive, gives each test a working
+    engine.
+    """
+    yield
+    from src.db.session import close_db
+
+    await close_db()
+
+
 @pytest.fixture
-def pinned_run_id(monkeypatch) -> str:
-    """Force a known run_id so assertions target this invocation specifically.
+def pinned_run_id(monkeypatch, request) -> str:
+    """Force a per-test run_id so assertions target this invocation only.
 
     `run_morning_pipeline` generates its own uuid, so without this every query
-    has to guess ("the newest row"), and a run that wrote nothing is
-    indistinguishable from one that wrote correctly — the previous version of
-    the failure test had exactly that hole.
+    has to guess ("the newest row") — and a run that wrote nothing is then
+    indistinguishable from one that wrote correctly, because an earlier test's
+    rows satisfy the query anyway. Both the failure test and the provenance test
+    had that hole: the provenance assertion was passing against the artifact
+    written by the FIRST test.
+
+    Derived from the test name, so each test gets a distinct stable id and their
+    rows cannot be mistaken for one another.
     """
+    import hashlib
     import uuid
 
-    fixed = uuid.UUID(int=0x5A0CE7E5_7000_4000_8000_000000000001)
+    digest = hashlib.sha256(request.node.name.encode()).digest()
+    fixed = uuid.UUID(bytes=digest[:16])
     monkeypatch.setattr(uuid, "uuid4", lambda: fixed)
     return fixed.hex[:12]
 
@@ -177,7 +202,7 @@ def stubbed_pipeline(monkeypatch):
     return fake
 
 
-async def test_pipeline_runs_end_to_end(stubbed_pipeline) -> None:
+async def test_pipeline_runs_end_to_end(stubbed_pipeline, pinned_run_id) -> None:
     """The whole thing executes without an unhandled exception.
 
     This alone would have caught the #64 outage: the pipeline fails closed, so
@@ -192,15 +217,23 @@ async def test_pipeline_runs_end_to_end(stubbed_pipeline) -> None:
     assert stubbed_pipeline.provenance_reset, "provenance should be reset at run start"
 
     async with get_session() as session:
+        artifacts = (await session.execute(
+            select(PipelineArtifact).where(PipelineArtifact.run_id == pinned_run_id)
+        )).scalars().all()
         run = (await session.execute(
-            select(DailyRun).order_by(DailyRun.id.desc()).limit(1)
+            select(DailyRun).where(DailyRun.run_date == date.today())
         )).scalar_one_or_none()
 
+    assert artifacts, f"run {pinned_run_id} persisted no artifacts"
     assert run is not None, "the run must persist a DailyRun row"
+    assert not any(a.status == "failed" for a in artifacts), (
+        f"a clean run wrote failed artifacts: "
+        f"{[(a.stage, a.status) for a in artifacts if a.status == 'failed']}"
+    )
 
 
 async def test_injected_provenance_reaches_the_governance_artifact(
-    stubbed_pipeline,
+    stubbed_pipeline, pinned_run_id
 ) -> None:
     """The link the source-level guard cannot prove.
 
@@ -215,13 +248,15 @@ async def test_injected_provenance_reaches_the_governance_artifact(
 
     async with get_session() as session:
         artifact = (await session.execute(
-            select(PipelineArtifact)
-            .where(PipelineArtifact.stage == "governance")
-            .order_by(PipelineArtifact.id.desc())
-            .limit(1)
-        )).scalar_one_or_none()
+            select(PipelineArtifact).where(
+                PipelineArtifact.run_id == pinned_run_id,
+                PipelineArtifact.stage == "governance",
+            )
+        )).scalars().first()
 
-    assert artifact is not None, "the run must persist a governance artifact"
+    assert artifact is not None, (
+        f"run {pinned_run_id} persisted no governance artifact of its own"
+    )
     payload = artifact.payload or {}
 
     assert payload.get("data_provenance") == SENTINEL_PROVENANCE, (
