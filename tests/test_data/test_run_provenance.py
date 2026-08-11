@@ -288,6 +288,55 @@ async def test_fmp_universe_survives_a_failed_cache_write(agg, monkeypatch) -> N
 
 
 @pytest.mark.asyncio
+async def test_the_failed_ticker_list_is_bounded_but_the_count_is_not(
+    agg, monkeypatch
+) -> None:
+    """A total outage fails every ticker; the payload must not grow with it.
+
+    `max_ohlcv_tickers` is 1000, so an unbounded list would put a multi-kilobyte
+    array into the governance artifact — largest on exactly the runs already in
+    trouble. The count stays exact so nothing is hidden, and a flag says the
+    sample was cut.
+    """
+
+    async def boom(*a, **k):
+        raise RuntimeError("everything is down")
+
+    for client, attr in (
+        (agg.polygon, "get_ohlcv"), (agg.fmp, "get_daily_prices"), (agg.yfinance, "get_ohlcv")
+    ):
+        monkeypatch.setattr(client, attr, boom)
+
+    tickers = [f"{a}{b}{c}" for a in "ABCDEF" for b in "ABCDE" for c in "ABCD"]
+    assert len(tickers) > 60, "need more than the cap to exercise truncation"
+    for t in tickers:
+        await agg.get_ohlcv(t, date(2026, 1, 1), date(2026, 8, 10))
+
+    prov = agg.get_data_provenance()
+    assert len(prov["ohlcv_failed_tickers"]) == 50, "sample is capped"
+    assert prov["ohlcv_failed_count"] == len(tickers), "count is exact"
+    assert prov["ohlcv_failures_truncated"] is True
+
+
+@pytest.mark.asyncio
+async def test_a_short_failure_list_is_not_marked_truncated(agg, monkeypatch) -> None:
+    async def boom(*a, **k):
+        raise RuntimeError("down")
+
+    for client, attr in (
+        (agg.polygon, "get_ohlcv"), (agg.fmp, "get_daily_prices"), (agg.yfinance, "get_ohlcv")
+    ):
+        monkeypatch.setattr(client, attr, boom)
+
+    await agg.get_ohlcv("ZZZZ", date(2026, 1, 1), date(2026, 8, 10))
+
+    prov = agg.get_data_provenance()
+    assert prov["ohlcv_failed_tickers"] == ["ZZZZ"]
+    assert prov["ohlcv_failed_count"] == 1
+    assert prov["ohlcv_failures_truncated"] is False
+
+
+@pytest.mark.asyncio
 async def test_an_opened_circuit_survives_its_own_cooldown(agg, monkeypatch) -> None:
     """The disclosure field must not deny the outage it exists to disclose.
 

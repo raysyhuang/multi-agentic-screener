@@ -362,6 +362,21 @@ async def run_morning_pipeline() -> None:
                     payload=_json_safe(no_trade.model_dump()),
                     errors=[{"code": "PIPELINE_CRASH", "message": str(exc)}],
                 ))
+
+                # Persist whatever governance context was collected before the
+                # crash. It was being finalized and then dropped, so a failed
+                # run left no regime, provenance, funnels or flags — discarding
+                # the diagnostic record precisely on the runs that need one. The
+                # record is partial by definition here; partial beats absent.
+                if gov is not None:
+                    session.add(PipelineArtifact(
+                        run_id=run_id,
+                        run_date=today,
+                        stage="governance",
+                        status=StageStatus.FAILED.value,
+                        payload=_json_safe(gov.record.to_dict()),
+                        errors=[{"code": "PIPELINE_CRASH", "message": str(exc)}],
+                    ))
         except Exception as db_exc:
             logger.error("Failed to write fail-closed record: %s", db_exc)
 
@@ -1973,7 +1988,7 @@ async def _run_pipeline_core(
         provenance.get("universe_source", "unknown"),
         provenance.get("ohlcv_by_source", {}),
         provenance.get("ohlcv_cache_hits", 0),
-        len(provenance.get("ohlcv_failed_tickers", [])),
+        provenance.get("ohlcv_failed_count", len(provenance.get("ohlcv_failed_tickers", []))),
         provenance.get("circuits_opened_during_run") or "none",
         universe_funnel.total_input,
         universe_funnel.passed,
