@@ -71,8 +71,15 @@ def _fund_flags(stock: dict) -> tuple[bool, bool, bool]:
     FMP-shaped row has no ``type`` key at all, so the flags are the only thing
     standing between an ETF and the universe; absent or empty there means the
     gate evaluated nothing and must say so.
+
+    The Polygon shape is identified by an *empty* ``type``, not merely by the
+    key being present. Presence alone would hand any future FMP security-type
+    field the Polygon exemption: an unfamiliar value like "TRUST" or "CEF" would
+    suppress the unknown warning and admit the row silently — the exact
+    failure this counter exists to expose. An unfamiliar non-empty type falls
+    through to the visible unknown path instead.
     """
-    polygon_shaped = "type" in stock
+    polygon_shaped = "type" in stock and not str(stock["type"]).strip()
 
     is_etf, etf_known = _as_bool(stock.get("isEtf"))
     is_fund, fund_known = _as_bool(stock.get("isFund"))
@@ -243,11 +250,16 @@ def filter_universe(
         # changed encoding — a silent zero-universe run, which is far worse than
         # admitting an ETF. Unrecognised values are counted and reported rather
         # than silently deciding either way.
-        is_etf, is_fund, evaluated = _fund_flags(stock)
-        if not evaluated:
+        is_etf, is_fund, flags_evaluated = _fund_flags(stock)
+        # A `type` that matches a known excluded category IS a decision, so the
+        # gate is not blind on that row even though the flags told us nothing.
+        # Without this, tightening the Polygon heuristic above would count every
+        # explicitly-typed ETF as "unknown" while also excluding it.
+        type_excluded = any(t in stock_type for t in EXCLUDED_TYPES)
+        if not (flags_evaluated or type_excluded):
             funnel.unrecognized_type_flags += 1
 
-        if any(t in stock_type for t in EXCLUDED_TYPES) or is_etf or is_fund:
+        if type_excluded or is_etf or is_fund:
             funnel.failed_type += 1
             continue
 

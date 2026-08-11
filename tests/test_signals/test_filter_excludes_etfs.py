@@ -136,6 +136,49 @@ def test_fmp_shaped_row_missing_the_flags_entirely_is_unknown() -> None:
     assert funnel.unrecognized_type_flags == 1
 
 
+@pytest.mark.parametrize("unfamiliar", ["TRUST", "CEF", "ETP", "SECURITY", "cs"])
+def test_unfamiliar_non_empty_type_does_not_earn_the_polygon_exemption(
+    unfamiliar: str,
+) -> None:
+    """Presence of `type` must not be enough to suppress the unknown warning.
+
+    If FMP ever replaced its boolean flags with a security-type field, keying
+    the Polygon exemption on `"type" in stock` would treat those rows as
+    Polygon-shaped, skip the unknown count, and admit an unrecognised ETP or
+    closed-end fund silently — reintroducing the exact silence this PR removes.
+    The Polygon builder emits `type=""` specifically, so the exemption keys on
+    emptiness. Caught by Hawk on 69b5982.
+    """
+    row = {
+        "symbol": "XXXX",
+        "price": 50.0,
+        "volume": 1_000_000,
+        "exchangeShortName": "NYSE",
+        "type": unfamiliar,
+    }
+    funnel = FilterFunnel()
+    passed = filter_universe([row], funnel=funnel)
+
+    assert [s["symbol"] for s in passed] == ["XXXX"], "unknown must not fail closed"
+    assert funnel.unrecognized_type_flags == 1, "and must be visible"
+
+
+def test_a_known_excluded_type_is_a_decision_not_an_unknown() -> None:
+    """`type="ETF"` answered the question — do not also count it as blind."""
+    row = {
+        "symbol": "SPY",
+        "price": 500.0,
+        "volume": 70_000_000,
+        "exchangeShortName": "NYSE",
+        "type": "ETF",
+    }
+    funnel = FilterFunnel()
+
+    assert filter_universe([row], funnel=funnel) == []
+    assert funnel.failed_type == 1
+    assert funnel.unrecognized_type_flags == 0
+
+
 def test_polygon_shaped_row_without_flags_is_not_flagged_unknown() -> None:
     """Absent flags are correct on the Polygon path — `type` is authoritative.
 
