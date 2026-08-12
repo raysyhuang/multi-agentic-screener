@@ -62,19 +62,52 @@ for up to 30 days. Hence the audit below, which is the price of the 20× saving.
 
 ### §3b Classification drift audit (mandatory, gates sign-off)
 
-For each month, sample **200 ticker/date pairs deterministically** — seeded by
-the month, drawn from that month's eligible set — and query date-specific
-reference data for each. Compare `type` and `primary_exchange` against the
-forward-held label.
+**Sampling population: pre-classification.** Draw the deterministic monthly
+sample from names that traded on D and pass the *observable* price and volume
+constraints — **before** any forward-held `type` or exchange label is applied.
+
+Sampling from the eligible set, as draft v3 did, makes the audit inherit the
+bias it exists to detect. Eligibility already depends on the classification
+under test, so one direction of error is structurally invisible:
+
+```
+actual common stock  →  forward-held label says ETF/fund/other
+                     →  excluded before the sample is drawn
+                     →  never tested
+                     →  the universe silently loses valid common stocks
+```
+
+Contamination (an ETF labelled CS) was catchable because such a name is
+included. False exclusion was not. The audit must defend both directions.
+
+**Stratify by forward-held bucket** — at minimum `common stock`,
+`ETF/fund/other`, and `unknown` — so excluded names are audited too.
+
+For each month, sample **200 ticker/date pairs deterministically** (seeded by
+the month), allocated **roughly equally across the three buckets** rather than
+proportionally. The common-stock bucket is by far the largest, so equal
+allocation deliberately over-samples the small ones — which is where the newly
+covered errors live, and rare errors are exactly what proportional sampling
+would miss. Where a bucket holds fewer than its allocation, take all of it and
+redistribute the remainder.
+
+Then query date-specific reference data for each pair and compare `type` and
+`primary_exchange` against the forward-held label.
 
 | Axis | Tolerance |
 |---|---|
-| Common-stock vs ETF/fund/other | **zero disagreements** |
+| Common-stock vs ETF/fund/other, **either direction** | **zero disagreements** |
 | `primary_exchange` label | **≤ 0.5%** of sampled pairs |
+
+Either direction is the point of the pre-classification population: a wrongly
+included ETF contaminates the universe, and a wrongly excluded common stock
+silently shrinks it. Both are misclassification; only the first was previously
+detectable.
 
 Zero tolerance on the security-type axis is not fastidiousness: a mislabelled
 ETF is exactly the contamination that put TQQQ into the live candidate pool at
-score 97.5. One disagreement means the monthly cadence cannot carry that axis,
+score 97.5 — and the mirror-image error would remove real tradeable names from
+every backtest run against this cache, which is harder to notice and worse. One disagreement means the monthly cadence cannot carry that axis,
 and the cache is not signed off — return for daily classification or another
 source rather than negotiating the threshold afterwards.
 
@@ -134,6 +167,10 @@ Re-querying a vendor cannot be expected to reproduce bytes: Polygon restates, an
 - ATR% distribution vs live observed — quantiles
 - market-cap / dollar-volume / sector distribution
 - exclusion counts by reason, including every `*_unknown`
+- **false-exclusion rate**: audited names whose forward-held label excluded them
+  but whose date-specific classification says common stock. Newly measurable
+  once the sample is drawn pre-classification; report it whether or not it
+  breaches the halt.
 - missing-history, alias-collision, delisting counts
 - vintage diff, when rebuilt
 
