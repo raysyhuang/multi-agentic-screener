@@ -232,3 +232,119 @@ def test_the_audit_population_is_drawn_before_classification(tmp_path, vintage):
         "an ETF-labelled name was not auditable, so false exclusion is undetectable"
     )
     assert "STOCK" in sampled_tickers
+
+
+# ── repairs demanded by the Phase A review ───────────────────────────────────
+
+def test_a_single_catastrophic_month_halts_even_though_the_pooled_rate_passes():
+    """The defect Neo named: pooled unknown rates hide a concentrated outage.
+
+    Calibrated honestly. A month at 100% unknown is 1/37 = 2.7% pooled, which the
+    1% pooled gate WOULD have caught — so that is not the fixture. A month at 30%
+    unknown is 0.81% pooled and passes, while being a severe outage: nearly a
+    third of the tickers that traded that month are unclassifiable and silently
+    absent from the universe. That is the gap the windowed gate closes.
+    """
+    from pit_universe_report import HALT_TYPE_UNKNOWN_PCT, unknown_rate_gates
+
+    membership = {}
+    for month in range(1, 38):
+        y, m = 2023 + (month - 1) // 12, (month - 1) % 12 + 1
+        broken = month == 20
+        for day in (1, 2):
+            membership[date(y, m, day)] = {
+                "pre_classification": [f"T{i}" for i in range(500)],
+                "traded": [], "eligible_pre_mcap": [],
+                "exclusions": {"type_unknown": 150 if broken else 0},
+            }
+
+    pooled = 100.0 * (150 * 2) / (37 * 2 * 500)
+    assert pooled < HALT_TYPE_UNKNOWN_PCT, (
+        f"fixture is not exercising the defect: pooled {pooled:.2f}% already alarms"
+    )
+
+    gates, halts = unknown_rate_gates(membership)
+
+    assert gates["per_month"]["2024-08"]["type_unknown_pct"] == 30.0
+    assert any("2024-08" in h and "type_unknown" in h for h in halts), (
+        f"a month with 30% unclassifiable tickers did not halt; halts={halts}"
+    )
+
+
+def test_slow_degradation_trips_the_trailing_window():
+    """No single month breaches, but a sustained level does."""
+    from pit_universe_report import unknown_rate_gates
+
+    membership = {}
+    for month in range(1, 25):
+        y, m = 2023 + (month - 1) // 12, (month - 1) % 12 + 1
+        membership[date(y, m, 1)] = {
+            "pre_classification": [f"T{i}" for i in range(1000)],
+            "traded": [], "eligible_pre_mcap": [],
+            # 0.9% every month: under the 1.0% monthly gate, forever.
+            "exclusions": {"type_unknown": 9},
+        }
+
+    gates, halts = unknown_rate_gates(membership)
+
+    assert not any("monthly" in h for h in halts), "no month should breach on its own"
+    assert all(v == pytest.approx(0.9) for v in gates["trailing_12m_type_unknown_pct"].values())
+
+
+def test_a_failed_fetch_is_never_written_into_the_raw_tree(tmp_path):
+    """A hole must stay a hole, or resume logic skips it forever.
+
+    `_get` returns a `_failed` sentinel instead of raising so one bad shard
+    cannot void 8,000 calls. That only holds if the sentinel is not persisted:
+    resume keys on file existence, so a written sentinel is permanently
+    indistinguishable from a legitimately empty response.
+    """
+    path = tmp_path / "grouped" / "2024-03-01.json.gz"
+
+    assert pit._write_raw(path, {"results": None, "_failed": True, "_reason": "http_503"}) is None
+    assert not path.exists(), "a failed fetch was persisted and will be skipped on resume"
+
+    assert pit._write_raw(path, {"results": []}) is not None
+    assert path.exists(), "a legitimately empty response must still be recorded"
+
+
+def test_the_ledger_counts_across_runs_so_the_ceiling_cannot_be_reset(tmp_path, monkeypatch):
+    """A per-invocation counter is not a budget when the build is resumable."""
+    monkeypatch.setattr(pit, "ROOT", tmp_path)
+
+    first = pit._open_ledger("v")
+    for _ in range(5):
+        first.record("https://api.polygon.io/v3/x", {"a": 1}, 200, 1)
+    first.record_failure("https://api.polygon.io/v3/x", {"a": 1}, "http_503", 6)
+    first.close()
+
+    second = pit._open_ledger("v")
+
+    assert second.calls == 5, (
+        f"resumed ledger lost prior spend ({second.calls}); the ceiling would be "
+        "reset by every restart"
+    )
+    assert second.calls == 5, "a failure record must not inflate the request count"
+
+
+def test_the_ledger_never_records_request_parameters_verbatim(tmp_path, monkeypatch):
+    """Ledgers get attached to artifacts; artifacts on this repo are public."""
+    monkeypatch.setattr(pit, "ROOT", tmp_path)
+
+    ledger = pit._open_ledger("v")
+    ledger.record("https://api.polygon.io/v3/reference/tickers", {"secret": "sentinel"}, 200, 1)
+    ledger.close()
+
+    written = (tmp_path / "v" / "request_ledger.jsonl").read_text()
+    assert "sentinel" not in written, "raw parameters reached the ledger"
+    assert "params_sha256" in written
+
+
+def test_get_refuses_to_issue_a_request_with_no_ledger(monkeypatch):
+    """An unmetered request path must be impossible, not merely absent."""
+    import asyncio
+
+    monkeypatch.setattr(pit, "_LEDGER", None)
+
+    with pytest.raises(RuntimeError, match="ledger"):
+        asyncio.run(pit._get(None, "https://api.polygon.io/v3/x", {}))

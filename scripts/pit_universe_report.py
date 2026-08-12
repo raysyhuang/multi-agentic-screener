@@ -76,12 +76,26 @@ def _audit_results(vintage: str) -> dict:
     if not audit_dir.exists():
         return {"ran": False}
 
-    from pit_universe_phase_a import _classification_by_month  # noqa: PLC0415
+    from pit_universe_phase_a import (  # noqa: PLC0415
+        ALLOWED_EXCHANGES as ALLOWED,
+        _classification_by_month,
+    )
 
     labels_by_month = _classification_by_month(vintage)
     per_month: dict[str, dict] = defaultdict(lambda: {
-        "sampled": 0, "type_disagree": 0, "exchange_disagree": 0,
+        "sampled": 0, "verifiable": 0, "unverifiable": 0,
+        # Only pairs whose forward-held label EXISTS can test drift. A pair with
+        # no held label is a different fact and is counted separately: treating
+        # absent as a differing value made every unknown-bucket sample look like
+        # a drift disagreement, which is 100% false positives.
+        "labelled": 0, "type_disagree": 0, "exchange_disagree": 0,
         "false_exclusion": 0, "contamination": 0,
+        # An exchange disagreement only matters if it crosses the eligible set.
+        # LNG on 2024-02-22 was held as AMEX and is actually NYSE: common stock,
+        # wrongly excluded. Tracking drift without tracking whether it changed
+        # membership reports noise and misses the one case that counts.
+        "exchange_membership_flip": 0,
+        "resolvable_unknown": 0,
     })
 
     for month_dir in sorted(audit_dir.glob("*")):
@@ -94,24 +108,101 @@ def _audit_results(vintage: str) -> dict:
             ticker = meta.get("ticker")
             rec = per_month[month_dir.name]
             rec["sampled"] += 1
+            if payload.get("_not_found") or not actual:
+                # No date-specific record. Neither agreement nor disagreement —
+                # counting it as agreement would understate drift, which is the
+                # direction that lets a bad cadence pass.
+                rec["unverifiable"] += 1
+                continue
+            rec["verifiable"] += 1
+
+            from pit_universe_phase_a import _EXCHANGE_MAP  # noqa: PLC0415
 
             held_label = held.get(ticker) or {}
             held_type = held_label.get("type")
             actual_type = actual.get("type")
+            actual_exch = _EXCHANGE_MAP.get(actual.get("primary_exchange", ""), "")
+
+            if not held_type:
+                # The monthly snapshot carried no label for this ticker, so it
+                # was excluded as type_unknown. That the per-ticker endpoint DOES
+                # resolve it is worth reporting — the snapshot is incomplete
+                # relative to it — but it is not classification DRIFT, which is
+                # what the cadence is on trial for.
+                if actual_type:
+                    rec["resolvable_unknown"] += 1
+                continue
+
+            rec["labelled"] += 1
             if actual_type and held_type != actual_type:
                 rec["type_disagree"] += 1
                 # Direction matters: one contaminates, one silently shrinks.
                 if held_type == "CS" and actual_type != "CS":
                     rec["contamination"] += 1
-                elif held_type != "CS" and actual_type == "CS":
+                elif actual_type == "CS":
                     rec["false_exclusion"] += 1
-
-            from pit_universe_phase_a import _EXCHANGE_MAP  # noqa: PLC0415
-            actual_exch = _EXCHANGE_MAP.get(actual.get("primary_exchange", ""), "")
             if actual_exch and held_label.get("exchange") != actual_exch:
                 rec["exchange_disagree"] += 1
+                held_ok = held_label.get("exchange") in ALLOWED
+                actual_ok = actual_exch in ALLOWED
+                if held_ok != actual_ok and (actual_type or held_type) == "CS":
+                    rec["exchange_membership_flip"] += 1
 
     return {"ran": True, "per_month": dict(per_month)}
+
+
+def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
+    """Per-month and trailing-12-month unknown rates (§A.5).
+
+    The pooled rate this replaces was unfit for purpose: across 751 sessions a
+    single month in which EVERY ticker was unclassifiable contributes ~2.7% to
+    the pooled figure, so a total classification outage for a month lands under
+    a 1% pooled threshold and passes. The gate must bind on the window in which
+    the damage is concentrated, so it is evaluated per month, and again on a
+    trailing 12-month window to catch slow degradation that no single month
+    breaches.
+    """
+    by_month: dict[str, dict[str, float]] = defaultdict(
+        lambda: {"pre": 0, "type_unknown": 0, "exchange_unknown": 0}
+    )
+    for d in sorted(membership):
+        rec = membership[d]
+        key = f"{d.year:04d}-{d.month:02d}"
+        by_month[key]["pre"] += len(rec["pre_classification"])
+        by_month[key]["type_unknown"] += rec["exclusions"].get("type_unknown", 0)
+        by_month[key]["exchange_unknown"] += rec["exclusions"].get("exchange_unknown", 0)
+
+    months = sorted(by_month)
+    per_month, halts = {}, []
+    for m in months:
+        r = by_month[m]
+        denom = max(1, r["pre"])
+        t_pct = 100.0 * r["type_unknown"] / denom
+        e_pct = 100.0 * r["exchange_unknown"] / denom
+        per_month[m] = {
+            "pre_classification": r["pre"],
+            "type_unknown_pct": round(t_pct, 4),
+            "exchange_unknown_pct": round(e_pct, 4),
+        }
+        if t_pct > HALT_TYPE_UNKNOWN_PCT:
+            halts.append(f"{m}: type_unknown {t_pct:.2f}% > {HALT_TYPE_UNKNOWN_PCT}% (monthly)")
+        if e_pct > HALT_EXCHANGE_UNKNOWN_PCT:
+            halts.append(
+                f"{m}: exchange_unknown {e_pct:.2f}% > {HALT_EXCHANGE_UNKNOWN_PCT}% (monthly)"
+            )
+
+    trailing = {}
+    for i in range(len(months)):
+        window = months[max(0, i - 11): i + 1]
+        if len(window) < 12:
+            continue
+        pre = sum(by_month[m]["pre"] for m in window)
+        t_pct = 100.0 * sum(by_month[m]["type_unknown"] for m in window) / max(1, pre)
+        trailing[months[i]] = round(t_pct, 4)
+        if t_pct > HALT_TYPE_UNKNOWN_PCT:
+            halts.append(f"{months[i]}: trailing-12m type_unknown {t_pct:.2f}% > {HALT_TYPE_UNKNOWN_PCT}%")
+
+    return {"per_month": per_month, "trailing_12m_type_unknown_pct": trailing}, halts
 
 
 def write_report(vintage: str) -> dict:
@@ -152,11 +243,33 @@ def write_report(vintage: str) -> dict:
             100.0 * sum(1 for v in eligible_atr if v >= 5.0) / len(eligible_atr), 2
         )
 
-    halts = []
-    if type_unknown_pct > HALT_TYPE_UNKNOWN_PCT:
-        halts.append(f"type_unknown {type_unknown_pct:.2f}% > {HALT_TYPE_UNKNOWN_PCT}%")
-    if exch_unknown_pct > HALT_EXCHANGE_UNKNOWN_PCT:
-        halts.append(f"exchange_unknown {exch_unknown_pct:.2f}% > {HALT_EXCHANGE_UNKNOWN_PCT}%")
+    # Pooled rates are REPORTED for continuity but no longer gate anything —
+    # they cannot see a single catastrophic month (see unknown_rate_gates).
+    windowed, halts = unknown_rate_gates(membership)
+
+    ledger_path = base / "request_ledger.jsonl"
+    ledger_summary = {"present": ledger_path.exists()}
+    if ledger_path.exists():
+        calls = failures = 0
+        for line in ledger_path.read_text().splitlines():
+            if not line.strip():
+                continue
+            try:
+                event = json.loads(line).get("event")
+            except json.JSONDecodeError:
+                continue
+            if event == "request":
+                calls += 1
+            elif event == "failure":
+                failures += 1
+        ledger_summary = {"present": True, "calls": calls, "durable_failures": failures}
+        if failures:
+            # A vintage with unrecovered holes is incomplete by construction;
+            # reporting it as a dataset would present a partial universe as a
+            # whole one, which is the silent-truncation failure mode.
+            halts.append(f"request ledger records {failures} unrecovered failure(s)")
+    else:
+        halts.append("no request ledger — provenance of this vintage is unverifiable")
 
     audit = _audit_results(vintage)
     if audit.get("ran"):
@@ -167,8 +280,8 @@ def write_report(vintage: str) -> dict:
                     f"(contamination={rec['contamination']}, "
                     f"false_exclusion={rec['false_exclusion']}) — zero tolerated"
                 )
-            if rec["sampled"]:
-                exch_pct = 100.0 * rec["exchange_disagree"] / rec["sampled"]
+            if rec["labelled"]:
+                exch_pct = 100.0 * rec["exchange_disagree"] / rec["labelled"]
                 if exch_pct > HALT_DRIFT_EXCHANGE_PCT:
                     halts.append(f"{month}: exchange drift {exch_pct:.2f}% > {HALT_DRIFT_EXCHANGE_PCT}%")
 
@@ -189,10 +302,12 @@ def write_report(vintage: str) -> dict:
         "raw_hashes": {str(p.relative_to(base)): _sha256(p) for p in raw_files},
         "distinct_eligible_tickers_pre_mcap": len(distinct_eligible),
         "exclusion_totals": dict(exclusion_totals),
-        "unknown_rates_pct": {
+        "unknown_rates_pct_pooled_DIAGNOSTIC_ONLY": {
             "type_unknown": round(type_unknown_pct, 4),
             "exchange_unknown": round(exch_unknown_pct, 4),
         },
+        "unknown_rate_gates": windowed,
+        "request_ledger": ledger_summary,
         "atr_pct_quantiles_diagnostic_only": quantiles,
         "classification_audit": audit,
         "halts": halts,
@@ -210,3 +325,91 @@ def write_report(vintage: str) -> dict:
 
     print(json.dumps({k: v for k, v in manifest.items() if k != "raw_hashes"}, indent=2))
     return manifest
+
+
+def verify(vintage: str, manifest_path: Path | None = None) -> dict:
+    """Recompute every raw hash against a manifest and report discrepancies.
+
+    This is what makes the replay claim checkable rather than asserted. The
+    manifest is committed to the repo while `outputs/` is gitignored, so the
+    authority for "these are the bytes the dataset was built from" lives in git
+    history, and a vintage restored from a Release archive can be proven
+    identical to the one that produced the accepted result.
+
+    Exits non-zero on any discrepancy: a verification that reports problems and
+    returns success is decorative.
+    """
+    base = ROOT / vintage
+    src = manifest_path or (base / "manifest.json")
+    if not src.exists():
+        raise SystemExit(f"no manifest at {src} — nothing to verify against")
+
+    expected = json.loads(src.read_text()).get("raw_hashes", {})
+    if not expected:
+        raise SystemExit(f"{src} carries no raw_hashes")
+
+    present = {
+        str(p.relative_to(base)): p
+        for p in sorted((base / "raw").rglob("*.json.gz"))
+    }
+
+    missing = sorted(set(expected) - set(present))
+    extra = sorted(set(present) - set(expected))
+    mismatched = [
+        rel for rel in sorted(set(expected) & set(present))
+        if _sha256(present[rel]) != expected[rel]
+    ]
+
+    result = {
+        "vintage": vintage,
+        "manifest": str(src),
+        "files_expected": len(expected),
+        "files_present": len(present),
+        "missing": missing[:20],
+        "missing_count": len(missing),
+        "extra": extra[:20],
+        "extra_count": len(extra),
+        "mismatched": mismatched[:20],
+        "mismatched_count": len(mismatched),
+        "verified": not (missing or extra or mismatched),
+    }
+    print(json.dumps(result, indent=2))
+    if not result["verified"]:
+        raise SystemExit(
+            f"VERIFY FAILED: {len(missing)} missing, {len(extra)} extra, "
+            f"{len(mismatched)} mismatched"
+        )
+    logger.info("verified %d raw files against %s", len(expected), src)
+    return result
+
+
+def package(vintage: str) -> Path:
+    """Build the Release archive and stamp its own hash.
+
+    Produces the artifact only. Uploading it is a deliberate, separately
+    authorised act: a vintage contains a full market history and publishing is
+    not reversible, so this never calls `gh release` on its own.
+    """
+    import tarfile
+
+    base = ROOT / vintage
+    archive = base.parent / f"pit-universe-{vintage}.tar.gz"
+    with tarfile.open(archive, "w:gz") as tar:
+        tar.add(base / "raw", arcname=f"{vintage}/raw")
+        for extra in ("manifest.json", "request_ledger.jsonl", "daily_counts.json"):
+            if (base / extra).exists():
+                tar.add(base / extra, arcname=f"{vintage}/{extra}")
+
+    digest = _sha256(archive)
+    (base / "archive.sha256").write_text(f"{digest}  {archive.name}\n")
+    size_mb = archive.stat().st_size / (1 << 20)
+    logger.info("archive %s (%.1f MB) sha256=%s", archive.name, size_mb, digest)
+    print(json.dumps({
+        "archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1),
+        "upload": (
+            f"gh release create pit-universe-{vintage} '{archive}' "
+            f"--title 'PIT universe vintage {vintage}' --notes-file "
+            f"outputs/research/PIT_PHASE_A_HALT_FINDINGS.md"
+        ),
+    }, indent=2))
+    return archive
