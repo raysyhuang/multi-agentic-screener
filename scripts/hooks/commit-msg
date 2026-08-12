@@ -1,0 +1,51 @@
+#!/usr/bin/env bash
+# Require a written reason whenever the staging guard was overridden.
+#
+# `ALLOW_LOCAL_FILES=1` lives in the environment and leaves no trace in git
+# history, so on its own it is an undocumented bypass — the reviewer sees a
+# commit containing a protected file and no explanation of why it was allowed.
+#
+# This hook re-runs the same detection as pre-commit (shared library, so the two
+# cannot drift) and, if protected files are staged, demands the marker with a
+# non-empty justification in the commit message.
+#
+#     ALLOW_LOCAL_FILES: research doc under the gitignored outputs/ tree
+#
+# Deliberately keyed on the staged content rather than on the environment
+# variable: the requirement then holds however the commit was produced.
+
+set -euo pipefail
+
+MSG_FILE="$1"
+HOOK_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")" && pwd)"
+# shellcheck source=lib-blocked-paths.sh
+source "$HOOK_DIR/lib-blocked-paths.sh"
+
+offenders="$(blocked_staged_paths)"
+[ -z "$offenders" ] && exit 0
+
+# Strip comment lines so a marker inside git's commentary does not count.
+body="$(grep -v '^#' "$MSG_FILE" || true)"
+
+reason="$(printf '%s' "$body" | sed -nE 's/.*ALLOW_LOCAL_FILES:[[:space:]]*(.+)/\1/p' | head -1)"
+# Trim, and drop a trailing ")" from the "(ALLOW_LOCAL_FILES: why)" form.
+reason="$(printf '%s' "$reason" | sed -E 's/\)[[:space:]]*$//; s/^[[:space:]]+//; s/[[:space:]]+$//')"
+
+if [ ${#reason} -ge 8 ]; then
+    exit 0
+fi
+
+cat >&2 <<EOF
+
+commit-msg: this commit contains protected files but gives no reason.
+
+$(printf '  %s\n' "$offenders")
+
+ALLOW_LOCAL_FILES=1 permits the commit but records nothing, so a reviewer sees
+the file and not the justification. State it in the message:
+
+    ALLOW_LOCAL_FILES: <why this path belongs in the repo>
+
+EOF
+[ -n "$reason" ] && echo "  (found '$reason' — too short to be a reason)" >&2
+exit 1
