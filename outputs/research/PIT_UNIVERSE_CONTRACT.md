@@ -37,8 +37,53 @@ The live filter (`fmp_client.get_stock_screener` + `filter_universe`) must be gi
 | **price > $5** | official close for D from grouped daily aggregates (`c`). Split-adjusted as Polygon serves it. Decision-time availability: the pipeline picks on D and enters T+1, so D's close is known at decision time — no lookahead. | exclude, count as `no_price` |
 | **volume > 500K** | **shares**, from grouped daily (`v`) for D — matching the live screener's `volumeMoreThan`, which is share volume. Single day, not a window, unless Neo prefers a 20-day average (live uses a single snapshot). | exclude, count as `no_volume` |
 | **market cap > $300M** | `/v3/reference/tickers/{t}?date=D` → `market_cap`. Verified genuinely as-of. Where absent, derive from `weighted_shares_outstanding × close(D)`. | **exclude and count as `mcap_unknown`** — never impute from a later value |
-| **NYSE / NASDAQ** | `primary_exchange` from the same as-of reference call, mapped via the existing `_EXCHANGE_MAP` | exclude, count as `exchange_unknown` |
-| **common stock, not ETF/fund** | `type == "CS"` from the as-of reference call | **exclude and count as `type_unknown`** |
+| **NYSE / NASDAQ** | `primary_exchange` from reference data, **forward-held monthly** — see §3a | exclude, count as `exchange_unknown` |
+| **common stock, not ETF/fund** | `type == "CS"` from reference data, **forward-held monthly** — see §3a | **exclude and count as `type_unknown`** |
+
+### §3a Classification cadence — forward-held monthly, not daily-exact
+
+Draft v2 said classification was evaluated "as of each D" while Appendix A
+specified monthly sampling. Those contradict, and the honest one is the cheaper
+one. Frozen:
+
+```
+Phase A produces a FORWARD-HELD MONTHLY-CLASSIFICATION universe,
+not a daily-exact classification universe.
+
+Snapshot:  first ET market date of each month.
+Validity:  from that snapshot date through the day before the next.
+           Never applied backwards. No label ever comes from the future.
+```
+
+This is lookahead-free but it is **an approximation**, and its error mode is not
+covered by the `*_unknown` thresholds: those catch *missing* labels, whereas
+drift is a *known* label that changed mid-month and is therefore silently wrong
+for up to 30 days. Hence the audit below, which is the price of the 20× saving.
+
+### §3b Classification drift audit (mandatory, gates sign-off)
+
+For each month, sample **200 ticker/date pairs deterministically** — seeded by
+the month, drawn from that month's eligible set — and query date-specific
+reference data for each. Compare `type` and `primary_exchange` against the
+forward-held label.
+
+| Axis | Tolerance |
+|---|---|
+| Common-stock vs ETF/fund/other | **zero disagreements** |
+| `primary_exchange` label | **≤ 0.5%** of sampled pairs |
+
+Zero tolerance on the security-type axis is not fastidiousness: a mislabelled
+ETF is exactly the contamination that put TQQQ into the live candidate pool at
+score 97.5. One disagreement means the monthly cadence cannot carry that axis,
+and the cache is not signed off — return for daily classification or another
+source rather than negotiating the threshold afterwards.
+
+Power, stated plainly: 200/month gives 7,200 paired observations over 3 years,
+which detects an aggregate disagreement rate around 0.5% comfortably. **Per-month
+power is low** — a single bad month could pass unnoticed on the exchange axis.
+The zero-tolerance type rule is what carries the safety, not the sample size.
+
+Audit cost: 200 × 36 ≈ **7,200 calls**, counted in Phase A below.
 
 **No current label may be backfilled onto a historical date.** If as-of classification is unavailable for a ticker on D, it is excluded and counted — not resolved with today's value. A company that converted structure, or a ticker reused after delisting, would otherwise be silently misclassified for its entire history. The counts of `*_unknown` exclusions are a headline diagnostic: a large or trending unknown rate invalidates the dataset.
 
@@ -59,6 +104,16 @@ The live filter (`fmp_client.get_stock_screener` + `filter_universe`) must be gi
 
 Re-querying a vendor cannot be expected to reproduce bytes: Polygon restates, and retrieval timestamps differ. So the contract is **replay determinism**, not build determinism:
 
+0. **Durability.** `outputs/` is gitignored, so a local folder is not an
+   artifact and cannot underwrite reproducibility. Each vintage is archived as
+   `pit-universe-<vintage>.tar.gz` and attached to a **GitHub Release** tagged
+   `pit-universe-<vintage>`; the **manifest is force-added into the repository**
+   so the hashes are durably version-controlled even though the payload is not.
+   The VPS fetches the release asset through the same authenticated API path it
+   already uses for `mas-run-attestation`, verifies every hash against the
+   committed manifest, and replays from that. Estimated archive size is
+   400–600 MB, within the 2 GB per-asset limit; if a vintage exceeds it the
+   manifest records the split parts.
 1. The first build persists **immutable raw-response snapshots** and their content hashes.
 2. The manifest records raw-input hashes, normalization version, config hash, code SHA, and the ET date range.
 3. **A replay from the same frozen raw snapshot must reproduce identical output hashes.** This is the reproducibility that gets asserted, including from the VPS.
@@ -132,11 +187,12 @@ The middle row is the constraint that shapes everything: classification is cheap
 |---|---|
 | Grouped daily, 3Y ≈ 750 market dates | **750** |
 | Reference list, monthly as-of, ~6 pages each × 36 | **~216** |
-| **Phase A total** | **≈ 1,000** |
+| Classification drift audit (§3b), 200/month × 36 | **~7,200** |
+| **Phase A total** | **≈ 8,200** |
 
 Yields price, share volume, exchange and security type for every date.
 
-**Classification cadence is monthly, applied forward-only.** A snapshot taken on the first market date of month M is valid for dates ≥ that date and < the next snapshot. This is lookahead-free — no label is ever taken from the future — and the staleness is bounded at one month and disclosed. Daily classification would cost ~4,500 calls for information that changes a handful of times a year; the trade is bounded staleness for a 20× saving, and it is Neo's to accept or reject.
+**Classification cadence is monthly, applied forward-only** — frozen in §3a, with the mandatory drift audit in §3b. Daily classification would cost ~4,500 calls; the monthly snapshot plus a 7,200-call audit costs more in raw calls but buys a *measured* bound on the approximation rather than an assumed one. If the audit fails on the security-type axis, the answer is daily classification, not a relaxed threshold.
 
 **Gate.** Phase A ends by reporting the exact count of distinct tickers that pass price + volume + exchange + type. Phase B does not begin until that number is known and approved.
 
