@@ -348,3 +348,69 @@ def test_get_refuses_to_issue_a_request_with_no_ledger(monkeypatch):
 
     with pytest.raises(RuntimeError, match="ledger"):
         asyncio.run(pit._get(None, "https://api.polygon.io/v3/x", {}))
+
+
+def test_known_market_holidays_are_not_sessions():
+    """Pin calendar BEHAVIOUR, not just the pinned version string.
+
+    The calendar decides which dates enter a vintage, so a library upgrade that
+    revised a historical holiday would silently change the dataset. The version
+    is pinned in pyproject and recorded in the manifest; this asserts the dates
+    that pin is protecting, so an upgrade fails here rather than in a diff of
+    8,000 raw files.
+    """
+    sessions = set(pit.et_sessions(3.0))
+    covered = [d for d in sessions if d.year == 2025]
+    assert covered, "fixture needs 2025 inside the range"
+
+    for holiday in (date(2025, 1, 1), date(2025, 7, 4), date(2025, 12, 25)):
+        assert holiday not in sessions, f"{holiday} is a market holiday, not a session"
+    assert date(2025, 7, 3) in sessions, "a half day is still a session"
+
+
+def test_an_adr_the_live_book_trades_is_reported_as_pit_being_stricter():
+    """§4 — the attribution that inverts the conclusion if you get it wrong.
+
+    `src/signals/filter.py` gates exchange, ETF/fund flags, price, volume and
+    market cap. It never requires common stock, so PIT's `type == "CS"` is a
+    constraint live does not have, and it silently removes ADRs the book
+    actually picks. The first version of this check bucketed ADRs with ETFs and
+    reported a PIT over-restriction as a live defect.
+    """
+    from pit_universe_report import live_divergence
+
+    rows = [
+        {"ticker": "ADR1", "run_date": "2024-03-01", "picked": True, "rank": 1, "model": "mr"},
+        {"ticker": "ETF1", "run_date": "2024-03-01", "picked": False, "rank": 5, "model": "mr"},
+    ]
+    membership = {date(2024, 3, 1): {"eligible_pre_mcap": [], "traded": ["ADR1", "ETF1"]}}
+    labels = {(2024, 3): {
+        "ADR1": {"type": "ADRC", "exchange": "NYSE"},
+        "ETF1": {"type": "ETF", "exchange": "NASDAQ"},
+    }}
+
+    import pit_universe_report as rep
+
+    orig = rep._read_raw
+    rep._read_raw = lambda p: {"candidates": rows}
+    try:
+        import pit_universe_phase_a as mod
+        real_m, real_l = mod.build_membership, mod._classification_by_month
+        mod.build_membership = lambda v: membership
+        mod._classification_by_month = lambda v: labels
+        (rep.ROOT / "stub" / "raw" / "live").mkdir(parents=True, exist_ok=True)
+        (rep.ROOT / "stub" / "raw" / "live" / "dashboard.json.gz").write_bytes(b"x")
+        try:
+            result, halts = live_divergence("stub")
+        finally:
+            mod.build_membership, mod._classification_by_month = real_m, real_l
+            import shutil
+            shutil.rmtree(rep.ROOT / "stub", ignore_errors=True)
+    finally:
+        rep._read_raw = orig
+
+    assert result["pit_stricter_than_live_count"] == 1, "the ADR was not attributed to PIT"
+    assert result["pit_stricter_picked_count"] == 1, "a PICKED exclusion must be counted"
+    assert result["explained_by_live_gates_count"] == 1, "the ETF belongs to live's dead gate"
+    assert result["pit_false_exclusion_count"] == 0
+    assert any("PICKED" in h for h in halts), f"a picked exclusion must halt; got {halts}"

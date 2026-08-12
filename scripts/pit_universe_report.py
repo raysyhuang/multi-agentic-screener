@@ -26,6 +26,23 @@ HALT_EXCHANGE_UNKNOWN_PCT = 1.0
 HALT_DRIFT_EXCHANGE_PCT = 0.5
 
 
+def _calendar_provenance() -> dict:
+    """Which calendar decided the session list.
+
+    Recorded because it is a dataset input, not a build detail: a different
+    version that revised a historical holiday would produce a different set of
+    dates from the same code and the same API, so a vintage is only replayable
+    against a known calendar version.
+    """
+    try:
+        import pandas_market_calendars as mcal  # noqa: PLC0415
+
+        return {"library": "pandas_market_calendars", "version": mcal.__version__}
+    except ImportError:
+        return {"library": "pandas_market_calendars", "version": None,
+                "note": "not installed — session list unverifiable"}
+
+
 def _sha256(path: Path) -> str:
     h = hashlib.sha256()
     with open(path, "rb") as fh:
@@ -271,6 +288,9 @@ def write_report(vintage: str) -> dict:
     else:
         halts.append("no request ledger — provenance of this vintage is unverifiable")
 
+    divergence, divergence_halts = live_divergence(vintage)
+    halts.extend(divergence_halts)
+
     audit = _audit_results(vintage)
     if audit.get("ran"):
         for month, rec in sorted(audit["per_month"].items()):
@@ -310,6 +330,8 @@ def write_report(vintage: str) -> dict:
         "request_ledger": ledger_summary,
         "atr_pct_quantiles_diagnostic_only": quantiles,
         "classification_audit": audit,
+        "live_universe_divergence": divergence,
+        "calendar": _calendar_provenance(),
         "halts": halts,
         "phase_b_gate": {
             "distinct_tickers": len(distinct_eligible),
@@ -413,3 +435,115 @@ def package(vintage: str) -> Path:
         ),
     }, indent=2))
     return archive
+
+
+def live_divergence(vintage: str) -> tuple[dict, list[str]]:
+    """Compare PIT membership against what the LIVE pipeline actually saw.
+
+    The §3b audit tests PIT against a vendor endpoint. This tests it against
+    production, which is the only source that can show the universe is too
+    NARROW in a way that mattered — a name the live book ranked, on a date PIT
+    says it was ineligible, is a false exclusion with a real consequence.
+
+    Direction is attributed three ways, because "absent from PIT" has three very
+    different meanings and collapsing them hides the important one:
+
+      pit_false_exclusion  PIT itself labels it CS on an allowed exchange, so PIT
+                           contradicts its own constraints — a real defect.
+      pit_stricter_than_live
+                           PIT excludes it on a constraint LIVE DOES NOT HAVE.
+                           `type == "CS"` is the case: src/signals/filter.py
+                           gates exchange, ETF/fund flags, price, volume and
+                           market cap, but never requires common stock. So PIT
+                           silently drops ADRs the book actually trades.
+      explained_by_live_gates
+                           PIT excludes it and live should have too — the ETF
+                           gate was dead until #63 (TQQQ ranked 97.5). Here PIT
+                           is right and live was wrong.
+
+    The middle bucket is the one worth the check. Lumping ADRs in with ETFs, as
+    the first version of this function did, reports a PIT over-restriction as a
+    live defect and inverts the conclusion.
+    """
+    base = ROOT / vintage
+    live_path = base / "raw" / "live" / "dashboard.json.gz"
+    if not live_path.exists():
+        return {"ran": False, "reason": "no live snapshot — run `divergence-fetch`"}, [
+            "live-universe divergence check has no snapshot to run against"
+        ]
+
+    from pit_universe_phase_a import _classification_by_month, build_membership  # noqa: PLC0415
+
+    live = _read_raw(live_path)
+    membership = build_membership(vintage)
+    labels = _classification_by_month(vintage)
+    covered = set(membership)
+
+    from datetime import date as _date  # noqa: PLC0415
+
+    pit_false_exclusions, pit_stricter, live_gate_misses = [], [], []
+    out_of_range = 0
+    checked = 0
+    for row in live.get("candidates") or []:
+        ticker, run_date = row.get("ticker"), row.get("run_date")
+        if not ticker or not run_date:
+            continue
+        try:
+            d = _date.fromisoformat(str(run_date)[:10])
+        except ValueError:
+            continue
+        if d not in covered:
+            out_of_range += 1
+            continue
+        checked += 1
+        if ticker in set(membership[d]["eligible_pre_mcap"]):
+            continue
+        # Absent from PIT. Attribute it.
+        keys = [k for k in labels if k <= (d.year, d.month)]
+        held = (labels[max(keys)].get(ticker) or {}) if keys else {}
+        record = {
+            "ticker": ticker, "date": str(d), "model": row.get("model"),
+            "picked": row.get("picked"), "rank": row.get("rank"),
+            "held_type": held.get("type"), "held_exchange": held.get("exchange"),
+            "traded_that_day": ticker in set(membership[d]["traded"]),
+        }
+        held_type = held.get("type")
+        on_allowed_exchange = held.get("exchange") in ("NYSE", "NASDAQ")
+        if held_type == "CS" and on_allowed_exchange:
+            pit_false_exclusions.append(record)
+        elif held_type in ("ETF", "FUND", "ETN"):
+            live_gate_misses.append(record)
+        else:
+            # Everything else — ADRC above all — is PIT applying a constraint
+            # live does not have.
+            pit_stricter.append(record)
+
+    result = {
+        "ran": True,
+        "live_candidates_in_range": checked,
+        "out_of_vintage_range": out_of_range,
+        "pit_false_exclusions": pit_false_exclusions[:25],
+        "pit_false_exclusion_count": len(pit_false_exclusions),
+        "pit_stricter_than_live": pit_stricter[:25],
+        "pit_stricter_than_live_count": len(pit_stricter),
+        "pit_stricter_picked_count": sum(1 for r in pit_stricter if r.get("picked")),
+        "pit_stricter_types": sorted({r.get("held_type") for r in pit_stricter}),
+        "pit_stricter_tickers": sorted({r["ticker"] for r in pit_stricter}),
+        "explained_by_live_gates": live_gate_misses[:25],
+        "explained_by_live_gates_count": len(live_gate_misses),
+        "explained_by_live_gates_tickers": sorted({r["ticker"] for r in live_gate_misses}),
+    }
+    halts = []
+    if pit_false_exclusions:
+        halts.append(
+            f"live divergence: {len(pit_false_exclusions)} live candidate(s) that PIT "
+            f"itself labels CS on NYSE/NASDAQ were absent from the eligible set"
+        )
+    if pit_stricter:
+        picked = sum(1 for r in pit_stricter if r.get("picked"))
+        halts.append(
+            f"live divergence: PIT excludes {len(pit_stricter)} live candidate-day(s) "
+            f"({picked} actually PICKED) on constraints live does not apply — "
+            f"types {sorted({r.get('held_type') for r in pit_stricter})}"
+        )
+    return result, halts

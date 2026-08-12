@@ -291,6 +291,29 @@ async def _get(
     return {"results": None, "_failed": True, "_reason": "retries_exhausted"}
 
 
+def _fetch_live_snapshot(vintage: str) -> Path:
+    """Freeze the public dashboard export as raw evidence for the §4 check.
+
+    Stored in the raw tree and hashed into the manifest like any other input:
+    the divergence result must be reproducible from frozen bytes, not from
+    whatever the live site happens to serve when the report is re-run. The
+    dashboard is already public, so this adds no disclosure.
+    """
+    import urllib.request
+
+    url = "https://raysyhuang.github.io/multi-agentic-screener/data.json"
+    with urllib.request.urlopen(url, timeout=60) as resp:  # noqa: S310
+        payload = json.loads(resp.read())
+    path = _raw_path(vintage, "live", "dashboard.json.gz")
+    digest = _write_raw_unchecked(path, payload)
+    logger.info(
+        "live snapshot: %d candidates, %d run_history rows, sha256=%s",
+        len(payload.get("candidates") or []), len(payload.get("run_history") or []),
+        digest[:16],
+    )
+    return path
+
+
 # ── trading calendar ─────────────────────────────────────────────────────────
 
 def _today_et() -> date:
@@ -575,7 +598,8 @@ async def run_audit(vintage: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", choices=["spine", "audit", "report", "verify", "package"])
+    ap.add_argument("step", choices=["spine", "audit", "report", "verify", "package",
+                                 "divergence-fetch"])
     ap.add_argument("--manifest", help="verify against this manifest instead of the vintage's own")
     ap.add_argument("--years", type=float, default=3.0)
     ap.add_argument("--vintage", default=None, help="ET date tag; defaults to today ET")
@@ -610,6 +634,8 @@ def main() -> None:
         from scripts.pit_universe_report import write_report  # noqa: PLC0415
 
         write_report(vintage)
+    elif args.step == "divergence-fetch":
+        _fetch_live_snapshot(vintage)
     elif args.step == "verify":
         from scripts.pit_universe_report import verify  # noqa: PLC0415
 

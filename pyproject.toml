@@ -41,7 +41,18 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
+# Research tooling — not installed on the production dyno. Deliberately NOT a
+# core dependency: only scripts/pit_universe_phase_a.py uses it.
+research = [
+    # Pinned EXACTLY, not ranged. This library decides which dates count as NYSE
+    # sessions, so it determines which dates enter a PIT vintage; a version bump
+    # that revised a historical holiday would silently change the dataset and
+    # break replay of an already-accepted vintage. The resolved version is
+    # recorded in the manifest for the same reason.
+    "pandas-market-calendars==5.3.0",
+]
 dev = [
+    "pandas-market-calendars==5.3.0",  # keep in step with `research`; CI runs its tests
     "pytest>=8.0",
     "aiosqlite>=0.20",  # in-memory DB for persistence round-trip tests
     "pytest-asyncio>=0.24",

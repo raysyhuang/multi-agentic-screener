@@ -125,8 +125,52 @@ All four blocking findings are accepted. None are disputed.
 | 1 | No persisted request ledger; no hard Phase A ceiling | confirmed | append-only JSONL ledger per request (endpoint, params digest, status, attempt, bytes); ceiling enforced in `_get`, aborts the run on breach |
 | 2 | 5xx aborts rather than bounded retry + durable failure record | confirmed at `_get` — network errors and 429 retry, 5xx goes straight to `raise_for_status()` | bounded retry on 5xx; on exhaustion write a durable failure record and continue, so one bad shard cannot void a run |
 | 3 | Pooled unknown rates hide a bad month | confirmed — `type_unknown_pct` is computed over the pooled `pre_classification` denominator across all 751 sessions | per-month and trailing-12-month gates; a synthetic 100%-unknown month must halt |
-| 4 | Missing live-universe divergence check | confirmed absent | compare PIT membership against live `Candidate`/universe funnel on overlapping dates |
+| 4 | Missing live-universe divergence check | **now implemented — see §5a** | compares PIT membership against the frozen live dashboard export, attributing each divergence three ways |
 | 5 | Raw + manifest under gitignored `outputs/`; no Release, no hash verification, no clean replay | confirmed | GitHub Release archive, manifest force-added to the repo, `verify` subcommand recomputing SHA-256 against the committed manifest, documented clean-VPS replay |
+
+### 5a. The divergence check found two real PIT-vs-live mismatches
+
+Run against 489 live candidate-days inside the vintage (`raw/live/dashboard.json.gz`,
+hashed into the manifest so the result replays from frozen bytes).
+
+**(i) PIT applies a constraint live does not have — 39 candidate-days, 8 of them PICKED.**
+`src/signals/filter.py` gates exchange, ETF/fund flags, price, volume and market cap. It
+never requires common stock. PIT's `type == "CS"` therefore removes every ADR the book
+actually trades:
+
+```
+ARM BP CX EQNR ERIC GGAL GSK KSPI NOK NVS PBR PKX PSO RIO
+SQM TS TSM UMC VALE VIST VOD YPF ZTO          (23 distinct, all ADRC)
+```
+
+PBR and NOK were picked at rank 1 and rank 5. **A backtest on this universe would be
+structurally blind to 23 liquid names the live book trades**, which is a selection
+divergence in the direction that makes backtests silently unrepresentative. Whether the
+constraint or live is right is a contract question — but they must agree, and today they
+do not. Requesting a ruling.
+
+**(ii) The volume constraint is evaluated on a different quantity than live — 7 candidate-days,
+1 PICKED (FTS, rank 2, 2026-08-03).** All seven pass PIT's own type and exchange checks and
+fail only `MIN_SHARE_VOLUME`, on that session's actual volume:
+
+```
+TFII 466,235 · HCC 417,301 · NSIT 413,740 · GSAT 472,176
+LGND 291,126 · FTS 422,890 · HRI 306,483        (floor: 500,000)
+```
+
+PIT uses the session's own share volume from grouped bars; live uses the FMP screener's
+volume field, which is not the same quantity for names hovering near the floor. This is a
+definitional mismatch, not a data error, and it also needs a ruling.
+
+**(iii) PIT correctly catches a known live defect — 12 candidate-days, 0 picked.**
+ETF/FUND names (TQQQ, QQQ, QQQM, SMH, VONG, IUSG, PDBC, FTGC, UFO, PDI) that live's dead
+ETF gate admitted until #63. Here PIT is right and live was wrong.
+
+**A defect in my own first implementation:** it bucketed ADRs together with ETFs under
+"explained by live gates", reporting a PIT over-restriction as a live defect and inverting
+the conclusion. Attribution is now three-way and pinned by a test. This is the third time
+in this workstream that collapsing two distinct categories into one produced a confident
+wrong answer.
 
 One item I verified rather than assumed: the live universe filter is
 `src/signals/filter.py:227`, `if exchange not in ("NYSE", "NASDAQ")`, which matches Phase A's
