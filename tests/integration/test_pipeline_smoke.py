@@ -31,6 +31,7 @@ import pytest
 from sqlalchemy import select
 
 from src.db.models import DailyRun, PipelineArtifact
+from src.main import _trading_date_et
 from src.db.session import get_session
 
 pytestmark = [pytest.mark.integration, pytest.mark.asyncio]
@@ -203,11 +204,16 @@ async def test_pipeline_runs_end_to_end(stubbed_pipeline, pinned_run_id) -> None
             select(PipelineArtifact).where(PipelineArtifact.run_id == pinned_run_id)
         )).scalars().all()
         run = (await session.execute(
-            select(DailyRun).where(DailyRun.run_date == date.today())
+            select(DailyRun).where(DailyRun.run_date == _trading_date_et())
         )).scalar_one_or_none()
 
     assert artifacts, f"run {pinned_run_id} persisted no artifacts"
     assert run is not None, "the run must persist a DailyRun row"
+    # The invariant, not just "a row exists": the pipeline files under the ET
+    # market date. Asserting against date.today() compared a UTC date to an ET
+    # one and failed only between 00:00 and 04:00 UTC — green for twenty hours a
+    # day, red every night, on every PR.
+    assert run.run_date == _trading_date_et()
     assert not any(a.status == "failed" for a in artifacts), (
         f"a clean run wrote failed artifacts: "
         f"{[(a.stage, a.status) for a in artifacts if a.status == 'failed']}"
@@ -277,7 +283,7 @@ async def test_a_failed_run_records_its_own_failure(
             select(PipelineArtifact).where(PipelineArtifact.run_id == pinned_run_id)
         )).scalars().all()
         run = (await session.execute(
-            select(DailyRun).where(DailyRun.run_date == date.today())
+            select(DailyRun).where(DailyRun.run_date == _trading_date_et())
         )).scalar_one_or_none()
 
     assert artifacts, f"run {pinned_run_id} persisted nothing at all"

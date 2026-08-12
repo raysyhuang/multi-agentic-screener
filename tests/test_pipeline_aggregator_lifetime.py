@@ -75,3 +75,29 @@ def test_provenance_is_snapshotted_before_the_release() -> None:
         if "data_provenance = aggregator.get_data_provenance()" in line
     ]
     assert snapshot_lines, "provenance must be captured before the aggregator is released"
+
+
+def test_the_smoke_test_files_runs_under_the_et_market_date() -> None:
+    """Guard the timezone assumption the integration test depends on.
+
+    The smoke test queried `DailyRun.run_date == date.today()` — the runner's
+    UTC date — while the pipeline writes `_trading_date_et()`. They differ
+    between 00:00 and 04:00 UTC, so CI was green for twenty hours a day and red
+    every night, on every PR regardless of its contents.
+
+    A source-level guard is right here specifically because the behavioural test
+    cannot be relied on to catch it: the integration test passes most of the
+    day, so a regression would land clean and only surface hours later, on
+    somebody else's unrelated change.
+    """
+    smoke = (
+        Path(__file__).resolve().parents[1]
+        / "tests" / "integration" / "test_pipeline_smoke.py"
+    ).read_text()
+
+    for line in smoke.splitlines():
+        if "DailyRun.run_date ==" in line:
+            assert "_trading_date_et()" in line, (
+                "the smoke test must compare against the ET market date the "
+                f"pipeline actually writes, not a UTC date: {line.strip()}"
+            )
