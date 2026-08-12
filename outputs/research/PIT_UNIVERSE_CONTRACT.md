@@ -85,23 +85,69 @@ buyback reporting; price moves daily. Holding the slow term and re-multiplying
 by the fast one is the more accurate approximation, and it is the one being
 approved.
 
-### §3d Threshold-band audit (Phase B acceptance)
+### §3d Threshold audit (Phase B acceptance)
 
 The approximation only changes an *answer* near the boundary. A name at $2B is
-eligible whichever shares vintage is used; a name at $310M may not be.
+eligible on any shares vintage; a name at $310M may not be.
 
-- Report, per date, the count of names whose estimated cap falls within
-  **±20% of $300M** — the band where a stale shares figure can flip eligibility.
-- For a deterministic sample of **50 band names per month**, query
-  date-specific `market_cap` and compare the resulting eligibility verdict
-  against the estimate.
-- **Halt if eligibility disagreement in the band exceeds 2%** of sampled names,
-  or if the band itself exceeds 10% of the daily universe — the latter would
-  mean the estimate is deciding a material share of membership.
+But a band defined by the estimate is selected by the quantity under test — the
+same defect as sampling classification drift from the already-classified
+eligible set (§3b), and the same shape as conditioning universe membership on
+ATR. **If the stale-share error itself exceeds 20%, a name can sit far outside
+the estimated band while its true market cap is on the other side of $300M.**
+The band audit would never see it. So the audit has two parts: one measures a
+rate, the other tests an assumption.
 
-Cost ≈ 50 × 36 ≈ **1,800 calls**, accounted to Phase B. Cheap because the band
-is small; the point is that it is the *only* place the approximation can alter
-membership, so that is where the sampling belongs.
+#### Part 1 — band sample (measures a rate)
+
+```
+Population:  every ticker/date pair in the month whose ESTIMATED market cap
+             lies within ±20% of $300M on that exact ET market date.
+             Membership is per pair, not per ticker.
+Sampling:    deterministic seeded sample of up to 50 pairs per month.
+             Seed and sampler version recorded in the manifest.
+Small pop:   fewer than 50 qualifying pairs => audit all of them.
+```
+
+Query date-specific `market_cap` for each pair and compare the **eligibility
+verdict** — above or below $300M — against the estimate.
+
+**Halt threshold: >2% disagreement, evaluated per month, not pooled.** A short
+concentrated period of share-count drift is exactly the failure worth catching,
+and pooling across 36 months would dilute one bad quarter into invisibility.
+
+#### Part 2 — out-of-band sentinel (tests an assumption)
+
+```
+Population:  ticker/date pairs whose estimated cap lies OUTSIDE the ±20% band.
+Sampling:    deterministic seeded sample of 25 pairs per month,
+             stratified roughly evenly above and below $300M.
+```
+
+The sentinel exists to falsify one claim: *an out-of-band estimate cannot flip
+membership.* That is a binary assumption, not a rate, so it carries **zero
+tolerance — any single sentinel flip halts Phase B acceptance**, whatever the
+band result shows. A flip means either the band is too narrow or the quarterly
+shares cadence is unsafe, and both require revision rather than a wider
+threshold.
+
+#### Consequence of any breach
+
+A breach in **either** part explicitly:
+
+- **blocks Phase B acceptance** — the market-cap layer is not signed off;
+- **blocks research consumption and sign-off** of the dataset as a whole;
+- **requires remediation of cadence, model or band before any rerun** — a rerun
+  on the same parameters is not a remedy.
+
+#### Cost
+
+```
+band sample      50/month x 36  ~ 1,800 calls
+sentinel         25/month x 36  ~   900 calls
+                                 ---------------
+                                 ~ 2,700 calls, accounted to Phase B
+```
 
 ### §3b Classification drift audit (mandatory, gates sign-off)
 
@@ -282,7 +328,7 @@ Estimated from live universe size (~2,500/day, expected ~4,000–6,000 distinct 
 
 ```
 12 quarters × ~5,000 tickers ≈ 60,000 calls
-+ threshold-band audit (§3d)      ≈  1,800 calls
++ threshold audit (§3d: band + sentinel) ≈ 2,700 calls
 ```
 
 Monthly cadence would be ~180,000. **Quarterly is the proposal; the count is an estimate until Phase A reports the real figure.**
@@ -337,7 +383,8 @@ Price/volume:    D close and D share volume; decision after D close, entry T+1
 Market cap:      DAILY ESTIMATE (§3c) — quarterly as-of weighted_shares_
                  outstanding held forward x daily D close. NOT daily market_cap
                  retrieval. Unresolvable => exclude and count unknown.
-                 Threshold-band audit per §3d gates Phase B acceptance.
+                 Threshold audit per §3d — band sample AND out-of-band
+                 sentinel — gates Phase B acceptance.
 Exchange/type:   as-of Polygon reference only; unknown excludes and is counted
 Corporate acts:  split-adjusted prices; no dividend/total-return adjustment
 Aliases:         native Polygon symbol + explicit dated alias mapping; never drop
