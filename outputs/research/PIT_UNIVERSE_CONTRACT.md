@@ -36,7 +36,7 @@ The live filter (`fmp_client.get_stock_screener` + `filter_universe`) must be gi
 |---|---|---|
 | **price > $5** | official close for D from grouped daily aggregates (`c`). Split-adjusted as Polygon serves it. Decision-time availability: the pipeline picks on D and enters T+1, so D's close is known at decision time — no lookahead. | exclude, count as `no_price` |
 | **volume > 500K** | **shares**, from grouped daily (`v`) for D — matching the live screener's `volumeMoreThan`, which is share volume. Single day, not a window, unless Neo prefers a 20-day average (live uses a single snapshot). | exclude, count as `no_volume` |
-| **market cap > $300M** | `/v3/reference/tickers/{t}?date=D` → `market_cap`. Verified genuinely as-of. Where absent, derive from `weighted_shares_outstanding × close(D)`. | **exclude and count as `mcap_unknown`** — never impute from a later value |
+| **market cap > $300M** | **Daily estimate**, not daily retrieval — see §3c. Quarterly as-of `weighted_shares_outstanding`, held forward, × close(D). | **exclude and count as `mcap_unknown`** — never impute from a later value |
 | **NYSE / NASDAQ** | `primary_exchange` from reference data, **forward-held monthly** — see §3a | exclude, count as `exchange_unknown` |
 | **common stock, not ETF/fund** | `type == "CS"` from reference data, **forward-held monthly** — see §3a | **exclude and count as `type_unknown`** |
 
@@ -59,6 +59,130 @@ This is lookahead-free but it is **an approximation**, and its error mode is not
 covered by the `*_unknown` thresholds: those catch *missing* labels, whereas
 drift is a *known* label that changed mid-month and is therefore silently wrong
 for up to 30 days. Hence the audit below, which is the price of the 20× saving.
+
+### §3c Market cap is a daily ESTIMATE, not a daily retrieval
+
+Same contradiction as §3a, in the constraint where it matters most. §3 said
+market cap was read as-of each D via the dated ticker endpoint; Appendix A
+budgeted quarterly snapshots. Those are different builds — one costs ~1.9M
+calls, the other ~60,000 — and an implementer could satisfy either section while
+violating the other. Frozen:
+
+```
+quarterly as-of weighted_shares_outstanding
+  held forward from its snapshot date
+  × daily D close
+  = daily ESTIMATED market cap
+```
+
+Snapshot on the first ET market date of each quarter, applied forward only,
+exactly as §3a. Never applied backwards.
+
+**Shares × close, not the stored `market_cap`.** The endpoint returns both, but
+a stored `market_cap` embeds the price on its own snapshot date and would be
+stale by up to a quarter. Shares outstanding move on corporate actions and
+buyback reporting; price moves daily. Holding the slow term and re-multiplying
+by the fast one is the more accurate approximation, and it is the one being
+approved.
+
+### §3d Threshold audit (Phase B acceptance)
+
+The approximation only changes an *answer* near the boundary. A name at $2B is
+eligible on any shares vintage; a name at $310M may not be.
+
+But a band defined by the estimate is selected by the quantity under test — the
+same defect as sampling classification drift from the already-classified
+eligible set (§3b), and the same shape as conditioning universe membership on
+ATR. **If the stale-share error itself exceeds 20%, a name can sit far outside
+the estimated band while its true market cap is on the other side of $300M.**
+The band audit would never see it. So the audit has two parts: one measures a
+rate, the other tests an assumption.
+
+#### Sampling discipline (applies to BOTH parts)
+
+A seeded draw is only reproducible if the sequence it draws from is itself
+fixed. Part 1 recorded a seed but never an ordering, which is the same gap
+raised against Part 2: two compliant builds could construct the population in
+different orders and select different pairs from the same seed.
+
+```
+Ordering:    after population construction, sort canonically by
+             (ET date, ticker) — never provider-return order, never
+             dict/set iteration order.
+Seed:        fixed seed plus sampler VERSION, both recorded in the manifest.
+             Changing the sampler is a version bump, not a silent edit.
+Replay:      the same frozen vintage + same seed + same sampler version must
+             yield the identical audited pair set, and therefore the identical
+             pass/fail verdict.
+```
+
+This matters most for the sentinel, whose zero-tolerance rule means a different
+25 pairs can flip the gate outright — but an unordered band population is
+equally unreproducible, so both are frozen here.
+
+#### Part 1 — band sample (measures a rate)
+
+```
+Population:  every ticker/date pair in the month whose ESTIMATED market cap
+             lies within ±20% of $300M on that exact ET market date.
+             Membership is per pair, not per ticker.
+Sampling:    deterministic seeded sample of up to 50 pairs per month,
+             drawn under the discipline above.
+Small pop:   fewer than 50 qualifying pairs => audit all of them.
+```
+
+Query date-specific `market_cap` for each pair and compare the **eligibility
+verdict** — above or below $300M — against the estimate.
+
+**Halt threshold: >2% disagreement, evaluated per month, not pooled.** A short
+concentrated period of share-count drift is exactly the failure worth catching,
+and pooling across 36 months would dilute one bad quarter into invisibility.
+
+#### Part 2 — out-of-band sentinel (tests an assumption)
+
+```
+Population:  ticker/date pairs whose estimated cap lies OUTSIDE the ±20% band.
+Sampling:    25 pairs per month under the discipline above.
+
+Allocation:  12 below $300M, 13 above $300M.
+             The extra pair alternates by month index: even month index
+             (0-based from the range start) gives the 13th to ABOVE,
+             odd gives it to BELOW. Fixed rule, not a judgement call.
+
+Underfilled stratum:
+             audit every available pair in that stratum, and redistribute
+             the unused allocation to the other stratum deterministically
+             (take the next pairs in canonical order).
+
+Underfilled total:
+             fewer than 25 outside-band pairs in the month => audit all of
+             them.
+```
+
+The sentinel exists to falsify one claim: *an out-of-band estimate cannot flip
+membership.* That is a binary assumption, not a rate, so it carries **zero
+tolerance — any single sentinel flip halts Phase B acceptance**, whatever the
+band result shows. A flip means either the band is too narrow or the quarterly
+shares cadence is unsafe, and both require revision rather than a wider
+threshold.
+
+#### Consequence of any breach
+
+A breach in **either** part explicitly:
+
+- **blocks Phase B acceptance** — the market-cap layer is not signed off;
+- **blocks research consumption and sign-off** of the dataset as a whole;
+- **requires remediation of cadence, model or band before any rerun** — a rerun
+  on the same parameters is not a remedy.
+
+#### Cost
+
+```
+band sample      50/month x 36  ~ 1,800 calls
+sentinel         25/month x 36  ~   900 calls
+                                 ---------------
+                                 ~ 2,700 calls, accounted to Phase B
+```
 
 ### §3b Classification drift audit (mandatory, gates sign-off)
 
@@ -239,6 +363,7 @@ Estimated from live universe size (~2,500/day, expected ~4,000–6,000 distinct 
 
 ```
 12 quarters × ~5,000 tickers ≈ 60,000 calls
++ threshold audit (§3d: band + sentinel) ≈ 2,700 calls
 ```
 
 Monthly cadence would be ~180,000. **Quarterly is the proposal; the count is an estimate until Phase A reports the real figure.**
@@ -290,8 +415,11 @@ The last row is measurable only where live records exist — the candidate table
 ```
 Range/frequency: 3 years, daily ET market dates
 Price/volume:    D close and D share volume; decision after D close, entry T+1
-Market cap:      as-of Polygon market_cap, else weighted shares × D close;
-                 otherwise exclude and count unknown
+Market cap:      DAILY ESTIMATE (§3c) — quarterly as-of weighted_shares_
+                 outstanding held forward x daily D close. NOT daily market_cap
+                 retrieval. Unresolvable => exclude and count unknown.
+                 Threshold audit per §3d — band sample AND out-of-band
+                 sentinel — gates Phase B acceptance.
 Exchange/type:   as-of Polygon reference only; unknown excludes and is counted
 Corporate acts:  split-adjusted prices; no dividend/total-return adjustment
 Aliases:         native Polygon symbol + explicit dated alias mapping; never drop
