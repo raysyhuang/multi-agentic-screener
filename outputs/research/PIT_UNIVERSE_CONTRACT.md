@@ -98,14 +98,36 @@ the estimated band while its true market cap is on the other side of $300M.**
 The band audit would never see it. So the audit has two parts: one measures a
 rate, the other tests an assumption.
 
+#### Sampling discipline (applies to BOTH parts)
+
+A seeded draw is only reproducible if the sequence it draws from is itself
+fixed. Part 1 recorded a seed but never an ordering, which is the same gap
+raised against Part 2: two compliant builds could construct the population in
+different orders and select different pairs from the same seed.
+
+```
+Ordering:    after population construction, sort canonically by
+             (ET date, ticker) — never provider-return order, never
+             dict/set iteration order.
+Seed:        fixed seed plus sampler VERSION, both recorded in the manifest.
+             Changing the sampler is a version bump, not a silent edit.
+Replay:      the same frozen vintage + same seed + same sampler version must
+             yield the identical audited pair set, and therefore the identical
+             pass/fail verdict.
+```
+
+This matters most for the sentinel, whose zero-tolerance rule means a different
+25 pairs can flip the gate outright — but an unordered band population is
+equally unreproducible, so both are frozen here.
+
 #### Part 1 — band sample (measures a rate)
 
 ```
 Population:  every ticker/date pair in the month whose ESTIMATED market cap
              lies within ±20% of $300M on that exact ET market date.
              Membership is per pair, not per ticker.
-Sampling:    deterministic seeded sample of up to 50 pairs per month.
-             Seed and sampler version recorded in the manifest.
+Sampling:    deterministic seeded sample of up to 50 pairs per month,
+             drawn under the discipline above.
 Small pop:   fewer than 50 qualifying pairs => audit all of them.
 ```
 
@@ -120,8 +142,21 @@ and pooling across 36 months would dilute one bad quarter into invisibility.
 
 ```
 Population:  ticker/date pairs whose estimated cap lies OUTSIDE the ±20% band.
-Sampling:    deterministic seeded sample of 25 pairs per month,
-             stratified roughly evenly above and below $300M.
+Sampling:    25 pairs per month under the discipline above.
+
+Allocation:  12 below $300M, 13 above $300M.
+             The extra pair alternates by month index: even month index
+             (0-based from the range start) gives the 13th to ABOVE,
+             odd gives it to BELOW. Fixed rule, not a judgement call.
+
+Underfilled stratum:
+             audit every available pair in that stratum, and redistribute
+             the unused allocation to the other stratum deterministically
+             (take the next pairs in canonical order).
+
+Underfilled total:
+             fewer than 25 outside-band pairs in the month => audit all of
+             them.
 ```
 
 The sentinel exists to falsify one claim: *an out-of-band estimate cannot flip
