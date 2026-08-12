@@ -176,6 +176,58 @@ One item I verified rather than assumed: the live universe filter is
 `src/signals/filter.py:227`, `if exchange not in ("NYSE", "NASDAQ")`, which matches Phase A's
 `ALLOWED_EXCHANGES` exactly. There is no live-vs-PIT divergence on the exchange constraint itself.
 
+## 5b. Two more gate defects, both mine, both found by re-reading the frozen text
+
+Neo's exact-SHA review of #80 returned MODIFY on two controls. Reading §A.5 line by line to
+implement them exposed a third I had also missed. All three are accepted.
+
+**(i) The call ceiling could be walked through by retries.** The budget was checked once per
+logical request, then the retry loop issued up to six more. Neo's offline reproduction —
+11,999/12,000 in, repeated 503, 12,005 out — is exact. The check now runs before every
+outbound attempt. A regression test starts at `ceiling - 1` against a permanently-503 client
+and asserts on requests actually SENT, not on the ledger count, since the contract governs
+outbound calls. Verified by reintroducing the defect and watching the test fail.
+
+**(ii) The trailing-12-month gate was not the frozen rule.** §A.5 requires, for **both**
+metrics, `monthly rate > 2x the trailing-12-month MEDIAN for that metric`. I implemented a
+pooled trailing *type* rate compared against a fixed 1%, and omitted exchange entirely — wrong
+statistic, wrong comparison, wrong scope. Now literal, with the window strictly prior to the
+month under test so a bad month cannot raise its own baseline.
+
+**Three months breach it that my version could not see:** 2025-05 (0.685% vs 2x0.223%),
+2025-09 (0.542% vs 2x0.262%), 2026-06 (0.772% vs 2x0.374%). All are well under the 1% absolute
+gate, so only the relative rule catches them. The gate I got wrong was concealing three real
+breaches.
+
+*Flagged, not silently softened:* where the trailing median is 0 — the normal state for
+`exchange_unknown` — any non-zero month exceeds 2x0 and halts. That may be stricter than
+intended. Implemented as written; softening it would be a second unilateral reinterpretation.
+Requesting a ruling.
+
+**(iii) The §A.5 live-count divergence gate was absent entirely.** Neo did not flag this; the
+contract does. It requires PIT daily eligible count vs contemporaneous live count, median over
+the overlap, to stay within 15%. I had built a per-candidate membership check instead — useful,
+and the source of the ADR and volume findings, but a different question and not the frozen gate.
+
+**It fails, and it is the hardest failure in the vintage:**
+
+```
+overlap dates                 60
+PIT  eligible  min/med/max    1,818 / 2,013 / 2,660
+LIVE universe  min/med/max    1,441 / 2,653 / 2,953
+median SIGNED divergence      -23.5%      (threshold: 15% absolute)
+PIT smaller than live on      59 of 60 dates
+```
+
+PIT is systematically ~23.5% smaller than the live universe, not noisily different — 59 of 60
+dates point the same way. The ADR exclusion (23 tickers) and the volume-basis mismatch account
+for part of it and are already before you for ruling; the residual is unexplained and I am not
+going to speculate about it in the same document that reports it.
+
+Worth separate note: the **live** universe count itself swings 1,441-2,953, a 2.05x range,
+against PIT's 1.46x. Whatever explains that instability is a live-pipeline question, not a PIT
+one, but it makes "the contemporaneous live count" a noisy reference to be gated against.
+
 ## 6. Provisional figures — explicitly not evidence
 
 Recorded only so a later run can be diffed against them. Every number below is produced by the

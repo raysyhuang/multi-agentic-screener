@@ -235,11 +235,6 @@ async def _get(
     """
     if _LEDGER is None:
         raise RuntimeError("no request ledger bound — call _open_ledger() first")
-    if _LEDGER.would_exceed():
-        raise BudgetExceeded(
-            f"Phase A ceiling {PHASE_A_CALL_CEILING} reached ({_LEDGER.calls} spent). "
-            "Raising it is a contract change, not a flag."
-        )
 
     settings = get_settings()
     # Bearer header, not a query parameter. A URL carrying the key ends up in
@@ -247,6 +242,19 @@ async def _get(
     headers = {"Authorization": f"Bearer {settings.polygon_api_key}"}
     attempts = 6
     for attempt in range(1, attempts + 1):
+        # Checked before EVERY outbound attempt, not once per logical request.
+        # Checking once and then retrying up to 6 times overshoots the ceiling by
+        # the retry count: starting at 11,999/12,000, a repeated 503 ends at
+        # 12,005. A budget that a retry storm can walk through is not a budget,
+        # and the failure mode is worst exactly when the vendor is unhealthy and
+        # retries are most frequent.
+        if _LEDGER.would_exceed():
+            _LEDGER.record_failure(url, params, "budget_ceiling_reached", attempt)
+            raise BudgetExceeded(
+                f"Phase A ceiling {PHASE_A_CALL_CEILING} reached ({_LEDGER.calls} "
+                f"spent) on attempt {attempt}. Raising it is a contract change, "
+                "not a flag."
+            )
         try:
             resp = await client.get(url, params=params, headers=headers, timeout=60)
         except httpx.HTTPError as e:

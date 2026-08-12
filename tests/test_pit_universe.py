@@ -27,6 +27,7 @@ from pathlib import Path
 from zoneinfo import ZoneInfo
 
 import pytest
+from unittest.mock import AsyncMock
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
 
@@ -236,59 +237,102 @@ def test_the_audit_population_is_drawn_before_classification(tmp_path, vintage):
 
 # ── repairs demanded by the Phase A review ───────────────────────────────────
 
-def test_a_single_catastrophic_month_halts_even_though_the_pooled_rate_passes():
-    """The defect Neo named: pooled unknown rates hide a concentrated outage.
-
-    Calibrated honestly. A month at 100% unknown is 1/37 = 2.7% pooled, which the
-    1% pooled gate WOULD have caught — so that is not the fixture. A month at 30%
-    unknown is 0.81% pooled and passes, while being a severe outage: nearly a
-    third of the tickers that traded that month are unclassifiable and silently
-    absent from the universe. That is the gap the windowed gate closes.
-    """
-    from pit_universe_report import HALT_TYPE_UNKNOWN_PCT, unknown_rate_gates
-
-    membership = {}
-    for month in range(1, 38):
-        y, m = 2023 + (month - 1) // 12, (month - 1) % 12 + 1
-        broken = month == 20
-        for day in (1, 2):
-            membership[date(y, m, day)] = {
-                "pre_classification": [f"T{i}" for i in range(500)],
-                "traded": [], "eligible_pre_mcap": [],
-                "exclusions": {"type_unknown": 150 if broken else 0},
-            }
-
-    pooled = 100.0 * (150 * 2) / (37 * 2 * 500)
-    assert pooled < HALT_TYPE_UNKNOWN_PCT, (
-        f"fixture is not exercising the defect: pooled {pooled:.2f}% already alarms"
-    )
-
-    gates, halts = unknown_rate_gates(membership)
-
-    assert gates["per_month"]["2024-08"]["type_unknown_pct"] == 30.0
-    assert any("2024-08" in h and "type_unknown" in h for h in halts), (
-        f"a month with 30% unclassifiable tickers did not halt; halts={halts}"
-    )
-
-
-def test_slow_degradation_trips_the_trailing_window():
-    """No single month breaches, but a sustained level does."""
-    from pit_universe_report import unknown_rate_gates
-
-    membership = {}
-    for month in range(1, 25):
-        y, m = 2023 + (month - 1) // 12, (month - 1) % 12 + 1
-        membership[date(y, m, 1)] = {
+def _membership(monthly: list[tuple[int, int, int, int]]) -> dict:
+    """[(year, month, type_unknown, exchange_unknown)] -> membership, 1000/month."""
+    out = {}
+    for y, m, tu, eu in monthly:
+        out[date(y, m, 1)] = {
             "pre_classification": [f"T{i}" for i in range(1000)],
             "traded": [], "eligible_pre_mcap": [],
-            # 0.9% every month: under the 1.0% monthly gate, forever.
-            "exclusions": {"type_unknown": 9},
+            "exclusions": {"type_unknown": tu, "exchange_unknown": eu},
         }
+    return out
 
-    gates, halts = unknown_rate_gates(membership)
 
-    assert not any("monthly" in h for h in halts), "no month should breach on its own"
-    assert all(v == pytest.approx(0.9) for v in gates["trailing_12m_type_unknown_pct"].values())
+def _months(n: int, tu: int = 3, eu: int = 3) -> list[tuple[int, int, int, int]]:
+    return [(2023 + i // 12, i % 12 + 1, tu, eu) for i in range(n)]
+
+
+def test_an_elevated_type_month_halts_on_the_trailing_median_rule():
+    """§A.5: monthly rate > 2x the trailing-12m MEDIAN for that metric.
+
+    0.3% baseline for twelve months, then 0.7% — under the 1% absolute gate, so
+    only the relative rule can catch it. This is the test my first
+    implementation could not have passed: it compared a pooled trailing rate to
+    a fixed 1% and would have stayed silent.
+    """
+    from pit_universe_report import unknown_rate_gates
+
+    rows = _months(12, tu=3, eu=3) + [(2024, 1, 7, 3)]
+    gates, halts = unknown_rate_gates(_membership(rows))
+
+    assert gates["per_month"]["2024-01"]["type_unknown_trailing_median_pct"] == 0.3
+    rel = [h for h in halts if "relative" in h and "type_unknown" in h]
+    assert rel, f"an elevated type month did not halt on the relative rule; {halts}"
+    assert not any("absolute" in h for h in halts), "0.7% must not trip the 1% absolute gate"
+
+
+def test_an_elevated_exchange_month_halts_on_the_trailing_median_rule():
+    """The metric my first implementation omitted entirely."""
+    from pit_universe_report import unknown_rate_gates
+
+    rows = _months(12, tu=3, eu=3) + [(2024, 1, 3, 7)]
+    gates, halts = unknown_rate_gates(_membership(rows))
+
+    rel = [h for h in halts if "relative" in h and "exchange_unknown" in h]
+    assert rel, f"an elevated exchange month did not halt; {halts}"
+
+
+def test_a_stable_month_does_not_halt():
+    """The gate must have an off state, or it certifies nothing."""
+    from pit_universe_report import unknown_rate_gates
+
+    gates, halts = unknown_rate_gates(_membership(_months(24, tu=3, eu=3)))
+
+    assert halts == [], f"a flat, healthy dataset halted: {halts}"
+
+
+def test_a_bad_month_cannot_raise_the_baseline_it_is_judged_against():
+    """The trailing window is strictly PRIOR to the month under test."""
+    from pit_universe_report import unknown_rate_gates
+
+    rows = _months(12, tu=3, eu=3) + [(2024, 1, 40, 3)]
+    gates, _ = unknown_rate_gates(_membership(rows))
+
+    assert gates["per_month"]["2024-01"]["type_unknown_trailing_median_pct"] == 0.3, (
+        "the month under test contaminated its own baseline"
+    )
+
+
+def test_the_pit_live_count_divergence_gate_is_evaluated(tmp_path, monkeypatch):
+    """§A.5: median PIT-vs-live eligible COUNT divergence > 15% halts.
+
+    Distinct from the per-name check: a universe uniformly half the size of live
+    can contain every live candidate and still be the wrong population.
+    """
+    import pit_universe_report as rep
+
+    monkeypatch.setattr(rep, "ROOT", tmp_path)
+    live_dir = tmp_path / "v" / "raw" / "live"
+    live_dir.mkdir(parents=True)
+    _write(live_dir / "dashboard.json.gz", {"run_history": [
+        {"date": "2024-03-01", "universe": 1000},
+        {"date": "2024-03-04", "universe": 1000},
+    ]})
+    membership = {
+        date(2024, 3, 1): {"eligible_pre_mcap": ["A"] * 500, "traded": []},
+        date(2024, 3, 4): {"eligible_pre_mcap": ["A"] * 500, "traded": []},
+    }
+
+    result, halts = rep.live_count_divergence("v", membership)
+
+    assert result["median_divergence_pct"] == 50.0
+    assert halts, "a universe half the size of live did not halt"
+
+    ok, ok_halts = rep.live_count_divergence("v", {
+        d: {"eligible_pre_mcap": ["A"] * 950, "traded": []} for d in membership
+    })
+    assert ok_halts == [], f"a 5% divergence must pass; {ok_halts}"
 
 
 def test_a_failed_fetch_is_never_written_into_the_raw_tree(tmp_path):
@@ -414,3 +458,44 @@ def test_an_adr_the_live_book_trades_is_reported_as_pit_being_stricter():
     assert result["explained_by_live_gates_count"] == 1, "the ETF belongs to live's dead gate"
     assert result["pit_false_exclusion_count"] == 0
     assert any("PICKED" in h for h in halts), f"a picked exclusion must halt; got {halts}"
+
+
+def test_a_retry_storm_cannot_walk_through_the_call_ceiling(tmp_path, monkeypatch):
+    """Neo's reproduction: 11,999/12,000 + repeated 503 ended at 12,005.
+
+    The budget was checked once per logical request, then the retry loop issued
+    up to six more. A ceiling a retry storm can overrun is not a ceiling, and it
+    fails worst precisely when the vendor is unhealthy and retries are dense.
+    Asserts on requests actually SENT, not on the ledger count, because the
+    contract is about outbound calls.
+    """
+    import asyncio
+
+    monkeypatch.setattr(pit, "ROOT", tmp_path)
+    monkeypatch.setattr(pit, "PHASE_A_CALL_CEILING", 12_000)
+    monkeypatch.setattr(pit, "REQUEST_DELAY_S", 0)
+    monkeypatch.setattr(pit.asyncio, "sleep", AsyncMock())
+
+    ledger = pit._open_ledger("v")
+    ledger.calls = 11_999
+
+    sent = []
+
+    class _Resp:
+        status_code = 503
+        def raise_for_status(self): raise AssertionError("unreachable")
+        def json(self): return {}
+
+    class _Client:
+        async def get(self, url, **kw):
+            sent.append(url)
+            return _Resp()
+
+    with pytest.raises(pit.BudgetExceeded):
+        asyncio.run(pit._get(_Client(), "https://api.polygon.io/v3/x", {"a": 1}))
+
+    assert len(sent) == 1, (
+        f"{len(sent)} outbound requests were sent with 1 unit of budget left; "
+        "the ceiling was checked once instead of before every attempt"
+    )
+    assert ledger.calls <= 12_000, f"ledger overran the ceiling: {ledger.calls}"

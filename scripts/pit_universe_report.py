@@ -24,6 +24,8 @@ ROOT = Path(__file__).resolve().parent.parent / "outputs" / "pit_universe"
 HALT_TYPE_UNKNOWN_PCT = 1.0
 HALT_EXCHANGE_UNKNOWN_PCT = 1.0
 HALT_DRIFT_EXCHANGE_PCT = 0.5
+# §A.5: PIT daily count vs contemporaneous live eligible count.
+HALT_LIVE_COUNT_DIVERGENCE_PCT = 15.0
 
 
 def _calendar_provenance() -> dict:
@@ -169,15 +171,28 @@ def _audit_results(vintage: str) -> dict:
 
 
 def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
-    """Per-month and trailing-12-month unknown rates (§A.5).
+    """§A.5 unknown-rate gates, both of them, for both metrics.
 
-    The pooled rate this replaces was unfit for purpose: across 751 sessions a
-    single month in which EVERY ticker was unclassifiable contributes ~2.7% to
-    the pooled figure, so a total classification outage for a month lands under
-    a 1% pooled threshold and passes. The gate must bind on the window in which
-    the damage is concentrated, so it is evaluated per month, and again on a
-    trailing 12-month window to catch slow degradation that no single month
-    breaches.
+    Two rules, and they catch different failures:
+
+      absolute   monthly rate > 1%              — a bad month, on its own terms
+      relative   monthly rate > 2x the trailing
+                 12-month MEDIAN for that metric — a month that is out of
+                                                   character for this dataset
+
+    The pooled rate this replaces was unfit for either purpose: across 751
+    sessions a single ruined month is diluted by 36 healthy ones. My first
+    attempt then implemented the relative rule as "pooled trailing type rate vs
+    a fixed 1%", which is neither the contract's statistic (median, not mean),
+    nor its comparison (2x baseline, not a constant), nor its scope (it omitted
+    exchange entirely). Writing a gate that is easier to compute than the one
+    that was frozen is silently reinterpreting the contract.
+
+    The median baseline is deliberately literal, including where it degenerates:
+    when the trailing median is 0 — which is the normal state for
+    `exchange_unknown` — any non-zero month exceeds 2x0 and halts. That may be
+    stricter than intended, but softening it here would be a second unilateral
+    reinterpretation, so it is implemented as written and flagged for ruling.
     """
     by_month: dict[str, dict[str, float]] = defaultdict(
         lambda: {"pre": 0, "type_unknown": 0, "exchange_unknown": 0}
@@ -189,37 +204,104 @@ def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
         by_month[key]["type_unknown"] += rec["exclusions"].get("type_unknown", 0)
         by_month[key]["exchange_unknown"] += rec["exclusions"].get("exchange_unknown", 0)
 
+    METRICS = (
+        ("type_unknown", HALT_TYPE_UNKNOWN_PCT),
+        ("exchange_unknown", HALT_EXCHANGE_UNKNOWN_PCT),
+    )
     months = sorted(by_month)
-    per_month, halts = {}, []
+    rates: dict[str, dict[str, float]] = {}
     for m in months:
         r = by_month[m]
         denom = max(1, r["pre"])
-        t_pct = 100.0 * r["type_unknown"] / denom
-        e_pct = 100.0 * r["exchange_unknown"] / denom
-        per_month[m] = {
-            "pre_classification": r["pre"],
-            "type_unknown_pct": round(t_pct, 4),
-            "exchange_unknown_pct": round(e_pct, 4),
+        rates[m] = {
+            metric: 100.0 * r[metric] / denom for metric, _ in METRICS
         }
-        if t_pct > HALT_TYPE_UNKNOWN_PCT:
-            halts.append(f"{m}: type_unknown {t_pct:.2f}% > {HALT_TYPE_UNKNOWN_PCT}% (monthly)")
-        if e_pct > HALT_EXCHANGE_UNKNOWN_PCT:
-            halts.append(
-                f"{m}: exchange_unknown {e_pct:.2f}% > {HALT_EXCHANGE_UNKNOWN_PCT}% (monthly)"
-            )
 
-    trailing = {}
-    for i in range(len(months)):
-        window = months[max(0, i - 11): i + 1]
-        if len(window) < 12:
+    per_month, halts = {}, []
+    for i, m in enumerate(months):
+        entry = {"pre_classification": by_month[m]["pre"]}
+        for metric, absolute in METRICS:
+            rate = rates[m][metric]
+            entry[f"{metric}_pct"] = round(rate, 4)
+
+            if rate > absolute:
+                halts.append(f"{m}: {metric} {rate:.2f}% > {absolute}% (monthly absolute)")
+
+            # Trailing 12 months, strictly PRIOR to m: including m in its own
+            # baseline lets a bad month raise the bar it is judged against.
+            window = [rates[k][metric] for k in months[max(0, i - 12): i]]
+            if len(window) < 12:
+                entry[f"{metric}_trailing_median_pct"] = None
+                continue
+            median = statistics.median(window)
+            entry[f"{metric}_trailing_median_pct"] = round(median, 4)
+            if rate > 2.0 * median:
+                halts.append(
+                    f"{m}: {metric} {rate:.4f}% > 2x trailing-12m median "
+                    f"{median:.4f}% (relative)"
+                )
+        per_month[m] = entry
+
+    return {"per_month": per_month, "rule": "absolute >1% and relative >2x trailing-12m median"}, halts
+
+
+def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[str]]:
+    """§A.5 — PIT daily eligible COUNT vs the contemporaneous live count.
+
+    Distinct from the per-candidate check in `live_divergence`, which asks
+    whether specific names PIT excluded were traded live. This asks whether the
+    universe is the right SIZE, and it is the gate the contract actually froze:
+    median divergence over the overlapping dates above 15% halts.
+
+    A universe can pass the per-name check and still fail this one — if PIT is
+    uniformly half the size of live, no individual live candidate need be
+    missing from it while the population is wrong.
+    """
+    base = ROOT / vintage
+    live_path = base / "raw" / "live" / "dashboard.json.gz"
+    if not live_path.exists():
+        return {"ran": False}, ["live count divergence has no snapshot to run against"]
+
+    live = _read_raw(live_path)
+    from datetime import date as _date  # noqa: PLC0415
+
+    pairs = []
+    for row in live.get("run_history") or []:
+        raw_date, live_n = row.get("date"), row.get("universe")
+        if not raw_date or not live_n:
             continue
-        pre = sum(by_month[m]["pre"] for m in window)
-        t_pct = 100.0 * sum(by_month[m]["type_unknown"] for m in window) / max(1, pre)
-        trailing[months[i]] = round(t_pct, 4)
-        if t_pct > HALT_TYPE_UNKNOWN_PCT:
-            halts.append(f"{months[i]}: trailing-12m type_unknown {t_pct:.2f}% > {HALT_TYPE_UNKNOWN_PCT}%")
+        try:
+            d = _date.fromisoformat(str(raw_date)[:10])
+        except ValueError:
+            continue
+        if d not in membership:
+            continue
+        pit_n = len(membership[d]["eligible_pre_mcap"])
+        pairs.append({
+            "date": str(d), "pit": pit_n, "live": live_n,
+            "divergence_pct": round(100.0 * abs(pit_n - live_n) / max(1, live_n), 2),
+        })
 
-    return {"per_month": per_month, "trailing_12m_type_unknown_pct": trailing}, halts
+    if not pairs:
+        return {"ran": True, "overlap_dates": 0}, [
+            "live count divergence: no overlapping dates — gate could not be evaluated"
+        ]
+
+    median_div = statistics.median(p["divergence_pct"] for p in pairs)
+    result = {
+        "ran": True,
+        "overlap_dates": len(pairs),
+        "median_divergence_pct": round(median_div, 2),
+        "threshold_pct": HALT_LIVE_COUNT_DIVERGENCE_PCT,
+        "sample": sorted(pairs, key=lambda p: -p["divergence_pct"])[:10],
+    }
+    halts = []
+    if median_div > HALT_LIVE_COUNT_DIVERGENCE_PCT:
+        halts.append(
+            f"live count divergence: median {median_div:.1f}% > "
+            f"{HALT_LIVE_COUNT_DIVERGENCE_PCT}% over {len(pairs)} overlapping date(s)"
+        )
+    return result, halts
 
 
 def write_report(vintage: str) -> dict:
@@ -290,6 +372,8 @@ def write_report(vintage: str) -> dict:
 
     divergence, divergence_halts = live_divergence(vintage)
     halts.extend(divergence_halts)
+    count_divergence, count_halts = live_count_divergence(vintage, membership)
+    halts.extend(count_halts)
 
     audit = _audit_results(vintage)
     if audit.get("ran"):
@@ -331,6 +415,7 @@ def write_report(vintage: str) -> dict:
         "atr_pct_quantiles_diagnostic_only": quantiles,
         "classification_audit": audit,
         "live_universe_divergence": divergence,
+        "live_count_divergence": count_divergence,
         "calendar": _calendar_provenance(),
         "halts": halts,
         "phase_b_gate": {
