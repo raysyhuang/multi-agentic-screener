@@ -196,6 +196,14 @@ def _candidates_payload(candidates, signals, outcome_by_sig) -> list[dict]:
     pipeline itself used. `picked` lets the audit compare the chosen top-2 against
     the ranks that were passed over.
 
+    That intent was not met until now. This function re-sorted by score and
+    renumbered from 1, exporting a DERIVED ordering while `Candidate.strategy_rank`
+    — the order selection actually used — was never emitted at all, and the
+    ledger's rejection columns were dropped. An audit built on the exported rank
+    was auditing an ordering the pipeline never used, and its first conclusions
+    ("rank-1 candidates skipped", "unpicked beats picked") were artifacts of
+    exactly that. The two orderings are now separate, explicitly named fields.
+
     Identity must be (run_date, ticker, MODEL) and must count only OFFICIAL,
     non-shadow signals. Keying on (run_date, ticker) alone silently corrupted the
     audit three ways:
@@ -220,15 +228,46 @@ def _candidates_payload(candidates, signals, outcome_by_sig) -> list[dict]:
         by_run.setdefault(c.run_date, []).append(c)
     out = []
     for run_date, rows in sorted(by_run.items()):
-        rows.sort(key=lambda r: (r.composite_score or 0), reverse=True)
-        for i, c in enumerate(rows, start=1):
+        # Ordered by strategy_rank where recorded, score otherwise, so the export
+        # is stable. The ordering is presentational; the RANK FIELDS below carry
+        # the meaning, and they are deliberately two separate fields.
+        # score_rank must be derived from SCORE, independently of the emission
+        # order. Computing it from an enumeration over a strategy_rank-sorted
+        # list silently makes the two fields the same number under a different
+        # name — which is the defect this change exists to remove.
+        by_score = sorted(rows, key=lambda r: -(r.composite_score or 0))
+        score_rank = {id(r): i for i, r in enumerate(by_score, start=1)}
+        rows.sort(key=lambda r: (r.strategy_rank if r.strategy_rank is not None else 10**6,
+                                 -(r.composite_score or 0)))
+        for c in rows:
             out.append({
                 "run_date": run_date.isoformat(),
-                "rank": i,
+                # The order selection ACTUALLY used. None for rows written before
+                # the selection ledger (PR #76) began recording it: null means
+                # "not recorded", never "rank unknown but presumed 1".
+                "strategy_rank": c.strategy_rank,
+                # Ordering by score alone. NOT the selection order — a
+                # correlation-dropped name can hold score_rank 1 with
+                # picked=false, which is precisely what made an audit built on
+                # this field conclude that rank-1 candidates were being skipped.
+                "score_rank": score_rank[id(c)],
                 "ticker": c.ticker,
                 "model": c.signal_model,
                 "score": round(float(c.composite_score), 4) if c.composite_score is not None else None,
                 "picked": (run_date, c.ticker.upper(), c.signal_model) in picked,
+                # Why a candidate was not taken. Without these, picked=false
+                # conflates below-quota, capacity-censored, correlation-dropped
+                # and fragility-blocked into one undifferentiated flag, and no
+                # selection-quality question can be answered from the export.
+                "selection_stage_reached": c.selection_stage_reached,
+                "rejection_stage": c.rejection_stage,
+                "rejection_reason": c.rejection_reason,
+                "slots_total": c.slots_total,
+                "slots_occupied": c.slots_occupied,
+                "slots_available": c.slots_available,
+                "correlated_with": c.correlated_with,
+                "correlation": (round(float(c.correlation), 4)
+                                if c.correlation is not None else None),
             })
     return out
 
