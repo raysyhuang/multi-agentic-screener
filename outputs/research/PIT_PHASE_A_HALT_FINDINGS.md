@@ -280,9 +280,26 @@ comparison window.** `#63` — "Actually exclude ETFs from the universe" — mer
 so for 59 of the 60 overlapping dates, live's `universe_size` counted ETFs, ETNs, FUNDs and REITs
 that the gate was supposed to remove and did not.
 
-PIT's own funnel puts that at roughly **626 ETF/day** passing price and volume, before REITs.
+PIT's own funnel puts that at **625 ETF/day** clearing PIT's price and volume floors on an allowed
+exchange, before REITs — which live also filters and PIT does not, so that figure understates the
+contamination.
 
-Confirmation, from the frozen live snapshot — ETF/FUND names appearing as *ranked live candidates*:
+**Evidence.** Every number below is regenerated from frozen bytes by
+`scripts/pit_live_reference_audit.py` into the committed artifact
+`outputs/research/evidence/pit_live_reference_audit.json`. Output is byte-deterministic, so the
+artifact is verified by regeneration rather than by trust:
+
+```
+source   outputs/pit_universe/2026-08-12/raw/live/dashboard.json.gz
+         sha256 ef07a7e8b7a3687865c8e3cd0254564c12c74c2fe0c1cdbcba3b6eba2042308d  (14,438 bytes)
+artifact sha256 dbe83e4c9a0b1f65b531ed631ff0ac26f608af3963668e7e4f3466b5fcf7ea17
+boundary PR #63, merge c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2, 2026-08-11T11:25:10Z
+         rule: ET date D is POST-fix iff D >= 2026-08-11 (merge 07:25 ET, before that
+         session's morning pipeline)
+verify   python scripts/pit_live_reference_audit.py --vintage 2026-08-12 --verify
+```
+
+ETF/FUND names appearing as *ranked live candidates*:
 
 ```
 total                       14
@@ -310,10 +327,10 @@ The sign inverts the day the gate starts working. PIT did not change; the refere
    definition mid-window. The pre-2026-08-11 dates are contaminated by a known, now-fixed defect,
    and exactly one clean date exists. A gate whose baseline is a moving definition certifies
    nothing, in either direction.
-2. **Acceptance now has a waiting period.** The gate needs roughly 30+ trading days of post-#63
-   live observations before its median is meaningful — approximately late September 2026. That is
-   a scheduling constraint on Phase A acceptance, not a code change, and it should be stated in the
-   contract rather than discovered later.
+2. **Acceptance needs a clean observation window**, and its length is *not* asserted here. A
+   post-#63 sample size sufficient to make the median meaningful is a **proposed contract
+   amendment (§A.5-v2, see §9)**, to be frozen separately. Writing a number into a findings
+   document is how an unreviewed threshold becomes load-bearing.
 3. **The post-fix direction is the expected one and is not alarming.** PIT being ~35% larger is
    consistent with PIT lacking two constraints live applies: market cap >= $300M
    (`fmp_client.py:275`) and the REIT/suffix exclusions. Phase B adds market cap, which will move
@@ -338,3 +355,47 @@ step outward:
 
 That makes four instances in this workstream of the same underlying failure — reporting a confident
 conclusion from a comparison whose two sides were not the same kind of thing.
+
+
+## 8a. Result, stated as the reviewer framed it
+
+```
+pre-#63 live counts        contaminated; unusable as a PIT baseline
+post-#63 live counts       1 observation; insufficient
+§A.5 live-count gate       DEFERRED — neither passed nor failed
+dataset acceptance         HALTED
+```
+
+The gate is deferred, not failed. A gate whose baseline changed definition mid-window certifies
+nothing in either direction, and recording it as a failure would be as wrong as recording it as a pass.
+
+---
+
+# 9. Proposed amendment §A.5-v2 — the live-count gate needs a clean-window precondition
+
+**Submitted for separate freezing. Not applied, and deliberately not given a number here.**
+
+§A.5 gates PIT's daily eligible count against "the contemporaneous live eligible count" without
+specifying that the live reference must be free of known universe-definition defects across the
+comparison window. #63 shows that omission is load-bearing: the gate returned a decisive-looking
+−23.5% that was an artefact of the reference, and the same failure would recur after any future
+change to `filter_universe`.
+
+**Proposed rule.** The live-count gate may only be evaluated over a window in which no
+universe-definition change merged, and requires a minimum number of clean observations. Any
+universe-affecting merge resets the window and the gate reverts to DEFERRED until it refills.
+
+Two parameters need ruling and I am not proposing values, because I have now seen this vintage's
+data and any number I suggest is contaminated by that:
+
+  (a) the minimum count of clean post-change observations;
+  (b) what counts as a "universe-definition change" — at minimum a merge touching
+      `src/signals/filter.py` or the screener query in `src/data/fmp_client.py`.
+
+**Operational note, offered as fact rather than as a proposal:** the only clean observation
+currently available is 2026-08-11, so under any minimum above 1 the gate is DEFERRED today and
+refills at one observation per trading day.
+
+An implementation should also make the deferral automatic rather than manual — the gate should
+detect the boundary from the merge history it is given, not rely on someone remembering that a
+filter changed. Otherwise the next occurrence looks exactly like this one did.

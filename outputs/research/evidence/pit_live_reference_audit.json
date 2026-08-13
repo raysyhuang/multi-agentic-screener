@@ -1,0 +1,608 @@
+{
+  "artifact": "pit_live_reference_audit",
+  "boundary": {
+    "merge_commit": "c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2",
+    "merged_at_utc": "2026-08-11T11:25:10Z",
+    "pr": 63,
+    "rule": "An ET market date D is POST-fix iff D >= 2026-08-11. The merge landed 11:25Z = 07:25 ET, before that session's morning pipeline, so 2026-08-11 is the first run that could apply the gate.",
+    "title": "Actually exclude ETFs from the universe"
+  },
+  "claim_1_etf_candidates": {
+    "before_fix": 14,
+    "date_range": [
+      "2026-06-08",
+      "2026-08-10"
+    ],
+    "on_or_after_fix": 0,
+    "rows": [
+      {
+        "date": "2026-06-08",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 7,
+        "ticker": "IUSG"
+      },
+      {
+        "date": "2026-06-12",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 5,
+        "ticker": "FTGC"
+      },
+      {
+        "date": "2026-06-12",
+        "held_type": "FUND",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 7,
+        "ticker": "PDI"
+      },
+      {
+        "date": "2026-06-15",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 4,
+        "ticker": "PDBC"
+      },
+      {
+        "date": "2026-06-15",
+        "held_type": "FUND",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 3,
+        "ticker": "PDI"
+      },
+      {
+        "date": "2026-06-23",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 5,
+        "ticker": "PDBC"
+      },
+      {
+        "date": "2026-06-26",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 3,
+        "ticker": "UFO"
+      },
+      {
+        "date": "2026-06-26",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 2,
+        "ticker": "VONG"
+      },
+      {
+        "date": "2026-07-03",
+        "held_type": "ETF",
+        "model": "sniper",
+        "picked": true,
+        "post_fix": false,
+        "rank": 1,
+        "ticker": "SMH"
+      },
+      {
+        "date": "2026-07-27",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 7,
+        "ticker": "QQQ"
+      },
+      {
+        "date": "2026-07-29",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 4,
+        "ticker": "QQQM"
+      },
+      {
+        "date": "2026-07-30",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "post_fix": false,
+        "rank": 2,
+        "ticker": "SMH"
+      },
+      {
+        "date": "2026-08-08",
+        "held_type": "ETF",
+        "model": "sniper",
+        "picked": false,
+        "post_fix": false,
+        "rank": 2,
+        "ticker": "TQQQ"
+      },
+      {
+        "date": "2026-08-10",
+        "held_type": "ETF",
+        "model": "sniper",
+        "picked": false,
+        "post_fix": false,
+        "rank": 5,
+        "ticker": "TQQQ"
+      }
+    ],
+    "statement": "ETF/FUND/ETN names appeared as ranked LIVE candidates only before #63.",
+    "total": 14
+  },
+  "claim_2_divergence_split": {
+    "overlap_dates": 60,
+    "pairs": [
+      {
+        "date": "2026-05-13",
+        "live": 2656,
+        "pit": 2051,
+        "post_fix": false,
+        "signed_pct": -22.78
+      },
+      {
+        "date": "2026-05-14",
+        "live": 2671,
+        "pit": 2003,
+        "post_fix": false,
+        "signed_pct": -25.01
+      },
+      {
+        "date": "2026-05-15",
+        "live": 2595,
+        "pit": 2030,
+        "post_fix": false,
+        "signed_pct": -21.77
+      },
+      {
+        "date": "2026-05-18",
+        "live": 2733,
+        "pit": 2008,
+        "post_fix": false,
+        "signed_pct": -26.53
+      },
+      {
+        "date": "2026-05-19",
+        "live": 2620,
+        "pit": 1997,
+        "post_fix": false,
+        "signed_pct": -23.78
+      },
+      {
+        "date": "2026-05-20",
+        "live": 2630,
+        "pit": 2000,
+        "post_fix": false,
+        "signed_pct": -23.95
+      },
+      {
+        "date": "2026-05-21",
+        "live": 2660,
+        "pit": 1967,
+        "post_fix": false,
+        "signed_pct": -26.05
+      },
+      {
+        "date": "2026-05-22",
+        "live": 2570,
+        "pit": 1871,
+        "post_fix": false,
+        "signed_pct": -27.2
+      },
+      {
+        "date": "2026-05-26",
+        "live": 2484,
+        "pit": 2002,
+        "post_fix": false,
+        "signed_pct": -19.4
+      },
+      {
+        "date": "2026-05-27",
+        "live": 2598,
+        "pit": 1990,
+        "post_fix": false,
+        "signed_pct": -23.4
+      },
+      {
+        "date": "2026-05-28",
+        "live": 2582,
+        "pit": 1997,
+        "post_fix": false,
+        "signed_pct": -22.66
+      },
+      {
+        "date": "2026-05-29",
+        "live": 2613,
+        "pit": 2144,
+        "post_fix": false,
+        "signed_pct": -17.95
+      },
+      {
+        "date": "2026-06-01",
+        "live": 2741,
+        "pit": 2122,
+        "post_fix": false,
+        "signed_pct": -22.58
+      },
+      {
+        "date": "2026-06-02",
+        "live": 2751,
+        "pit": 2074,
+        "post_fix": false,
+        "signed_pct": -24.61
+      },
+      {
+        "date": "2026-06-03",
+        "live": 2659,
+        "pit": 2075,
+        "post_fix": false,
+        "signed_pct": -21.96
+      },
+      {
+        "date": "2026-06-04",
+        "live": 2687,
+        "pit": 2012,
+        "post_fix": false,
+        "signed_pct": -25.12
+      },
+      {
+        "date": "2026-06-05",
+        "live": 2592,
+        "pit": 1987,
+        "post_fix": false,
+        "signed_pct": -23.34
+      },
+      {
+        "date": "2026-06-08",
+        "live": 2637,
+        "pit": 1969,
+        "post_fix": false,
+        "signed_pct": -25.33
+      },
+      {
+        "date": "2026-06-09",
+        "live": 2677,
+        "pit": 2077,
+        "post_fix": false,
+        "signed_pct": -22.41
+      },
+      {
+        "date": "2026-06-10",
+        "live": 2721,
+        "pit": 2010,
+        "post_fix": false,
+        "signed_pct": -26.13
+      },
+      {
+        "date": "2026-06-11",
+        "live": 2633,
+        "pit": 2054,
+        "post_fix": false,
+        "signed_pct": -21.99
+      },
+      {
+        "date": "2026-06-12",
+        "live": 2680,
+        "pit": 1954,
+        "post_fix": false,
+        "signed_pct": -27.09
+      },
+      {
+        "date": "2026-06-15",
+        "live": 2588,
+        "pit": 2074,
+        "post_fix": false,
+        "signed_pct": -19.86
+      },
+      {
+        "date": "2026-06-16",
+        "live": 2666,
+        "pit": 2026,
+        "post_fix": false,
+        "signed_pct": -24.01
+      },
+      {
+        "date": "2026-06-17",
+        "live": 2589,
+        "pit": 2107,
+        "post_fix": false,
+        "signed_pct": -18.62
+      },
+      {
+        "date": "2026-06-18",
+        "live": 2726,
+        "pit": 2427,
+        "post_fix": false,
+        "signed_pct": -10.97
+      },
+      {
+        "date": "2026-06-22",
+        "live": 2930,
+        "pit": 2106,
+        "post_fix": false,
+        "signed_pct": -28.12
+      },
+      {
+        "date": "2026-06-23",
+        "live": 2692,
+        "pit": 2053,
+        "post_fix": false,
+        "signed_pct": -23.74
+      },
+      {
+        "date": "2026-06-24",
+        "live": 2633,
+        "pit": 2118,
+        "post_fix": false,
+        "signed_pct": -19.56
+      },
+      {
+        "date": "2026-06-25",
+        "live": 2741,
+        "pit": 2041,
+        "post_fix": false,
+        "signed_pct": -25.54
+      },
+      {
+        "date": "2026-06-26",
+        "live": 2675,
+        "pit": 2660,
+        "post_fix": false,
+        "signed_pct": -0.56
+      },
+      {
+        "date": "2026-06-29",
+        "live": 2953,
+        "pit": 2150,
+        "post_fix": false,
+        "signed_pct": -27.19
+      },
+      {
+        "date": "2026-06-30",
+        "live": 2772,
+        "pit": 2132,
+        "post_fix": false,
+        "signed_pct": -23.09
+      },
+      {
+        "date": "2026-07-01",
+        "live": 2721,
+        "pit": 2120,
+        "post_fix": false,
+        "signed_pct": -22.09
+      },
+      {
+        "date": "2026-07-02",
+        "live": 2743,
+        "pit": 2080,
+        "post_fix": false,
+        "signed_pct": -24.17
+      },
+      {
+        "date": "2026-07-06",
+        "live": 2706,
+        "pit": 2002,
+        "post_fix": false,
+        "signed_pct": -26.02
+      },
+      {
+        "date": "2026-07-07",
+        "live": 2605,
+        "pit": 2037,
+        "post_fix": false,
+        "signed_pct": -21.8
+      },
+      {
+        "date": "2026-07-08",
+        "live": 2743,
+        "pit": 2058,
+        "post_fix": false,
+        "signed_pct": -24.97
+      },
+      {
+        "date": "2026-07-09",
+        "live": 2673,
+        "pit": 1945,
+        "post_fix": false,
+        "signed_pct": -27.24
+      },
+      {
+        "date": "2026-07-10",
+        "live": 2518,
+        "pit": 1818,
+        "post_fix": false,
+        "signed_pct": -27.8
+      },
+      {
+        "date": "2026-07-13",
+        "live": 2427,
+        "pit": 1932,
+        "post_fix": false,
+        "signed_pct": -20.4
+      },
+      {
+        "date": "2026-07-14",
+        "live": 2536,
+        "pit": 1915,
+        "post_fix": false,
+        "signed_pct": -24.49
+      },
+      {
+        "date": "2026-07-15",
+        "live": 2639,
+        "pit": 1975,
+        "post_fix": false,
+        "signed_pct": -25.16
+      },
+      {
+        "date": "2026-07-16",
+        "live": 2557,
+        "pit": 2031,
+        "post_fix": false,
+        "signed_pct": -20.57
+      },
+      {
+        "date": "2026-07-17",
+        "live": 2632,
+        "pit": 1973,
+        "post_fix": false,
+        "signed_pct": -25.04
+      },
+      {
+        "date": "2026-07-22",
+        "live": 2504,
+        "pit": 1887,
+        "post_fix": false,
+        "signed_pct": -24.64
+      },
+      {
+        "date": "2026-07-23",
+        "live": 2504,
+        "pit": 1959,
+        "post_fix": false,
+        "signed_pct": -21.77
+      },
+      {
+        "date": "2026-07-24",
+        "live": 2683,
+        "pit": 1837,
+        "post_fix": false,
+        "signed_pct": -31.53
+      },
+      {
+        "date": "2026-07-27",
+        "live": 2485,
+        "pit": 1915,
+        "post_fix": false,
+        "signed_pct": -22.94
+      },
+      {
+        "date": "2026-07-28",
+        "live": 2523,
+        "pit": 2014,
+        "post_fix": false,
+        "signed_pct": -20.17
+      },
+      {
+        "date": "2026-07-29",
+        "live": 2654,
+        "pit": 2057,
+        "post_fix": false,
+        "signed_pct": -22.49
+      },
+      {
+        "date": "2026-07-30",
+        "live": 2718,
+        "pit": 2010,
+        "post_fix": false,
+        "signed_pct": -26.05
+      },
+      {
+        "date": "2026-07-31",
+        "live": 2657,
+        "pit": 1982,
+        "post_fix": false,
+        "signed_pct": -25.4
+      },
+      {
+        "date": "2026-08-03",
+        "live": 2614,
+        "pit": 1997,
+        "post_fix": false,
+        "signed_pct": -23.6
+      },
+      {
+        "date": "2026-08-04",
+        "live": 2652,
+        "pit": 2113,
+        "post_fix": false,
+        "signed_pct": -20.32
+      },
+      {
+        "date": "2026-08-05",
+        "live": 2733,
+        "pit": 2032,
+        "post_fix": false,
+        "signed_pct": -25.65
+      },
+      {
+        "date": "2026-08-06",
+        "live": 2668,
+        "pit": 2045,
+        "post_fix": false,
+        "signed_pct": -23.35
+      },
+      {
+        "date": "2026-08-07",
+        "live": 2595,
+        "pit": 1992,
+        "post_fix": false,
+        "signed_pct": -23.24
+      },
+      {
+        "date": "2026-08-10",
+        "live": 2606,
+        "pit": 2018,
+        "post_fix": false,
+        "signed_pct": -22.56
+      },
+      {
+        "date": "2026-08-11",
+        "live": 1441,
+        "pit": 1949,
+        "post_fix": true,
+        "signed_pct": 35.25
+      }
+    ],
+    "post_fix": {
+      "median_signed_pct": 35.25,
+      "n": 1
+    },
+    "pre_fix": {
+      "median_signed_pct": -23.6,
+      "n": 59
+    },
+    "statement": "Median PIT-vs-live signed count divergence inverts at the boundary."
+  },
+  "claim_3_etf_supply": {
+    "days_measured": 60,
+    "median_per_day": 625,
+    "statement": "Count of ETF-labelled tickers per day that clear PIT's price and volume floors on an allowed exchange \u2014 the population live's dead gate admitted. Excludes REITs, which live also filters and PIT does not, so this UNDERSTATES the contamination."
+  },
+  "conclusion": {
+    "dataset_acceptance": "HALTED",
+    "post_fix_live_counts": "only 1 observation(s); insufficient",
+    "pre_fix_live_counts": "contaminated; unusable as a PIT baseline",
+    "section_A5_live_count_gate": "DEFERRED \u2014 neither passed nor failed"
+  },
+  "generator": {
+    "command": "python scripts/pit_live_reference_audit.py --vintage 2026-08-12",
+    "deterministic": true,
+    "script": "scripts/pit_live_reference_audit.py",
+    "sha256": "47f24a65979c297ab552fa3decb6d91399ad3e74cbcd47854a5169c37b25c20a"
+  },
+  "schema_version": 1,
+  "source": {
+    "bytes": 14438,
+    "note": "Public dashboard export, frozen into the vintage's raw tree and hashed into manifest.json. Contains no positions, prices or P&L.",
+    "origin": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
+    "path": "outputs/pit_universe/2026-08-12/raw/live/dashboard.json.gz",
+    "sha256": "ef07a7e8b7a3687865c8e3cd0254564c12c74c2fe0c1cdbcba3b6eba2042308d"
+  },
+  "vintage": "2026-08-12"
+}
