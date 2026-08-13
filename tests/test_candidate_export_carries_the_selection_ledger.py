@@ -103,3 +103,74 @@ def test_an_unrecorded_rank_exports_as_null_not_as_a_guess():
 
     assert rows[0]["strategy_rank"] is None
     assert rows[0]["score_rank"] == 1
+
+
+# ── export -> audit integration ──────────────────────────────────────────────
+
+def test_the_audit_consumes_the_export_without_a_keyerror(tmp_path, capsys):
+    """The export and its only consumer must agree on field names.
+
+    Renaming `rank` to `strategy_rank`/`score_rank` fixed the ambiguity and
+    simultaneously broke `rank_quality_audit.py`, which still read `c["rank"]`.
+    A valid new export raised KeyError — the export's stated purpose is to feed
+    this audit, so a schema change that the consumer cannot read is not a fix.
+
+    Exercises the three shapes that make `picked: false` ambiguous: a
+    correlation-dropped name, a capacity/slot-censored name, and a below-quota
+    name.
+    """
+    import json
+    import sys as _sys
+
+    _sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "scripts"))
+    from rank_quality_audit import audit_live  # noqa: PLC0415
+
+    rows = _export([
+        _Candidate(ticker="TAKEN", composite_score=95.0, strategy_rank=1,
+                   selection_stage_reached=True),
+        _Candidate(ticker="DROPPED", composite_score=99.0, strategy_rank=2,
+                   rejection_stage="correlation", rejection_reason="correlation_filtered",
+                   correlated_with="TAKEN", correlation=0.91),
+        _Candidate(ticker="CAPPED", composite_score=88.0, strategy_rank=3,
+                   rejection_stage="capacity", rejection_reason="capacity_censored",
+                   slots_total=3, slots_occupied=3, slots_available=0),
+        _Candidate(ticker="QUOTA", composite_score=80.0, strategy_rank=4,
+                   rejection_stage="quota", rejection_reason="below_quota"),
+        # Pre-ledger row: no strategy_rank. Must be reported as unknown, never
+        # coerced into the score ordering.
+        _Candidate(ticker="OLD", composite_score=70.0, strategy_rank=None),
+    ])
+    export = {
+        "candidates": rows,
+        "trades": {"sniper|mas_official": [
+            {"ticker": t, "pnl_pct": 1.0} for t in ("TAKEN", "DROPPED", "CAPPED")
+        ]},
+    }
+    path = tmp_path / "data.json"
+    path.write_text(json.dumps(export))
+
+    audit_live(str(path))            # must not raise
+    out = capsys.readouterr().out
+
+    assert "KeyError" not in out
+    assert "5 candidate rows" in out
+    assert "1 row(s) carry no strategy_rank" in out, (
+        "an unrecorded rank must be reported as unknown, not silently ranked"
+    )
+
+
+def test_the_audit_never_falls_back_to_the_score_ordering():
+    """Substituting score_rank for a missing strategy_rank rebuilds the defect.
+
+    It would look like data and read like a rank, while being the ordering the
+    pipeline did not use — the exact confusion that produced the false
+    "rank-1 candidates are skipped" conclusion.
+    """
+    source = (Path(__file__).resolve().parents[1] / "scripts" / "rank_quality_audit.py").read_text()
+    live = source[source.index("def audit_live"):]
+
+    assert 'c["rank"]' not in live, "a bare `rank` read has returned"
+    assert 'c.get("score_rank")' not in live and 'c["score_rank"]' not in live, (
+        "the live arm must not read the score ordering as a selection rank"
+    )
+    assert 'c.get("strategy_rank") is not None' in live

@@ -51,21 +51,26 @@ def spearman(xs: list[float], ys: list[float]) -> float:
 def audit(path: Path, label: str, top_k: int = 2) -> None:
     df = pd.read_csv(path)
     if not {"entry_date", "score", "pnl_pct"}.issubset(df.columns):
-        print(f"{label}: missing columns"); return
+        print(f"{label}: missing columns")
+        return
     df = df.sort_values(["entry_date", "score"], ascending=[True, False]).copy()
-    df["rank"] = df.groupby("entry_date").cumcount() + 1
+    # Backtest arm: this IS a score ordering, derived here from a CSV that has
+    # no selection ledger. Named score_rank to match the export's vocabulary so
+    # the two arms cannot be confused for the same quantity.
+    df["score_rank"] = df.groupby("entry_date").cumcount() + 1
     df["year"] = df["entry_date"].astype(str).str[:4]
     # only days that actually had a CHOICE to make
-    sizes = df.groupby("entry_date")["rank"].transform("max")
+    sizes = df.groupby("entry_date")["score_rank"].transform("max")
     df = df[sizes > top_k]
 
-    top = df[df["rank"] <= top_k]["pnl_pct"].tolist()
-    rest = df[df["rank"] > top_k]["pnl_pct"].tolist()
+    top = df[df["score_rank"] <= top_k]["pnl_pct"].tolist()
+    rest = df[df["score_rank"] > top_k]["pnl_pct"].tolist()
     if len(top) < 30 or len(rest) < 30:
-        print(f"{label}: too few ({len(top)}/{len(rest)})"); return
+        print(f"{label}: too few ({len(top)}/{len(rest)})")
+        return
 
     d, lo, hi = boot_diff(top, rest)
-    ic = spearman(df["rank"].tolist(), df["pnl_pct"].tolist())
+    ic = spearman(df["score_rank"].tolist(), df["pnl_pct"].tolist())
     sig = "SIGNIFICANT" if (lo > 0 or hi < 0) else "not significant"
     print(f"\n=== {label} (days with >{top_k} candidates) ===")
     print(f"  rank 1-{top_k}: n={len(top):5d}  avg={st.mean(top):+.3f}%  "
@@ -78,8 +83,8 @@ def audit(path: Path, label: str, top_k: int = 2) -> None:
     # per-year split (house rule)
     parts = []
     for y, g in df.groupby("year"):
-        t = g[g["rank"] <= top_k]["pnl_pct"]
-        r = g[g["rank"] > top_k]["pnl_pct"]
+        t = g[g["score_rank"] <= top_k]["pnl_pct"]
+        r = g[g["score_rank"] > top_k]["pnl_pct"]
         if len(t) >= 10 and len(r) >= 10:
             parts.append(f"{y}:{t.mean() - r.mean():+.3f}(n={len(t)}/{len(r)})")
     print("  per-year edge: " + ("  ".join(parts) if parts else "insufficient"))
@@ -88,7 +93,7 @@ def audit(path: Path, label: str, top_k: int = 2) -> None:
     by_day = df.groupby("entry_date")["pnl_pct"].apply(list)
     real, ideal, rand = [], [], []
     for d_, vals in zip(by_day.index, by_day):
-        sub = df[df["entry_date"] == d_].sort_values("rank")
+        sub = df[df["entry_date"] == d_].sort_values("score_rank")
         real.append(sub.head(top_k)["pnl_pct"].mean())
         ideal.append(sorted(vals, reverse=True)[:top_k])
         rand.append(st.mean(random.sample(vals, min(top_k, len(vals)))))
@@ -117,10 +122,24 @@ def audit_live(src: str, top_k: int = 2) -> None:
     for stream, rows in (raw.get("trades") or {}).items():
         for t in rows:
             pnl.setdefault(t["ticker"].upper(), []).append(t["pnl_pct"])
-    resolved = [(c["rank"], pnl[c["ticker"].upper()][0])
-                for c in cands if c["ticker"].upper() in pnl]
-    print(f"\n=== LIVE candidates ===\n  {len(cands)} ranked rows, "
-          f"{len(resolved)} with a resolved outcome")
+    # `strategy_rank` is the order selection ACTUALLY used. The export also
+    # carries `score_rank` (score ordering), and reading that instead is what
+    # made an earlier run of this audit conclude rank-1 candidates were being
+    # skipped: a correlation-dropped name holds score_rank 1 with picked=false,
+    # displacing the truly-selected name to 2. Never read a bare `rank`; the
+    # export deliberately no longer has one.
+    unranked = sum(1 for c in cands if c.get("strategy_rank") is None)
+    resolved = [(c["strategy_rank"], pnl[c["ticker"].upper()][0])
+                for c in cands
+                if c.get("strategy_rank") is not None and c["ticker"].upper() in pnl]
+    print(f"\n=== LIVE candidates ===\n  {len(cands)} candidate rows, "
+          f"{len(resolved)} ranked AND resolved")
+    if unranked:
+        # Rows predating the selection ledger. Excluded, never coerced: a missing
+        # rank is unknown, and substituting the score order would silently
+        # reintroduce the defect this audit exists to detect.
+        print(f"  {unranked} row(s) carry no strategy_rank (pre-ledger) — "
+              "excluded as unknown, not ranked")
     if len(resolved) < 40:
         print("  too few resolved to judge — rerun once the book has more history")
         return
