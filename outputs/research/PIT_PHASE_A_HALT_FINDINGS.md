@@ -289,13 +289,21 @@ committed artifact `outputs/research/evidence/pit_live_reference_audit.json`. Ou
 byte-deterministic, so it is verified by regeneration rather than trusted:
 
 ```
-committed source  evidence/source/dashboard.json.gz              sha256 ef07a7e8b7a36878… (14,438 B)
+committed source  evidence/source/dashboard_minimal.json         sha256 dee1f1b969b7cf8f…
                   evidence/source/pipeline_run_provenance.json   sha256 cd8b51ab2576309a…
-artifact                                                         sha256 93631cbfacaa0d39…
+artifact                                                         sha256 83974e32a7e8db35…
 boundary          PR #63, merge c14d6d6f…, 2026-08-11T11:25:10Z
-verify            python scripts/pit_live_reference_audit.py --vintage 2026-08-12 --verify
-sources           python scripts/pit_live_reference_audit.py --check-sources
+verify sources    python scripts/pit_live_reference_audit.py --check-sources
+certify           python scripts/pit_live_reference_audit.py --certify
+                  -> CERTIFICATION_BLOCKED: incomplete_source_closure (exit 2)
 ```
+
+The committed source is a **field projection** of the public dashboard export — only
+`candidates{ticker,run_date,model,rank,picked}` and `run_history{date,universe}`, the fields any
+claim reads. An earlier revision committed the FULL export and described it as containing no
+positions, prices or P&L. **That was false**: it carried `entry_price` and unrealised P&L for 14
+open positions. The data was already public so nothing was disclosed, but the description was wrong
+and the collection served no claim. Both are corrected, and a test now asserts the projection.
 
 **The boundary is NOT a date rule — corrected after review.** My first version asserted
 `D >= 2026-08-11` by reasoning from the merge time against cron timing. Review proposed the strict
@@ -334,33 +342,37 @@ before #63 merged           14
 on/after #63 merged          0        <- last one is TQQQ on 2026-08-10
 ```
 
-And the divergence, split at the merge date:
+And the divergence, partitioned by the commit that produced each date (§8, above):
 
 ```
                                         n     median signed divergence
-BEFORE (live counted ETFs)             59              -23.6%
-AFTER  (ETF gate actually live)         1              +35.3%
-
-2026-08-10   PIT 2,018   live 2,606    -22.6%
-2026-08-11   PIT 1,949   live 1,441    +35.3%   <- gate active; live falls 45%
+pre-fix                                59              -23.6%
+post-fix                                0              none
+INDETERMINATE (2026-08-11)              1              excluded — see below
 ```
 
-The sign inverts the day the gate starts working. PIT did not change; the reference did.
+**No sign-inversion claim is made.** An earlier version of this document reported that the sign
+inverted on 2026-08-11 and treated that as the moment the gate began working. The per-run boundary
+shows 2026-08-11 is INDETERMINATE — the pipeline ran on both sides of the merge that day — so its
++35.25% is not evidence in either direction, and the claim rested on the only observation that
+cannot support it. Withdrawn.
 
 ## Consequences
 
 1. **§A.5's live-count divergence gate cannot presently be evaluated.** Its reference changed
    definition mid-window. The pre-2026-08-11 dates are contaminated by a known, now-fixed defect,
-   and exactly one clean date exists. A gate whose baseline is a moving definition certifies
-   nothing, in either direction.
+   and **zero clean post-fix dates exist in the overlap** — the single candidate is INDETERMINATE,
+   and the first cleanly post-fix date (2026-08-12) falls outside the vintage. A gate whose
+   baseline is a moving definition certifies nothing, in either direction.
 2. **Acceptance needs a clean observation window**, and its length is *not* asserted here. A
    post-#63 sample size sufficient to make the median meaningful is a **proposed contract
    amendment (§A.5-v2, see §9)**, to be frozen separately. Writing a number into a findings
    document is how an unreviewed threshold becomes load-bearing.
-3. **The post-fix direction is the expected one and is not alarming.** PIT being ~35% larger is
-   consistent with PIT lacking two constraints live applies: market cap >= $300M
-   (`fmp_client.py:275`) and the REIT/suffix exclusions. Phase B adds market cap, which will move
-   PIT toward live rather than away.
+3. **If PIT later reads larger than live, that is expected, not alarming.** PIT lacking
+   two constraints live applies — market cap >= $300M (`fmp_client.py:275`) and the REIT/suffix
+   exclusions — should inflate it. Phase B adds market cap, moving PIT toward live rather than
+   away. Stated as a prediction to be tested once clean observations exist, NOT as an
+   interpretation of the indeterminate date.
 4. **The ADR and volume-basis findings survive intact.** Both were measured against PIT's *own*
    labels and against individual live candidates, never against the contaminated count, so neither
    depends on the retracted interpretation. They still need rulings.

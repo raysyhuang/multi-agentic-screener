@@ -60,7 +60,7 @@ EXCLUDED_TYPES = ("ETF", "ETN", "FUND")
 # support are reproducible from a clean checkout rather than from a directory
 # that only exists on one machine.
 EVIDENCE_SRC = Path(__file__).resolve().parent.parent / "outputs" / "research" / "evidence" / "source"
-DASHBOARD_SRC = EVIDENCE_SRC / "dashboard.json.gz"
+DASHBOARD_SRC = EVIDENCE_SRC / "dashboard_minimal.json"
 RUN_PROVENANCE_SRC = EVIDENCE_SRC / "pipeline_run_provenance.json"
 
 
@@ -97,16 +97,26 @@ def build_evidence(vintage: str) -> dict:
     live_path = DASHBOARD_SRC
     if not live_path.exists():
         raise SystemExit(f"no committed dashboard source at {live_path}")
+    live_min = json.loads(live_path.read_text())
     vintage_copy = ROOT / vintage / "raw" / "live" / "dashboard.json.gz"
-    if vintage_copy.exists() and _sha256_file(vintage_copy) != _sha256_file(live_path):
-        raise SystemExit(
-            "the committed dashboard source and the vintage copy differ — "
-            "the evidence chain is broken"
-        )
+    if vintage_copy.exists():
+        # The committed file is a field PROJECTION of the vintage copy, not a
+        # byte copy, so verify the projection instead of the hash: a projection
+        # can drop fields but must never introduce or alter a row.
+        parent = _read_gz(vintage_copy)
+        if _sha256_file(vintage_copy) != live_min["_parent_export_sha256"]:
+            raise SystemExit("committed source does not derive from this vintage's export")
+        for key, fields in live_min["_projection"].items():
+            got, want = live_min[key], parent.get(key) or []
+            if len(got) != len(want):
+                raise SystemExit(f"projection changed row count for {key}")
+            for a, b in zip(got, want):
+                if any(a[f] != b.get(f) for f in fields):
+                    raise SystemExit(f"projection altered a value in {key}")
 
     boundary = load_boundary()
     klass = {d: v["classification"] for d, v in boundary["by_et_date"].items()}
-    live = _read_gz(live_path)
+    live = live_min
     labels_by_month = _classification_by_month(vintage)
     membership = build_membership(vintage)
 
@@ -178,13 +188,20 @@ def build_evidence(vintage: str) -> dict:
         "schema_version": 1,
         "vintage": vintage,
         "source": {
-            "path": str(live_path.relative_to(ROOT.parent.parent)),
+            "path": "outputs/research/evidence/source/dashboard_minimal.json",
             "sha256": _sha256_file(live_path),
             "bytes": live_path.stat().st_size,
             "origin": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
             "note": (
-                "Public dashboard export, frozen into the vintage's raw tree and "
-                "hashed into manifest.json. Contains no positions, prices or P&L."
+                "Field projection of the PUBLIC dashboard export, carrying only "
+                "candidates{ticker,run_date,model,rank,picked} and "
+                "run_history{date,universe} — the only fields any claim reads. "
+                "open_positions, trades, today_picks and portfolio are excluded. "
+                "An earlier revision committed the FULL export and described it as "
+                "containing no positions, prices or P&L; that was false — it "
+                "carried entry_price and unrealised P&L for 14 open positions. "
+                "The data was already public, so nothing was disclosed, but the "
+                "description was wrong and the collection was unnecessary."
             ),
         },
         "source_closure": {
@@ -196,7 +213,7 @@ def build_evidence(vintage: str) -> dict:
             # rather than decided here.
             "complete": False,
             "committed": [
-                "outputs/research/evidence/source/dashboard.json.gz",
+                "outputs/research/evidence/source/dashboard_minimal.json",
                 "outputs/research/evidence/source/pipeline_run_provenance.json",
             ],
             "missing": [
@@ -295,31 +312,102 @@ def build_evidence(vintage: str) -> dict:
     }
 
 
+# Every committed source, paired with the artifact field that records its hash.
+# Driven by a table rather than ad-hoc lines: the first version verified the
+# dashboard and merely PRINTED the provenance hash, which left a live hole —
+# edit pipeline_run_provenance.json, the date classification changes, the
+# artifact's recorded boundary hash goes stale, and CI stays green.
+_VERIFIED_SOURCES = (
+    ("outputs/research/evidence/source/dashboard_minimal.json",
+     ("source", "sha256")),
+    ("outputs/research/evidence/source/pipeline_run_provenance.json",
+     ("boundary", "source_sha256")),
+)
+
+
+def _recorded(artifact: dict, path: tuple[str, ...]) -> str:
+    node = artifact
+    for key in path:
+        node = node[key]
+    return node
+
+
+def check_sources() -> int:
+    """Compare every committed source against the hash the artifact records."""
+    artifact = json.loads(ARTIFACT.read_text())
+    repo = Path(__file__).resolve().parent.parent
+    ok = True
+
+    declared = set(artifact["source_closure"]["committed"])
+    verified = {rel for rel, _ in _VERIFIED_SOURCES}
+    if declared != verified:
+        print(f"  UNVERIFIED SOURCE(S): {sorted(declared - verified)}")
+        print("  every declared-committed source must have a recorded hash to check")
+        ok = False
+
+    for rel, field in _VERIFIED_SOURCES:
+        path = repo / rel
+        if not path.exists():
+            print(f"  MISSING   {rel}")
+            ok = False
+            continue
+        actual = _sha256_file(path)
+        expected = _recorded(artifact, field)
+        if actual == expected:
+            print(f"  OK        {actual[:16]}  {rel}")
+        else:
+            print(f"  MISMATCH  {rel}")
+            print(f"            artifact[{'.'.join(field)}] = {expected[:16]}")
+            print(f"            actual bytes             = {actual[:16]}")
+            ok = False
+    return 0 if ok else 1
+
+
+CERTIFICATION_BLOCKED = "CERTIFICATION_BLOCKED: incomplete_source_closure"
+
+
+def certify() -> int:
+    """Fail closed while the evidence chain is incomplete.
+
+    Prose saying "provisional" is not a gate. Until the vintage's raw closure is
+    available, certification must be mechanically UNAVAILABLE — this exits
+    non-zero so any pipeline that tries to treat the artifact as
+    acceptance-grade stops, rather than relying on a reader noticing a caveat.
+    A skipped regeneration test is not a fail-closed gate either; it is silence.
+    """
+    artifact = json.loads(ARTIFACT.read_text())
+    closure = artifact["source_closure"]
+
+    if not closure.get("complete"):
+        print(CERTIFICATION_BLOCKED)
+        print(f"  missing: {closure.get('missing')}")
+        print(f"  blocker: {closure.get('blocker')}")
+        return 2
+
+    if check_sources() != 0:
+        print("CERTIFICATION_BLOCKED: source_hash_mismatch")
+        return 2
+
+    print("sources verified and closure complete — regeneration required to certify")
+    return 0
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vintage", default="2026-08-12")
     ap.add_argument("--check-sources", action="store_true",
                     help="verify committed source bytes match their recorded hashes")
+    ap.add_argument("--certify", action="store_true",
+                    help="fail closed unless the evidence chain is complete")
     ap.add_argument("--verify", action="store_true",
                     help="regenerate and diff against the committed artifact")
     args = ap.parse_args()
 
     if args.check_sources:
-        committed = json.loads(ARTIFACT.read_text())
-        ok = True
-        for rel in committed["source_closure"]["committed"]:
-            path = Path(__file__).resolve().parent.parent / rel
-            if not path.exists():
-                print(f"  MISSING  {rel}")
-                ok = False
-                continue
-            print(f"  {_sha256_file(path)[:16]}  {rel}")
-        recorded = committed["source"]["sha256"]
-        actual = _sha256_file(DASHBOARD_SRC)
-        if recorded != actual:
-            print(f"  HASH MISMATCH: artifact records {recorded[:16]}, source is {actual[:16]}")
-            ok = False
-        raise SystemExit(0 if ok else 1)
+        raise SystemExit(check_sources())
+
+    if args.certify:
+        raise SystemExit(certify())
 
     evidence = build_evidence(args.vintage)
     blob = json.dumps(evidence, indent=2, sort_keys=True) + "\n"

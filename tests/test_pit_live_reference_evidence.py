@@ -112,7 +112,7 @@ def test_committed_source_bytes_match_their_recorded_hashes(evidence):
     """Review's point: test the BYTES, not that prose says 625."""
     import hashlib
 
-    src = REPO / "outputs" / "research" / "evidence" / "source" / "dashboard.json.gz"
+    src = REPO / "outputs" / "research" / "evidence" / "source" / "dashboard_minimal.json"
     digest = hashlib.sha256(src.read_bytes()).hexdigest()
     assert digest == evidence["source"]["sha256"], (
         f"committed source bytes do not match the hash the artifact records: "
@@ -178,3 +178,84 @@ def test_the_artifact_regenerates_byte_identically():
         cwd=REPO, capture_output=True, text=True,
     )
     assert result.returncode == 0, f"regeneration diverged:\n{result.stdout}\n{result.stderr}"
+
+
+# ── tamper + fail-closed regressions ─────────────────────────────────────────
+
+def _run(*args) -> tuple[int, str]:
+    import subprocess
+    r = subprocess.run(["python", "scripts/pit_live_reference_audit.py", *args],
+                       cwd=REPO, capture_output=True, text=True)
+    return r.returncode, r.stdout + r.stderr
+
+
+SOURCES = (
+    "outputs/research/evidence/source/dashboard_minimal.json",
+    "outputs/research/evidence/source/pipeline_run_provenance.json",
+)
+
+
+@pytest.mark.parametrize("rel", SOURCES)
+def test_tampering_with_any_committed_source_fails_the_hash_check(rel):
+    """Both sources must be VERIFIED, not merely printed.
+
+    The first version compared the dashboard hash and only printed the provenance
+    hash. That left a live hole: edit pipeline_run_provenance.json, the date
+    classification changes, the artifact's recorded boundary hash goes stale, and
+    CI stays green on a boundary that no longer matches its evidence.
+    """
+    path = REPO / rel
+    original = path.read_bytes()
+    assert _run("--check-sources")[0] == 0, "clean tree should verify"
+    try:
+        path.write_bytes(original + b"\n")
+        code, out = _run("--check-sources")
+        assert code != 0, f"tampering with {rel} was not detected:\n{out}"
+        assert "MISMATCH" in out
+        assert rel in out
+    finally:
+        path.write_bytes(original)
+    assert _run("--check-sources")[0] == 0, "restore should re-verify"
+
+
+def test_every_declared_source_is_actually_hash_checked():
+    """A source can be declared committed but silently left unverified."""
+    artifact = json.loads(ARTIFACT.read_text())
+    assert set(artifact["source_closure"]["committed"]) == set(SOURCES), (
+        "declared-committed sources and hash-checked sources have diverged; "
+        "the check is driven by a table that must cover every declared source"
+    )
+
+
+def test_certification_is_mechanically_blocked_while_closure_is_incomplete():
+    """Prose saying 'provisional' is not a gate.
+
+    Review's point: a skipped regeneration test is silence, not a fail-closed
+    certification gate. While the 284MB Polygon closure is unavailable, any path
+    that tries to treat this artifact as acceptance-grade must exit non-zero.
+    """
+    code, out = _run("--certify")
+
+    assert code != 0, "certification succeeded with an incomplete evidence chain"
+    assert "CERTIFICATION_BLOCKED: incomplete_source_closure" in out
+    assert "raw/grouped" in out, "the blocker must name what is missing"
+
+
+def test_the_committed_source_carries_no_position_or_pnl_fields():
+    """Self-reported defect: the full export was committed and mis-described.
+
+    It carried entry_price and unrealised P&L for 14 open positions while the
+    provenance note claimed it contained none. Already-public data, so nothing
+    was disclosed — but the description was false and the collection served no
+    claim. The committed source is now a projection of only the fields read.
+    """
+    data = json.loads((REPO / SOURCES[0]).read_text())
+
+    for banned in ("open_positions", "trades", "today_picks", "portfolio"):
+        assert banned not in data, f"{banned} is committed but no claim reads it"
+
+    allowed = set(data["_projection"]["candidates"]) | set(data["_projection"]["run_history"])
+    for key in ("candidates", "run_history"):
+        for row in data[key]:
+            leaked = {f for f in row if f not in allowed}
+            assert not leaked, f"{key} rows carry unprojected fields: {leaked}"

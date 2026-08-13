@@ -605,20 +605,20 @@
     "command": "python scripts/pit_live_reference_audit.py --vintage 2026-08-12",
     "deterministic": true,
     "script": "scripts/pit_live_reference_audit.py",
-    "sha256": "944d336132e60219ef35fef65e608c0a2ad7ecfcbf6738a50c570f1969d418f4"
+    "sha256": "49f7071e76f4b198d52b65295c2e3fd57629719908b9acdd0fa678fe49f25f8e"
   },
   "schema_version": 1,
   "source": {
-    "bytes": 14438,
-    "note": "Public dashboard export, frozen into the vintage's raw tree and hashed into manifest.json. Contains no positions, prices or P&L.",
+    "bytes": 76153,
+    "note": "Field projection of the PUBLIC dashboard export, carrying only candidates{ticker,run_date,model,rank,picked} and run_history{date,universe} \u2014 the only fields any claim reads. open_positions, trades, today_picks and portfolio are excluded. An earlier revision committed the FULL export and described it as containing no positions, prices or P&L; that was false \u2014 it carried entry_price and unrealised P&L for 14 open positions. The data was already public, so nothing was disclosed, but the description was wrong and the collection was unnecessary.",
     "origin": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
-    "path": "outputs/research/evidence/source/dashboard.json.gz",
-    "sha256": "ef07a7e8b7a3687865c8e3cd0254564c12c74c2fe0c1cdbcba3b6eba2042308d"
+    "path": "outputs/research/evidence/source/dashboard_minimal.json",
+    "sha256": "dee1f1b969b7cf8f34636ab34644be0eb656d0f5bc8cceb080c602b0c282ed93"
   },
   "source_closure": {
     "blocker": "Full closure needs the vintage published as a versioned Release asset with a committed manifest handle. 284MB exceeds git limits, and it is licensed vendor market data \u2014 redistribution terms must be confirmed before publication. Until then claims 1-3 are REPRODUCIBLE ONLY where the vintage exists, and CI can verify the committed subset and the artifact's internal consistency only.",
     "committed": [
-      "outputs/research/evidence/source/dashboard.json.gz",
+      "outputs/research/evidence/source/dashboard_minimal.json",
       "outputs/research/evidence/source/pipeline_run_provenance.json"
     ],
     "complete": false,
