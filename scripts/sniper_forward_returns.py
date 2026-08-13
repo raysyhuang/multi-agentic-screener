@@ -4,20 +4,50 @@ Reads the live sniper trade list from the published dashboard data.json (90d
 window), then measures buy-and-hold forward returns from the actual entry
 (T+1 open, the real live fill basis) out to +21 and +42 trading days, vs SPY
 over the identical window. Polygon-only (strict), provenance stamped.
+
+Input provenance: by default the PUBLIC dashboard export is fetched live and its
+SHA-256 recorded, so a run states exactly which snapshot it measured. Pass
+--input to replay a frozen copy instead.
+
+Output: aggregates go to stdout. The per-pick table carries realised P&L keyed
+by ticker and date, so it is written ONLY when --dump-trades is given, and only
+under outputs/ (gitignored). An earlier revision wrote it unconditionally into
+scripts/ — a TRACKED directory — which put per-trade P&L one `git add` away from
+public history. That has happened in this repo before.
 """
 from __future__ import annotations
 
+import argparse
+import hashlib
 import json
 import sys
+import urllib.request
 from pathlib import Path
 
 import pandas as pd
 
-sys.path.insert(0, str(Path("/Users/rayhuang/Documents/Python Project/Multi-Agentic Screener")))
+REPO = Path(__file__).resolve().parents[1]
+sys.path.insert(0, str(REPO))
 from src.research.signal_backtest import fetch_ohlcv, get_last_ohlcv_provenance  # noqa: E402
 
-SCRATCH = Path(__file__).parent
-data = json.loads((SCRATCH / "live_data.json").read_text())
+DASHBOARD_URL = "https://raysyhuang.github.io/multi-agentic-screener/data.json"
+OUT_DIR = REPO / "outputs" / "research"      # gitignored
+
+_ap = argparse.ArgumentParser(description=__doc__)
+_ap.add_argument("--input", help="frozen dashboard export to replay instead of fetching")
+_ap.add_argument("--dump-trades", action="store_true",
+                 help="also write the per-pick CSV (contains realised P&L) under outputs/")
+ARGS = _ap.parse_args()
+
+if ARGS.input:
+    _raw = Path(ARGS.input).read_bytes()
+    _origin = ARGS.input
+else:
+    with urllib.request.urlopen(DASHBOARD_URL, timeout=60) as _r:  # noqa: S310
+        _raw = _r.read()
+    _origin = DASHBOARD_URL
+print(f"input: {_origin}\n  sha256 {hashlib.sha256(_raw).hexdigest()}")
+data = json.loads(_raw)
 trades = sorted(data["trades"]["sniper|mas_official"], key=lambda t: (t["signal_date"], t["ticker"]))
 
 tickers = sorted({t["ticker"] for t in trades})
@@ -92,7 +122,17 @@ for t in trades:
     rows.append(row)
 
 df = pd.DataFrame(rows)
-df.to_csv(SCRATCH / "sniper_forward_returns.csv", index=False)
+if ARGS.dump_trades:
+    OUT_DIR.mkdir(parents=True, exist_ok=True)
+    _csv = OUT_DIR / "sniper_live_picks_forward_returns.csv"
+    # Guard, not just convention: refuse to write per-trade P&L anywhere git
+    # tracks, however the path was reached.
+    if _csv.resolve().is_relative_to(REPO / "scripts") or _csv.resolve().parent == REPO:
+        raise SystemExit(f"refusing to write per-trade P&L to a tracked path: {_csv}")
+    df.to_csv(_csv, index=False)
+    print(f"\nwrote {_csv.relative_to(REPO)} (gitignored; contains per-trade P&L)")
+else:
+    print("\n(per-pick CSV not written; pass --dump-trades to emit it under outputs/)")
 
 pd.set_option("display.width", 200, "display.max_rows", 200)
 print("\n=== PER-PICK ===")
@@ -137,4 +177,4 @@ print(f"\nHolding 1mo instead of exiting: mean delta {comp['delta_21'].mean():+.
 print(f"Holding 2mo instead of exiting: mean delta {comp['delta_42'].mean():+.2f}pp, "
       f"better on {100 * (comp['delta_42'] > 0).mean():.0f}% of picks")
 
-print("\nwrote", SCRATCH / "sniper_forward_returns.csv")
+
