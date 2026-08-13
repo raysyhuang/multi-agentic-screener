@@ -258,3 +258,83 @@ an **absent** value as a **differing** value, or a rate computed over the wrong 
 The audit caught the first because two independent counters moved identically every month. Neo caught
 the second and third. The pattern to watch on the next submission is not "unknown vs known" specifically
 but **any statistic whose denominator I chose without stating what it makes undetectable.**
+
+
+---
+
+# 8. CORRECTION — the -23.5% divergence measured a LIVE defect, not a PIT one
+
+Added 2026-08-13, after #80 merged. **This retracts the interpretation in §5b(iii).** The
+measurement is unchanged; the conclusion drawn from it was wrong.
+
+## What I reported
+
+"PIT is systematically ~23.5% smaller than the live universe, 59 of 60 dates, and a ~10-point
+residual survives both candidate causes — there is a third cause not yet identified."
+
+## What is actually true
+
+The third cause is that **the live reference was itself defective over almost the entire
+comparison window.** `#63` — "Actually exclude ETFs from the universe" — merged
+**2026-08-11T11:25Z**, two days before this analysis. The dashboard `run_history` spans ~65 days,
+so for 59 of the 60 overlapping dates, live's `universe_size` counted ETFs, ETNs, FUNDs and REITs
+that the gate was supposed to remove and did not.
+
+PIT's own funnel puts that at roughly **626 ETF/day** passing price and volume, before REITs.
+
+Confirmation, from the frozen live snapshot — ETF/FUND names appearing as *ranked live candidates*:
+
+```
+total                       14
+date range                  2026-06-08 .. 2026-08-10
+before #63 merged           14
+on/after #63 merged          0        <- last one is TQQQ on 2026-08-10
+```
+
+And the divergence, split at the merge date:
+
+```
+                                        n     median signed divergence
+BEFORE (live counted ETFs)             59              -23.6%
+AFTER  (ETF gate actually live)         1              +35.3%
+
+2026-08-10   PIT 2,018   live 2,606    -22.6%
+2026-08-11   PIT 1,949   live 1,441    +35.3%   <- gate active; live falls 45%
+```
+
+The sign inverts the day the gate starts working. PIT did not change; the reference did.
+
+## Consequences
+
+1. **§A.5's live-count divergence gate cannot presently be evaluated.** Its reference changed
+   definition mid-window. The pre-2026-08-11 dates are contaminated by a known, now-fixed defect,
+   and exactly one clean date exists. A gate whose baseline is a moving definition certifies
+   nothing, in either direction.
+2. **Acceptance now has a waiting period.** The gate needs roughly 30+ trading days of post-#63
+   live observations before its median is meaningful — approximately late September 2026. That is
+   a scheduling constraint on Phase A acceptance, not a code change, and it should be stated in the
+   contract rather than discovered later.
+3. **The post-fix direction is the expected one and is not alarming.** PIT being ~35% larger is
+   consistent with PIT lacking two constraints live applies: market cap >= $300M
+   (`fmp_client.py:275`) and the REIT/suffix exclusions. Phase B adds market cap, which will move
+   PIT toward live rather than away.
+4. **The ADR and volume-basis findings survive intact.** Both were measured against PIT's *own*
+   labels and against individual live candidates, never against the contaminated count, so neither
+   depends on the retracted interpretation. They still need rulings.
+
+## The error, and the rule it implies
+
+I gated PIT against the live universe without checking whether the live universe was healthy over
+the window I was gating against. The defect was **already recorded in my own project memory** —
+TQQQ reaching the official candidate pool at 97.5 is the reason #63 exists — and I still did not
+connect it when I chose live as a reference.
+
+This is the same family as "never let the artifact under audit define the audit population", one
+step outward:
+
+> **A reference is not a baseline until it has been audited over the comparison window.**
+> Especially a reference you know has recently been repaired: the fix date partitions the data,
+> and comparing across that boundary measures the repair, not the subject.
+
+That makes four instances in this workstream of the same underlying failure — reporting a confident
+conclusion from a comparison whose two sides were not the same kind of thing.
