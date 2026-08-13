@@ -51,8 +51,12 @@ jobs:
           out="$(python scripts/pit_live_reference_audit.py --certify)"
           code=$?
           echo "$out"
-          if [ "$code" -eq 0 ]; then
-            echo "::error::certification succeeded with an incomplete source closure"
+          # Exactly 2, not merely nonzero. A controlled block is exit 2; an
+          # unrelated crash is exit 1. Accepting any nonzero code lets a
+          # regression that happens to print the marker pass as a deliberate
+          # block, which is the failure this gate exists to prevent.
+          if [ "$code" -ne 2 ]; then
+            echo "::error::expected controlled certification block (exit 2); got $code"
             exit 1
           fi
           echo "$out" | grep -q "CERTIFICATION_BLOCKED" || {

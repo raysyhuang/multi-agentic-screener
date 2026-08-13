@@ -133,8 +133,15 @@ def test_the_etf_contamination_claim_is_internally_consistent(evidence):
     assert all(r["held_type"] in ("ETF", "ETN", "FUND") for r in c["rows"])
 
 
-def test_the_divergence_inverts_at_the_boundary(evidence):
-    """Sign inversion at the merge is what distinguishes a live defect from a PIT one."""
+def test_every_overlap_date_is_classified_by_the_boundary(evidence):
+    """Every overlap date lands in exactly one bucket; none escapes the partition.
+
+    Named for what it asserts. It was called
+    `test_the_divergence_inverts_at_the_boundary` with a docstring about sign
+    inversion — a claim withdrawn once 2026-08-11 was shown INDETERMINATE. The
+    assertions had already been rewritten; the name had not, which would have
+    told the next reviewer the suite still stood behind a retracted finding.
+    """
     s = evidence["claim_2_divergence_split"]
     assert (s["pre_fix"]["n"] + s["post_fix"]["n"] + s["indeterminate"]["n"]
             == s["overlap_dates"]), "every overlap date must be classified"
