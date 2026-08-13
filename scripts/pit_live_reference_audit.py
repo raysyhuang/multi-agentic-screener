@@ -37,23 +37,39 @@ ARTIFACT = (
     / "outputs" / "research" / "evidence" / "pit_live_reference_audit.json"
 )
 
-# The definition change that partitions the comparison window. Recorded as data,
-# not prose, so the boundary rule is auditable alongside the numbers it produces.
-# Retrieved with: gh pr view 63 --json number,title,mergedAt,mergeCommit
-BOUNDARY = {
-    "pr": 63,
-    "title": "Actually exclude ETFs from the universe",
-    "merged_at_utc": "2026-08-11T11:25:10Z",
-    "merge_commit": "c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2",
-    "rule": (
-        "An ET market date D is POST-fix iff D >= 2026-08-11. The merge landed "
-        "11:25Z = 07:25 ET, before that session's morning pipeline, so 2026-08-11 "
-        "is the first run that could apply the gate."
-    ),
-}
+# The definition change that partitions the comparison window.
+#
+# The boundary is NOT a date rule. My first version asserted "post-fix iff
+# D >= 2026-08-11", reasoning from the merge time against cron timing; review
+# proposed the strict "D > 2026-08-11" instead. Both are wrong, because the
+# pipeline ran SEVEN times on 2026-08-11 with commits on BOTH sides of the merge
+# (10:41Z c73568a5 without it, 11:39Z 4e0addb6 with it, and more), and DailyRun
+# is upserted so the surviving row is whichever ran last. No inequality on the
+# date can express that.
+#
+# So the boundary is derived per date from what actually executed, frozen in
+# `evidence/source/pipeline_run_provenance.json`: a date is assignable only if
+# every run that could have written its row sat on one side of the merge.
+BOUNDARY_PR = 63
+BOUNDARY_MERGE_COMMIT = "c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2"
+BOUNDARY_MERGED_AT_UTC = "2026-08-11T11:25:10Z"
 
 EXCLUDED_TYPES = ("ETF", "ETN", "FUND")
-CUTOVER = date(2026, 8, 11)
+
+# Committed source closure. These bytes are IN the repo, so the claims they
+# support are reproducible from a clean checkout rather than from a directory
+# that only exists on one machine.
+EVIDENCE_SRC = Path(__file__).resolve().parent.parent / "outputs" / "research" / "evidence" / "source"
+DASHBOARD_SRC = EVIDENCE_SRC / "dashboard.json.gz"
+RUN_PROVENANCE_SRC = EVIDENCE_SRC / "pipeline_run_provenance.json"
+
+
+def load_boundary() -> dict:
+    """Per-date classification derived from the runs that actually executed."""
+    prov = json.loads(RUN_PROVENANCE_SRC.read_text())
+    if prov["boundary_merge_commit"] != BOUNDARY_MERGE_COMMIT:
+        raise SystemExit("run provenance describes a different merge boundary")
+    return prov
 
 
 def _sha256_file(path: Path) -> str:
@@ -75,10 +91,21 @@ def build_evidence(vintage: str) -> dict:
         _classification_by_month, _label_for, build_membership,
     )
 
-    live_path = ROOT / vintage / "raw" / "live" / "dashboard.json.gz"
+    # Read the COMMITTED copy, not the gitignored vintage. The two are verified
+    # byte-identical below; reading the committed one is what makes a clean
+    # checkout able to reproduce this at all.
+    live_path = DASHBOARD_SRC
     if not live_path.exists():
-        raise SystemExit(f"no live snapshot at {live_path}")
+        raise SystemExit(f"no committed dashboard source at {live_path}")
+    vintage_copy = ROOT / vintage / "raw" / "live" / "dashboard.json.gz"
+    if vintage_copy.exists() and _sha256_file(vintage_copy) != _sha256_file(live_path):
+        raise SystemExit(
+            "the committed dashboard source and the vintage copy differ — "
+            "the evidence chain is broken"
+        )
 
+    boundary = load_boundary()
+    klass = {d: v["classification"] for d, v in boundary["by_et_date"].items()}
     live = _read_gz(live_path)
     labels_by_month = _classification_by_month(vintage)
     membership = build_membership(vintage)
@@ -99,7 +126,7 @@ def build_evidence(vintage: str) -> dict:
                 "date": str(d), "ticker": ticker, "held_type": held_type,
                 "model": row.get("model"), "rank": row.get("rank"),
                 "picked": row.get("picked"),
-                "post_fix": d >= CUTOVER,
+                "boundary_class": klass.get(str(d), "pre_fix"),
             })
     etf_rows.sort(key=lambda r: (r["date"], r["ticker"]))
 
@@ -119,11 +146,12 @@ def build_evidence(vintage: str) -> dict:
         pairs.append({
             "date": str(d), "pit": pit_n, "live": live_n,
             "signed_pct": round(100.0 * (pit_n - live_n) / live_n, 2),
-            "post_fix": d >= CUTOVER,
+            "boundary_class": klass.get(str(d), "pre_fix"),
         })
     pairs.sort(key=lambda p: p["date"])
-    pre = [p["signed_pct"] for p in pairs if not p["post_fix"]]
-    post = [p["signed_pct"] for p in pairs if p["post_fix"]]
+    pre = [p["signed_pct"] for p in pairs if p["boundary_class"] == "pre_fix"]
+    post = [p["signed_pct"] for p in pairs if p["boundary_class"] == "post_fix"]
+    indet = [p["signed_pct"] for p in pairs if p["boundary_class"] == "INDETERMINATE"]
 
     # ── claim 3: ETF/day passing price+volume, from PIT's own funnel ─────────
     etf_per_day = []
@@ -159,26 +187,75 @@ def build_evidence(vintage: str) -> dict:
                 "hashed into manifest.json. Contains no positions, prices or P&L."
             ),
         },
+        "source_closure": {
+            # Stated explicitly rather than implied. A clean checkout CANNOT
+            # regenerate this artifact today: claims 1-3 need the vintage's
+            # reference labels and grouped bars, which are 284MB of licensed
+            # Polygon data in a gitignored tree. Publishing them is a vendor
+            # redistribution question, not a technical one, so it is escalated
+            # rather than decided here.
+            "complete": False,
+            "committed": [
+                "outputs/research/evidence/source/dashboard.json.gz",
+                "outputs/research/evidence/source/pipeline_run_provenance.json",
+            ],
+            "missing": [
+                "outputs/pit_universe/<vintage>/raw/reference/**  (17MB, Polygon)",
+                "outputs/pit_universe/<vintage>/raw/grouped/**   (239MB, Polygon)",
+            ],
+            "blocker": (
+                "Full closure needs the vintage published as a versioned Release "
+                "asset with a committed manifest handle. 284MB exceeds git limits, "
+                "and it is licensed vendor market data — redistribution terms must "
+                "be confirmed before publication. Until then claims 1-3 are "
+                "REPRODUCIBLE ONLY where the vintage exists, and CI can verify the "
+                "committed subset and the artifact's internal consistency only."
+            ),
+            "verifiable_from_committed_bytes": [
+                "boundary classification (pipeline_run_provenance.json)",
+                "live universe counts per date (dashboard.json.gz)",
+            ],
+        },
         "generator": {
             "script": "scripts/pit_live_reference_audit.py",
             "sha256": _sha256_file(Path(__file__).resolve()),
             "command": f"python scripts/pit_live_reference_audit.py --vintage {vintage}",
             "deterministic": True,
         },
-        "boundary": BOUNDARY,
+        "boundary": {
+            "pr": BOUNDARY_PR,
+            "merge_commit": BOUNDARY_MERGE_COMMIT,
+            "merged_at_utc": BOUNDARY_MERGED_AT_UTC,
+            "derivation": (
+                "Per ET date, from the commits that actually ran the pipeline "
+                "(evidence/source/pipeline_run_provenance.json). A date is "
+                "assignable only if every run sat on one side of the merge; "
+                "otherwise INDETERMINATE. NOT a date inequality — 2026-08-11 ran "
+                "seven times with commits on both sides."
+            ),
+            "source_sha256": _sha256_file(RUN_PROVENANCE_SRC),
+            "classification_counts": {
+                k: sum(1 for v in klass.values() if v == k)
+                for k in ("pre_fix", "post_fix", "INDETERMINATE")
+            },
+        },
         "claim_1_etf_candidates": {
             "statement": (
                 "ETF/FUND/ETN names appeared as ranked LIVE candidates only before #63."
             ),
             "total": len(etf_rows),
-            "before_fix": sum(1 for r in etf_rows if not r["post_fix"]),
-            "on_or_after_fix": sum(1 for r in etf_rows if r["post_fix"]),
+            "before_fix": sum(1 for r in etf_rows if r["boundary_class"] == "pre_fix"),
+            "on_or_after_fix": sum(1 for r in etf_rows if r["boundary_class"] == "post_fix"),
+            "indeterminate": sum(1 for r in etf_rows if r["boundary_class"] == "INDETERMINATE"),
             "date_range": [etf_rows[0]["date"], etf_rows[-1]["date"]] if etf_rows else None,
             "rows": etf_rows,
         },
         "claim_2_divergence_split": {
             "statement": (
-                "Median PIT-vs-live signed count divergence inverts at the boundary."
+                "Median PIT-vs-live signed count divergence, partitioned by which "
+                "commit produced each date. NO sign-inversion claim is made: the "
+                "earlier version rested on a single observation that the derived "
+                "boundary shows is INDETERMINATE, not post-fix."
             ),
             "overlap_dates": len(pairs),
             "pre_fix": {
@@ -188,6 +265,11 @@ def build_evidence(vintage: str) -> dict:
             "post_fix": {
                 "n": len(post),
                 "median_signed_pct": round(statistics.median(post), 2) if post else None,
+            },
+            "indeterminate": {
+                "n": len(indet),
+                "median_signed_pct": round(statistics.median(indet), 2) if indet else None,
+                "note": "excluded from both sides; not evidence in either direction",
             },
             "pairs": pairs,
         },
@@ -203,7 +285,10 @@ def build_evidence(vintage: str) -> dict:
         },
         "conclusion": {
             "pre_fix_live_counts": "contaminated; unusable as a PIT baseline",
-            "post_fix_live_counts": f"only {len(post)} observation(s); insufficient",
+            "post_fix_live_counts": (
+                f"{len(post)} clean observation(s) in the overlap; insufficient. "
+                f"{len(indet)} date(s) INDETERMINATE (runs on both sides of the merge)."
+            ),
             "section_A5_live_count_gate": "DEFERRED — neither passed nor failed",
             "dataset_acceptance": "HALTED",
         },
@@ -213,9 +298,28 @@ def build_evidence(vintage: str) -> dict:
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--vintage", default="2026-08-12")
+    ap.add_argument("--check-sources", action="store_true",
+                    help="verify committed source bytes match their recorded hashes")
     ap.add_argument("--verify", action="store_true",
                     help="regenerate and diff against the committed artifact")
     args = ap.parse_args()
+
+    if args.check_sources:
+        committed = json.loads(ARTIFACT.read_text())
+        ok = True
+        for rel in committed["source_closure"]["committed"]:
+            path = Path(__file__).resolve().parent.parent / rel
+            if not path.exists():
+                print(f"  MISSING  {rel}")
+                ok = False
+                continue
+            print(f"  {_sha256_file(path)[:16]}  {rel}")
+        recorded = committed["source"]["sha256"]
+        actual = _sha256_file(DASHBOARD_SRC)
+        if recorded != actual:
+            print(f"  HASH MISMATCH: artifact records {recorded[:16]}, source is {actual[:16]}")
+            ok = False
+        raise SystemExit(0 if ok else 1)
 
     evidence = build_evidence(args.vintage)
     blob = json.dumps(evidence, indent=2, sort_keys=True) + "\n"

@@ -284,19 +284,45 @@ PIT's own funnel puts that at **625 ETF/day** clearing PIT's price and volume fl
 exchange, before REITs — which live also filters and PIT does not, so that figure understates the
 contamination.
 
-**Evidence.** Every number below is regenerated from frozen bytes by
-`scripts/pit_live_reference_audit.py` into the committed artifact
-`outputs/research/evidence/pit_live_reference_audit.json`. Output is byte-deterministic, so the
-artifact is verified by regeneration rather than by trust:
+**Evidence.** Regenerated from frozen bytes by `scripts/pit_live_reference_audit.py` into the
+committed artifact `outputs/research/evidence/pit_live_reference_audit.json`. Output is
+byte-deterministic, so it is verified by regeneration rather than trusted:
 
 ```
-source   outputs/pit_universe/2026-08-12/raw/live/dashboard.json.gz
-         sha256 ef07a7e8b7a3687865c8e3cd0254564c12c74c2fe0c1cdbcba3b6eba2042308d  (14,438 bytes)
-artifact sha256 dbe83e4c9a0b1f65b531ed631ff0ac26f608af3963668e7e4f3466b5fcf7ea17
-boundary PR #63, merge c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2, 2026-08-11T11:25:10Z
-         rule: ET date D is POST-fix iff D >= 2026-08-11 (merge 07:25 ET, before that
-         session's morning pipeline)
-verify   python scripts/pit_live_reference_audit.py --vintage 2026-08-12 --verify
+committed source  evidence/source/dashboard.json.gz              sha256 ef07a7e8b7a36878… (14,438 B)
+                  evidence/source/pipeline_run_provenance.json   sha256 cd8b51ab2576309a…
+artifact                                                         sha256 93631cbfacaa0d39…
+boundary          PR #63, merge c14d6d6f…, 2026-08-11T11:25:10Z
+verify            python scripts/pit_live_reference_audit.py --vintage 2026-08-12 --verify
+sources           python scripts/pit_live_reference_audit.py --check-sources
+```
+
+**The boundary is NOT a date rule — corrected after review.** My first version asserted
+`D >= 2026-08-11` by reasoning from the merge time against cron timing. Review proposed the strict
+`D > 2026-08-11`. **Both are unsound.** The pipeline ran **seven times on 2026-08-11 with commits on
+both sides of the merge**:
+
+```
+2026-08-11 10:41Z  c73568a5  scheduled   does NOT contain #63
+2026-08-11 11:39Z  4e0addb6  scheduled   CONTAINS #63
+2026-08-11 12:16Z  4e0addb6  dispatch    CONTAINS #63
+2026-08-11 15:51Z  789a0ef9  dispatch    CONTAINS #63
+```
+
+`DailyRun` is upserted, so that date's surviving row depends on which run wrote last. No inequality
+on the date expresses that. The boundary is therefore derived **per date from the commits that
+actually executed** — a date is assignable only if every run sat on one side — giving
+`pre_fix 12 · post_fix 1 · INDETERMINATE 1` across the recorded window.
+
+**Consequence: 2026-08-11 is unassignable, so there are ZERO clean post-fix observations**, not one.
+The vintage ends 2026-08-11, so the first clean post-fix date (2026-08-12) falls outside the overlap.
+
+**The sign-inversion claim is withdrawn.** It rested entirely on that single indeterminate date.
+
+```
+pre_fix         n=59   median -23.6%
+post_fix        n=0    median  none
+INDETERMINATE   n=1    median +35.25%   <- excluded; not evidence in either direction
 ```
 
 ETF/FUND names appearing as *ranked live candidates*:

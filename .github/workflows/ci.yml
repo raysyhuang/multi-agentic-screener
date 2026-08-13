@@ -32,6 +32,14 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -e ".[dev,research]"
+
+      # The evidence artifact behind the #81 retraction must stay tied to bytes
+      # in the repo, not to a directory on one machine. This verifies the
+      # committed sources still hash to what the artifact records; full
+      # regeneration additionally needs the vintage, which is not committable
+      # (see source_closure.blocker in the artifact).
+      - name: Verify committed evidence sources
+        run: python scripts/pit_live_reference_audit.py --check-sources
       - name: Run tests with coverage
         run: |
           pytest --cov=src --cov-report=term-missing \
