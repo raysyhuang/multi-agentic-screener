@@ -20,6 +20,7 @@ from __future__ import annotations
 import argparse
 import hashlib
 import json
+import subprocess
 import sys
 import urllib.request
 from pathlib import Path
@@ -49,10 +50,13 @@ def assert_safe_pnl_path(path: Path) -> Path:
       * it must not be tracked in the index;
       * it must be positively confirmed ignored.
 
-    Fails closed: if git cannot be consulted at all, refuse rather than assume.
+    Every git outcome is handled EXPLICITLY, because "nonzero" conflates two
+    opposite meanings. `ls-files --error-unmatch` exits 1 for the expected
+    not-tracked case and 128 when the index is corrupt or unreadable. Treating
+    any nonzero as "not tracked" turns a git FAILURE into a safe answer — with a
+    broken index, ls-files returns 128 and check-ignore can still return 0, and
+    the destination is allowed. An unanswerable question must refuse, not pass.
     """
-    import subprocess
-
     resolved = path.resolve()
     if not resolved.is_relative_to(REPO.resolve()):
         raise SystemExit(f"refusing: per-trade P&L destination is outside the repo: {resolved}")
@@ -64,12 +68,27 @@ def assert_safe_pnl_path(path: Path) -> Path:
         except OSError as exc:
             raise SystemExit(f"refusing: cannot consult git about {resolved} ({exc})") from exc
 
-    if _git("ls-files", "--error-unmatch", str(resolved)) == 0:
+    # 0 = tracked, 1 = not tracked, anything else = git could not answer.
+    code = _git("ls-files", "--error-unmatch", str(resolved))
+    if code == 0:
         raise SystemExit(f"refusing: {resolved} is TRACKED by git — per-trade P&L must not be")
-    if _git("check-ignore", "-q", str(resolved)) != 0:
+    if code != 1:
+        raise SystemExit(
+            f"refusing: git ls-files failed (exit {code}) for {resolved}; "
+            "cannot establish that the destination is untracked"
+        )
+
+    # 0 = ignored, 1 = not ignored, anything else = git could not answer.
+    code = _git("check-ignore", "-q", str(resolved))
+    if code == 1:
         raise SystemExit(
             f"refusing: {resolved} is not git-ignored. Per-trade P&L may only be "
             "written to an explicitly ignored path."
+        )
+    if code != 0:
+        raise SystemExit(
+            f"refusing: git check-ignore failed (exit {code}) for {resolved}; "
+            "cannot establish that the destination is ignored"
         )
     return resolved
 
