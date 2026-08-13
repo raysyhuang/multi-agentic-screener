@@ -1,0 +1,560 @@
+{
+  "artifact": "pipeline_run_provenance",
+  "boundary_merge_commit": "c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2",
+  "boundary_pr": 63,
+  "by_et_date": {
+    "2026-07-27": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-27T12:50:47Z",
+          "event": "schedule",
+          "run_id": 30267610327,
+          "sha": "5006a2043d0824f9d6669bea50039e488fe3113f"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-27T13:36:33Z",
+          "event": "schedule",
+          "run_id": 30271079762,
+          "sha": "5006a2043d0824f9d6669bea50039e488fe3113f"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-27T21:42:10Z",
+          "event": "schedule",
+          "run_id": 30307935307,
+          "sha": "bd587416fbd088a18fee0218598b74f592f87eaa"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-27T22:33:47Z",
+          "event": "schedule",
+          "run_id": 30311163503,
+          "sha": "bd587416fbd088a18fee0218598b74f592f87eaa"
+        }
+      ]
+    },
+    "2026-07-28": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-28T11:50:17Z",
+          "event": "schedule",
+          "run_id": 30356393918,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-28T12:50:49Z",
+          "event": "schedule",
+          "run_id": 30360748620,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-28T21:42:24Z",
+          "event": "schedule",
+          "run_id": 30401748548,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-28T22:33:56Z",
+          "event": "schedule",
+          "run_id": 30405005226,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        }
+      ]
+    },
+    "2026-07-29": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-29T11:54:25Z",
+          "event": "schedule",
+          "run_id": 30449391757,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-29T12:57:43Z",
+          "event": "schedule",
+          "run_id": 30453848588,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-29T21:28:27Z",
+          "event": "schedule",
+          "run_id": 30492502944,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-29T22:29:18Z",
+          "event": "schedule",
+          "run_id": 30496305161,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        }
+      ]
+    },
+    "2026-07-30": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-30T11:45:18Z",
+          "event": "schedule",
+          "run_id": 30539784120,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-30T12:26:40Z",
+          "event": "schedule",
+          "run_id": 30542564715,
+          "sha": "db41882571b54874202d6cea10d6ddb481ffeaad"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-30T21:45:04Z",
+          "event": "schedule",
+          "run_id": 30584614551,
+          "sha": "9629c76fcff8f70300cdac07739aea92fe3fb8d7"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-30T22:35:48Z",
+          "event": "schedule",
+          "run_id": 30587697657,
+          "sha": "9629c76fcff8f70300cdac07739aea92fe3fb8d7"
+        }
+      ]
+    },
+    "2026-07-31": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-31T11:52:10Z",
+          "event": "schedule",
+          "run_id": 30628540814,
+          "sha": "9629c76fcff8f70300cdac07739aea92fe3fb8d7"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-31T12:53:01Z",
+          "event": "schedule",
+          "run_id": 30632270901,
+          "sha": "9629c76fcff8f70300cdac07739aea92fe3fb8d7"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-31T21:41:09Z",
+          "event": "schedule",
+          "run_id": 30667440740,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-07-31T22:32:59Z",
+          "event": "schedule",
+          "run_id": 30670298053,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        }
+      ]
+    },
+    "2026-08-03": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-03T12:49:37Z",
+          "event": "schedule",
+          "run_id": 30815188936,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-03T13:37:17Z",
+          "event": "schedule",
+          "run_id": 30818796434,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-03T21:43:21Z",
+          "event": "schedule",
+          "run_id": 30855812279,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-03T22:33:30Z",
+          "event": "schedule",
+          "run_id": 30859099547,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        }
+      ]
+    },
+    "2026-08-04": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-04T11:55:54Z",
+          "event": "schedule",
+          "run_id": 30906882185,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-04T12:57:33Z",
+          "event": "schedule",
+          "run_id": 30911470006,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-04T21:50:29Z",
+          "event": "schedule",
+          "run_id": 30954016118,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-04T22:36:01Z",
+          "event": "schedule",
+          "run_id": 30956999970,
+          "sha": "0a9ca8d531537f282f0212ba86ee962156d39434"
+        }
+      ]
+    },
+    "2026-08-05": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-05T11:50:44Z",
+          "event": "schedule",
+          "run_id": 31003098447,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-05T12:49:23Z",
+          "event": "schedule",
+          "run_id": 31007326073,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-05T21:50:02Z",
+          "event": "schedule",
+          "run_id": 31050314236,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-05T22:34:26Z",
+          "event": "schedule",
+          "run_id": 31053260302,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        }
+      ]
+    },
+    "2026-08-06": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-06T11:56:39Z",
+          "event": "schedule",
+          "run_id": 31099320749,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-06T12:53:20Z",
+          "event": "schedule",
+          "run_id": 31103369899,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-07T00:56:55Z",
+          "event": "schedule",
+          "run_id": 31136389730,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-07T01:03:25Z",
+          "event": "schedule",
+          "run_id": 31136763725,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        }
+      ]
+    },
+    "2026-08-07": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-07T10:42:20Z",
+          "event": "schedule",
+          "run_id": 31171140968,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-07T11:41:48Z",
+          "event": "schedule",
+          "run_id": 31175107314,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-07T21:16:37Z",
+          "event": "schedule",
+          "run_id": 31219382613,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-07T22:06:08Z",
+          "event": "schedule",
+          "run_id": 31222592093,
+          "sha": "fa08e6244a1bdf6871956f5a687c68577525eff4"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-08T02:00:00Z",
+          "event": "workflow_dispatch",
+          "run_id": 31233959321,
+          "sha": "e60d608be8e64d43aebe0eb7777fe46f3f49be60"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-08T02:11:02Z",
+          "event": "workflow_dispatch",
+          "run_id": 31234389633,
+          "sha": "621a0df7a7559bd356b6037e769252bfb7621d68"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-08T02:20:01Z",
+          "event": "workflow_dispatch",
+          "run_id": 31234718865,
+          "sha": "ba1e14512495644efe1db10768d0a3c5e61c9c7c"
+        }
+      ]
+    },
+    "2026-08-08": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-09T00:10:39Z",
+          "event": "workflow_dispatch",
+          "run_id": 31285606432,
+          "sha": "2bddde1c16f06c302b7acae561f797e5eed07ef1"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-09T00:20:01Z",
+          "event": "workflow_dispatch",
+          "run_id": 31285932572,
+          "sha": "992963eb9c837c3d65202575e09863a40b5f72b2"
+        }
+      ]
+    },
+    "2026-08-10": {
+      "classification": "pre_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-10T10:57:53Z",
+          "event": "schedule",
+          "run_id": 31381423741,
+          "sha": "6b0c205f7fb5c857c7c89d5a42dbb5df45130faa"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-10T11:43:35Z",
+          "event": "schedule",
+          "run_id": 31384766004,
+          "sha": "6b0c205f7fb5c857c7c89d5a42dbb5df45130faa"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-10T21:21:17Z",
+          "event": "schedule",
+          "run_id": 31433447086,
+          "sha": "27be276935b49552be3c722aaa6b02d20086ef2f"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-10T22:07:07Z",
+          "event": "schedule",
+          "run_id": 31436922093,
+          "sha": "27be276935b49552be3c722aaa6b02d20086ef2f"
+        }
+      ]
+    },
+    "2026-08-11": {
+      "classification": "INDETERMINATE",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-11T10:41:40Z",
+          "event": "schedule",
+          "run_id": 31483338361,
+          "sha": "c73568a53b9181600a0a6e109d2857f90a14ef52"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": false,
+          "created_utc": "2026-08-11T11:16:11Z",
+          "event": "workflow_dispatch",
+          "run_id": 31485873608,
+          "sha": "76e681ac9a4f274a9036cb3c30e1c5813afc3b0b"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-11T11:39:59Z",
+          "event": "schedule",
+          "run_id": 31487635626,
+          "sha": "4e0addb67e09fd1639ef7df874486920b9689cc6"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-11T12:16:57Z",
+          "event": "workflow_dispatch",
+          "run_id": 31490465198,
+          "sha": "4e0addb67e09fd1639ef7df874486920b9689cc6"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-11T15:51:39Z",
+          "event": "workflow_dispatch",
+          "run_id": 31509313483,
+          "sha": "789a0ef9af5707e607e7030f0ac7fb2974b37c2a"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-11T21:24:16Z",
+          "event": "schedule",
+          "run_id": 31537717312,
+          "sha": "c2e9ae4a8fdfec32fc924f54fbd301fc3258cdba"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-11T22:11:57Z",
+          "event": "schedule",
+          "run_id": 31541363679,
+          "sha": "c2e9ae4a8fdfec32fc924f54fbd301fc3258cdba"
+        }
+      ]
+    },
+    "2026-08-12": {
+      "classification": "post_fix",
+      "runs": [
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-12T10:51:41Z",
+          "event": "schedule",
+          "run_id": 31589283897,
+          "sha": "18c03cca559c4a8b44947549ff870306336b4525"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-12T11:42:19Z",
+          "event": "schedule",
+          "run_id": 31593044267,
+          "sha": "18c03cca559c4a8b44947549ff870306336b4525"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-12T21:23:24Z",
+          "event": "schedule",
+          "run_id": 31642290963,
+          "sha": "18c03cca559c4a8b44947549ff870306336b4525"
+        },
+        {
+          "conclusion": "success",
+          "contains_pr63": true,
+          "created_utc": "2026-08-12T22:10:16Z",
+          "event": "schedule",
+          "run_id": 31645805168,
+          "sha": "18c03cca559c4a8b44947549ff870306336b4525"
+        }
+      ]
+    }
+  },
+  "purpose": "Which commit produced each ET market date's pipeline output, so the #63 boundary is derived from what actually ran rather than asserted from cron timing.",
+  "schema_version": 1,
+  "source": "gh run list --workflow=scheduled-pipelines.yml"
+}

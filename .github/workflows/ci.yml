@@ -32,6 +32,35 @@ jobs:
           cache: pip
       - name: Install dependencies
         run: pip install -e ".[dev,research]"
+
+      # The evidence artifact behind the #81 retraction must stay tied to bytes
+      # in the repo, not to a directory on one machine. This verifies the
+      # committed sources still hash to what the artifact records; full
+      # regeneration additionally needs the vintage, which is not committable
+      # (see source_closure.blocker in the artifact).
+      - name: Verify committed evidence sources
+        run: python scripts/pit_live_reference_audit.py --check-sources
+
+      # Certification must be mechanically unavailable while the evidence chain
+      # is incomplete — a skipped regeneration test is silence, not a gate. This
+      # asserts the blocked state is REAL, so a future edit that quietly flips
+      # source_closure.complete fails here instead of certifying on prose.
+      - name: Assert dataset certification is blocked
+        run: |
+          set +e
+          out="$(python scripts/pit_live_reference_audit.py --certify)"
+          code=$?
+          echo "$out"
+          # Exactly 2, not merely nonzero. A controlled block is exit 2; an
+          # unrelated crash is exit 1. Accepting any nonzero code lets a
+          # regression that happens to print the marker pass as a deliberate
+          # block, which is the failure this gate exists to prevent.
+          if [ "$code" -ne 2 ]; then
+            echo "::error::expected controlled certification block (exit 2); got $code"
+            exit 1
+          fi
+          echo "$out" | grep -q "CERTIFICATION_BLOCKED" || {
+            echo "::error::certify failed without the expected blocked marker"; exit 1; }
       - name: Run tests with coverage
         run: |
           pytest --cov=src --cov-report=term-missing \

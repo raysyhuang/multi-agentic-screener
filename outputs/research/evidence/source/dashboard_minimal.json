@@ -1,0 +1,3957 @@
+{
+  "_note": "Minimal projection of the PUBLIC dashboard export, reduced to the only fields this audit reads. open_positions, trades, today_picks, portfolio, alpha_summary and benchmarks are EXCLUDED \u2014 no claim depends on them, and committing them published entry prices and unrealised P&L for no purpose.",
+  "_origin": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
+  "_parent_export_sha256": "ef07a7e8b7a3687865c8e3cd0254564c12c74c2fe0c1cdbcba3b6eba2042308d",
+  "_projection": {
+    "candidates": [
+      "ticker",
+      "run_date",
+      "model",
+      "rank",
+      "picked"
+    ],
+    "run_history": [
+      "date",
+      "universe"
+    ]
+  },
+  "candidates": [
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-13",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-13",
+      "ticker": "UTI"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-05-13",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-13",
+      "ticker": "FORM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-13",
+      "ticker": "NXT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-13",
+      "ticker": "AGRO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-13",
+      "ticker": "ARM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-13",
+      "ticker": "MRVL"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-13",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-14",
+      "ticker": "UTI"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-05-14",
+      "ticker": "NXT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-14",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-14",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-14",
+      "ticker": "RRX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-14",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-14",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-14",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-14",
+      "ticker": "ARM"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-15",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-05-15",
+      "ticker": "LGN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-15",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-15",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-15",
+      "ticker": "LSCC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-15",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-15",
+      "ticker": "DIOD"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-15",
+      "ticker": "ORKA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-15",
+      "ticker": "IBRX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-05-15",
+      "ticker": "ARM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-05-18",
+      "ticker": "GFS"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-18",
+      "ticker": "IRDM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-18",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-18",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-18",
+      "ticker": "UCTT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-18",
+      "ticker": "ARM"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 7,
+      "run_date": "2026-05-18",
+      "ticker": "GLW"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 8,
+      "run_date": "2026-05-18",
+      "ticker": "DELL"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-19",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-05-19",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-19",
+      "ticker": "NOK"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-19",
+      "ticker": "ARM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-19",
+      "ticker": "LRCX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-19",
+      "ticker": "VG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-19",
+      "ticker": "LSCC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-19",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-19",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-05-19",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-20",
+      "ticker": "ON"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-20",
+      "ticker": "NXT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-20",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-20",
+      "ticker": "VG"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 5,
+      "run_date": "2026-05-20",
+      "ticker": "NOK"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-20",
+      "ticker": "LSCC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-20",
+      "ticker": "KLIC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-20",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-20",
+      "ticker": "ARM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-05-21",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-21",
+      "ticker": "NXT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-21",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-21",
+      "ticker": "NTRA"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 5,
+      "run_date": "2026-05-21",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 6,
+      "run_date": "2026-05-21",
+      "ticker": "VG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-21",
+      "ticker": "LASR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-21",
+      "ticker": "DIOD"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-21",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-22",
+      "ticker": "WDC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-22",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-22",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-22",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-22",
+      "ticker": "OSCR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 6,
+      "run_date": "2026-05-22",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-22",
+      "ticker": "DIOD"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-22",
+      "ticker": "VAL"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-22",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-05-22",
+      "ticker": "GFS"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-25",
+      "ticker": "UTI"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-05-25",
+      "ticker": "DNLI"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-25",
+      "ticker": "FORM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-25",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-25",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-25",
+      "ticker": "OSCR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-26",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-05-26",
+      "ticker": "OSCR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-26",
+      "ticker": "FORM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-26",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-26",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-26",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-27",
+      "ticker": "U"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-27",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-27",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-27",
+      "ticker": "FORM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-27",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-27",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-27",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-27",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 9,
+      "run_date": "2026-05-27",
+      "ticker": "GLW"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-05-28",
+      "ticker": "GFS"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-05-28",
+      "ticker": "DOCN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-05-28",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-28",
+      "ticker": "UCTT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-28",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-28",
+      "ticker": "CIEN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-28",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-28",
+      "ticker": "MIRM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-05-28",
+      "ticker": "MRVL"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-05-28",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-05-29",
+      "ticker": "ROAD"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-05-29",
+      "ticker": "CIEN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-05-29",
+      "ticker": "NXT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-05-29",
+      "ticker": "DOCN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-05-29",
+      "ticker": "IBRX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-05-29",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-05-29",
+      "ticker": "DYN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-05-29",
+      "ticker": "NAMS"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 9,
+      "run_date": "2026-05-29",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-05-29",
+      "ticker": "MRVL"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-01",
+      "ticker": "NXT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-01",
+      "ticker": "MPWR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-01",
+      "ticker": "UCTT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-01",
+      "ticker": "DOCN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-01",
+      "ticker": "OSCR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-01",
+      "ticker": "DYN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-01",
+      "ticker": "WDAY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-01",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-01",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-06-02",
+      "ticker": "ICHR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-02",
+      "ticker": "DYN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-06-02",
+      "ticker": "OSCR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 4,
+      "run_date": "2026-06-02",
+      "ticker": "UTI"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-02",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-02",
+      "ticker": "KLIC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-02",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-02",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-02",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-02",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-03",
+      "ticker": "XMTR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-03",
+      "ticker": "UCTT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-03",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-03",
+      "ticker": "LUMN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-03",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-03",
+      "ticker": "IRDM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-03",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-03",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-03",
+      "ticker": "GLW"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-03",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-04",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-04",
+      "ticker": "IREN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-04",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-04",
+      "ticker": "GLW"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-04",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-04",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-04",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-04",
+      "ticker": "HCC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-04",
+      "ticker": "ZM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-04",
+      "ticker": "MTSI"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-05",
+      "ticker": "AVGO"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-05",
+      "ticker": "CIEN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-05",
+      "ticker": "GFS"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-05",
+      "ticker": "VRT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-05",
+      "ticker": "FN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-05",
+      "ticker": "DNLI"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-05",
+      "ticker": "GLW"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-05",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-05",
+      "ticker": "HCC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-08",
+      "ticker": "PBR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-08",
+      "ticker": "LYB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-08",
+      "ticker": "PRMB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-08",
+      "ticker": "Q"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-08",
+      "ticker": "HON"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-08",
+      "ticker": "LYV"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-08",
+      "ticker": "IUSG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-08",
+      "ticker": "KSPI"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-09",
+      "ticker": "VALE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-09",
+      "ticker": "LYV"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-09",
+      "ticker": "SQM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-09",
+      "ticker": "SCCO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-09",
+      "ticker": "CX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-09",
+      "ticker": "DAR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-09",
+      "ticker": "OUT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-09",
+      "ticker": "FSLR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-09",
+      "ticker": "ORA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-09",
+      "ticker": "EMN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-06-10",
+      "ticker": "ZTO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-10",
+      "ticker": "AAPL"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-10",
+      "ticker": "PBF"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-10",
+      "ticker": "GEN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-10",
+      "ticker": "RELY"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-10",
+      "ticker": "HASI"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-10",
+      "ticker": "ET"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-10",
+      "ticker": "PKX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-10",
+      "ticker": "FSLR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-10",
+      "ticker": "VIST"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-11",
+      "ticker": "ET"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-11",
+      "ticker": "HASI"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-11",
+      "ticker": "ZM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-11",
+      "ticker": "MT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-11",
+      "ticker": "FSLR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-11",
+      "ticker": "ERIC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-11",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-11",
+      "ticker": "EQIX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-11",
+      "ticker": "AMZN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-11",
+      "ticker": "MTZ"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-12",
+      "ticker": "TTE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-12",
+      "ticker": "ZM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-12",
+      "ticker": "YOU"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-12",
+      "ticker": "CNI"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-12",
+      "ticker": "FTGC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-12",
+      "ticker": "NWSA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-12",
+      "ticker": "PDI"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-12",
+      "ticker": "EQT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-12",
+      "ticker": "GEN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-06-15",
+      "ticker": "YOU"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-15",
+      "ticker": "BEP"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-15",
+      "ticker": "PDI"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-15",
+      "ticker": "PDBC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-15",
+      "ticker": "DAR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-15",
+      "ticker": "VCTR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-15",
+      "ticker": "META"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-15",
+      "ticker": "WMG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-15",
+      "ticker": "WEX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-15",
+      "ticker": "KW"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-16",
+      "ticker": "ENTG"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-16",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-16",
+      "ticker": "NOK"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-16",
+      "ticker": "CRWD"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-16",
+      "ticker": "GFS"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-16",
+      "ticker": "FLEX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-16",
+      "ticker": "QCOM"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-17",
+      "ticker": "MBLY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-17",
+      "ticker": "CRWD"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-17",
+      "ticker": "FLEX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-17",
+      "ticker": "NOK"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 5,
+      "run_date": "2026-06-17",
+      "ticker": "INTC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-17",
+      "ticker": "QCOM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-17",
+      "ticker": "GFS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-06-18",
+      "ticker": "HP"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-18",
+      "ticker": "REG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-06-18",
+      "ticker": "PAA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-18",
+      "ticker": "HIW"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-18",
+      "ticker": "BKR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-18",
+      "ticker": "BP"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-18",
+      "ticker": "ENB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-18",
+      "ticker": "TFII"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-19",
+      "ticker": "CNQ"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-19",
+      "ticker": "LINE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-19",
+      "ticker": "GSK"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-19",
+      "ticker": "UDR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-19",
+      "ticker": "XPO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-19",
+      "ticker": "LLY"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-19",
+      "ticker": "OXY"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-19",
+      "ticker": "TS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-22",
+      "ticker": "NN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-22",
+      "ticker": "GSK"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-22",
+      "ticker": "UDR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-22",
+      "ticker": "XPO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-22",
+      "ticker": "LLY"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-22",
+      "ticker": "TS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-22",
+      "ticker": "OXY"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-23",
+      "ticker": "YPF"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-23",
+      "ticker": "CPT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-23",
+      "ticker": "AMH"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-23",
+      "ticker": "VOD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-23",
+      "ticker": "PDBC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-23",
+      "ticker": "DGX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-23",
+      "ticker": "HSIC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-23",
+      "ticker": "LYB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-23",
+      "ticker": "ZGN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-23",
+      "ticker": "SLB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-24",
+      "ticker": "LYB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-24",
+      "ticker": "ZGN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-24",
+      "ticker": "WHD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-24",
+      "ticker": "APO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-24",
+      "ticker": "VOD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-24",
+      "ticker": "RIO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-24",
+      "ticker": "DAR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-25",
+      "ticker": "GGAL"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-25",
+      "ticker": "VOD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-25",
+      "ticker": "RIO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-25",
+      "ticker": "SQM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-25",
+      "ticker": "RKLB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-25",
+      "ticker": "HCC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-25",
+      "ticker": "DOCN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-25",
+      "ticker": "WHD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-25",
+      "ticker": "TTE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-26",
+      "ticker": "TTE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-26",
+      "ticker": "VONG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-26",
+      "ticker": "UFO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-26",
+      "ticker": "ROST"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-26",
+      "ticker": "DOCN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-26",
+      "ticker": "SQM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-26",
+      "ticker": "GS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-26",
+      "ticker": "SEIC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-26",
+      "ticker": "IONQ"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-06-29",
+      "ticker": "EQNR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-06-29",
+      "ticker": "IBKR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-29",
+      "ticker": "NVDA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-29",
+      "ticker": "SQM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-29",
+      "ticker": "HLT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-29",
+      "ticker": "GS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-29",
+      "ticker": "ERIC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-29",
+      "ticker": "FANG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-29",
+      "ticker": "GOOG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-06-30",
+      "ticker": "HLT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-06-30",
+      "ticker": "GM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-06-30",
+      "ticker": "MAR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-06-30",
+      "ticker": "HAFN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-06-30",
+      "ticker": "ROST"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-06-30",
+      "ticker": "IBKR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-06-30",
+      "ticker": "SQM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-06-30",
+      "ticker": "WT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-06-30",
+      "ticker": "DVN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 10,
+      "run_date": "2026-06-30",
+      "ticker": "SU"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-01",
+      "ticker": "RKT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-01",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-07-01",
+      "ticker": "INTC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-01",
+      "ticker": "FLEX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-01",
+      "ticker": "NBIS"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-02",
+      "ticker": "RDDT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-02",
+      "ticker": "KLAC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-02",
+      "ticker": "RRX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-02",
+      "ticker": "STX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-02",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-03",
+      "ticker": "SMH"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-03",
+      "ticker": "FLEX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-03",
+      "ticker": "NET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-03",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-03",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-06",
+      "ticker": "NSIT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-06",
+      "ticker": "AMD"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-07-06",
+      "ticker": "NET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-06",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-06",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-06",
+      "ticker": "KLIC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-06",
+      "ticker": "NESR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-07",
+      "ticker": "STX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-07",
+      "ticker": "NESR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-07",
+      "ticker": "XMTR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-07",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-07",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 6,
+      "run_date": "2026-07-07",
+      "ticker": "AMAT"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-08",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-08",
+      "ticker": "NESR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-08",
+      "ticker": "MRCY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-08",
+      "ticker": "DNTH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-08",
+      "ticker": "XMTR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 6,
+      "run_date": "2026-07-08",
+      "ticker": "TSM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-08",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-08",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-09",
+      "ticker": "NWL"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-09",
+      "ticker": "KDP"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-09",
+      "ticker": "SOLV"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-09",
+      "ticker": "ULS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-09",
+      "ticker": "WSC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-09",
+      "ticker": "MTH"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-09",
+      "ticker": "GSAT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-09",
+      "ticker": "RL"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-10",
+      "ticker": "UMC"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-10",
+      "ticker": "KLAC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-10",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-13",
+      "ticker": "U"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-13",
+      "ticker": "XMTR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-13",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 4,
+      "run_date": "2026-07-13",
+      "ticker": "LRCX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-13",
+      "ticker": "CRWD"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-14",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-14",
+      "ticker": "VG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-14",
+      "ticker": "FROG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-14",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-14",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-14",
+      "ticker": "AMAT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-14",
+      "ticker": "AMD"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-14",
+      "ticker": "CRWD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-15",
+      "ticker": "ABBV"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-15",
+      "ticker": "VRTX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-07-15",
+      "ticker": "DE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-15",
+      "ticker": "NVS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-15",
+      "ticker": "LLY"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-15",
+      "ticker": "PM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-15",
+      "ticker": "GFS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-15",
+      "ticker": "LUV"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-07-15",
+      "ticker": "LGND"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-16",
+      "ticker": "DGX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-16",
+      "ticker": "BIRK"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-16",
+      "ticker": "GD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-16",
+      "ticker": "LAUR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-16",
+      "ticker": "EW"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-16",
+      "ticker": "JNJ"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-16",
+      "ticker": "GFS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-16",
+      "ticker": "GPC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-07-16",
+      "ticker": "LIN"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-17",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-17",
+      "ticker": "DDOG"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-07-17",
+      "ticker": "KLAC"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-17",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-17",
+      "ticker": "HPE"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-17",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-17",
+      "ticker": "NTAP"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-17",
+      "ticker": "LQDA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-18",
+      "ticker": "RARE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-18",
+      "ticker": "GFS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-18",
+      "ticker": "TDC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-18",
+      "ticker": "NBIX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-18",
+      "ticker": "ETOR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-18",
+      "ticker": "UAL"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-18",
+      "ticker": "QNST"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-18",
+      "ticker": "VIRT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-22",
+      "ticker": "PFG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-22",
+      "ticker": "RBRK"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-22",
+      "ticker": "GEN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-22",
+      "ticker": "TWLO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-22",
+      "ticker": "ABNB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-22",
+      "ticker": "TGTX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-22",
+      "ticker": "FTNT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-22",
+      "ticker": "DBX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-23",
+      "ticker": "GEN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-07-23",
+      "ticker": "OKTA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-23",
+      "ticker": "TWLO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-23",
+      "ticker": "ABNB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-23",
+      "ticker": "TGTX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-23",
+      "ticker": "FTNT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-23",
+      "ticker": "DBX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-23",
+      "ticker": "EW"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-24",
+      "ticker": "FFIV"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-24",
+      "ticker": "CRWD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-24",
+      "ticker": "MCO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-24",
+      "ticker": "KRC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-24",
+      "ticker": "PSO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-24",
+      "ticker": "NET"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-07-27",
+      "ticker": "PANW"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-27",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 3,
+      "run_date": "2026-07-27",
+      "ticker": "NET"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-27",
+      "ticker": "UNM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-27",
+      "ticker": "HOG"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-27",
+      "ticker": "WST"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-27",
+      "ticker": "QQQ"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-28",
+      "ticker": "COLB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-28",
+      "ticker": "EQR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-28",
+      "ticker": "VNOM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-28",
+      "ticker": "LSTR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-28",
+      "ticker": "EXPD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-28",
+      "ticker": "HUM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-07-28",
+      "ticker": "KGS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-07-28",
+      "ticker": "JBHT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-29",
+      "ticker": "TRGP"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-29",
+      "ticker": "XPO"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-29",
+      "ticker": "GH"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-29",
+      "ticker": "QQQM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-29",
+      "ticker": "XMTR"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-07-29",
+      "ticker": "NTRA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-30",
+      "ticker": "KGS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-30",
+      "ticker": "SMH"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-30",
+      "ticker": "GTES"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-30",
+      "ticker": "WHD"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-30",
+      "ticker": "DTM"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-07-31",
+      "ticker": "WELL"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-07-31",
+      "ticker": "DTE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-07-31",
+      "ticker": "WSC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-07-31",
+      "ticker": "JBHT"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-07-31",
+      "ticker": "TFII"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-08-03",
+      "ticker": "UE"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-08-03",
+      "ticker": "FTS"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-03",
+      "ticker": "UAA"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-03",
+      "ticker": "ES"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-03",
+      "ticker": "WRB"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-03",
+      "ticker": "D"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-08-04",
+      "ticker": "DELL"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-08-04",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-04",
+      "ticker": "LQDA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-04",
+      "ticker": "DYN"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-04",
+      "ticker": "HRI"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-04",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-08-04",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-08-04",
+      "ticker": "WGS"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-08-04",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-08-05",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-08-05",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-05",
+      "ticker": "HPE"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-05",
+      "ticker": "MRCY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-05",
+      "ticker": "TER"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-05",
+      "ticker": "IOT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-08-05",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-08-05",
+      "ticker": "DYN"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-08-05",
+      "ticker": "HLT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-08-06",
+      "ticker": "YOU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-08-06",
+      "ticker": "HUBS"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-06",
+      "ticker": "RBRK"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-06",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-06",
+      "ticker": "HBM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-06",
+      "ticker": "HRI"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-08-06",
+      "ticker": "NET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-08-06",
+      "ticker": "HPE"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-08-06",
+      "ticker": "ZETA"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-08-07",
+      "ticker": "ONTO"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-08-07",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-07",
+      "ticker": "IOT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-07",
+      "ticker": "WAY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-07",
+      "ticker": "NET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-07",
+      "ticker": "IBRX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-08-07",
+      "ticker": "SU"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-08-07",
+      "ticker": "HIW"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-08-07",
+      "ticker": "RHP"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-08-08",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-08-08",
+      "ticker": "TQQQ"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-08",
+      "ticker": "IOT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-08",
+      "ticker": "WAY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-08",
+      "ticker": "NET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-08",
+      "ticker": "IBRX"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 7,
+      "run_date": "2026-08-08",
+      "ticker": "HIW"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": true,
+      "rank": 8,
+      "run_date": "2026-08-08",
+      "ticker": "WPC"
+    },
+    {
+      "model": "mean_reversion",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-08-08",
+      "ticker": "RHP"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 1,
+      "run_date": "2026-08-10",
+      "ticker": "FSLR"
+    },
+    {
+      "model": "sniper",
+      "picked": true,
+      "rank": 2,
+      "run_date": "2026-08-10",
+      "ticker": "FROG"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-10",
+      "ticker": "JBLU"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-10",
+      "ticker": "GH"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-10",
+      "ticker": "TQQQ"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-10",
+      "ticker": "IOT"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-08-10",
+      "ticker": "WAY"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 8,
+      "run_date": "2026-08-10",
+      "ticker": "NET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 9,
+      "run_date": "2026-08-10",
+      "ticker": "IBRX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 1,
+      "run_date": "2026-08-11",
+      "ticker": "DELL"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 2,
+      "run_date": "2026-08-11",
+      "ticker": "ANET"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 3,
+      "run_date": "2026-08-11",
+      "ticker": "TSEM"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 4,
+      "run_date": "2026-08-11",
+      "ticker": "AUR"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 5,
+      "run_date": "2026-08-11",
+      "ticker": "IBRX"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 6,
+      "run_date": "2026-08-11",
+      "ticker": "AXON"
+    },
+    {
+      "model": "sniper",
+      "picked": false,
+      "rank": 7,
+      "run_date": "2026-08-11",
+      "ticker": "ZETA"
+    }
+  ],
+  "run_history": [
+    {
+      "date": "2026-05-13",
+      "universe": 2656
+    },
+    {
+      "date": "2026-05-14",
+      "universe": 2671
+    },
+    {
+      "date": "2026-05-15",
+      "universe": 2595
+    },
+    {
+      "date": "2026-05-18",
+      "universe": 2733
+    },
+    {
+      "date": "2026-05-19",
+      "universe": 2620
+    },
+    {
+      "date": "2026-05-20",
+      "universe": 2630
+    },
+    {
+      "date": "2026-05-21",
+      "universe": 2660
+    },
+    {
+      "date": "2026-05-22",
+      "universe": 2570
+    },
+    {
+      "date": "2026-05-25",
+      "universe": 2483
+    },
+    {
+      "date": "2026-05-26",
+      "universe": 2484
+    },
+    {
+      "date": "2026-05-27",
+      "universe": 2598
+    },
+    {
+      "date": "2026-05-28",
+      "universe": 2582
+    },
+    {
+      "date": "2026-05-29",
+      "universe": 2613
+    },
+    {
+      "date": "2026-06-01",
+      "universe": 2741
+    },
+    {
+      "date": "2026-06-02",
+      "universe": 2751
+    },
+    {
+      "date": "2026-06-03",
+      "universe": 2659
+    },
+    {
+      "date": "2026-06-04",
+      "universe": 2687
+    },
+    {
+      "date": "2026-06-05",
+      "universe": 2592
+    },
+    {
+      "date": "2026-06-08",
+      "universe": 2637
+    },
+    {
+      "date": "2026-06-09",
+      "universe": 2677
+    },
+    {
+      "date": "2026-06-10",
+      "universe": 2721
+    },
+    {
+      "date": "2026-06-11",
+      "universe": 2633
+    },
+    {
+      "date": "2026-06-12",
+      "universe": 2680
+    },
+    {
+      "date": "2026-06-15",
+      "universe": 2588
+    },
+    {
+      "date": "2026-06-16",
+      "universe": 2666
+    },
+    {
+      "date": "2026-06-17",
+      "universe": 2589
+    },
+    {
+      "date": "2026-06-18",
+      "universe": 2726
+    },
+    {
+      "date": "2026-06-19",
+      "universe": 2903
+    },
+    {
+      "date": "2026-06-22",
+      "universe": 2930
+    },
+    {
+      "date": "2026-06-23",
+      "universe": 2692
+    },
+    {
+      "date": "2026-06-24",
+      "universe": 2633
+    },
+    {
+      "date": "2026-06-25",
+      "universe": 2741
+    },
+    {
+      "date": "2026-06-26",
+      "universe": 2675
+    },
+    {
+      "date": "2026-06-29",
+      "universe": 2953
+    },
+    {
+      "date": "2026-06-30",
+      "universe": 2772
+    },
+    {
+      "date": "2026-07-01",
+      "universe": 2721
+    },
+    {
+      "date": "2026-07-02",
+      "universe": 2743
+    },
+    {
+      "date": "2026-07-03",
+      "universe": 2693
+    },
+    {
+      "date": "2026-07-06",
+      "universe": 2706
+    },
+    {
+      "date": "2026-07-07",
+      "universe": 2605
+    },
+    {
+      "date": "2026-07-08",
+      "universe": 2743
+    },
+    {
+      "date": "2026-07-09",
+      "universe": 2673
+    },
+    {
+      "date": "2026-07-10",
+      "universe": 2518
+    },
+    {
+      "date": "2026-07-13",
+      "universe": 2427
+    },
+    {
+      "date": "2026-07-14",
+      "universe": 2536
+    },
+    {
+      "date": "2026-07-15",
+      "universe": 2639
+    },
+    {
+      "date": "2026-07-16",
+      "universe": 2557
+    },
+    {
+      "date": "2026-07-17",
+      "universe": 2632
+    },
+    {
+      "date": "2026-07-18",
+      "universe": 1847
+    },
+    {
+      "date": "2026-07-22",
+      "universe": 2504
+    },
+    {
+      "date": "2026-07-23",
+      "universe": 2504
+    },
+    {
+      "date": "2026-07-24",
+      "universe": 2683
+    },
+    {
+      "date": "2026-07-27",
+      "universe": 2485
+    },
+    {
+      "date": "2026-07-28",
+      "universe": 2523
+    },
+    {
+      "date": "2026-07-29",
+      "universe": 2654
+    },
+    {
+      "date": "2026-07-30",
+      "universe": 2718
+    },
+    {
+      "date": "2026-07-31",
+      "universe": 2657
+    },
+    {
+      "date": "2026-08-03",
+      "universe": 2614
+    },
+    {
+      "date": "2026-08-04",
+      "universe": 2652
+    },
+    {
+      "date": "2026-08-05",
+      "universe": 2733
+    },
+    {
+      "date": "2026-08-06",
+      "universe": 2668
+    },
+    {
+      "date": "2026-08-07",
+      "universe": 2595
+    },
+    {
+      "date": "2026-08-08",
+      "universe": 2595
+    },
+    {
+      "date": "2026-08-10",
+      "universe": 2606
+    },
+    {
+      "date": "2026-08-11",
+      "universe": 1441
+    }
+  ]
+}

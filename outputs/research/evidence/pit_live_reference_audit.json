@@ -1,0 +1,635 @@
+{
+  "artifact": "pit_live_reference_audit",
+  "boundary": {
+    "classification_counts": {
+      "INDETERMINATE": 1,
+      "post_fix": 1,
+      "pre_fix": 12
+    },
+    "derivation": "Per ET date, from the commits that actually ran the pipeline (evidence/source/pipeline_run_provenance.json). A date is assignable only if every run sat on one side of the merge; otherwise INDETERMINATE. NOT a date inequality \u2014 2026-08-11 ran seven times with commits on both sides.",
+    "merge_commit": "c14d6d6f777b058e18fa8e4440ab5c9b3095d7d2",
+    "merged_at_utc": "2026-08-11T11:25:10Z",
+    "pr": 63,
+    "source_sha256": "cd8b51ab2576309ab16abe6198fa418603e209088863854867bcd1a6d21bd1aa"
+  },
+  "claim_1_etf_candidates": {
+    "before_fix": 14,
+    "date_range": [
+      "2026-06-08",
+      "2026-08-10"
+    ],
+    "indeterminate": 0,
+    "on_or_after_fix": 0,
+    "rows": [
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-08",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 7,
+        "ticker": "IUSG"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-12",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 5,
+        "ticker": "FTGC"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-12",
+        "held_type": "FUND",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 7,
+        "ticker": "PDI"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-15",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 4,
+        "ticker": "PDBC"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-15",
+        "held_type": "FUND",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 3,
+        "ticker": "PDI"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-23",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 5,
+        "ticker": "PDBC"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-26",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 3,
+        "ticker": "UFO"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-26",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 2,
+        "ticker": "VONG"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-03",
+        "held_type": "ETF",
+        "model": "sniper",
+        "picked": true,
+        "rank": 1,
+        "ticker": "SMH"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-27",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 7,
+        "ticker": "QQQ"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-29",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 4,
+        "ticker": "QQQM"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-30",
+        "held_type": "ETF",
+        "model": "mean_reversion",
+        "picked": false,
+        "rank": 2,
+        "ticker": "SMH"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-08",
+        "held_type": "ETF",
+        "model": "sniper",
+        "picked": false,
+        "rank": 2,
+        "ticker": "TQQQ"
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-10",
+        "held_type": "ETF",
+        "model": "sniper",
+        "picked": false,
+        "rank": 5,
+        "ticker": "TQQQ"
+      }
+    ],
+    "statement": "ETF/FUND/ETN names appeared as ranked LIVE candidates only before #63.",
+    "total": 14
+  },
+  "claim_2_divergence_split": {
+    "indeterminate": {
+      "median_signed_pct": 35.25,
+      "n": 1,
+      "note": "excluded from both sides; not evidence in either direction"
+    },
+    "overlap_dates": 60,
+    "pairs": [
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-13",
+        "live": 2656,
+        "pit": 2051,
+        "signed_pct": -22.78
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-14",
+        "live": 2671,
+        "pit": 2003,
+        "signed_pct": -25.01
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-15",
+        "live": 2595,
+        "pit": 2030,
+        "signed_pct": -21.77
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-18",
+        "live": 2733,
+        "pit": 2008,
+        "signed_pct": -26.53
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-19",
+        "live": 2620,
+        "pit": 1997,
+        "signed_pct": -23.78
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-20",
+        "live": 2630,
+        "pit": 2000,
+        "signed_pct": -23.95
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-21",
+        "live": 2660,
+        "pit": 1967,
+        "signed_pct": -26.05
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-22",
+        "live": 2570,
+        "pit": 1871,
+        "signed_pct": -27.2
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-26",
+        "live": 2484,
+        "pit": 2002,
+        "signed_pct": -19.4
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-27",
+        "live": 2598,
+        "pit": 1990,
+        "signed_pct": -23.4
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-28",
+        "live": 2582,
+        "pit": 1997,
+        "signed_pct": -22.66
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-05-29",
+        "live": 2613,
+        "pit": 2144,
+        "signed_pct": -17.95
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-01",
+        "live": 2741,
+        "pit": 2122,
+        "signed_pct": -22.58
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-02",
+        "live": 2751,
+        "pit": 2074,
+        "signed_pct": -24.61
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-03",
+        "live": 2659,
+        "pit": 2075,
+        "signed_pct": -21.96
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-04",
+        "live": 2687,
+        "pit": 2012,
+        "signed_pct": -25.12
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-05",
+        "live": 2592,
+        "pit": 1987,
+        "signed_pct": -23.34
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-08",
+        "live": 2637,
+        "pit": 1969,
+        "signed_pct": -25.33
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-09",
+        "live": 2677,
+        "pit": 2077,
+        "signed_pct": -22.41
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-10",
+        "live": 2721,
+        "pit": 2010,
+        "signed_pct": -26.13
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-11",
+        "live": 2633,
+        "pit": 2054,
+        "signed_pct": -21.99
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-12",
+        "live": 2680,
+        "pit": 1954,
+        "signed_pct": -27.09
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-15",
+        "live": 2588,
+        "pit": 2074,
+        "signed_pct": -19.86
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-16",
+        "live": 2666,
+        "pit": 2026,
+        "signed_pct": -24.01
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-17",
+        "live": 2589,
+        "pit": 2107,
+        "signed_pct": -18.62
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-18",
+        "live": 2726,
+        "pit": 2427,
+        "signed_pct": -10.97
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-22",
+        "live": 2930,
+        "pit": 2106,
+        "signed_pct": -28.12
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-23",
+        "live": 2692,
+        "pit": 2053,
+        "signed_pct": -23.74
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-24",
+        "live": 2633,
+        "pit": 2118,
+        "signed_pct": -19.56
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-25",
+        "live": 2741,
+        "pit": 2041,
+        "signed_pct": -25.54
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-26",
+        "live": 2675,
+        "pit": 2660,
+        "signed_pct": -0.56
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-29",
+        "live": 2953,
+        "pit": 2150,
+        "signed_pct": -27.19
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-06-30",
+        "live": 2772,
+        "pit": 2132,
+        "signed_pct": -23.09
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-01",
+        "live": 2721,
+        "pit": 2120,
+        "signed_pct": -22.09
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-02",
+        "live": 2743,
+        "pit": 2080,
+        "signed_pct": -24.17
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-06",
+        "live": 2706,
+        "pit": 2002,
+        "signed_pct": -26.02
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-07",
+        "live": 2605,
+        "pit": 2037,
+        "signed_pct": -21.8
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-08",
+        "live": 2743,
+        "pit": 2058,
+        "signed_pct": -24.97
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-09",
+        "live": 2673,
+        "pit": 1945,
+        "signed_pct": -27.24
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-10",
+        "live": 2518,
+        "pit": 1818,
+        "signed_pct": -27.8
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-13",
+        "live": 2427,
+        "pit": 1932,
+        "signed_pct": -20.4
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-14",
+        "live": 2536,
+        "pit": 1915,
+        "signed_pct": -24.49
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-15",
+        "live": 2639,
+        "pit": 1975,
+        "signed_pct": -25.16
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-16",
+        "live": 2557,
+        "pit": 2031,
+        "signed_pct": -20.57
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-17",
+        "live": 2632,
+        "pit": 1973,
+        "signed_pct": -25.04
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-22",
+        "live": 2504,
+        "pit": 1887,
+        "signed_pct": -24.64
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-23",
+        "live": 2504,
+        "pit": 1959,
+        "signed_pct": -21.77
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-24",
+        "live": 2683,
+        "pit": 1837,
+        "signed_pct": -31.53
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-27",
+        "live": 2485,
+        "pit": 1915,
+        "signed_pct": -22.94
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-28",
+        "live": 2523,
+        "pit": 2014,
+        "signed_pct": -20.17
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-29",
+        "live": 2654,
+        "pit": 2057,
+        "signed_pct": -22.49
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-30",
+        "live": 2718,
+        "pit": 2010,
+        "signed_pct": -26.05
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-07-31",
+        "live": 2657,
+        "pit": 1982,
+        "signed_pct": -25.4
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-03",
+        "live": 2614,
+        "pit": 1997,
+        "signed_pct": -23.6
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-04",
+        "live": 2652,
+        "pit": 2113,
+        "signed_pct": -20.32
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-05",
+        "live": 2733,
+        "pit": 2032,
+        "signed_pct": -25.65
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-06",
+        "live": 2668,
+        "pit": 2045,
+        "signed_pct": -23.35
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-07",
+        "live": 2595,
+        "pit": 1992,
+        "signed_pct": -23.24
+      },
+      {
+        "boundary_class": "pre_fix",
+        "date": "2026-08-10",
+        "live": 2606,
+        "pit": 2018,
+        "signed_pct": -22.56
+      },
+      {
+        "boundary_class": "INDETERMINATE",
+        "date": "2026-08-11",
+        "live": 1441,
+        "pit": 1949,
+        "signed_pct": 35.25
+      }
+    ],
+    "post_fix": {
+      "median_signed_pct": null,
+      "n": 0
+    },
+    "pre_fix": {
+      "median_signed_pct": -23.6,
+      "n": 59
+    },
+    "statement": "Median PIT-vs-live signed count divergence, partitioned by which commit produced each date. NO sign-inversion claim is made: the earlier version rested on a single observation that the derived boundary shows is INDETERMINATE, not post-fix."
+  },
+  "claim_3_etf_supply": {
+    "days_measured": 60,
+    "median_per_day": 625,
+    "statement": "Count of ETF-labelled tickers per day that clear PIT's price and volume floors on an allowed exchange \u2014 the population live's dead gate admitted. Excludes REITs, which live also filters and PIT does not, so this UNDERSTATES the contamination."
+  },
+  "conclusion": {
+    "dataset_acceptance": "HALTED",
+    "post_fix_live_counts": "0 clean observation(s) in the overlap; insufficient. 1 date(s) INDETERMINATE (runs on both sides of the merge).",
+    "pre_fix_live_counts": "contaminated; unusable as a PIT baseline",
+    "section_A5_live_count_gate": "DEFERRED \u2014 neither passed nor failed"
+  },
+  "generator": {
+    "command": "python scripts/pit_live_reference_audit.py --vintage 2026-08-12",
+    "deterministic": true,
+    "script": "scripts/pit_live_reference_audit.py",
+    "sha256": "49f7071e76f4b198d52b65295c2e3fd57629719908b9acdd0fa678fe49f25f8e"
+  },
+  "schema_version": 1,
+  "source": {
+    "bytes": 76153,
+    "note": "Field projection of the PUBLIC dashboard export, carrying only candidates{ticker,run_date,model,rank,picked} and run_history{date,universe} \u2014 the only fields any claim reads. open_positions, trades, today_picks and portfolio are excluded. An earlier revision committed the FULL export and described it as containing no positions, prices or P&L; that was false \u2014 it carried entry_price and unrealised P&L for 14 open positions. The data was already public, so nothing was disclosed, but the description was wrong and the collection was unnecessary.",
+    "origin": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
+    "path": "outputs/research/evidence/source/dashboard_minimal.json",
+    "sha256": "dee1f1b969b7cf8f34636ab34644be0eb656d0f5bc8cceb080c602b0c282ed93"
+  },
+  "source_closure": {
+    "blocker": "Full closure needs the vintage published as a versioned Release asset with a committed manifest handle. 284MB exceeds git limits, and it is licensed vendor market data \u2014 redistribution terms must be confirmed before publication. Until then claims 1-3 are REPRODUCIBLE ONLY where the vintage exists, and CI can verify the committed subset and the artifact's internal consistency only.",
+    "committed": [
+      "outputs/research/evidence/source/dashboard_minimal.json",
+      "outputs/research/evidence/source/pipeline_run_provenance.json"
+    ],
+    "complete": false,
+    "missing": [
+      "outputs/pit_universe/<vintage>/raw/reference/**  (17MB, Polygon)",
+      "outputs/pit_universe/<vintage>/raw/grouped/**   (239MB, Polygon)"
+    ],
+    "verifiable_from_committed_bytes": [
+      "boundary classification (pipeline_run_provenance.json)",
+      "live universe counts per date (dashboard.json.gz)"
+    ]
+  },
+  "vintage": "2026-08-12"
+}

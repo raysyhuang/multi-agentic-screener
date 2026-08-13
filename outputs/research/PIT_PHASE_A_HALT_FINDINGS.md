@@ -258,3 +258,182 @@ an **absent** value as a **differing** value, or a rate computed over the wrong 
 The audit caught the first because two independent counters moved identically every month. Neo caught
 the second and third. The pattern to watch on the next submission is not "unknown vs known" specifically
 but **any statistic whose denominator I chose without stating what it makes undetectable.**
+
+
+---
+
+# 8. CORRECTION — the -23.5% divergence measured a LIVE defect, not a PIT one
+
+Added 2026-08-13, after #80 merged. **This retracts the interpretation in §5b(iii).** The
+measurement is unchanged; the conclusion drawn from it was wrong.
+
+## What I reported
+
+"PIT is systematically ~23.5% smaller than the live universe, 59 of 60 dates, and a ~10-point
+residual survives both candidate causes — there is a third cause not yet identified."
+
+## What is actually true
+
+The third cause is that **the live reference was itself defective over almost the entire
+comparison window.** `#63` — "Actually exclude ETFs from the universe" — merged
+**2026-08-11T11:25Z**, two days before this analysis. The dashboard `run_history` spans ~65 days,
+so for 59 of the 60 overlapping dates, live's `universe_size` counted ETFs, ETNs, FUNDs and REITs
+that the gate was supposed to remove and did not.
+
+PIT's own funnel puts that at **625 ETF/day** clearing PIT's price and volume floors on an allowed
+exchange, before REITs — which live also filters and PIT does not, so that figure understates the
+contamination.
+
+**Evidence.** Regenerated from frozen bytes by `scripts/pit_live_reference_audit.py` into the
+committed artifact `outputs/research/evidence/pit_live_reference_audit.json`. Output is
+byte-deterministic, so it is verified by regeneration rather than trusted:
+
+```
+committed source  evidence/source/dashboard_minimal.json         sha256 dee1f1b969b7cf8f…
+                  evidence/source/pipeline_run_provenance.json   sha256 cd8b51ab2576309a…
+artifact                                                         sha256 83974e32a7e8db35…
+boundary          PR #63, merge c14d6d6f…, 2026-08-11T11:25:10Z
+verify sources    python scripts/pit_live_reference_audit.py --check-sources
+certify           python scripts/pit_live_reference_audit.py --certify
+                  -> CERTIFICATION_BLOCKED: incomplete_source_closure (exit 2)
+```
+
+The committed source is a **field projection** of the public dashboard export — only
+`candidates{ticker,run_date,model,rank,picked}` and `run_history{date,universe}`, the fields any
+claim reads. An earlier revision committed the FULL export and described it as containing no
+positions, prices or P&L. **That was false**: it carried `entry_price` and unrealised P&L for 14
+open positions. The data was already public so nothing was disclosed, but the description was wrong
+and the collection served no claim. Both are corrected, and a test now asserts the projection.
+
+**The boundary is NOT a date rule — corrected after review.** My first version asserted
+`D >= 2026-08-11` by reasoning from the merge time against cron timing. Review proposed the strict
+`D > 2026-08-11`. **Both are unsound.** The pipeline ran **seven times on 2026-08-11 with commits on
+both sides of the merge**:
+
+```
+2026-08-11 10:41Z  c73568a5  scheduled   does NOT contain #63
+2026-08-11 11:39Z  4e0addb6  scheduled   CONTAINS #63
+2026-08-11 12:16Z  4e0addb6  dispatch    CONTAINS #63
+2026-08-11 15:51Z  789a0ef9  dispatch    CONTAINS #63
+```
+
+`DailyRun` is upserted, so that date's surviving row depends on which run wrote last. No inequality
+on the date expresses that. The boundary is therefore derived **per date from the commits that
+actually executed** — a date is assignable only if every run sat on one side — giving
+`pre_fix 12 · post_fix 1 · INDETERMINATE 1` across the recorded window.
+
+**Consequence: 2026-08-11 is unassignable, so there are ZERO clean post-fix observations**, not one.
+The vintage ends 2026-08-11, so the first clean post-fix date (2026-08-12) falls outside the overlap.
+
+**The sign-inversion claim is withdrawn.** It rested entirely on that single indeterminate date.
+
+```
+pre_fix         n=59   median -23.6%
+post_fix        n=0    median  none
+INDETERMINATE   n=1    median +35.25%   <- excluded; not evidence in either direction
+```
+
+ETF/FUND names appearing as *ranked live candidates*:
+
+```
+total                       14
+date range                  2026-06-08 .. 2026-08-10
+before #63 merged           14
+on/after #63 merged          0        <- last one is TQQQ on 2026-08-10
+```
+
+And the divergence, partitioned by the commit that produced each date (§8, above):
+
+```
+                                        n     median signed divergence
+pre-fix                                59              -23.6%
+post-fix                                0              none
+INDETERMINATE (2026-08-11)              1              excluded — see below
+```
+
+**No sign-inversion claim is made.** An earlier version of this document reported that the sign
+inverted on 2026-08-11 and treated that as the moment the gate began working. The per-run boundary
+shows 2026-08-11 is INDETERMINATE — the pipeline ran on both sides of the merge that day — so its
++35.25% is not evidence in either direction, and the claim rested on the only observation that
+cannot support it. Withdrawn.
+
+## Consequences
+
+1. **§A.5's live-count divergence gate cannot presently be evaluated.** Its reference changed
+   definition mid-window. The pre-2026-08-11 dates are contaminated by a known, now-fixed defect,
+   and **zero clean post-fix dates exist in the overlap** — the single candidate is INDETERMINATE,
+   and the first cleanly post-fix date (2026-08-12) falls outside the vintage. A gate whose
+   baseline is a moving definition certifies nothing, in either direction.
+2. **Acceptance needs a clean observation window**, and its length is *not* asserted here. A
+   post-#63 sample size sufficient to make the median meaningful is a **proposed contract
+   amendment (§A.5-v2, see §9)**, to be frozen separately. Writing a number into a findings
+   document is how an unreviewed threshold becomes load-bearing.
+3. **If PIT later reads larger than live, that is expected, not alarming.** PIT lacking
+   two constraints live applies — market cap >= $300M (`fmp_client.py:275`) and the REIT/suffix
+   exclusions — should inflate it. Phase B adds market cap, moving PIT toward live rather than
+   away. Stated as a prediction to be tested once clean observations exist, NOT as an
+   interpretation of the indeterminate date.
+4. **The ADR and volume-basis findings survive intact.** Both were measured against PIT's *own*
+   labels and against individual live candidates, never against the contaminated count, so neither
+   depends on the retracted interpretation. They still need rulings.
+
+## The error, and the rule it implies
+
+I gated PIT against the live universe without checking whether the live universe was healthy over
+the window I was gating against. The defect was **already recorded in my own project memory** —
+TQQQ reaching the official candidate pool at 97.5 is the reason #63 exists — and I still did not
+connect it when I chose live as a reference.
+
+This is the same family as "never let the artifact under audit define the audit population", one
+step outward:
+
+> **A reference is not a baseline until it has been audited over the comparison window.**
+> Especially a reference you know has recently been repaired: the fix date partitions the data,
+> and comparing across that boundary measures the repair, not the subject.
+
+That makes four instances in this workstream of the same underlying failure — reporting a confident
+conclusion from a comparison whose two sides were not the same kind of thing.
+
+
+## 8a. Result, stated as the reviewer framed it
+
+```
+pre-#63 live counts        contaminated; unusable as a PIT baseline
+post-#63 live counts       1 observation; insufficient
+§A.5 live-count gate       DEFERRED — neither passed nor failed
+dataset acceptance         HALTED
+```
+
+The gate is deferred, not failed. A gate whose baseline changed definition mid-window certifies
+nothing in either direction, and recording it as a failure would be as wrong as recording it as a pass.
+
+---
+
+# 9. Proposed amendment §A.5-v2 — the live-count gate needs a clean-window precondition
+
+**Submitted for separate freezing. Not applied, and deliberately not given a number here.**
+
+§A.5 gates PIT's daily eligible count against "the contemporaneous live eligible count" without
+specifying that the live reference must be free of known universe-definition defects across the
+comparison window. #63 shows that omission is load-bearing: the gate returned a decisive-looking
+−23.5% that was an artefact of the reference, and the same failure would recur after any future
+change to `filter_universe`.
+
+**Proposed rule.** The live-count gate may only be evaluated over a window in which no
+universe-definition change merged, and requires a minimum number of clean observations. Any
+universe-affecting merge resets the window and the gate reverts to DEFERRED until it refills.
+
+Two parameters need ruling and I am not proposing values, because I have now seen this vintage's
+data and any number I suggest is contaminated by that:
+
+  (a) the minimum count of clean post-change observations;
+  (b) what counts as a "universe-definition change" — at minimum a merge touching
+      `src/signals/filter.py` or the screener query in `src/data/fmp_client.py`.
+
+**Operational note, offered as fact rather than as a proposal:** the only clean observation
+currently available is 2026-08-11, so under any minimum above 1 the gate is DEFERRED today and
+refills at one observation per trading day.
+
+An implementation should also make the deferral automatic rather than manual — the gate should
+detect the boundary from the merge history it is given, not rely on someone remembering that a
+filter changed. Otherwise the next occurrence looks exactly like this one did.
