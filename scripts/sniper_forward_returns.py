@@ -33,6 +33,46 @@ from src.research.signal_backtest import fetch_ohlcv, get_last_ohlcv_provenance 
 DASHBOARD_URL = "https://raysyhuang.github.io/multi-agentic-screener/data.json"
 OUT_DIR = REPO / "outputs" / "research"      # gitignored
 
+
+def assert_safe_pnl_path(path: Path) -> Path:
+    """Refuse to write per-trade P&L anywhere git would track it.
+
+    An earlier version rejected `scripts/` and the repo root by name. That is a
+    denylist of two places I happened to think of — it says nothing about the
+    destination actually being ignored, and a changed output directory, a
+    relaxed ignore rule, or a symlink would walk straight past it. The authority
+    on whether git will pick a file up is git, so ask git:
+
+      * the path must resolve beneath the repository (so the checks below mean
+        something — `git check-ignore` outside a work tree is not a safety
+        statement);
+      * it must not be tracked in the index;
+      * it must be positively confirmed ignored.
+
+    Fails closed: if git cannot be consulted at all, refuse rather than assume.
+    """
+    import subprocess
+
+    resolved = path.resolve()
+    if not resolved.is_relative_to(REPO.resolve()):
+        raise SystemExit(f"refusing: per-trade P&L destination is outside the repo: {resolved}")
+
+    def _git(*args: str) -> int:
+        try:
+            return subprocess.run(("git", "-C", str(REPO), *args),
+                                  capture_output=True).returncode
+        except OSError as exc:
+            raise SystemExit(f"refusing: cannot consult git about {resolved} ({exc})") from exc
+
+    if _git("ls-files", "--error-unmatch", str(resolved)) == 0:
+        raise SystemExit(f"refusing: {resolved} is TRACKED by git — per-trade P&L must not be")
+    if _git("check-ignore", "-q", str(resolved)) != 0:
+        raise SystemExit(
+            f"refusing: {resolved} is not git-ignored. Per-trade P&L may only be "
+            "written to an explicitly ignored path."
+        )
+    return resolved
+
 _ap = argparse.ArgumentParser(description=__doc__)
 _ap.add_argument("--input", help="frozen dashboard export to replay instead of fetching")
 _ap.add_argument("--dump-trades", action="store_true",
@@ -125,10 +165,7 @@ df = pd.DataFrame(rows)
 if ARGS.dump_trades:
     OUT_DIR.mkdir(parents=True, exist_ok=True)
     _csv = OUT_DIR / "sniper_live_picks_forward_returns.csv"
-    # Guard, not just convention: refuse to write per-trade P&L anywhere git
-    # tracks, however the path was reached.
-    if _csv.resolve().is_relative_to(REPO / "scripts") or _csv.resolve().parent == REPO:
-        raise SystemExit(f"refusing to write per-trade P&L to a tracked path: {_csv}")
+    assert_safe_pnl_path(_csv)
     df.to_csv(_csv, index=False)
     print(f"\nwrote {_csv.relative_to(REPO)} (gitignored; contains per-trade P&L)")
 else:
