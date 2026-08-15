@@ -96,7 +96,7 @@ Inherited from `min_threshold_trades = 100` (`validation_card.py:336`). Any clai
 
 A stream **stops** (paper trading halted, sleeve retired or rebuilt) when **either** fires:
 
-**S1 — Statistically established negative.** At **n ≥ 30**, the bootstrap 95% CI of mean alpha is **entirely below zero** (`ci_high < 0`). This is the symmetric mirror of Tier 2's promotion test. It cannot be argued away by "small sample" — 30 is the same floor promotion must clear.
+**S1 — Statistically established negative.** At a fixed evaluation point with **n ≥ 30**, the bootstrap 95% CI of mean alpha vs SPY is **entirely below zero** — `alpha_summary[<stream>]["spy"]["ci_hi"] < 0`. This is the symmetric mirror of Tier 2's promotion test. It cannot be argued away by "small sample" — 30 is the same floor promotion must clear.
 
 **S2 — Drawdown breach.** Paper-sleeve equity drawdown (concurrency-capped, as computed by the unified exit engine, not a sum of per-trade returns) reaches the number in the table below. This one fires regardless of `n`, because a large enough loss is decision-relevant before it is statistically significant.
 
