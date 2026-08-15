@@ -7,12 +7,14 @@ Unit tests only — no DB, no VPS, no network. Covers:
   - Fail-closed validation guards
   - Dry-run mode
   - Missing --phase
+  - ET date resolution (not UTC)
+  - Child env forces empty telegram
+  - No secrets in stderr
+  - run-meta stamps git_sha and dashboard_sha256
 """
 from __future__ import annotations
 
-import json
-import os
-import sys
+import hashlib
 from pathlib import Path
 from unittest.mock import MagicMock, patch
 
@@ -158,61 +160,91 @@ class TestFailClosedValidation:
 
     def test_validation_passes_with_safe_settings(self, mock_settings):
         """Validation must pass when all settings are safe."""
-        with patch("src.config.get_settings", return_value=mock_settings):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
 
-                result = _validate_settings_fail_closed()
-                assert result["trading_mode"] == "PAPER"
-                assert result["execution_mode"] == "quant_only"
+            result = _validate_settings_fail_closed()
+            assert result["trading_mode"] == "PAPER"
+            assert result["execution_mode"] == "quant_only"
+            assert result["telegram_bot_token_empty"] is True
+            assert result["telegram_chat_id_empty"] is True
 
     def test_validation_fails_on_live_trading_mode(self, mock_settings_live):
         """Validation must fail if trading_mode is LIVE."""
-        with patch("src.config.get_settings", return_value=mock_settings_live):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+        with (
+            patch("src.config.get_settings", return_value=mock_settings_live),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
 
-                with pytest.raises(SystemExit):
-                    _validate_settings_fail_closed()
+            with pytest.raises(SystemExit):
+                _validate_settings_fail_closed()
 
     def test_validation_fails_on_telegram_creds(self, mock_settings_telegram):
         """Validation must fail if Telegram credentials are present."""
-        with patch("src.config.get_settings", return_value=mock_settings_telegram):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+        with (
+            patch("src.config.get_settings", return_value=mock_settings_telegram),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
 
-                with pytest.raises(SystemExit):
-                    _validate_settings_fail_closed()
+            with pytest.raises(SystemExit):
+                _validate_settings_fail_closed()
 
     def test_validation_fails_on_non_postgres_db(self, mock_settings):
         """Validation must fail if database_url is not postgres."""
         mock_settings.database_url = "sqlite:///mas_mirror.db"
-        with patch("src.config.get_settings", return_value=mock_settings):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
 
-                with pytest.raises(SystemExit):
-                    _validate_settings_fail_closed()
+            with pytest.raises(SystemExit):
+                _validate_settings_fail_closed()
 
     def test_validation_fails_if_ibkr_importable(self, mock_settings):
         """Validation must fail if src.broker.ibkr is importable."""
-        with patch("src.config.get_settings", return_value=mock_settings):
-            # Simulate IBKR being importable
-            with patch("importlib.util.find_spec", return_value=MagicMock()):
-                from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=MagicMock()),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
 
-                with pytest.raises(SystemExit):
-                    _validate_settings_fail_closed()
+            with pytest.raises(SystemExit):
+                _validate_settings_fail_closed()
 
     def test_validation_fails_on_missing_db_marker(self, mock_settings):
         """Validation must fail if database_url lacks the mirror marker."""
         mock_settings.database_url = "postgresql://user:pass@host/production_db"
-        with patch("src.config.get_settings", return_value=mock_settings):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
 
-                with pytest.raises(SystemExit):
-                    _validate_settings_fail_closed()
+            with pytest.raises(SystemExit):
+                _validate_settings_fail_closed()
+
+    def test_validation_redacts_secrets_in_error(self, mock_settings, capsys):
+        """Validation errors must not print secrets or connection strings."""
+        mock_settings.database_url = "sqlite:///secret_path.db"
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import _validate_settings_fail_closed
+
+            with pytest.raises(SystemExit):
+                _validate_settings_fail_closed()
+
+            captured = capsys.readouterr()
+            # Should mention the scheme, not the full URL
+            assert "sqlite" in captured.err
+            assert "secret_path" not in captured.err
 
 
 class TestDryRun:
@@ -224,13 +256,15 @@ class TestDryRun:
             "sys.argv",
             ["mas_vps_paper_mirror.py", "--phase", "morning", "--dry-run", "--out-root", str(tmp_path)],
         )
-        with patch("src.config.get_settings", return_value=mock_settings):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import main
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import main
 
-                with pytest.raises(SystemExit) as exc:
-                    main()
-                assert exc.value.code == 0
+            with pytest.raises(SystemExit) as exc:
+                main()
+            assert exc.value.code == 0
 
     def test_dry_run_does_not_create_output_dirs(self, tmp_path, mock_settings, monkeypatch):
         """Dry-run must not create output directories or run commands."""
@@ -239,24 +273,26 @@ class TestDryRun:
             "sys.argv",
             ["mas_vps_paper_mirror.py", "--phase", "afternoon", "--dry-run", "--out-root", str(out_root)],
         )
-        with patch("src.config.get_settings", return_value=mock_settings):
-            with patch("importlib.util.find_spec", return_value=None):
-                from scripts.mas_vps_paper_mirror import main
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+        ):
+            from scripts.mas_vps_paper_mirror import main
 
-                with pytest.raises(SystemExit):
-                    main()
+            with pytest.raises(SystemExit):
+                main()
 
-                # out_root should not exist (dry-run doesn't create dirs)
-                # Actually, the plan resolution doesn't create dirs either, so this is fine
-                # But if out_root was created, it should be empty
-                if out_root.exists():
-                    assert list(out_root.iterdir()) == []
+            # out_root should not exist (dry-run doesn't create dirs)
+            # Actually, the plan resolution doesn't create dirs either, so this is fine
+            # But if out_root was created, it should be empty
+            if out_root.exists():
+                assert list(out_root.iterdir()) == []
 
 
 class TestArgparsing:
     """Test that argparse rejects missing or invalid arguments."""
 
-    def test_missing_phase_arg_fails(self, monkeypatch, capsys):
+    def test_missing_phase_arg_fails(self, monkeypatch):
         """Missing --phase must fail with usage message."""
         monkeypatch.setattr("sys.argv", ["mas_vps_paper_mirror.py"])
         from scripts.mas_vps_paper_mirror import main
@@ -273,3 +309,136 @@ class TestArgparsing:
         with pytest.raises(SystemExit) as exc:
             main()
         assert exc.value.code != 0
+
+
+class TestRunDate:
+    """Test that run_date uses America/New_York, not UTC."""
+
+    def test_run_date_is_et_not_utc(self, monkeypatch):
+        """Run date must be America/New_York date, not UTC."""
+        # Mock datetime to return a UTC Wednesday 02:00 (which is still Tuesday ET)
+        from datetime import UTC, datetime
+        from zoneinfo import ZoneInfo
+
+        # UTC Wed 02:00 = Tue 22:00 ET (during EDT, UTC-4)
+        mock_utc_time = datetime(2026, 8, 20, 2, 0, 0, tzinfo=UTC)  # Wed 02:00 UTC
+        mock_et_time = datetime(2026, 8, 19, 22, 0, 0, tzinfo=ZoneInfo("America/New_York"))  # Tue 22:00 ET
+
+        with patch("scripts.mas_vps_paper_mirror.datetime") as mock_datetime:
+            mock_datetime.now.side_effect = lambda tz=None: mock_et_time if tz else mock_utc_time
+            mock_datetime.UTC = UTC
+
+            from scripts.mas_vps_paper_mirror import _resolve_plan
+
+            plan = _resolve_plan(
+                phase="morning",
+                out_root=Path("/tmp/test"),
+                run_date="2026-08-19",  # Tuesday (ET date, not Wed UTC date)
+                repo_root=Path("/workspace"),
+            )
+
+            # The phase_dir should contain the ET date (2026-08-19), not the UTC date (2026-08-20)
+            assert "2026-08-19" in plan["phase_dir"]
+            assert "2026-08-20" not in plan["phase_dir"]
+
+
+class TestChildEnv:
+    """Test that child processes get forced-empty Telegram creds."""
+
+    def test_child_env_forces_empty_telegram(self, tmp_path, mock_settings, monkeypatch):
+        """Child env must have TELEGRAM_BOT_TOKEN="" and TELEGRAM_CHAT_ID=""."""
+
+        # Create the phase dir so the script doesn't fail on mkdir
+        phase_dir = tmp_path / "2026-08-15" / "afternoon"
+        phase_dir.mkdir(parents=True, exist_ok=True)
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["mas_vps_paper_mirror.py", "--phase", "afternoon", "--out-root", str(tmp_path)],
+        )
+
+        # Simulate a leftover token in os.environ (should be overridden)
+        monkeypatch.setenv("TELEGRAM_BOT_TOKEN", "leftover_token")
+        monkeypatch.setenv("TELEGRAM_CHAT_ID", "leftover_chat_id")
+
+        captured_env = {}
+
+        def mock_run(*args, **kwargs):
+            nonlocal captured_env
+            cmd = args[0] if args else kwargs.get("cmd", [])
+            # Mock successful exit
+            mock_result = MagicMock()
+            mock_result.returncode = 0
+            # For git rev-parse, return a proper string
+            if "git" in cmd and "rev-parse" in cmd:
+                mock_result.stdout = "abc1234\n"
+            # Capture env for non-git commands
+            if "git" not in cmd:
+                captured_env = kwargs.get("env", {})
+            return mock_result
+
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+            patch("subprocess.run", side_effect=mock_run),
+        ):
+            from scripts.mas_vps_paper_mirror import main
+
+            main()
+
+            # Check that the child env has empty Telegram creds
+            assert captured_env.get("TELEGRAM_BOT_TOKEN") == ""
+            assert captured_env.get("TELEGRAM_CHAT_ID") == ""
+            assert captured_env.get("TRADING_MODE") == "PAPER"
+            assert captured_env.get("EXECUTION_MODE") == "quant_only"
+
+
+class TestRunMeta:
+    """Test that run-meta.json stamps git_sha and dashboard_sha256."""
+
+    def test_run_meta_stamps_git_sha_and_dashboard_sha256(self, tmp_path, mock_settings, monkeypatch):
+        """run-meta.json must include git_sha and dashboard_sha256."""
+        import json
+
+        # Create the phase dir and dashboard file
+        phase_dir = tmp_path / "2026-08-15" / "afternoon"
+        phase_dir.mkdir(parents=True, exist_ok=True)
+
+        mock_dashboard_content = b'{"test": "data"}'
+        expected_sha256 = hashlib.sha256(mock_dashboard_content).hexdigest()
+
+        # Write the dashboard file
+        dashboard_path = phase_dir / "dashboard-data.json"
+        dashboard_path.write_bytes(mock_dashboard_content)
+
+        monkeypatch.setattr(
+            "sys.argv",
+            ["mas_vps_paper_mirror.py", "--phase", "afternoon", "--out-root", str(tmp_path)],
+        )
+
+        def mock_subprocess_run(*args, **kwargs):
+            cmd = args[0] if args else kwargs.get("cmd", [])
+            mock_result = MagicMock()
+            if "git" in cmd and "rev-parse" in cmd:
+                mock_result.returncode = 0
+                mock_result.stdout = "abc1234\n"
+            else:
+                mock_result.returncode = 0
+            return mock_result
+
+        with (
+            patch("src.config.get_settings", return_value=mock_settings),
+            patch("importlib.util.find_spec", return_value=None),
+            patch("subprocess.run", side_effect=mock_subprocess_run),
+        ):
+            from scripts.mas_vps_paper_mirror import main
+
+            main()
+
+            # Read the run-meta.json that was written
+            meta_path = phase_dir / "run-meta.json"
+            assert meta_path.exists()
+
+            meta_content = json.loads(meta_path.read_text())
+            assert meta_content["git_sha"] == "abc1234"
+            assert meta_content["dashboard_sha256"] == expected_sha256

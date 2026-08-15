@@ -26,18 +26,20 @@ This script is the in-repo version of the VPS-only ~hermes/.../mas_vps_paper_mir
 from __future__ import annotations
 
 import argparse
+import hashlib
 import json
 import os
 import subprocess
 import sys
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
+from zoneinfo import ZoneInfo
 
 
 def _iso_now() -> str:
     """UTC timestamp in ISO 8601 format."""
-    return datetime.now(timezone.utc).isoformat()
+    return datetime.now(UTC).isoformat()
 
 
 def _validate_settings_fail_closed() -> dict[str, Any]:
@@ -64,23 +66,21 @@ def _validate_settings_fail_closed() -> dict[str, Any]:
     # 3. Database URL must be isolated (postgres, contains marker)
     db_url = settings.database_url
     if not db_url.startswith("postgres"):
-        errors.append(f"database_url must be postgres (got: {db_url[:20]}...)")
+        # Redact: only log the scheme, not the connection string
+        scheme = db_url.split("://")[0] if "://" in db_url else "(no-scheme)"
+        errors.append(f"database_url must be postgres (got scheme: {scheme!r})")
     # Check for the isolated mirror DB marker (env-settable, default "mas_mirror_")
     db_marker = os.getenv("MAS_MIRROR_DB_MARKER", "mas_mirror_")
     if db_marker and db_marker not in db_url:
         errors.append(
-            f"database_url must contain mirror marker {db_marker!r} (got: {db_url})"
+            f"database_url must contain mirror marker {db_marker!r} (marker not found)"
         )
 
     # 4. Telegram credentials must be blank (afternoon lane is artifact-only, no briefs)
     if settings.telegram_bot_token:
-        errors.append(
-            f"telegram_bot_token must be empty (got non-empty: {settings.telegram_bot_token[:8]}...)"
-        )
+        errors.append("telegram_bot_token must be empty (got non-empty token)")
     if settings.telegram_chat_id:
-        errors.append(
-            f"telegram_chat_id must be empty (got: {settings.telegram_chat_id!r})"
-        )
+        errors.append("telegram_chat_id must be empty (got non-empty chat ID)")
 
     # 5. IBKR module must not be importable (paper mirror never executes live broker)
     import importlib.util
@@ -93,18 +93,21 @@ def _validate_settings_fail_closed() -> dict[str, Any]:
             print(f"  - {e}", file=sys.stderr)
         sys.exit(1)
 
-    # Return the resolved settings as a dict for audit logging
+    # Return the resolved settings as a dict for audit logging (redacted)
+    scheme = db_url.split("://")[0] if "://" in db_url else "(unknown)"
+    has_marker = db_marker in db_url if db_marker else False
     return {
         "trading_mode": settings.trading_mode,
         "execution_mode": settings.execution_mode,
-        "database_url": db_url[:50] + "..." if len(db_url) > 50 else db_url,
-        "telegram_bot_token": "(empty)" if not settings.telegram_bot_token else "(SET)",
-        "telegram_chat_id": "(empty)" if not settings.telegram_chat_id else "(SET)",
+        "database_url_scheme": scheme,
+        "database_url_has_marker": has_marker,
+        "telegram_bot_token_empty": not bool(settings.telegram_bot_token),
+        "telegram_chat_id_empty": not bool(settings.telegram_chat_id),
     }
 
 
 def _run_step(
-    step_name: str, cmd: list[str], log_file: Path, cwd: Path | None = None
+    step_name: str, cmd: list[str], log_file: Path, cwd: Path | None = None, env: dict | None = None
 ) -> dict[str, Any]:
     """Run a command step, stream output to log_file, return step metadata.
 
@@ -130,6 +133,8 @@ def _run_step(
             stdout=log,
             stderr=subprocess.STDOUT,
             cwd=cwd,
+            env=env,
+            check=False,
         )
 
     duration = __import__("time").monotonic() - start_mono
@@ -255,13 +260,24 @@ def main() -> None:
     )
     out_root = out_root.resolve()
 
-    # Run date: UTC date at invocation time (mirrors GHA's run-date logic)
-    run_date = datetime.now(timezone.utc).strftime("%Y-%m-%d")
+    # Run date: America/New_York date at invocation time (not UTC)
+    # A UTC Wednesday 02:00 is still Tuesday ET, so the phase folder must be ET-dated.
+    run_date = datetime.now(ZoneInfo("America/New_York")).strftime("%Y-%m-%d")
 
     # Repo root: parent of src/ (where alembic and worker must run from)
     repo_root = Path(__file__).resolve().parent.parent
 
-    # Validate settings BEFORE planning (fail-closed, no wasted planning on unsafe env)
+    # Force child environment: TRADING_MODE=PAPER, EXECUTION_MODE=quant_only,
+    # TELEGRAM_BOT_TOKEN="", TELEGRAM_CHAT_ID="". This is the F2 dotenv-precedence
+    # fix from outputs/research/REVIEW_vps_boston_mirror_2026-08-10.md: env vars
+    # override .env, so forcing these empty in os.environ before get_settings()
+    # guarantees the child processes cannot leak credentials from a leftover .env.
+    os.environ.setdefault("TRADING_MODE", "PAPER")
+    os.environ.setdefault("EXECUTION_MODE", "quant_only")
+    os.environ["TELEGRAM_BOT_TOKEN"] = ""
+    os.environ["TELEGRAM_CHAT_ID"] = ""
+
+    # Validate settings AFTER forcing the env, so a leftover dotenv token still fails
     print("Validating settings (fail-closed)...")
     validated_settings = _validate_settings_fail_closed()
     print("Settings OK:", json.dumps(validated_settings, indent=2))
@@ -279,12 +295,35 @@ def main() -> None:
     phase_dir = Path(plan["phase_dir"])
     phase_dir.mkdir(parents=True, exist_ok=True)
 
+    # Stamp git SHA (the app already does this in src/governance/artifacts.py)
+    git_sha = "(unknown)"
+    try:
+        git_result = subprocess.run(
+            ["git", "rev-parse", "--short", "HEAD"],
+            cwd=repo_root,
+            capture_output=True,
+            text=True,
+            check=False,
+        )
+        if git_result.returncode == 0:
+            git_sha = git_result.stdout.strip()
+    except Exception:  # noqa: BLE001, S110
+        pass
+
+    # Prepare child env: copy current env, ensure forced values
+    child_env = os.environ.copy()
+    child_env["TRADING_MODE"] = "PAPER"
+    child_env["EXECUTION_MODE"] = "quant_only"
+    child_env["TELEGRAM_BOT_TOKEN"] = ""
+    child_env["TELEGRAM_CHAT_ID"] = ""
+
     run_meta = {
         "phase": args.phase,
         "run_date": run_date,
         "invoked_at": _iso_now(),
         "out_root": str(out_root),
         "repo_root": str(repo_root),
+        "git_sha": git_sha,
         "validated_settings": validated_settings,
         "steps": [],
     }
@@ -296,6 +335,7 @@ def main() -> None:
             cmd=step_def["command"],
             log_file=Path(step_def["log_file"]),
             cwd=Path(step_def["cwd"]),
+            env=child_env,
         )
         run_meta["steps"].append(step_result)
         if step_result["exit_code"] != 0:
@@ -306,6 +346,18 @@ def main() -> None:
     run_meta["success"] = failed_step is None
     if failed_step:
         run_meta["failed_step"] = failed_step
+
+    # Stamp dashboard_sha256 if the export succeeded
+    dashboard_path = phase_dir / "dashboard-data.json"
+    if dashboard_path.exists():
+        try:
+            with dashboard_path.open("rb") as f:
+                dashboard_sha256 = hashlib.sha256(f.read()).hexdigest()
+            run_meta["dashboard_sha256"] = dashboard_sha256
+        except Exception:  # noqa: BLE001
+            run_meta["dashboard_sha256"] = None
+    else:
+        run_meta["dashboard_sha256"] = None
 
     # Write run-meta.json
     meta_path = phase_dir / "run-meta.json"
