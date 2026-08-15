@@ -208,7 +208,12 @@ def _apply_wr_haircut(trades: list[Trade], target_wr: float) -> list[Trade]:
     if n_demote <= 0:
         return trades
 
-    losses = [t.pnl_pct for t in trades if t.pnl_pct <= 0]
+    # Strictly < 0: an exact-breakeven exit is not a loss, and letting a cluster
+    # of flat exits into this pool drags the median toward zero — a milder form
+    # of the same optimistic bias this function was just fixed for. Breakevens
+    # still count in len(trades) for the target rate; they just don't define
+    # what a typical loss looks like.
+    losses = [t.pnl_pct for t in trades if t.pnl_pct < 0]
     if losses:
         demoted_pnl = float(median(losses))  # already negative
     else:
