@@ -61,7 +61,7 @@ from src.validation.stage_validator import (
 # from src.signals.breakout import score_breakout
 from src.signals.mean_reversion import score_mean_reversion
 # from src.signals.catalyst import score_catalyst  # disabled: unproven, sparse data
-from src.signals.veto import apply_veto_layer, VETO_EXTENDED, VETO_DILUTION, VETO_DATA_SANITY
+from src.signals.veto import apply_veto_layer
 from src.signals.ranker import (
     rank_candidates,
     deduplicate_signals,
@@ -1490,10 +1490,10 @@ async def _run_pipeline_core(
 
     # --- Step 5.5: Quality veto layer (pre-ranking) ---
     # Three look-ahead-safe vetoes: extended tape, dilution, data sanity.
-    # Shadow-only by default: marks candidates with veto_reason but keeps them
-    # in the stream for evidence collection (§0.4).
+    # Shadow mode (default): run vetoes, collect results, store in Signal.features.
+    # Do NOT remove from all_signals (they must rank/select to measure gate cost).
+    # Hard veto mode: remove vetoed signals before ranking.
     veto_results = []
-    veto_reasons_by_ticker: dict[str, str] = {}  # ticker -> veto_reason for shadow persist
     if settings.quality_veto_enabled:
         logger.info("Step 5.5: Applying quality veto layer (shadow_only=%s)...", settings.quality_veto_shadow_only)
         # Build fundamental data dict by ticker for veto layer
@@ -1501,18 +1501,26 @@ async def _run_pipeline_core(
             ticker: features_by_ticker.get(ticker, {}).get("fundamental", {})
             for ticker in {sig.ticker for sig in all_signals}
         }
+        # In hard veto mode, remove from all_signals. In shadow mode, keep them.
         all_signals, veto_results = apply_veto_layer(
             all_signals,
             price_data=price_data,
             fundamental_data_by_ticker=fundamental_data_by_ticker,
-            shadow_only=settings.quality_veto_shadow_only,
+            shadow_only=False if not settings.quality_veto_shadow_only else True,
         )
         vetoed_count = sum(1 for r in veto_results if r.vetoed)
-        # Track veto reasons by ticker for shadow persist downstream
-        veto_reasons_by_ticker = {
-            r.ticker: r.veto_reason
-            for r in veto_results if r.vetoed and r.veto_reason
-        }
+        # Store veto info in features for signals that have veto_reason attached
+        for sig in all_signals:
+            if hasattr(sig, 'veto_reason') and sig.veto_reason:
+                # Attach to features dict for persistence without changing official picks
+                if not hasattr(sig, 'components'):
+                    sig.components = {}
+                if not isinstance(sig.components, dict):
+                    sig.components = {}
+                sig.components['quality_veto'] = {
+                    'reason': sig.veto_reason,
+                    'vetoed': True,
+                }
         logger.info("Quality veto: %d/%d signals vetoed", vetoed_count, len(veto_results))
 
     # --- Step 6: Rank and select top candidates ---
@@ -2110,12 +2118,11 @@ async def _run_pipeline_core(
         from src.utils.trading_calendar import next_trading_day as _next_td
         next_entry_date = _next_td(today)
         for signal in new_signals:
-            # Determine skip_reason: validation shadow or veto shadow
+            # Determine skip_reason: validation shadow only.
+            # Vetoed picks in shadow mode do NOT get skip_reason set (they're official picks).
             skip_reason = None
             if signal in _shadow_signal_objs:
                 skip_reason = SHADOW_SKIP_REASON
-            elif signal.ticker in veto_reasons_by_ticker:
-                skip_reason = veto_reasons_by_ticker[signal.ticker]
 
             outcome = Outcome(
                 signal_id=signal.id,
@@ -2133,16 +2140,8 @@ async def _run_pipeline_core(
                 len(_shadow_signal_objs),
                 ",".join(sorted(s.ticker for s in _shadow_signal_objs)),
             )
-        if veto_reasons_by_ticker:
-            vetoed_tickers = [
-                f"{t}({r})" for t, r in sorted(veto_reasons_by_ticker.items())
-            ]
-            logger.warning(
-                "Shadow-booked %d quality-vetoed pick(s): %s — tracked for veto "
-                "cost measurement, excluded from all performance stats",
-                len(veto_reasons_by_ticker),
-                ",".join(vetoed_tickers),
-            )
+        # Vetoed picks in shadow mode are NOT shadow-booked — they're official picks
+        # with quality_veto info in Signal.features. No skip_reason, no separate persist.
 
         # Save agent logs
         for log in pipeline_result.agent_logs:
