@@ -2,7 +2,9 @@
 
 ## Status
 
-**PRE-REGISTERED — committed 2026-08-15, before the measurement lane produced its first scheduled results.**
+**PRE-REGISTERED — committed 2026-08-16, before the measurement lane produced its first scheduled results.**
+
+Verify rather than trust this line: `git log --format='%h %ad %s' --date=iso -- docs/paper_sleeve_acceptance_criteria.md`. The earliest commit touching this file must precede **2026-08-17 21:35Z**, the afternoon lane's first scheduled run. If it does not, this document is not a pre-registration and should not be treated as one.
 
 The afternoon mark-to-market lane (Hermes job `94022cc9cad0`, `35 21 * * 1-5` UTC) first runs **Monday 2026-08-17 21:35Z**. Everything below was written while the paper book held **four closed trades total**, which is a smoke test and not evidence. The commit timestamp is the point: a bar written after the numbers exist is not a bar.
 
