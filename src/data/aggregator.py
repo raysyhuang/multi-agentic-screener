@@ -67,6 +67,10 @@ class DataAggregator:
         self.yfinance = YFinanceClient()
         self.fred = FREDClient(api_key=settings.fred_api_key or None)
         self.mcp = MCPClient() if settings.mcp_enabled else None
+        # None once a fetch has succeeded; an exception CLASS NAME if it failed.
+        # Starts as "never attempted" so an unfetched calendar is not mistaken
+        # for a healthy one.
+        self.last_earnings_fetch_error: str | None = "not_attempted"
         self._semaphore = asyncio.Semaphore(MAX_CONCURRENCY)
         self._cache = DataCache()
         self._cache_enabled = True
@@ -739,7 +743,14 @@ class DataAggregator:
         self._macro_cache_hit = True
 
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
-        """Earnings calendar for catalyst detection."""
+        """Earnings calendar for catalyst detection.
+
+        Sets `last_earnings_fetch_error` so callers can tell a PROVIDER FAILURE
+        apart from a genuinely empty calendar. Both return `[]`, and the
+        earnings blackout fails open, so collapsing them means a dead feed and a
+        quiet week are the same observation — which is precisely why the old
+        coverage warning could not detect a broken feed.
+        """
         from_date = date.today()
         to_date = from_date + timedelta(days=days_ahead)
 
@@ -750,14 +761,48 @@ class DataAggregator:
             )
             cached = self._cache.get(key)
             if cached is not None:
-                return json.loads(cached)
+                # A cache entry is untrusted input. Decoding it unguarded meant a
+                # corrupt row raised straight out of this method — crashing the
+                # run AND leaving last_earnings_fetch_error set to None, i.e.
+                # reporting a healthy feed while the pipeline failed closed.
+                # Shape is validated too: a decoded dict or string would sail
+                # past a bare json.loads and only fail much later, far from the
+                # cause. Malformed cache degrades to a cache MISS so the run can
+                # still get a real answer from the provider.
+                try:
+                    decoded = json.loads(cached)
+                except (ValueError, TypeError):
+                    logger.warning(
+                        "Earnings calendar cache entry is malformed JSON — "
+                        "treating as a cache miss and refetching"
+                    )
+                    decoded = None
+                if isinstance(decoded, list):
+                    self.last_earnings_fetch_error = None
+                    return decoded
+                if decoded is not None:
+                    logger.warning(
+                        "Earnings calendar cache decoded to %s, expected list — "
+                        "treating as a cache miss and refetching",
+                        type(decoded).__name__,
+                    )
 
         try:
             result = await self.fmp.get_earnings_calendar(from_date, to_date)
+            if not isinstance(result, list):
+                # The provider answered with something unusable. Not a valid
+                # empty calendar, so it must not be reported as a healthy feed.
+                self.last_earnings_fetch_error = "MalformedProviderPayload"
+                logger.warning("Earnings calendar payload was %s, expected list",
+                               type(result).__name__)
+                return []
+            self.last_earnings_fetch_error = None
             if self._cache_enabled and result:
                 self._cache.put(key, json.dumps(result), TTL_EARNINGS_CALENDAR, source="fmp", endpoint="earnings_calendar")
             return result
         except Exception as e:
+            # Class name only — exception text has carried a full DSN before.
+            self.last_earnings_fetch_error = type(e).__name__
             logger.warning("Earnings calendar failed: %s", e)
             return []
 

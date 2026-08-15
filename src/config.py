@@ -83,7 +83,35 @@ class Settings(BaseSettings):
     # additionally skips names reporting within its hold window (mid-hold gap
     # risk). If calendar coverage falls below this fraction, pipeline-health WARNs
     # so a broken earnings feed can't silently disable the blackout.
+    # DEPRECATED, no longer gates anything. It compared "fraction of the
+    # qualified universe with a known earnings date" against 15%, but the
+    # calendar is fetched only 14 days ahead, so a name reporting in 3 weeks
+    # correctly has no date and was counted as missing coverage. Measured
+    # against a live-shaped universe on 2026-08-13, the CEILING at a 14-day
+    # window was 6.9% — the gate could not pass, and warned on 4+ consecutive
+    # runs. Worse, a genuinely dead feed (0%) and a healthy off-season (7%) both
+    # sit below 15%, so the alarm was already on in both states and could not
+    # distinguish them. Retained only so existing env overrides do not break.
     earnings_coverage_min_pct: float = 0.15
+
+    # What the check above was actually for: catching a feed that has stopped
+    # returning data, which silently disables the fail-open blackout.
+    #
+    # The PRIMARY signals are qualitative and need no calibration — the fetch
+    # either succeeded or it did not, and the calendar either returned rows or
+    # it did not. This floor is only a secondary tripwire for a partially
+    # degraded feed.
+    #
+    # Evidence (measured 2026-08-13 against the live FMP screener params):
+    #   +14d window -> 2,272 distinct symbols reporting
+    #   +30d        -> 3,094
+    #   +90d        -> 3,998
+    # A healthy 14-day calendar therefore returns thousands of rows; a broken
+    # one returns zero. 100 sits an order of magnitude below the observed
+    # healthy value and an order above dead, so it cannot fire seasonally the
+    # way the 15% coverage gate did. It is deliberately NOT fitted to the
+    # observation — only placed far from both failure modes.
+    earnings_calendar_min_entries: int = 100
 
     # --- Phase 2: Win-Rate Lift ---
     weekly_trend_gate_enabled: bool = False   # require close > 150-day SMA (30-week proxy)

@@ -987,6 +987,10 @@ async def _run_pipeline_core(
     logger.info("Step 4: Computing features for %d tickers...", len(qualified_tickers))
     features_by_ticker = {}
     earnings_calendar = await aggregator.get_upcoming_earnings()
+    # Captured HERE, while the aggregator is alive. It is closed at Step 4 and
+    # the health check that consumes this runs ~350 lines later — reading it
+    # there is precisely the dereference that took the book dark in #64.
+    earnings_fetch_error = aggregator.last_earnings_fetch_error
 
     # Phase 1: compute technical features for all qualified tickers.
     for ticker in qualified_tickers:
@@ -1332,32 +1336,74 @@ async def _run_pipeline_core(
 
     logger.info("Generated %d raw signals", len(all_signals))
 
-    # Earnings-blackout coverage health: the blackout fails open, so if the
-    # earnings feed is broken/sparse it silently stops protecting picks. Surface
-    # low coverage as a WARN (not a silent pass) so a broken FMP secret can't
-    # disable the blackout unnoticed again. sniper_skips = names sniper avoided
-    # because earnings fell within its hold window (the mid-hold gap fix).
+    # Earnings-feed health. The blackout fails open, so a feed that stops
+    # returning data silently stops protecting picks — that is the failure this
+    # guards, and it is now measured DIRECTLY as the size of the calendar the
+    # run actually received.
+    #
+    # The previous check inferred it from "fraction of the qualified universe
+    # with a known earnings date" against a 15% floor. That could not work: the
+    # calendar is fetched 14 days ahead, so a name reporting in three weeks
+    # correctly has no date and counted as missing coverage. Against a
+    # live-shaped universe on 2026-08-13 the CEILING at 14 days was 6.9%, so the
+    # gate was unreachable and warned on four consecutive runs. And because a
+    # dead feed (0%) and a healthy off-season (7%) both sit under 15%, the alarm
+    # was already on in both states — an alarm that never turns off cannot
+    # report anything.
+    #
+    # The 14-day window is NOT widened: the global blackout needs 2 days of
+    # notice and sniper's hold-aware gate needs 7, so 14 already covers both
+    # with a week to spare. Widening would raise the old metric while changing
+    # nothing about protection.
+    # Three separable facts, because "no earnings dates" has three causes and
+    # only two of them are faults:
+    #   fetch_ok    the provider answered at all      (False = provider failure)
+    #   rows        entries the calendar returned     (0 = feed dead or empty)
+    #   match_rate  qualified names inside the window (SEASONAL — diagnostic)
+    _cal_fetch_ok = earnings_fetch_error is None
+    _cal_entries = len(earnings_calendar or [])
     _cov = earnings_covered / earnings_total if earnings_total else 0.0
+    _feed_ok = (
+        _cal_fetch_ok
+        and _cal_entries > 0
+        and _cal_entries >= settings.earnings_calendar_min_entries
+    )
     _blackout_stage = StageValidation(stage_name="earnings_blackout", executed=True)
-    _blackout_ok = _cov >= settings.earnings_coverage_min_pct
     _blackout_stage.checks.append(StageCheck(
-        name="earnings_coverage",
-        passed=_blackout_ok,
+        name="earnings_feed_alive",
+        passed=_feed_ok,
         severity=Severity.WARN,
         message=(
-            f"Earnings-calendar coverage {_cov:.0%} ({earnings_covered}/{earnings_total}) "
-            f"below {settings.earnings_coverage_min_pct:.0%} — blackout fails OPEN for "
-            f"uncovered names; earnings gappers may leak into picks"
-            if not _blackout_ok else
-            f"Earnings coverage {_cov:.0%}; sniper skipped {sniper_earnings_skips} mid-hold-earnings names"
+            (f"Earnings calendar FETCH FAILED ({earnings_fetch_error}) — "
+             if not _cal_fetch_ok else
+             f"Earnings calendar returned {_cal_entries} entries, below "
+             f"{settings.earnings_calendar_min_entries} — ")
+            + "the feed looks broken and the blackout FAILS OPEN, so earnings "
+              "gappers may leak into picks"
+            if not _feed_ok else
+            f"Earnings calendar healthy ({_cal_entries} entries); {earnings_covered} of "
+            f"{earnings_total} qualified names report within the window; sniper skipped "
+            f"{sniper_earnings_skips} mid-hold-earnings names"
         ),
-        value={"coverage": round(_cov, 3), "covered": earnings_covered,
-               "total": earnings_total, "sniper_earnings_skips": sniper_earnings_skips},
+        value={"calendar_fetch_succeeded": _cal_fetch_ok,
+               "calendar_fetch_error": earnings_fetch_error,
+               "calendar_entries": _cal_entries,
+               # Reported as a DIAGNOSTIC, never gated: it tracks the earnings
+               # season, not feed health, and is expected to sit near 7% between
+               # seasons.
+               "window_coverage_diagnostic": round(_cov, 3),
+               "covered": earnings_covered, "total": earnings_total,
+               "sniper_earnings_skips": sniper_earnings_skips},
     ))
     pipeline_health.add_stage(_blackout_stage)
-    if not _blackout_ok:
-        logger.warning("Earnings-blackout coverage LOW: %.0f%% (%d/%d) — blackout "
-                       "fails open for the rest", _cov * 100, earnings_covered, earnings_total)
+    if not _feed_ok:
+        logger.warning("Earnings feed UNHEALTHY: fetch_ok=%s entries=%d (< %d) "
+                       "error=%s — blackout fails open", _cal_fetch_ok, _cal_entries,
+                       settings.earnings_calendar_min_entries, earnings_fetch_error)
+    else:
+        logger.info("Earnings feed healthy: %d calendar entries; %d/%d qualified names "
+                    "report within the window (seasonal, not a health metric)",
+                    _cal_entries, earnings_covered, earnings_total)
 
     # Propagate data quality flags to signals
     for sig in all_signals:

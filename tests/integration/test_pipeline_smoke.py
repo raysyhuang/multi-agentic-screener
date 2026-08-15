@@ -120,6 +120,11 @@ class FakeAggregator:
     async def get_upcoming_earnings(self, days_ahead: int = 14) -> list[dict]:
         return []
 
+    # Mirrors the real aggregator: the pipeline reads this immediately after
+    # the fetch to tell a provider failure from an empty calendar. Omitting it
+    # would AttributeError on every run — the #64 shape exactly.
+    last_earnings_fetch_error: str | None = None
+
     def get_fmp_budget_status(self) -> dict:
         return {
             "date": str(date.today()), "calls_used": 0, "daily_budget": 750,
