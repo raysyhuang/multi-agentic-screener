@@ -196,3 +196,35 @@ def test_exclusion_threshold_check():
     exclusion_pct = (m_cap3["skipped"] / len(trades)) * 100.0
     # With 100 consecutive daily 20-day holds, cap=3 should skip many (>30%).
     assert exclusion_pct > 30.0  # This would trigger the kill note.
+
+
+def test_weekly_plus_slot_cap_skips_more():
+    """Weekly pre-filter + slot cap together skip more than either alone (§2.6 grid)."""
+    # 50 consecutive daily 20-day trades (stacked earnings season).
+    trades = synthetic_overlapping_trades(n=50, start=date(2023, 1, 1), hold_days=20)
+    
+    # Baseline: no filters, uncapped.
+    m_uncap = compute_metrics(to_book_trades(trades), max_concurrent=None)
+    assert m_uncap["taken"] == 50
+    assert m_uncap["skipped"] == 0
+    
+    # Weekly filter only (max 2/week), uncapped replay.
+    filtered_weekly = filter_weekly_entry_limit(trades, max_per_week=2)
+    m_weekly_uncap = compute_metrics(to_book_trades(filtered_weekly), max_concurrent=None)
+    weekly_only_skipped = len(trades) - len(filtered_weekly)
+    assert weekly_only_skipped > 0  # Some trades dropped by weekly filter.
+    
+    # Slot cap only (cap=3), no pre-filter.
+    m_slot_only = compute_metrics(to_book_trades(trades), max_concurrent=3)
+    slot_only_skipped = m_slot_only["skipped"]
+    assert slot_only_skipped > 0  # Some trades skipped by slot cap.
+    
+    # Weekly filter + slot cap (combined).
+    m_combined = compute_metrics(to_book_trades(filtered_weekly), max_concurrent=3)
+    combined_skipped = weekly_only_skipped + m_combined["skipped"]
+    
+    # Combined should skip more than either alone (or equal if both bind fully).
+    assert combined_skipped >= weekly_only_skipped
+    assert combined_skipped >= slot_only_skipped
+    # At least one should be strictly greater (both filters add restrictions).
+    assert combined_skipped > weekly_only_skipped or combined_skipped > slot_only_skipped

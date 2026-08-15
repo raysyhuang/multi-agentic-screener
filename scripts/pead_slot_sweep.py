@@ -9,10 +9,12 @@ necessary to keep PEAD from becoming the book's largest exposure.
 
 Questions:
 1. Peak concurrent open PEAD positions when uncapped (20-day holds)?
-2. At open-slot caps {3, 5, 8, uncapped}, what are taken/skipped/peak/return/maxDD?
-3. At max-entries-per-week {2, 3, 5} (pre-filter, then replayed), same metrics.
-4. Optional: sector cap (max 2 same-sector concurrently) if sector available.
-5. Pre-registered kill note: if a cap would exclude >30% of the backtest cohort,
+2. At open-slot caps {3, 5, 8, 10, uncapped}, what are taken/skipped/peak/return/maxDD?
+   (10 is the live pead_max_concurrent on main; include for ranking vs shipping default.)
+3. Crossed grid (§2.6): max-entries-per-week {2, 3, 5} × sector cap {None, 2} ×
+   slot caps {3, 5, 8, 10, uncapped}. Weekly/sector are PRE-FILTERS on the trade
+   list, then replayed through capped-equity sim at each slot cap.
+4. Pre-registered kill note: if a cap would exclude >30% of the backtest cohort,
    write that the 30-trade promotion clock restarts under that cap (§0.2).
 
 Relative arms only (same lesson as sniper_pick_count): the comparison is
@@ -28,7 +30,6 @@ from __future__ import annotations
 
 import argparse
 import sys
-from collections import Counter
 from datetime import date, timedelta
 from pathlib import Path
 
@@ -179,13 +180,13 @@ def main() -> None:
     print_row("uncapped", len(records), m_uncap)
     print()
 
-    # 2. Open-slot cap sweep.
+    # 2. Open-slot cap sweep (baseline: no pre-filters).
     print("=" * 95)
-    print("OPEN-SLOT CAP SWEEP — {3, 5, 8, uncapped}")
+    print("OPEN-SLOT CAP SWEEP — {3, 5, 8, 10, uncapped} (no pre-filters)")
     print("=" * 95)
     print(hdr)
     print("-" * 95)
-    caps = [3, 5, 8, None]
+    caps = [3, 5, 8, 10, None]
     results_cap = {}
     for cap in caps:
         label = "uncapped" if cap is None else f"cap={cap}"
@@ -195,7 +196,7 @@ def main() -> None:
     print()
 
     # Check 30% exclusion threshold (pre-registered kill note from §0.2).
-    for cap in [3, 5, 8]:
+    for cap in [3, 5, 8, 10]:
         m = results_cap[cap]
         exclusion_pct = (m["skipped"] / len(records)) * 100.0 if len(records) else 0
         if exclusion_pct > 30.0:
@@ -203,41 +204,51 @@ def main() -> None:
             print("   → would restart PEAD promotion clock; do NOT ship this cap")
     print()
 
-    # 3. Weekly entry limit sweep (pre-filter, then replay).
+    # 3. CROSSED GRID: weekly × sector × slot caps (§2.6 request).
+    # Check if sector data is available once.
+    _, sector_ok = filter_sector_cap(records, max_per_sector=2)
+    
     print("=" * 95)
-    print("MAX-ENTRIES-PER-WEEK SWEEP — {2, 3, 5} (pre-filter, then uncapped replay)")
+    print("CROSSED GRID — weekly {2,3,5} × sector × slot caps {3,5,8,10,uncapped} (§2.6)")
     print("=" * 95)
-    print(hdr)
-    print("-" * 95)
-    for weekly_limit in [2, 3, 5]:
-        filtered = filter_weekly_entry_limit(records, weekly_limit)
-        label = f"weekly_limit={weekly_limit}"
-        m = compute_metrics(to_book_trades(filtered), max_concurrent=None)
-        print_row(label, len(filtered), m)
-        exclusion_pct = ((len(records) - len(filtered)) / len(records)) * 100.0 if len(records) else 0
-        if exclusion_pct > 30.0:
-            print(f"   ⚠  excluded {exclusion_pct:.1f}% of cohort (>30% threshold)")
-    print()
-
-    # 4. Sector cap (optional — only if sector data is available).
-    print("=" * 95)
-    print("SECTOR CAP — max 2 same-sector concurrently (if sector available)")
-    print("=" * 95)
-    filtered_sector, sector_ok = filter_sector_cap(records, max_per_sector=2)
-    if not sector_ok:
-        print("sector column not available or incomplete (>50% null) — skipping")
-    else:
+    
+    # Grid: weekly limits (None = no limit), sector (if available), slot caps.
+    weekly_limits = [2, 3, 5]
+    sector_caps = [2] if sector_ok else []
+    slot_caps = [3, 5, 8, 10, None]
+    
+    # For each weekly limit (with and without sector cap if available):
+    for weekly in weekly_limits:
+        filtered_weekly = filter_weekly_entry_limit(records, weekly)
+        weekly_exclusion = ((len(records) - len(filtered_weekly)) / len(records)) * 100.0 if len(records) else 0
+        
+        # Weekly only (no sector cap).
+        print(f"\nWeekly limit = {weekly} (no sector cap)")
+        print(f"  pre-filter: {len(filtered_weekly)}/{len(records)} trades "
+              f"({weekly_exclusion:.1f}% excluded)")
         print(hdr)
         print("-" * 95)
-        m_sector = compute_metrics(to_book_trades(filtered_sector), max_concurrent=None)
-        print_row("sector_cap=2", len(filtered_sector), m_sector)
-        exclusion_pct = ((len(records) - len(filtered_sector)) / len(records)) * 100.0 if len(records) else 0
-        if exclusion_pct > 30.0:
-            print(f"   ⚠  excluded {exclusion_pct:.1f}% of cohort (>30% threshold)")
-        # Show sector distribution of filtered trades.
-        sectors = [r.get("sector", "UNKNOWN") for r in filtered_sector]
-        sector_counts = Counter(sectors).most_common(8)
-        print(f"\n   top sectors: {', '.join(f'{s}={c}' for s, c in sector_counts)}")
+        for cap in slot_caps:
+            label = f"  slot={'∞' if cap is None else cap}"
+            m = compute_metrics(to_book_trades(filtered_weekly), max_concurrent=cap)
+            print_row(label, len(filtered_weekly), m)
+        
+        # Weekly + sector cap (if sector available).
+        if sector_ok:
+            filtered_weekly_sector, _ = filter_sector_cap(filtered_weekly, max_per_sector=2)
+            combined_exclusion = ((len(records) - len(filtered_weekly_sector)) / len(records)) * 100.0 if len(records) else 0
+            print(f"\nWeekly limit = {weekly} + sector cap = 2")
+            print(f"  pre-filter: {len(filtered_weekly_sector)}/{len(records)} trades "
+                  f"({combined_exclusion:.1f}% excluded)")
+            print(hdr)
+            print("-" * 95)
+            for cap in slot_caps:
+                label = f"  slot={'∞' if cap is None else cap}"
+                m = compute_metrics(to_book_trades(filtered_weekly_sector), max_concurrent=cap)
+                print_row(label, len(filtered_weekly_sector), m)
+    
+    if not sector_ok:
+        print("\n(sector cap grid skipped: sector column not available or >50% null)")
     print()
 
     # 5. Summary verdict.

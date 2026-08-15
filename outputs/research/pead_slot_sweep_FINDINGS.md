@@ -1,4 +1,4 @@
-# PEAD concurrency + entry-limit sweep — research-only (2026-08-15)
+# PEAD concurrency + entry-limit sweep — harness + synthetic lock only (2026-08-15)
 
 Pre-registered in STRATEGY_REVIEW_2026-08 §0.2 and §2.6. Follow-up to
 `pead_FINDINGS.md`, which found mid-third concurrency-capped equity lost
@@ -7,8 +7,11 @@ that 13 PEAD positions were open on 2026-08-06 against a "cap" of 5 (which is
 actually a per-run pick quota). With 20-day untrailed holds (since PR #43),
 earnings-season clustering can make PEAD the book's largest exposure.
 
+**This PR delivers the HARNESS and SYNTHETIC LOCK. §0.2 and §2.6 remain open
+until a real PEAD trade list is run on a checkout that has the cache.**
+
 Script: `scripts/pead_slot_sweep.py`. Tests: `tests/test_pead_slot_sweep.py`
-(pass in CI without data files). Same lesson as `sniper_pick_count_FINDINGS.md`:
+(15 tests, all pass in CI without data files). Same lesson as `sniper_pick_count_FINDINGS.md`:
 the comparison is capital-aware compounded return vs summed per-trade P&L.
 
 ## Question
@@ -16,10 +19,12 @@ the comparison is capital-aware compounded return vs summed per-trade P&L.
 On a PEAD trade list, after capital is real (slots, not summed per-trade P&L):
 
 1. What is peak concurrent open PEAD when uncapped (20-day holds)?
-2. At open-slot caps {3, 5, 8, uncapped}, what are taken/skipped/peak/return/maxDD?
-3. At max-entries-per-week {2, 3, 5} (pre-filter, then replayed), same metrics?
-4. Optional: sector cap (max 2 same-sector concurrently) if sector available?
-5. Pre-registered kill note (§0.2): if a cap would exclude >30% of the backtest
+2. At open-slot caps {3, 5, 8, 10, uncapped}, what are taken/skipped/peak/return/maxDD?
+   (10 is the live `pead_max_concurrent` on main; include for ranking vs shipping default.)
+3. Crossed grid (§2.6): max-entries-per-week {2, 3, 5} × sector cap {None, 2} ×
+   slot caps {3, 5, 8, 10, uncapped}. Weekly/sector are PRE-FILTERS on the trade
+   list, then replayed through capped-equity sim at each slot cap.
+4. Pre-registered kill note (§0.2): if a cap would exclude >30% of the backtest
    cohort, write that the 30-trade promotion clock restarts under that cap.
 
 ## Method
@@ -37,8 +42,10 @@ cache:
 - `test_sector_cap_binds`: max 2 per sector concurrently pre-filters by sector.
 - `test_exclusion_threshold_check`: cap=3 on 100 consecutive 20-day trades
   excludes >30% (triggers the kill note).
+- `test_weekly_plus_slot_cap_skips_more`: weekly pre-filter + slot cap together
+  skip more than either alone (§2.6 grid mechanism).
 
-All 14 unit tests pass in CI without data files (verified 2026-08-15).
+All 15 unit tests pass in CI without data files (verified 2026-08-15).
 
 ## Results
 
@@ -71,8 +78,11 @@ The mechanism is locked:
 Once real cohort data is available, the sweep will answer:
 
 1. **Peak concurrent uncapped**: how many PEAD positions stack in earnings season?
-2. **Open-slot cap {3, 5, 8}**: which balances skipped-signal cost vs book exposure?
-3. **Weekly entry limit {2, 3, 5}**: does a pre-filter flatten the peak without
+2. **Open-slot cap {3, 5, 8, 10}**: which balances skipped-signal cost vs book
+   exposure? (10 is the current live `pead_max_concurrent` on main.)
+3. **Crossed grid (§2.6)**: for each weekly limit {2, 3, 5} and sector cap
+   {None, 2}, what are the taken/skipped/peak/return/maxDD at slot caps
+   {3, 5, 8, 10, uncapped}? Does a weekly pre-filter flatten the peak without
    dropping >30% of the cohort (which would restart the 30-trade promotion clock)?
 4. **Sector cap**: if sector data is available, does max 2 per sector keep
    PEAD from becoming a single-sector bet?
