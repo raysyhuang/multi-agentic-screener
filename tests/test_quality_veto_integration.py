@@ -1,61 +1,111 @@
-"""Integration test: prove official approved set unchanged in shadow mode.
+"""Integration test: prove shadow mode stores veto in components, not skip_reason.
 
-This test simulates the pipeline flow after veto layer runs, proving that
-vetoed signals in shadow mode do NOT change pipeline_result.approved.
+Tests the actual veto layer with real signals to verify:
+1. Shadow mode: vetoed signals stay in list, veto info in components
+2. Hard mode: vetoed signals removed from list
 """
 
 from __future__ import annotations
 
-from dataclasses import dataclass
+import pandas as pd
+
+from src.signals.veto import apply_veto_layer
 
 
-@dataclass
-class MockApprovedPick:
-    """Minimal mock of an approved pick with ticker."""
+def test_shadow_mode_stores_veto_in_components():
+    """Shadow mode: vetoed signal stays in list with veto info in components."""
+    # Build mock signals with components dict
+    class MockSignal:
+        def __init__(self, ticker):
+            self.ticker = ticker
+            self.components = {}
 
-    ticker: str
-    signal_model: str = "mean_reversion"
+    sig_clean = MockSignal("CLEAN")
+    sig_extended = MockSignal("EXTENDED")
+
+    # Build OHLCV: EXTENDED at 20-day high, CLEAN mid-range
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
+    df_extended = pd.DataFrame({
+        "date": dates,
+        "open": [100.0] * 40,
+        "high": [100.5] * 40,
+        "low": [99.0] * 40,
+        "close": [100.5] * 40,  # At high
+        "volume": [1_000_000] * 40,
+    })
+    df_clean = pd.DataFrame({
+        "date": dates,
+        "open": [100.0] * 40,
+        "high": [110.0] * 40,
+        "low": [90.0] * 40,
+        "close": [95.0] * 40,  # Mid-range
+        "volume": [1_000_000] * 40,
+    })
+
+    price_data = {"EXTENDED": df_extended, "CLEAN": df_clean}
+
+    # Run apply_veto_layer in shadow mode
+    signals, _ = apply_veto_layer(
+        [sig_clean, sig_extended],
+        price_data=price_data,
+        fundamental_data_by_ticker={},
+        shadow_only=True,
+    )
+
+    # Both signals stay in list (shadow mode)
+    assert len(signals) == 2
+    tickers = [s.ticker for s in signals]
+    assert "CLEAN" in tickers
+    assert "EXTENDED" in tickers
+
+    # Vetoed signal has veto_reason attached
+    extended_sig = next(s for s in signals if s.ticker == "EXTENDED")
+    assert hasattr(extended_sig, 'veto_reason')
+    assert extended_sig.veto_reason == "veto_extended"
+
+    # Clean signal has no veto_reason
+    clean_sig = next(s for s in signals if s.ticker == "CLEAN")
+    assert not hasattr(clean_sig, 'veto_reason') or clean_sig.veto_reason is None
 
 
-def test_shadow_mode_does_not_change_approved_set():
-    """Shadow mode: vetoed picks stay in approved, veto info goes to features."""
-    # Simulate approved list with one vetoed ticker
-    approved_before = [
-        MockApprovedPick("CLEAN"),
-        MockApprovedPick("VETOED"),  # This one has veto_reason
-        MockApprovedPick("ALSO_CLEAN"),
-    ]
+def test_hard_veto_mode_removes_from_list():
+    """Hard veto mode: vetoed signal removed from list."""
+    class MockSignal:
+        def __init__(self, ticker):
+            self.ticker = ticker
+            self.components = {}
 
-    # Simulate veto results (VETOED was flagged)
-    veto_info = {"VETOED": "veto_extended"}
+    sig_clean = MockSignal("CLEAN")
+    sig_extended = MockSignal("EXTENDED")
 
-    # Shadow mode logic: do NOT remove from approved
-    # (This is what main.py should do after Step 5.5)
-    approved_after = list(approved_before)  # Keep all picks
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
+    df_extended = pd.DataFrame({
+        "date": dates,
+        "open": [100.0] * 40,
+        "high": [100.5] * 40,
+        "low": [99.0] * 40,
+        "close": [100.5] * 40,
+        "volume": [1_000_000] * 40,
+    })
+    df_clean = pd.DataFrame({
+        "date": dates,
+        "open": [100.0] * 40,
+        "high": [110.0] * 40,
+        "low": [90.0] * 40,
+        "close": [95.0] * 40,
+        "volume": [1_000_000] * 40,
+    })
 
-    # Verify approved set unchanged
-    assert len(approved_after) == len(approved_before)
-    assert [p.ticker for p in approved_after] == ["CLEAN", "VETOED", "ALSO_CLEAN"]
+    price_data = {"EXTENDED": df_extended, "CLEAN": df_clean}
 
-    # In production, VETOED pick would have quality_veto in Signal.features,
-    # but skip_reason stays None (official pick).
-    # This test proves the list itself is unchanged.
+    # Run apply_veto_layer in hard veto mode
+    signals, _ = apply_veto_layer(
+        [sig_clean, sig_extended],
+        price_data=price_data,
+        fundamental_data_by_ticker={},
+        shadow_only=False,
+    )
 
-
-def test_hard_veto_mode_does_remove_from_approved():
-    """Hard veto mode (not default): vetoed picks removed from approved."""
-    approved_before = [
-        MockApprovedPick("CLEAN"),
-        MockApprovedPick("VETOED"),
-        MockApprovedPick("ALSO_CLEAN"),
-    ]
-
-    veto_info = {"VETOED": "veto_extended"}
-
-    # Hard veto mode logic: remove vetoed picks
-    # (This would happen at Step 5.5 via apply_veto_layer with shadow_only=False)
-    approved_after = [p for p in approved_before if p.ticker not in veto_info]
-
-    # Verify vetoed pick removed
-    assert len(approved_after) == 2
-    assert [p.ticker for p in approved_after] == ["CLEAN", "ALSO_CLEAN"]
+    # Only clean signal remains (hard veto removed EXTENDED)
+    assert len(signals) == 1
+    assert signals[0].ticker == "CLEAN"

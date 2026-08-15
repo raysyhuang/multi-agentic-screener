@@ -123,8 +123,8 @@ def veto_extended_tape(
 
         return VetoResult(ticker=ticker, vetoed=False)
 
-    except Exception as e:
-        # Fail open on any computation error
+    except Exception as e:  # noqa: BLE001
+        # Fail open on any computation error (intentional broad catch)
         logger.warning("Extended veto: %s failed open (error: %s)", ticker, e)
         return VetoResult(ticker=ticker, vetoed=False)
 

@@ -12,21 +12,18 @@ These tests use synthetic data only (no network, no parquet) and verify that:
 from __future__ import annotations
 
 from dataclasses import dataclass
-from datetime import date, timedelta
 
 import pandas as pd
-import pytest
 
 from src.signals.veto import (
-    veto_extended_tape,
-    veto_dilution,
-    veto_data_sanity,
-    apply_veto_layer,
-    VETO_EXTENDED,
-    VETO_DILUTION,
     VETO_DATA_SANITY,
+    VETO_DILUTION,
+    VETO_EXTENDED,
+    apply_veto_layer,
+    veto_data_sanity,
+    veto_dilution,
+    veto_extended_tape,
 )
-
 
 # --- Synthetic signal object for testing ---
 
@@ -43,7 +40,7 @@ class MockSignal:
 def test_extended_veto_fires_at_20d_high():
     """Synthetic OHLCV: close pinned at 20-day high → veto fires."""
     # Create 40 days of data with close at $100
-    dates = pd.date_range(end=date.today(), periods=40, freq="D")
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
     df = pd.DataFrame({
         "date": dates,
         "open": [99.5] * 40,
@@ -63,7 +60,7 @@ def test_extended_veto_fires_at_20d_high():
 
 def test_extended_veto_does_not_fire_mid_range():
     """Synthetic OHLCV: close in mid-range → no veto."""
-    dates = pd.date_range(end=date.today(), periods=40, freq="D")
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
     df = pd.DataFrame({
         "date": dates,
         "open": [100.0] * 40,
@@ -80,7 +77,7 @@ def test_extended_veto_does_not_fire_mid_range():
 
 def test_extended_veto_fails_open_short_history():
     """Extended veto: short history (<20+14 bars) → fail open (no veto)."""
-    dates = pd.date_range(end=date.today(), periods=20, freq="D")  # Only 20 days
+    dates = pd.date_range(end="2024-12-31", periods=20, freq="D")  # Only 20 days
     df = pd.DataFrame({
         "date": dates,
         "open": [100.0] * 20,
@@ -225,7 +222,7 @@ def test_apply_veto_layer_shadow_mode():
     sig = MockSignal(ticker="EXTENDED", score=85.0)
     
     # OHLCV with close at 20-day high
-    dates = pd.date_range(end=date.today(), periods=40, freq="D")
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
     df_extended = pd.DataFrame({
         "date": dates,
         "open": [100.0] * 40,
@@ -261,7 +258,7 @@ def test_apply_veto_layer_hard_mode():
     sig = MockSignal(ticker="EXTENDED", score=85.0)
     
     # OHLCV with close at 20-day high
-    dates = pd.date_range(end=date.today(), periods=40, freq="D")
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
     df_extended = pd.DataFrame({
         "date": dates,
         "open": [100.0] * 40,
@@ -295,7 +292,7 @@ def test_apply_veto_layer_official_picks_unchanged_in_shadow_mode():
     sig_clean = MockSignal(ticker="CLEAN", score=90.0)
     sig_extended = MockSignal(ticker="EXTENDED", score=85.0)
 
-    dates = pd.date_range(end=date.today(), periods=40, freq="D")
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
     
     # CLEAN: mid-range close
     df_clean = pd.DataFrame({
@@ -326,7 +323,7 @@ def test_apply_veto_layer_official_picks_unchanged_in_shadow_mode():
         "EXTENDED": {},
     }
 
-    filtered, veto_results = apply_veto_layer(
+    filtered, _ = apply_veto_layer(
         [sig_clean, sig_extended],
         price_data=price_data,
         fundamental_data_by_ticker=fundamental_data_by_ticker,
@@ -352,7 +349,7 @@ def test_apply_veto_layer_multiple_vetoes():
     # This signal will trigger both extended and dilution vetoes
     sig = MockSignal(ticker="MULTI", score=85.0)
 
-    dates = pd.date_range(end=date.today(), periods=40, freq="D")
+    dates = pd.date_range(end="2024-12-31", periods=40, freq="D")
     df_extended = pd.DataFrame({
         "date": dates,
         "open": [100.0] * 40,
