@@ -10,6 +10,14 @@ The afternoon mark-to-market lane (Hermes job `94022cc9cad0`, `35 21 * * 1-5` UT
 
 **Any change to this document after 2026-08-17 must be a new commit with a stated reason, and must not be made while a decision is pending.** See [Amendment rule](#amendment-rule).
 
+## Scope
+
+This document governs **thresholds and decision rules for paper-sleeve results**. It is the single acceptance bar; there is no other.
+
+It does **not** authorize promotion to a live executor. Clearing Tier 2 makes a sleeve eligible for a promotion *discussion*, which still goes through the validation card and remains Ray's decision.
+
+`docs/paper_mirror_acceptance.md` (PR #89) covers **launcher operational acceptance** — did the afternoon lane run, did it stamp fills, did it avoid touching alpha-bearing code. That is a different question and a legitimate one. Any threshold or citation rule in that document is **superseded by this one**; two acceptance bars is how a result gets graded against whichever bar has no failure mode.
+
 ## Goal
 
 Define, in advance and numerically, what would make the paper sleeves worth promoting, worth continuing, or worth stopping — so that "is it working?" and "what counts as enough data?" cannot be renegotiated in the presence of results.
@@ -49,6 +57,8 @@ These exist so that `n` and "a valid week" are fixed before anyone wants them to
 
 **Closed trade.** An `outcome` row with `still_open = false` and non-null `pnl_pct`, whose `entry_date <= to_date`. Positions whose entry is in the future (the `to_date < entry_date` guard) are not trades and are not counted.
 
+> **A row with `pnl_pct: null` is not a trade and never enters any count.** This is stated explicitly because the retracted **85.7% win rate** was computed over exactly such rows — positions that had never resolved, in a book where `_evaluate_position` had never executed. A rate computed over unresolved rows is not a low-confidence estimate; it is not a measurement at all.
+
 **n.** Count of **countable** closed trades **per stream**. Never pooled across streams to reach a threshold.
 
 **Valid measurement day.** A scheduled afternoon run that produced a bundle with a non-null `dashboard_sha256` and exited zero.
@@ -73,6 +83,14 @@ The lane runs daily and `n` grows daily, but the CI is a fixed 95%. **Under repe
 
 Between those points the numbers may be *described* (see [Not quotable](#not-quotable)) but no Tier or Stop determination may be made. If a stream passes through an evaluation point without anyone looking, the next permitted look is the next point — not the day someone noticed.
 
+### Time dispersion — required alongside `n`, at every tier
+
+`n` alone is not a sample. Thirty trades entered inside one week are not thirty independent observations of anything; they are one week, sampled thirty times. This is the same clustering that makes the bootstrap CI optimistic (see [Known limitation](#known-limitation-of-the-ci--it-is-optimistic)), and it is the failure `n` by itself cannot detect.
+
+> **Every tier threshold additionally requires that the qualifying trades span ≥ 15 distinct trading days**, measured on `entry_date`.
+
+This is a **dispersion constraint on the existing threshold, not a second count threshold.** There is exactly one sample floor in this document — n = 30 — and it is the one anchored to `min_stat_trades` in the codebase. The dispersion requirement is adopted from the launcher acceptance draft (PR #89), which got this right and which the count-only version of this document got wrong.
+
 ### Tier 1 — First permissible read: **n ≥ 30 closed trades per stream**
 
 Inherited from `min_stat_trades = 30` (`src/backtest/validation_card.py:308`) and the `min_regime_trades = 30` veto floor from PR #40. The repo already refuses to let a cohort veto below 30; a paper sleeve should not get a weaker standard than a regime cohort.
@@ -93,6 +111,21 @@ Tier 2 makes a sleeve *eligible for a promotion discussion*, not promoted. Promo
 ### Tier 3 — Threshold/parameter claims: **n ≥ 100**
 
 Inherited from `min_threshold_trades = 100` (`validation_card.py:336`). Any claim of the form "threshold X is better than Y" needs 100 closed trades on that stream. Below that, parameter differences are noise — the repeated finding of this project is that no tunable parameter improves MR (score IC ≈ 0).
+
+## Comparators — the live books, not backtest bands
+
+"Beats zero" is a weak question. The useful one is **"does this reproduce the live book?"** Compare against **published live performance**, never against truth-matrix or backtest bands — the backtest universe is known-wrong for sniper (large-cap cache, median ATR% 2.28 against a floor of 5), so a paper sleeve beating a backtest band tells you nothing.
+
+| Book | Reported | As of |
+|---|---|---|
+| MAS-GH sniper (GitHub-hosted prod) | ~50% WR / **−0.97%** avg | reconciled through 2026-08-13 |
+| IBKR | ~42% WR / **−0.14%** avg | reconciled through 2026-08-13 |
+
+> ⚠️ **These conflict with the older recorded figure of sniper 50–57% WR / +0.74%/trade (2026-07-27) — opposite sign on average return.** The discrepancy is not resolved here and must not be resolved by picking the flattering one. **Before any comparison is made, the comparator must be re-derived from the reconciliation and pinned with its date and row count**, not quoted from memory. A comparison against an unpinned comparator is not a comparison.
+
+Whichever way that resolves, the direction of the test is fixed now: a paper sleeve is interesting if it **reproduces or beats the live book on expectancy**, and uninteresting if it merely beats zero on a metric the live book also beats.
+
+**Explicitly not comparators:** the retracted 82% sniper win rate, the retracted 69.5% MR win rate, the retracted 85.7% paper WR, and `trade_pnl_pct` from `sniper_component_ic.py` (frozen V3 params, zero slippage — not expectancy, and the file says so).
 
 ## Stop condition — stated as a number, not a judgment
 
@@ -132,6 +165,20 @@ The measurement itself is void — reset `n`, do not merge the windows — if an
 - **Mirror falls behind `main`.** The measurement is only valid for the code it ran. The mirror must be fast-forwarded before each PAPER run; a window spanning a stale checkout is void for the stale portion.
 - **Stream blending.** Any read that pools streams to reach a threshold voids that read.
 - **Provenance gap.** Artifacts without a `get_last_ohlcv_provenance()` stamp are not admissible, per the repo's provenance rule.
+
+## Decisional vs descriptive metrics
+
+Both get reported. Only one decides anything.
+
+| Metric | Role |
+|---|---|
+| **Mean alpha vs SPY + bootstrap CI** | **DECISIONAL.** Tier 2 and S1 read this and nothing else. |
+| Win rate (% `pnl_pct > 0`) | Descriptive only. **Never decisional.** |
+| Average `pnl_pct` per trade | Descriptive; the expectancy comparator against the live books. |
+| Sharpe (≥30 trades, distinct entry dates) | Descriptive. |
+| Max drawdown, concurrency-capped equity | Descriptive — **except** as stop condition S2, which is decisional. |
+
+**Win rate is deliberately excluded from every decision rule in this document.** The trail/stop sweep purchased a **90% win rate at approximately zero profit**: a tighter trail buys WR and sells expectancy. A bar whose headline metric is win rate would reward exactly the change that destroys the edge. Report it; never decide on it.
 
 ## Not quotable
 
