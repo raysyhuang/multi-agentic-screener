@@ -29,6 +29,7 @@ import argparse
 import csv
 from dataclasses import dataclass, field
 from datetime import date, datetime
+from statistics import median
 
 
 @dataclass
@@ -187,10 +188,16 @@ def simulate(
 
 
 def _apply_wr_haircut(trades: list[Trade], target_wr: float) -> list[Trade]:
-    """Rescale outcomes toward a target win rate by flipping the worst-MFE
-    wins into losses is overkill; simpler honest proxy: deterministically
-    convert the smallest-margin wins into break-even/small losses until the
-    realized win rate matches target. Returns a new list (order preserved)."""
+    """Rescale outcomes toward a target win rate: deterministically demote the
+    smallest-margin wins into TYPICAL losses until the realized win rate matches
+    target. Returns a new list (order preserved).
+
+    A demoted win takes the cohort's MEDIAN LOSS magnitude — not the negation of
+    its own gain. Negating (the behaviour through 2026-08-15) turned a +0.2% win
+    into −0.2% while the cohort's typical loss was several percent, which biased
+    this stress test in the FAVOURABLE direction. The haircut exists to measure
+    what a lower win rate costs; understating the loss defeats its only purpose.
+    """
     wins = [t for t in trades if t.pnl_pct > 0]
     cur_wr = len(wins) / len(trades) if trades else 0.0
     if target_wr >= cur_wr:
@@ -200,14 +207,28 @@ def _apply_wr_haircut(trades: list[Trade], target_wr: float) -> list[Trade]:
     n_demote = len(wins) - n_target_wins
     if n_demote <= 0:
         return trades
+
+    losses = [t.pnl_pct for t in trades if t.pnl_pct <= 0]
+    if losses:
+        demoted_pnl = float(median(losses))  # already negative
+    else:
+        # No losers to characterize a "typical loss". Fall back to the negated
+        # median WIN, which is punitive rather than flattering, and say so.
+        demoted_pnl = -float(median([t.pnl_pct for t in wins]))
+        print(
+            "  [wr-haircut] cohort has no losing trades; demoting to the negated "
+            f"median win ({demoted_pnl:+.2f}%) as a conservative stand-in"
+        )
+
     # demote the smallest wins (closest to break-even) — most marginal edge
     win_sorted = sorted(wins, key=lambda t: t.pnl_pct)
     demote = set(id(t) for t in win_sorted[:n_demote])
     out: list[Trade] = []
     for t in trades:
         if id(t) in demote:
-            # marginal win becomes a typical loss (use median loss size)
-            out.append(Trade(t.ticker, t.entry, t.exit, -abs(t.pnl_pct), t.regime))
+            out.append(
+                Trade(t.ticker, t.entry, t.exit, demoted_pnl, t.regime, t.score)
+            )
         else:
             out.append(t)
     return out
