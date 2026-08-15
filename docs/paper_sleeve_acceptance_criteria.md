@@ -87,9 +87,24 @@ Between those points the numbers may be *described* (see [Not quotable](#not-quo
 
 `n` alone is not a sample. Thirty trades entered inside one week are not thirty independent observations of anything; they are one week, sampled thirty times. This is the same clustering that makes the bootstrap CI optimistic (see [Known limitation](#known-limitation-of-the-ci--it-is-optimistic)), and it is the failure `n` by itself cannot detect.
 
-> **Every tier threshold additionally requires that the qualifying trades span ≥ 15 distinct trading days**, measured on `entry_date`.
+> **Every tier threshold additionally requires that the qualifying trades span at least `max(15, n/2)` distinct trading days**, measured on `entry_date`.
 
-This is a **dispersion constraint on the existing threshold, not a second count threshold.** There is exactly one sample floor in this document — n = 30 — and it is the one anchored to `min_stat_trades` in the codebase. The dispersion requirement is adopted from the launcher acceptance draft (PR #89), which got this right and which the count-only version of this document got wrong.
+| Tier | n | Required distinct entry days |
+|---|---|---|
+| Tier 1 | 30 | 15 |
+| — | 50 | 25 |
+| Tier 3 | 100 | 50 |
+
+**It scales with `n` deliberately.** A flat 15-day floor binds at Tier 1 and is nearly free at Tier 3 — 100 trades across 15 days is 6.7 entries per day, which is exactly the clustering the constraint exists to catch, and it would pass. `max(15, n/2)` caps the average at two entries per active day at every tier.
+
+This is a **dispersion constraint on the existing threshold, not a second count threshold.** There is exactly one sample floor — n = 30, anchored to `min_stat_trades`. The dispersion idea is adopted from the launcher acceptance draft (PR #89), which got it right where the count-only version of this document got it wrong.
+
+**On the two date fields — this is a deliberate choice, not an inherited inconsistency.** Countability is measured on `exit_date`; dispersion on `entry_date`. They answer different questions:
+
+- **Countability asks whether the mark is trustworthy.** A `pnl_pct` is stamped at exit, so a trade counts only if *its exit* landed on a valid measurement day.
+- **Dispersion asks whether the bets are independent.** Correlated exposure is created when positions are *opened* into the same conditions, so clustering is measured on entry.
+
+Using one field for both would break one of the two tests.
 
 ### Tier 1 — First permissible read: **n ≥ 30 closed trades per stream**
 
@@ -123,7 +138,36 @@ Inherited from `min_threshold_trades = 100` (`validation_card.py:336`). Any clai
 
 > ⚠️ **These conflict with the older recorded figure of sniper 50–57% WR / +0.74%/trade (2026-07-27) — opposite sign on average return.** The discrepancy is not resolved here and must not be resolved by picking the flattering one. **Before any comparison is made, the comparator must be re-derived from the reconciliation and pinned with its date and row count**, not quoted from memory. A comparison against an unpinned comparator is not a comparison.
 
-Whichever way that resolves, the direction of the test is fixed now: a paper sleeve is interesting if it **reproduces or beats the live book on expectancy**, and uninteresting if it merely beats zero on a metric the live book also beats.
+### Reproduction and beating are different tests. Do not weld them together.
+
+**Both live books are negative.** Any rule phrased as "reproduces *or* beats the live book" therefore passes a sleeve running −0.9%/trade, which reproduces MAS-GH faithfully while losing money. With a negative comparator the two tests point in opposite directions:
+
+| Test | Question | Where it lives |
+|---|---|---|
+| **Reproduction** | Does the paper book behave like the live book? | **Mirror fidelity.** Belongs to `docs/paper_mirror_acceptance.md` (launcher acceptance), not here. |
+| **Beating** | Is this sleeve worth trading? | **Sleeve value.** This document. |
+
+The rules for this document:
+
+> **Beating the live book is NECESSARY and NEVER SUFFICIENT.** A sleeve must clear the live comparator *and* clear Tier 2 on its own terms (`ci_lo > 0` on alpha vs SPY). Clearing the comparator alone establishes only that it is less bad than what is already running.
+>
+> **Reproducing a negative live book is a STOP signal, not a pass.** A paper sleeve faithfully tracking −0.97%/trade is evidence that the mirror works and the sleeve does not. It confirms fidelity and disconfirms value in the same measurement.
+
+The decisional table below is unchanged and remains authoritative: `ci_lo > 0` on alpha vs SPY is the only quantity that decides anything. This section constrains interpretation; it does not add a decision rule.
+
+### ⚠️ BLOCKING PREREQUISITE — comparator pinning is unassigned
+
+The pinning requirement above sits **on the critical path to any Tier 2 read**, and as of this writing **no one owns it**. If it stays unassigned, the first stream to reach n = 30 arrives at a bar it cannot be evaluated against, and the likely response under time pressure is to quote a remembered number — which is the failure this document exists to prevent.
+
+| Field | Value |
+|---|---|
+| **Owner** | **UNASSIGNED — Ray to name** |
+| **Due** | Before the first stream reaches n = 30 |
+| **Blocks** | Tier 2 for every stream |
+
+**Definition of done:** the comparator is re-derived from the reconciliation artifact — not from memory, not from this document, not from a dashboard rendering — and recorded here as: metric, value, row count, date range, and the source artifact's identifier. Both live books, and the sign conflict resolved with evidence rather than by preference.
+
+Until that exists, streams may reach n = 30 and be *described*, but **no Tier 2 determination may be made.**
 
 **Explicitly not comparators:** the retracted 82% sniper win rate, the retracted 69.5% MR win rate, the retracted 85.7% paper WR, and `trade_pnl_pct` from `sniper_component_ic.py` (frozen V3 params, zero slippage — not expectancy, and the file says so).
 
