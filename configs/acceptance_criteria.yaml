@@ -1,0 +1,125 @@
+# Paper-sleeve acceptance criteria — MACHINE-READABLE TRANSCRIPTION
+#
+# ┌────────────────────────────────────────────────────────────────────────┐
+# │ THIS FILE IS NON-NORMATIVE. IT DECIDES NOTHING.                        │
+# │                                                                        │
+# │ docs/paper_sleeve_acceptance_criteria.md is the sole acceptance bar.   │
+# │ This file is a DERIVED transcription of it, for machines to read.      │
+# │                                                                        │
+# │ If this file and the document disagree, THE DOCUMENT WINS and this     │
+# │ file has a bug. Fix it here; never "reconcile" by editing the doc.     │
+# └────────────────────────────────────────────────────────────────────────┘
+#
+# Why the header is that emphatic: a second file carrying the same thresholds
+# is a second authority, and the failure mode is that nobody says which wins
+# until they disagree — which is exactly the §1 defect this project just spent
+# a night removing from its own alignment doc. Stating precedence now, while
+# the two agree, costs nothing. Stating it later is an adjudication.
+#
+# NO CI READS THIS YET, DELIBERATELY. A test that could disagree with the
+# document during its amendment window would force an adjudication that is
+# itself an amendment. The test lands after 2026-08-17 21:35Z, at which point
+# it is ~20 lines because this transcription already exists.
+#
+# transcribed_from: docs/paper_sleeve_acceptance_criteria.md @ cb8ec41
+# transcribed_by:   Victor (Claude Code, VPS Boston), 2026-08-16
+# status:           non-normative, no consumer
+
+source_of_truth: docs/paper_sleeve_acceptance_criteria.md
+
+# ── Where every quantity is read from ────────────────────────────────────
+# The bundle matters as much as the path: mirror and production exports share
+# stream keys, so a path alone resolves in both and returns different numbers.
+field_paths:
+  sample_size:      'alpha_summary[<stream>]["spy"]["n"]'
+  alpha_ci_lo:      'alpha_summary[<stream>]["spy"]["ci_lo"]'
+  alpha_ci_hi:      'alpha_summary[<stream>]["spy"]["ci_hi"]'
+  alpha_mean:       'alpha_summary[<stream>]["spy"]["mean"]'
+  per_trade_alpha:  'trades[<stream>][i]["alpha_spy"]'
+  trade_regime:     'join trades[<stream>][i]["signal_date"] -> run_history[date == signal_date]["regime"]'
+
+benchmark: spy          # fixed in advance; qqq is exported but never read
+do_not_use:
+  - field: significant
+    why: two-sided (lo > 0 or hi < 0); Tier 2 and S1 are both one-sided
+
+measured_bundle: mirror         # alpha_summary ALWAYS means the mirror bundle
+comparator_bundle: production   # the production export is comparator only, never the measured object
+
+# ── Evaluation points ────────────────────────────────────────────────────
+evaluation_points: [30, 50, 100]   # nowhere else; a 95% CI checked 60 times is not 95%
+resumption: next_scheduled_point   # never on the day a comparator lands
+
+# ── Tiers ────────────────────────────────────────────────────────────────
+tiers:
+  tier_0_display_only:
+    n: 3
+    decisional: false             # exists so the dashboard renders; not a read
+  tier_1_first_read:
+    n: 30
+    min_distinct_entry_days: 15
+    anchored_to: validation_card.py:308 min_stat_trades
+  tier_2_promotion_bar:
+    n: 30
+    min_distinct_entry_days: 15
+    conditions:
+      - id: 1
+        test: 'n >= 30'
+      - id: 2
+        test: 'alpha_ci_lo > 0'
+        kind: evidence            # the sleeve's own CI must exclude zero
+      - id: 3
+        test: '>= 2 regimes, each with >= 10 closed trades'
+      - id: 4
+        test: 'no execution-config drift during the window'
+      - id: 5
+        test: 'alpha_mean > comparator.alpha_mean'
+        kind: deployment          # point comparison; NEVER upgrade into evidence
+        evaluable_only_with_pinned_comparator: true
+        if_no_comparator: NOT_EVALUABLE   # not passed, not failed; Tier 2 defers
+  tier_3_parameter_claims:
+    n: 100
+    min_distinct_entry_days: 50
+    anchored_to: validation_card.py:336 min_threshold_trades
+
+dispersion_rule: 'max(15, n/2) distinct entry_date values'
+
+# ── Stop conditions ──────────────────────────────────────────────────────
+stops:
+  s1_established_negative:
+    n: 30
+    test: 'alpha_ci_hi < 0'
+    discretionary: false
+  s2_drawdown_breach:
+    threshold_pct: null           # UNSET — Ray's to set. Proposed 20%, anchored
+    proposed_pct: 20              # to sniper Run E's 24% backtest drawdown.
+    fires_regardless_of_n: true
+    discretionary: false
+
+# ── The pinned comparator ────────────────────────────────────────────────
+comparator:
+  artifact: outputs/research/frozen/data-2026-08-14T205945Z.json
+  sha256: f4de7a2e7bf566b0935ca08ebea5e84cc501c4f72773bab1b7a5eb6b84d512a0
+  generated_at: '2026-08-14T20:59:45.235253+00:00'
+  window_days: 90                 # rolling in the live export; frozen here
+  stream: sniper|mas_official
+  alpha_mean: 0.6408              # THE bar for condition 5
+  alpha_ci: [-0.5856, 1.8895]     # spans zero; significant=false
+  raw_avg_pnl_pct: 0.7490         # recorded to show it is NOT the metric used
+  n: 60
+
+# ── Still unset. Ray's, not derivable from the codebase. ─────────────────
+unset_requiring_ray:
+  - s2_drawdown_breach_pct
+  - max_measurement_window_months   # proposed 6
+  - pead_promotion_sizing
+
+# ── Explicitly not comparators ───────────────────────────────────────────
+inadmissible:
+  - retracted 82% sniper win rate
+  - retracted 69.5% MR win rate
+  - retracted 85.7% paper win rate
+  - sniper_component_ic.py trade_pnl_pct   # frozen V3 params, zero slippage
+  - '-0.97% MAS-GH sniper'                 # retracted: no artifact, sign flip
+  - '-0.14% IBKR'                          # unlocatable: wrong source, not disconfirmed
+  - any backtest band                      # backtest admits ATR% 3.5-5.0 production rejects
