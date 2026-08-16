@@ -189,7 +189,9 @@ The rules for this document:
 
 > **Beating the live book is NECESSARY and NEVER SUFFICIENT.** A sleeve must clear the live comparator *and* clear Tier 2 on its own terms (`ci_lo > 0` on alpha vs SPY). Clearing the comparator alone establishes only that it is less bad than what is already running.
 >
-> **Reproducing a negative live book is a STOP signal, not a pass.** A paper sleeve faithfully tracking −0.97%/trade is evidence that the mirror works and the sleeve does not. It confirms fidelity and disconfirms value in the same measurement.
+> **Reproducing a negative live book is a STOP signal, not a pass.** A paper sleeve faithfully tracking a losing book is evidence that the mirror works and the sleeve does not — it confirms fidelity and disconfirms value in the same measurement.
+>
+> **This rule is currently hypothetical, and stays in force anyway.** As pinned, the live book is **positive** (`sniper|mas_official` +0.6408% alpha), so there is no negative book to reproduce today. The rule exists because the comparator is re-pinned over time and a book can turn negative between evaluation points — at which moment the temptation to read fidelity as success is strongest. Do not delete it for being inactive.
 
 The decisional table below is unchanged and remains authoritative: `ci_lo > 0` on alpha vs SPY is the only quantity that decides anything. This section constrains interpretation; it does not add a decision rule.
 
