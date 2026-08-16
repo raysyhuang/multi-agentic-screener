@@ -191,9 +191,7 @@ A reader who takes condition 2 from the production bundle evaluates the live boo
 
 **Which expectancy** was ambiguous and is now fixed: **condition 5 compares mean alpha vs SPY**, not raw `pnl_pct`. For the reference artifact that is **+0.6408%**, not +0.7490%. Condition 2 and condition 5 must read the same quantity or the bar mixes metrics.
 
-> **Stated plainly: conditions 2 and 5 apply different evidentiary standards, and 5 is the weaker.** Condition 2 requires the paper sleeve's alpha CI to **exclude zero**. Condition 5 requires only beating a live book whose own CI is [−0.5856, +1.8895] with `significant: false` — a point-estimate comparison against a book that has itself established nothing.
->
-> This is deliberate and is not a licence to relax condition 2. Condition 5 asks "is this better than what we already run," which is a **deployment** question and legitimately a point comparison. Condition 2 asks "is there an edge at all," which is an **evidentiary** question. Do not upgrade 5 into evidence or downgrade 2 into a comparison.
+> **Conditions 2 and 5 apply different evidentiary standards, and 5 is the weaker.** The normative statement, including both prohibitions, is at [Tier 2](#tier-2--the-promotion-bar-n--30) and is not restated here. **One statement, one amendment surface** — this passage previously duplicated it near-identically, which is two places to drift.
 
 ### Reproduction and beating are different tests. Do not weld them together.
 
