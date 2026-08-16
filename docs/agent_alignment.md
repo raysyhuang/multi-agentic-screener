@@ -9,16 +9,17 @@ Several AI agents work on MAS from different surfaces. This document is what the
 | Name | Surface | GitHub write | Host shell |
 |---|---|---|---|
 | **Claude Code (Ray's Mac)** | Claude Code, canonical checkout | **yes** — branches, PRs, merges | no |
-| **Victor** | Claude Code, VPS Boston | **no** — `gh` unauthenticated, push remote severed | **yes** |
-| **Hawk** | OpenRouter agent | read-only `gh`; reviews | no |
+| **Victor** | Claude Code, VPS Boston | **yes** — repo + workflow scopes (granted 2026-08-16; was severed before) | **yes** |
+| **Hawk** | OpenRouter agent | `gh` available; reviews — exact scopes unconfirmed | no |
 | **Neo** | Codex agent | via PR | yes |
 | **Grok bot** | Cursor agent | opens PRs via cloud agent | no |
 
 **Assignment consequences**, learned by getting them wrong:
 
 - **Host-side tasks are not automatically Ray's.** Several items were routed to "Ray or Neo only" on the assumption nobody else could reach the host. Victor could, and the task sat blocked on a false premise. If a task is host-side, Victor is assignable.
-- **Do not assign a merge to Victor**, and Victor should not ask anyone to push on its behalf. It produces patches and findings; someone with credentials lands them.
-- **The correct split for host-side work** is: name the executor, name a separate reviewer, and route the push to whoever holds credentials. Three roles, stated explicitly.
+- **Capability cells go stale and were wrong within hours of this table landing.** Victor's said "no GitHub write"; scopes were granted the same morning. Hawk's overstated the constraint too. **Confirm capability before routing on it** — an agent blocked by a stale table is the same waste as one assigned work it cannot do.
+- **§1 still binds regardless of scope.** Push access is not authority: no agent pushes to `origin/main`, ever. Work lands by branch + PR + green CI, and the guard and the grant are not in tension.
+- **The correct split for host-side work** is: name the executor, name a separate reviewer, and route the push to whoever holds credentials — which may now be the executor. Name all three roles even when two collapse onto one agent.
 
 Keep this table in your own persistent memory as well. An agent that re-derives who-did-what from conversation will misattribute across a session boundary — that has already happened twice.
 

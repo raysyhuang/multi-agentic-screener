@@ -140,12 +140,41 @@ Inherited from `min_threshold_trades = 100` (`validation_card.py:336`). Any clai
 
 "Beats zero" is a weak question. The useful one is **"does this reproduce the live book?"** Compare against **published live performance**, never against truth-matrix or backtest bands — the backtest universe is known-wrong for sniper (large-cap cache, median ATR% 2.28 against a floor of 5), so a paper sleeve beating a backtest band tells you nothing.
 
-| Book | Reported | As of |
-|---|---|---|
-| MAS-GH sniper (GitHub-hosted prod) | ~50% WR / **−0.97%** avg | reconciled through 2026-08-13 |
-| IBKR | ~42% WR / **−0.14%** avg | reconciled through 2026-08-13 |
+### The sign conflict is RESOLVED. The −0.97% figure is unsupported.
 
-> ⚠️ **These conflict with the older recorded figure of sniper 50–57% WR / +0.74%/trade (2026-07-27) — opposite sign on average return.** The discrepancy is not resolved here and must not be resolved by picking the flattering one. **Before any comparison is made, the comparator must be re-derived from the reconciliation and pinned with its date and row count**, not quoted from memory. A comparison against an unpinned comparator is not a comparison.
+Independently recomputed from the raw production export by Victor and reproduced exactly by Hawk from the same artifact:
+
+| Stream | n | Mean `pnl_pct` | Mean alpha vs SPY | Alpha CI | `significant` |
+|---|---|---|---|---|---|
+| `sniper \| mas_official` | 60 | **+0.7490%** (53.3% WR) | **+0.6408%** | [−0.5856, +1.8895] | **false** |
+| `mr \| mas_official` | 35 | +0.4039% | — | [−0.1881, +1.3334] | **false** |
+| manual sleeve | 63 | +0.1847% | — | [−0.4158, +0.7623] | **false** |
+| `pead_paper` | 10 | −0.1942% | — | crosses zero | false |
+| `pead_neglected` | 10 | −0.6139% | — | crosses zero | false |
+
+**The previously recorded −0.97% is not supported by this artifact and is withdrawn.** The older +0.74%/trade figure reproduces. **IBKR is `unlocatable`, not retracted** — it is a separate broker and its absence from the MAS export is the wrong source, not disconfirming evidence.
+
+### The comparator must be pinned to a saved artifact, not a URL
+
+`data.json` is **overwritten every run on a rolling `window_days: 90`**. A URL is not a pin: next Monday it silently drops everything before ~2026-05-18 and the comparator moves with no amendment. **Pin a saved copy with its hash.**
+
+Reference artifact for the figures above: `generated_at 2026-08-14T20:59:45Z`, `sha256` beginning `f4de7a2e7bf566b0`. A pinned comparator record must carry: stream, metric, value, n, date range, `generated_at`, and full sha256.
+
+### ⚠️ Which artifact — the field path does not resolve uniquely
+
+**The mirror bundle and the production Pages export use identical stream keys.** `alpha_summary["sniper|mas_official"]["spy"]["ci_lo"]` resolves in **both** and returns **different books** — the mirror had n=3 for that key on 2026-08-15 while production had n=60.
+
+> **Every reference in this document to `alpha_summary[...]` means the MIRROR bundle** — the paper sleeve under measurement, written by the afternoon lane into `<date>/afternoon/`. **The production Pages export is the COMPARATOR only, never the measured object.**
+
+A reader who takes condition 2 from the production bundle evaluates the live book **against itself**, satisfying conditions 2 and 5 with identical rows. Naming the path is not enough; the artifact must be named too.
+
+### Condition 5 compares alpha, and is the weaker of the two tests
+
+**Which expectancy** was ambiguous and is now fixed: **condition 5 compares mean alpha vs SPY**, not raw `pnl_pct`. For the reference artifact that is **+0.6408%**, not +0.7490%. Condition 2 and condition 5 must read the same quantity or the bar mixes metrics.
+
+> **Stated plainly: conditions 2 and 5 apply different evidentiary standards, and 5 is the weaker.** Condition 2 requires the paper sleeve's alpha CI to **exclude zero**. Condition 5 requires only beating a live book whose own CI is [−0.5856, +1.8895] with `significant: false` — a point-estimate comparison against a book that has itself established nothing.
+>
+> This is deliberate and is not a licence to relax condition 2. Condition 5 asks "is this better than what we already run," which is a **deployment** question and legitimately a point comparison. Condition 2 asks "is there an edge at all," which is an **evidentiary** question. Do not upgrade 5 into evidence or downgrade 2 into a comparison.
 
 ### Reproduction and beating are different tests. Do not weld them together.
 
