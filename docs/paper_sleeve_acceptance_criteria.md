@@ -128,6 +128,12 @@ Below n = 30 the only permitted statements are descriptive: "n closed trades so 
 >
 > It also keeps the reporting honest in the case that matters: **"no admissible comparator existed"** and **"nothing cleared the bar"** are very different claims about the strategies, and only one of them is about the strategies at all.
 
+> **Resumption — a comparator arriving is not an evaluation point.** When a comparator is pinned *after* a stream has already been recorded NOT EVALUABLE, the deferred determination resumes **at the next scheduled evaluation point** (n = 30 / 50 / 100) — **never on the day the comparator lands**.
+>
+> Otherwise comparator-arrival becomes an unscheduled look, timed by an event that has nothing to do with the stream. An extra look at a fixed 95% interval is precisely the multiple-comparisons problem the fixed evaluation points exist to prevent, and the pinning date is not a property of the evidence. The concrete failure: a stream deferred at n = 30 and now sitting at n = 41 would get a fresh look the moment someone finished pinning, rather than waiting for n = 50.
+>
+> A stream that is already past n = 100 when the comparator lands is evaluated **once**, on the qualifying trades as of that point, and gets no further scheduled look. One look, not one per pin.
+
 Tier 2 makes a sleeve *eligible for a promotion discussion*, not promoted. Promotion remains Ray's decision and still goes through the validation card.
 
 > **Consistency note.** Condition 5 was implicit until 2026-08-16: the Comparators section asserted that beating the live book is "necessary," while the Tier 2 list named only four conditions and the blocker table said pinning blocks Tier 2. Victor (Claude Code, VPS) caught the contradiction. It is resolved here by making the comparator an **explicit** Tier 2 condition rather than by weakening the blocker table — the stricter branch, which the amendment rule permits unconditionally ("raising a threshold is always allowed"). The blocker table is therefore accurate as written: **comparator pinning does gate Tier 2.**
@@ -287,4 +293,9 @@ Supporting context: picks run ~1.2/day and #68 established that the sniper slot 
 1. Amendments are commits to this file with a stated reason in the commit body.
 2. **No amendment while a decision is pending on the stream it affects.** If a sleeve is at n = 28 and someone wants to lower Tier 1 to 25, the answer is no.
 3. Lowering a threshold requires a reason that is not "the current data would pass the lower one."
-4. Raising a threshold is always allowed.
+4. **Raising a *promotion* threshold is always allowed.** Tier 1, Tier 2, Tier 3, the dispersion floor: raising these makes promotion harder, so no justification is needed.
+5. **Raising a *stop* threshold is a loosening, and takes rule 3's test.** S1's sample floor and S2's drawdown breach are the thresholds a sleeve must cross to be **stopped**. Raising one keeps a losing sleeve alive longer, which is the same act as lowering a promotion bar wearing the opposite sign. So it requires a reason that is **not** "the current drawdown would breach the lower one."
+
+   > Rules 3 and 4 were written as if every threshold pointed the same way. They do not. "Raise = conservative" holds for a bar you must clear to *proceed*, and inverts for a bar you must cross to *halt* — moving S2 from 20% to 40% mid-drawdown would be permitted by rule 4 as written, and it is exactly the abuse rule 3 exists to stop.
+
+6. **Direction is judged by effect, not by arithmetic.** If an amendment makes it easier for a sleeve to keep running or to be promoted, it is a loosening and takes rule 3's test, whatever happens to the number.
