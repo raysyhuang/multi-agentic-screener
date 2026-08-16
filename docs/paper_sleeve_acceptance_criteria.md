@@ -120,8 +120,11 @@ Below n = 30 the only permitted statements are descriptive: "n closed trades so 
 2. **Bootstrap 95% CI of mean alpha vs SPY strictly above zero** — `alpha_summary[<stream>]["spy"]["ci_lo"] > 0`. A positive mean whose CI crosses zero is a lean, not an edge; that sentence is already the docstring of the function that computes it.
 3. **≥ 2 distinct market regimes represented, each with ≥ 10 closed trades**, where a trade's regime is obtained by joining `trades[<stream>][i]["signal_date"]` to `run_history[date == signal_date]["regime"]`, using the repo's `bull` / `bear` / `choppy` keys. Trades whose `signal_date` has no matching `run_history` row are **excluded from the regime count** (they still count toward `n`). A sleeve that has only ever traded one regime has not been tested.
 4. **No execution-config drift** during the measurement window (see [Invalidating conditions](#invalidating-conditions)).
+5. **Clears the pinned live-book comparator on expectancy** (see [Comparators](#comparators--the-live-books-not-backtest-bands)). Necessary, never sufficient — a sleeve that clears condition 2 but is worse than what is already running has demonstrated an edge and not a reason to deploy it.
 
 Tier 2 makes a sleeve *eligible for a promotion discussion*, not promoted. Promotion remains Ray's decision and still goes through the validation card.
+
+> **Consistency note.** Condition 5 was implicit until 2026-08-16: the Comparators section asserted that beating the live book is "necessary," while the Tier 2 list named only four conditions and the blocker table said pinning blocks Tier 2. Victor (Claude Code, VPS) caught the contradiction. It is resolved here by making the comparator an **explicit** Tier 2 condition rather than by weakening the blocker table — the stricter branch, which the amendment rule permits unconditionally ("raising a threshold is always allowed"). The blocker table is therefore accurate as written: **comparator pinning does gate Tier 2.**
 
 ### Tier 3 — Threshold/parameter claims: **n ≥ 100**
 
