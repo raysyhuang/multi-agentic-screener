@@ -44,6 +44,7 @@ This is not a strategy-tuning protocol. It sets acceptance thresholds only.
 | Mean alpha CI, lower bound | `alpha_summary[<stream>]["spy"]["ci_lo"]` |
 | Mean alpha CI, upper bound | `alpha_summary[<stream>]["spy"]["ci_hi"]` |
 | Sample size | `alpha_summary[<stream>]["spy"]["n"]` |
+| Mean alpha (condition 5 comparator test) | `alpha_summary[<stream>]["spy"]["mean"]` |
 | Per-trade alpha | `trades[<stream>][i]["alpha_spy"]` |
 | Regime for a trade | **join** `trades[<stream>][i]["signal_date"]` → `run_history[date == signal_date]["regime"]` |
 
