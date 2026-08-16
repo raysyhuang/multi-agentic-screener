@@ -1,0 +1,22 @@
+{
+  "frozen_at_utc": "2026-08-16",
+  "frozen_by": "Victor (Claude Code, VPS Boston)",
+  "source_url": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
+  "generated_at": "2026-08-14T20:59:45.235253+00:00",
+  "sha256": "f4de7a2e7bf566b0935ca08ebea5e84cc501c4f72773bab1b7a5eb6b84d512a0",
+  "bytes": 254904,
+  "window_days": 90,
+  "why": "The Pages export is overwritten every run on a rolling window_days=90. Monday's run drops trades before ~2026-05-18 and the comparator would move with no amendment. A pin must reference this frozen copy and hash, not the URL.",
+  "counts": {
+    "trade_rows": 178,
+    "run_history": 65,
+    "open_positions": 13,
+    "streams": [
+      "mean_reversion|mas_official",
+      "mean_reversion|mr_manual_sleeve",
+      "pead|pead_neglected",
+      "pead|pead_paper",
+      "sniper|mas_official"
+    ]
+  }
+}
