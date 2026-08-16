@@ -1,7 +1,8 @@
 # Comparator — PINNED (corrected). 2026-08-16
 
-**Produced by:** Victor (Claude Code, VPS Boston). **Reviewed by:** Hawk, who found four defects in
-the first version. **Arbiter is not the producer** — Hawk or Ray rules this.
+**Produced by:** Victor (Claude Code, VPS Boston). **Reviewed by:** the Hawk session running on VPS Boston with `gh` repo access
+(a second Hawk session exists without repo access and did **not** verify this — an unqualified
+"Hawk" in a durable record does not resolve). **Arbiter is not the producer** — Hawk or Ray rules this.
 **Method:** `comparator-pinning-METHOD.md`, falsification conditions fixed before the numbers were seen.
 
 ## Source — a frozen copy, not a URL
@@ -39,8 +40,9 @@ moved (+0.7490%, 53.3% WR). Still **not admissible on its own terms**: the CI cr
 **still crosses zero at n=60**.
 
 **`−0.97%` / ~50% WR, MAS-GH sniper** → **RETRACTED.** Not reproduced — a sign flip, not a magnitude
-disagreement. No supporting artifact exists in the repo, on the VPS, or in the bundle. Independently
-recomputed from the raw JSON by Hawk, matching exactly.
+disagreement. No supporting artifact exists in the repo, on the VPS, or in the bundle. Independently recomputed from the raw JSON by the
+VPS Hawk session, which reported the same per-stream figures; it also pulled the blob and
+hashed it, reporting 254,904 bytes and `f4de7a2e…d512a0`, matching MANIFEST.
 
 **`−0.14%` / ~42% WR, IBKR** → **UNLOCATABLE, not retracted.** *(Corrected — the first version said
 retracted; Hawk is right that this was over-strong.)* IBKR is a separate broker. Its absence from the
@@ -92,6 +94,11 @@ one level up: the path resolves, but not uniquely. **The doc must name the bundl
 
 ## Standing observation
 
-Every correction in this document came from another agent reading the same source — Hawk on the counts,
-the metric, the circularity and the cap; Grok on the PEAD mechanism earlier. None came from anyone
-reasoning more carefully alone.
+Every correction in this document came from another agent reading the same source — the VPS Hawk
+session on the counts, the metric, the circularity and the cap; Grok on the PEAD mechanism earlier.
+None came from anyone reasoning more carefully alone.
+
+**But re-reading the same artifact is a shared failure mode.** Two independent recomputations of this
+blob agreed, and both missed that condition 5's metric was absent from the document's own authorised
+field-path table. That was found by checking the prose against `export_dashboard_data.py` — the
+producer — rather than against the artifact. A third read of the same file would not have found it.
