@@ -120,7 +120,20 @@ Below n = 30 the only permitted statements are descriptive: "n closed trades so 
 2. **Bootstrap 95% CI of mean alpha vs SPY strictly above zero** — `alpha_summary[<stream>]["spy"]["ci_lo"] > 0`. A positive mean whose CI crosses zero is a lean, not an edge; that sentence is already the docstring of the function that computes it.
 3. **≥ 2 distinct market regimes represented, each with ≥ 10 closed trades**, where a trade's regime is obtained by joining `trades[<stream>][i]["signal_date"]` to `run_history[date == signal_date]["regime"]`, using the repo's `bull` / `bear` / `choppy` keys. Trades whose `signal_date` has no matching `run_history` row are **excluded from the regime count** (they still count toward `n`). A sleeve that has only ever traded one regime has not been tested.
 4. **No execution-config drift** during the measurement window (see [Invalidating conditions](#invalidating-conditions)).
-5. **Clears the pinned live-book comparator on expectancy** (see [Comparators](#comparators--the-live-books-not-backtest-bands)). Necessary, never sufficient — a sleeve that clears condition 2 but is worse than what is already running has demonstrated an edge and not a reason to deploy it.
+5. **Beats the pinned live-book comparator on mean alpha vs SPY** — the sleeve's `alpha_summary[<stream>]["spy"]["mean"]` exceeds the comparator's, read from the pinned artifact (see [Comparators](#comparators--the-live-books-not-backtest-bands)). Necessary, never sufficient — a sleeve that clears condition 2 but is worse than what is already running has demonstrated an edge and not a reason to deploy it.
+
+   **The metric is named because "expectancy" was ambiguous and the two candidates differ.** For the pinned `sniper|mas_official` book: mean alpha vs SPY is **+0.6408%**, raw `avg pnl_pct` is **+0.7490%**. Conditions 2 and 5 now read the same quantity from the same field, so one bar cannot be cleared on one metric and judged on another.
+
+> **Conditions 2 and 5 apply different evidentiary standards, deliberately. Condition 5 is the softer one.**
+>
+> Condition 2 is an **evidence** test: the sleeve's own CI must exclude zero. Condition 5 is a **deployment** test: is this better than what is already running? A point-estimate comparison is legitimate for that question — but it is not evidence, and the pinned comparator is not an established edge. Every live stream in the pinned artifact carries `significant: false`; `sniper|mas_official`'s own alpha CI is **[−0.5856, +1.8895]**, 2.48 points wide and spanning zero.
+>
+> Two consequences, both binding:
+>
+> - **Condition 5 may never be upgraded into evidence.** Beating the comparator establishes nothing about whether the sleeve has an edge. It is a relative statement about two things that may both be noise.
+> - **Condition 2 may never be downgraded into a comparison.** "Its CI is tighter than the live book's" is not condition 2. `ci_lo > 0` is condition 2, and nothing else satisfies it.
+>
+> This asymmetry was invisible until 2026-08-16. Making it visible is the fix; removing it is not, because the two conditions are answering different questions and a single standard would break one of them.
 
 > **Condition 5 is evaluable only while an admissible pinned comparator exists.** If none exists when a stream reaches an evaluation point, condition 5 is recorded as **NOT EVALUABLE** — *not passed, not failed*. Tier 2 is **deferred, not denied**, and **the absence of a comparator is itself reported as the finding.**
 >
