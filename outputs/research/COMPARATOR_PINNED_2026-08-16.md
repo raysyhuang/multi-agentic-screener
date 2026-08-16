@@ -8,7 +8,7 @@ the first version. **Arbiter is not the producer** — Hawk or Ray rules this.
 
 | Field | Value |
 |---|---|
-| Frozen artifact | `rescued/frozen/data-2026-08-14T205945Z.json` |
+| Frozen artifact | `outputs/research/frozen/data-2026-08-14T205945Z.json` |
 | **sha256** | `f4de7a2e7bf566b0935ca08ebea5e84cc501c4f72773bab1b7a5eb6b84d512a0` |
 | Bytes | 254,904 |
 | `generated_at` | 2026-08-14T20:59:45.235253+00:00 |

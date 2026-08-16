@@ -35,21 +35,46 @@ git fetch origin && git log --oneline -3 origin/main
 
 ## 1. Single authority
 
-**The Claude Code checkout on Ray's Mac, plus `origin/main`, is the source of truth.** Every other checkout — VPS checkouts, Cursor workspaces, personal clones — is a **research sandbox**.
+**`origin/main` is the source of truth — not any checkout, including Ray's.** Every working copy on every machine is a peer that fetches from it and lands work by PR.
 
-> **Disambiguation.** "Ray's Claude Code checkout" no longer identifies a unique instance: more than one Claude Code session works this repo (see §0). Authority attaches to **the checkout on Ray's Mac**, not to the fact that an agent is Claude Code. A Claude Code session running on a VPS is a sandbox like any other.
+> **Why authority moved off the Mac (2026-08-16).** This previously read "the Claude Code checkout on Ray's Mac, plus `origin/main`." That definition needs a specific laptop to be reachable in order to mean anything — and the Mac travels and gets switched off, while the VPS runs 24/7. A rule whose referent is in a bag at the airport is not a rule.
+>
+> It also failed the monitoring case: from the Claude iPhone app, `origin/main` is visible and neither working tree is. A definition of truth that cannot be observed from where it gets checked is the wrong definition.
+>
+> **Nothing is loosened.** Every guard below already pointed at `origin/main`. The Mac clause was doing no work `origin/main` was not already doing — it only created a second authority for the case where the two disagreed, which is the case it was least able to settle.
 
-- Never push to `origin/main` from a sandbox.
+- Never push to `origin/main` from any checkout. **This includes Ray's.** No machine has a private path to `main`.
 - To land work: open a PR against `origin/main`, get CI green, merge there.
-- Sandbox-local edits are non-canonical and can be overwritten without notice. If you care about it, it belongs in a PR or it does not exist.
+- Local edits are non-canonical **on every machine** and can be overwritten without notice. If you care about it, it belongs in a PR or it does not exist.
+- **A checkout's state is a claim about itself, never about the repo.** Verify with `git fetch origin && git log --oneline -3 origin/main` — never by asking another machine what it has.
 
 Why: two agents writing to two working copies of a same-named repo is the setup behind the 2026-04-11 unattended-push incident.
 
-## 2. `main` has no branch protection
+## 2. `main` is branch-protected (since 2026-08-16)
 
-The branch-protection API returns 404 for `main`. **Nothing mechanically stops a bad push**, so the discipline is currently the only guard. Never commit to `main`, even locally. Branch from `origin/main` → PR → CI green → merge.
+| Setting | Value |
+|---|---|
+| Required checks | `lint`, `test`, `migrations` |
+| Branches must be current | yes (`strict`) |
+| Approving reviews | 1, **stale reviews dismissed on new commits** |
+| **Admin enforcement** | **on — admins are not exempt** |
+| Force pushes / branch deletion | disabled |
 
-This is a known gap, not an endorsement. See §6.
+**This section previously read "`main` has no branch protection … the discipline is currently the only guard."** That was true until it wasn't. Every other guard in this document is a convention; this one is enforced by the server.
+
+`enforce_admins` is on for a specific reason: the risk was never Ray hot-fixing at 2am, it was **an agent operating with Ray's credentials inheriting the exemption**. An admin token held by an agent is an admin token.
+
+Verified rather than assumed — an identical ruleset was applied to a throwaway branch and a real direct push attempted against it with an admin token:
+
+```
+remote: error: GH006: Protected branch update failed for refs/heads/protection-test.
+remote: - Changes must be made through a pull request.
+ ! [remote rejected] (protected branch hook declined)
+```
+
+Testing on `main` itself was declined deliberately: the only informative outcome of that test is the violation it is meant to prevent.
+
+**Operational consequence.** `strict` + `dismiss_stale` serialise the queue — every merge makes other open PRs stale, each rebase dismisses its approval, and each then needs a fresh one. **Keep PR count low.** This is a cost of the settings, not an argument against them.
 
 ## 3. Install the staging guard, once per clone
 
