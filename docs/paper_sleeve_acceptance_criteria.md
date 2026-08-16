@@ -81,6 +81,10 @@ This is not a strategy-tuning protocol. It sets acceptance thresholds only.
 
 **The benchmark is SPY, fixed in advance.** `BENCHMARKS = {"spy": "SPY", "qqq": "QQQ"}` (`export_dashboard_data.py:43`), so two benchmarks exist and both are exported. Every test in this document reads `["spy"]`. Choosing the benchmark after seeing which one passes is not permitted.
 
+**The interval is a percentile bootstrap, named here before it can matter.** `_alpha_summary` draws 10,000 resampled means and takes the 2.5th and 97.5th order statistics — `means = sorted(...); lo, hi = means[249], means[9749]` (`export_dashboard_data.py:66-89`). It is **not** a normal or t interval, and it is **not** symmetric about the point estimate: the pinned comparator's published interval `[−0.5856, +1.8895]` has midpoint 0.6520 against a mean of 0.6408.
+
+> Condition 5 compares point estimates, so today the method does not affect any test. It is documented now precisely because that could change: the moment anyone argues for "beat the CI" instead of "beat the point estimate," an undocumented interval method becomes load-bearing on a number whose interval spans −0.59 to +1.89. **Naming it while no result exists costs nothing; naming it afterwards is a choice about a result.**
+
 **Do not use the `significant` field for any test here.** It is two-sided — `bool(lo > 0 or hi < 0)` (`:89`) — while Tier 2 and S1 are both one-sided. Read `ci_lo` and `ci_hi` directly.
 
 ## Definitions
