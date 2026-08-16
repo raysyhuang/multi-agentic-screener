@@ -10,6 +10,37 @@ The afternoon mark-to-market lane (Hermes job `94022cc9cad0`, `35 21 * * 1-5` UT
 
 **Any change to this document after 2026-08-17 must be a new commit with a stated reason, and must not be made while a decision is pending.** See [Amendment rule](#amendment-rule).
 
+## When measurement starts — gated on a condition, not a date
+
+**The measurement window has not opened.** This section is written **before** the runs it governs exist, which is the only time it can be written honestly.
+
+### Why the original date was withdrawn
+
+The afternoon lane's first scheduled run (2026-08-17 21:35Z) will fire and will write `outcome` rows and artifact directories. Those rows are real. They are nonetheless **excluded**, because the code that produced them was not observable when it produced them:
+
+- The operational launcher lived only on one host, in no repository. It was patched at 2026-08-16T00:34:36Z — two genuine defects, correctly reasoned, applied at the last moment before the window — with **no version control, no PR, no required checks and no review**. Every control this project built governs `origin/main`; that file was not in `origin/main`, so the change routed around all of them by construction rather than by evasion.
+- Its pre-patch state now exists only as a `.bak` on that host. A measurement whose producing code cannot be reconstructed or reviewed by anyone off that machine is not a measurement anyone can adjudicate.
+
+Nothing about the numbers is alleged to be wrong. The claim is narrower and sufficient: **they cannot be checked.**
+
+### The start condition
+
+> **The measurement window opens on the first `entry_date` on or after the calendar date on which ALL of the following are simultaneously true — and not before:**
+>
+> 1. The launcher that produces the artifacts is present on `origin/main`, with no host paths embedded, and the deployed copy's content hash matches that revision.
+> 2. **Five consecutive valid measurement days** have been produced by that versioned launcher. "Valid measurement day" is already defined below; "consecutive" means five scheduled runs with no invalid day between them.
+> 3. This document records the resulting start date in a commit **dated on or before that date**.
+
+Five is one trading week of the afternoon lane, the same unit as the valid-week rule. The point is not the number — it is that **the start is determined by the condition and then recorded, never chosen and then justified.**
+
+### What is in and what is out
+
+- **Every trade whose `entry_date` precedes the start date is OUT** — excluded from `n`, from every Tier test, and from S1. Trades are admitted on entry, not exit, so no trade is ever half-inside the window.
+- Out-of-window trades **remain visible** in `trades[]` and may be described. They may not be counted.
+- Runs before the start date are **operational rehearsal**. They exercise the lane; they do not measure a sleeve.
+
+> **This is deliberately unfavourable to the project.** It discards real trades and delays the first read. Written now, before those trades exist, that costs nothing but time. Written afterwards, the same rule would be indistinguishable from discarding a result someone did not like.
+
 ## Scope
 
 This document governs **thresholds and decision rules for paper-sleeve results**. It is the single acceptance bar; there is no other.
