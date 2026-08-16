@@ -122,6 +122,12 @@ Below n = 30 the only permitted statements are descriptive: "n closed trades so 
 4. **No execution-config drift** during the measurement window (see [Invalidating conditions](#invalidating-conditions)).
 5. **Clears the pinned live-book comparator on expectancy** (see [Comparators](#comparators--the-live-books-not-backtest-bands)). Necessary, never sufficient — a sleeve that clears condition 2 but is worse than what is already running has demonstrated an edge and not a reason to deploy it.
 
+> **Condition 5 is evaluable only while an admissible pinned comparator exists.** If none exists when a stream reaches an evaluation point, condition 5 is recorded as **NOT EVALUABLE** — *not passed, not failed*. Tier 2 is **deferred, not denied**, and **the absence of a comparator is itself reported as the finding.**
+>
+> This clause exists so that a condition can never become permanently unsatisfiable-by-inevaluability. A criterion with only a failure mode and no path to satisfaction is the mirror image of the defect this document rejected in the launcher acceptance draft — one that no result can fail, versus one no result can pass. Both are ways of guaranteeing a no-decision, and neither is a bar.
+>
+> It also keeps the reporting honest in the case that matters: **"no admissible comparator existed"** and **"nothing cleared the bar"** are very different claims about the strategies, and only one of them is about the strategies at all.
+
 Tier 2 makes a sleeve *eligible for a promotion discussion*, not promoted. Promotion remains Ray's decision and still goes through the validation card.
 
 > **Consistency note.** Condition 5 was implicit until 2026-08-16: the Comparators section asserted that beating the live book is "necessary," while the Tier 2 list named only four conditions and the blocker table said pinning blocks Tier 2. Victor (Claude Code, VPS) caught the contradiction. It is resolved here by making the comparator an **explicit** Tier 2 condition rather than by weakening the blocker table — the stricter branch, which the amendment rule permits unconditionally ("raising a threshold is always allowed"). The blocker table is therefore accurate as written: **comparator pinning does gate Tier 2.**
