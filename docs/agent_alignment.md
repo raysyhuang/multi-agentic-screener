@@ -2,6 +2,26 @@
 
 Several AI agents work on MAS from different surfaces. This document is what they align to. It is deliberately **repo-side only**: host, scheduler, and deployment internals are not here — ask Ray for those.
 
+## 0. Roster — who exists, and what each can actually do
+
+§6 ("no agent executes unless it is named") requires a roster, and this document previously had none — it referred to "several agents" without naming them, which left the rule depending on knowledge that lived only in a chat channel. Names and surfaces are not host secrets; they are the half §6 needs.
+
+| Name | Surface | GitHub write | Host shell |
+|---|---|---|---|
+| **Claude Code (Ray's Mac)** | Claude Code, canonical checkout | **yes** — branches, PRs, merges | no |
+| **Victor** | Claude Code, VPS Boston | **no** — `gh` unauthenticated, push remote severed | **yes** |
+| **Hawk** | OpenRouter agent | read-only `gh`; reviews | no |
+| **Neo** | Codex agent | via PR | yes |
+| **Grok bot** | Cursor agent | opens PRs via cloud agent | no |
+
+**Assignment consequences**, learned by getting them wrong:
+
+- **Host-side tasks are not automatically Ray's.** Several items were routed to "Ray or Neo only" on the assumption nobody else could reach the host. Victor could, and the task sat blocked on a false premise. If a task is host-side, Victor is assignable.
+- **Do not assign a merge to Victor**, and Victor should not ask anyone to push on its behalf. It produces patches and findings; someone with credentials lands them.
+- **The correct split for host-side work** is: name the executor, name a separate reviewer, and route the push to whoever holds credentials. Three roles, stated explicitly.
+
+Keep this table in your own persistent memory as well. An agent that re-derives who-did-what from conversation will misattribute across a session boundary — that has already happened twice.
+
 ## Sync point
 
 Do not trust a SHA written in a document; documents go stale on every merge. Get it from git:
@@ -14,7 +34,9 @@ git fetch origin && git log --oneline -3 origin/main
 
 ## 1. Single authority
 
-**Ray's Claude Code checkout plus `origin/main` is the source of truth.** Every other checkout — VPS sandboxes, Cursor workspaces, personal clones — is a **research sandbox**.
+**The Claude Code checkout on Ray's Mac, plus `origin/main`, is the source of truth.** Every other checkout — VPS checkouts, Cursor workspaces, personal clones — is a **research sandbox**.
+
+> **Disambiguation.** "Ray's Claude Code checkout" no longer identifies a unique instance: more than one Claude Code session works this repo (see §0). Authority attaches to **the checkout on Ray's Mac**, not to the fact that an agent is Claude Code. A Claude Code session running on a VPS is a sandbox like any other.
 
 - Never push to `origin/main` from a sandbox.
 - To land work: open a PR against `origin/main`, get CI green, merge there.
