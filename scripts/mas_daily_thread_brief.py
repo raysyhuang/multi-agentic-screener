@@ -43,11 +43,7 @@ def resolve_config() -> tuple[Path, Path, Path]:
 
 
 def combine_output(*, health: str, mirror: str) -> str:
-    return "\n".join([
-        "[MAS] VPS Boston mirror run — GitHub-aligned",
-        health.strip(),
-        mirror.strip(),
-    ])
+    return f"[MAS] VPS Boston mirror run — GitHub-aligned\n{health.strip()}\n{mirror.strip()}"
 
 
 def should_emit(today: str, delivered_date: str | None, eastern_hour: int, *, healthy: bool) -> bool:
@@ -58,7 +54,7 @@ def should_emit(today: str, delivered_date: str | None, eastern_hour: int, *, he
 
 def invoke(script: Path) -> tuple[int, str]:
     result = subprocess.run(
-        [sys.executable, str(script)], text=True, capture_output=True, timeout=1900
+        [sys.executable, str(script)], text=True, capture_output=True, timeout=1900, check=False
     )
     output = (result.stdout or result.stderr).strip()
     return result.returncode, output or f"⚠️ no output from {script.name}"

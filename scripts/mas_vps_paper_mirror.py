@@ -7,11 +7,10 @@ import hashlib
 import json
 import os
 import subprocess
-import sys
-from datetime import datetime, timezone
-from zoneinfo import ZoneInfo
+from datetime import UTC, datetime
 from pathlib import Path
 from urllib.parse import urlsplit
+from zoneinfo import ZoneInfo
 
 # ── Deployment configuration ─────────────────────────────────────────────
 # Every path is supplied by the operator. There are NO DEFAULTS, deliberately:
@@ -133,7 +132,7 @@ def resolved_settings(env: dict[str, str], python: Path, repo: Path) -> dict[str
         "print(json.dumps({'telegram_bot_token':s.telegram_bot_token,'telegram_chat_id':s.telegram_chat_id,"
         "'database_url':s.database_url,'trading_mode':s.trading_mode,'execution_mode':s.execution_mode}))"
     )
-    result = subprocess.run([str(python), "-c", code], cwd=repo, env=env, text=True, capture_output=True, timeout=90)
+    result = subprocess.run([str(python), "-c", code], cwd=repo, env=env, text=True, capture_output=True, timeout=90, check=False)
     if result.returncode:
         raise RuntimeError("could not resolve upstream MAS settings")
     try:
@@ -166,7 +165,7 @@ def format_summary(picks: list[dict], *, source_sha: str, artifact: str) -> str:
 
 
 def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:
-    result = subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True, timeout=1800)
+    result = subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True, timeout=1800, check=False)
     (out / f"{Path(command[-1]).name}.stdout.log").write_text(result.stdout, encoding="utf-8")
     (out / f"{Path(command[-1]).name}.stderr.log").write_text(result.stderr, encoding="utf-8")
     if result.returncode:
@@ -225,17 +224,25 @@ def main() -> int:
             # the actual UTC date, so neither key is ever a mislabelled value.
             "run_date": run_date,
             "run_date_tz": "America/New_York",
-            "run_date_utc": datetime.now(timezone.utc).date().isoformat(),
+            "run_date_utc": datetime.now(UTC).date().isoformat(),
             "phase": args.phase,
-            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+            "completed_at_utc": datetime.now(UTC).isoformat(),
             "source_tier": "vps_paper_mirror_of_github_main",
-            # Identity of THIS FILE, not of the checkout it drives. source_sha
-            # below is `git rev-parse HEAD` in the pipeline checkout and proves
-            # which pipeline ran; it says nothing about which launcher ran.
-            # Without this, a governed copy in the repo and an ungoverned copy
-            # on the host are indistinguishable in the run record — which is the
-            # failure this file was brought into the repo to close.
-            # Verify: git show <commit>:scripts/mas_vps_paper_mirror.py | sha256sum
+            # Content hash of THIS FILE. source_sha below is `git rev-parse
+            # HEAD` in the pipeline checkout: it identifies the pipeline, not
+            # the launcher.
+            #
+            # WHAT THIS PROVES, precisely: that the bytes executed match a
+            # committed revision. Compare against the exact commit recorded in
+            # source_sha:
+            #     git show <source_sha>:scripts/mas_vps_paper_mirror.py | sha256sum
+            # A mismatch means the run came from code that is not in the repo,
+            # and the artifact is inadmissible.
+            #
+            # WHAT IT DOES NOT PROVE: that the scheduler invoked the repository
+            # copy. A host copy with identical bytes passes identically. This
+            # establishes code-content equivalence only; repointing the
+            # scheduler is a separate step and is not evidenced here.
             "launcher_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
             "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
             "trading_mode": env["TRADING_MODE"],
@@ -253,7 +260,8 @@ def main() -> int:
             artifact=str(dashboard),
         ))
         return 0
-    except Exception as exc:
+    except Exception as exc:  # noqa: BLE001 - fail closed on ANY fault; a mirror that
+        # half-runs is worse than one that refuses, and the message is the alert.
         print(f"⚠️ MAS VPS PAPER mirror failed closed: {type(exc).__name__}: {exc}")
         return 1
 
