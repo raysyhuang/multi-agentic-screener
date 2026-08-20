@@ -1,0 +1,262 @@
+#!/usr/bin/env python3
+"""Run the current GitHub MAS code as an isolated, paper-only VPS mirror."""
+from __future__ import annotations
+
+import argparse
+import hashlib
+import json
+import os
+import subprocess
+import sys
+from datetime import datetime, timezone
+from zoneinfo import ZoneInfo
+from pathlib import Path
+from urllib.parse import urlsplit
+
+# ── Deployment configuration ─────────────────────────────────────────────
+# Every path is supplied by the operator. There are NO DEFAULTS, deliberately:
+# this file lives in a public repository, and a default would publish the
+# layout of the host that runs it. Absent configuration is a fail-closed error,
+# not a fallback.
+#
+#   MAS_MIRROR_REPO       checkout the mirror executes (required)
+#   MAS_MIRROR_PYTHON     interpreter (optional; defaults to <repo>/.venv/bin/python)
+#   MAS_MIRROR_OUT_ROOT   artifact root (required)
+#   MAS_MIRROR_ENV_FILES  os.pathsep-separated env overlays, in precedence order (required)
+#
+# Use --print-config to verify resolution without running anything.
+
+
+class ConfigError(RuntimeError):
+    """Deployment configuration is missing or unusable."""
+
+
+def _required_path(var: str) -> Path:
+    raw = os.environ.get(var, "").strip()
+    if not raw:
+        raise ConfigError(
+            f"{var} is not set. This launcher ships without host defaults so that "
+            f"no deployment layout is published in the repository; set it in the "
+            f"scheduler unit or wrapper that invokes this script."
+        )
+    return Path(raw).expanduser()
+
+
+def resolve_config() -> tuple[Path, Path, Path, tuple[Path, ...]]:
+    repo = _required_path("MAS_MIRROR_REPO")
+    if not repo.is_dir():
+        raise ConfigError(f"MAS_MIRROR_REPO does not exist or is not a directory: {repo}")
+
+    raw_python = os.environ.get("MAS_MIRROR_PYTHON", "").strip()
+    python = Path(raw_python).expanduser() if raw_python else repo / ".venv/bin/python"
+
+    out_root = _required_path("MAS_MIRROR_OUT_ROOT")
+
+    raw_envs = os.environ.get("MAS_MIRROR_ENV_FILES", "").strip()
+    if not raw_envs:
+        raise ConfigError("MAS_MIRROR_ENV_FILES is not set (os.pathsep-separated, in precedence order)")
+    env_files = tuple(Path(p).expanduser() for p in raw_envs.split(os.pathsep) if p.strip())
+    if not env_files:
+        raise ConfigError("MAS_MIRROR_ENV_FILES resolved to no paths")
+
+    return repo, python, out_root, env_files
+
+
+def load_env_file(path: Path, env: dict[str, str]) -> None:
+    if not path.is_file():
+        raise ValueError(f"required environment overlay is missing: {path}")
+    for raw in path.read_text(encoding="utf-8", errors="ignore").splitlines():
+        line = raw.strip()
+        if not line or line.startswith("#") or "=" not in line:
+            continue
+        key, value = line.split("=", 1)
+        key = key.strip().removeprefix("export ").strip()
+        if key:
+            env[key] = value.strip().strip("'\"")
+
+
+def build_mirror_env(base: dict[str, str]) -> dict[str, str]:
+    env = dict(base)
+    env.update({
+        "TRADING_MODE": "PAPER",
+        "EXECUTION_MODE": "quant_only",
+        "PEAD_ENABLED": "true",
+        "LOCAL_MIRROR_NO_TRADE": "1",
+        "LOCAL_MIRROR_NO_TELEGRAM": "1",
+        "PRIVATE_SCREENER_MIRROR": "1",
+        "PYTHONUNBUFFERED": "1",
+        # Explicit empties override a checkout .env under pydantic-settings;
+        # removing these keys would let dotenv values re-enable Telegram.
+        "TELEGRAM_BOT_TOKEN": "",
+        "TELEGRAM_CHAT_ID": "",
+    })
+    return env
+
+
+def validate_mirror_env(env: dict[str, str]) -> None:
+    url = env.get("DATABASE_URL", "")
+    if not url:
+        raise ValueError("DATABASE_URL is required")
+    parsed = urlsplit(url)
+    if parsed.scheme not in {"postgres", "postgresql"} or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}:
+        raise ValueError("DATABASE_URL must point to isolated local PostgreSQL")
+    db_name = parsed.path.lstrip("/")
+    if not db_name.startswith("mas_mirror_"):
+        raise ValueError("DATABASE_URL must target an isolated mas_mirror_* database")
+    if env.get("TRADING_MODE") != "PAPER" or env.get("EXECUTION_MODE") != "quant_only":
+        raise ValueError("mirror must run PAPER + quant_only")
+    if env.get("TELEGRAM_BOT_TOKEN") or env.get("TELEGRAM_CHAT_ID"):
+        raise ValueError("Telegram credentials must be absent in the mirror")
+
+
+def validate_resolved_settings(settings: dict[str, str]) -> None:
+    """Fail closed on the configuration the upstream app actually resolved."""
+    if settings.get("telegram_bot_token") or settings.get("telegram_chat_id"):
+        raise ValueError("Telegram must resolve to empty credentials in the mirror")
+    db_url = settings.get("database_url", "")
+    parsed = urlsplit(db_url)
+    if (
+        parsed.scheme not in {"postgres", "postgresql"}
+        or parsed.hostname not in {"127.0.0.1", "localhost", "::1"}
+        or not parsed.path.lstrip("/").startswith("mas_mirror_")
+    ):
+        raise ValueError("resolved DATABASE_URL is not an isolated local mirror database")
+    if settings.get("trading_mode") != "PAPER":
+        raise ValueError("resolved trading mode must be PAPER")
+    if settings.get("execution_mode") != "quant_only":
+        raise ValueError("resolved execution mode must be quant_only")
+
+
+def resolved_settings(env: dict[str, str], python: Path, repo: Path) -> dict[str, str]:
+    code = (
+        "import json; from src.config import get_settings; s=get_settings(); "
+        "print(json.dumps({'telegram_bot_token':s.telegram_bot_token,'telegram_chat_id':s.telegram_chat_id,"
+        "'database_url':s.database_url,'trading_mode':s.trading_mode,'execution_mode':s.execution_mode}))"
+    )
+    result = subprocess.run([str(python), "-c", code], cwd=repo, env=env, text=True, capture_output=True, timeout=90)
+    if result.returncode:
+        raise RuntimeError("could not resolve upstream MAS settings")
+    try:
+        return json.loads(result.stdout)
+    except json.JSONDecodeError as exc:
+        # stdout carries database_url and telegram credentials. A JSONDecodeError
+        # embeds a snippet of the document it failed on, and main() prints the
+        # exception, so the raw message would leak them into the run log.
+        raise RuntimeError(
+            f"upstream MAS settings were not valid JSON ({exc.msg} at pos {exc.pos}); "
+            f"stdout withheld ({len(result.stdout)} bytes)"
+        ) from None
+
+
+def short(value: str) -> str:
+    return value[:12] if value else "unknown"
+
+
+def format_summary(picks: list[dict], *, source_sha: str, artifact: str) -> str:
+    names = [
+        f"{row.get('ticker', '?')} {row.get('model', '?')} {float(row.get('confidence') or 0):.0f}"
+        for row in picks[:6]
+    ]
+    rendered = ", ".join(names) if names else "no picks"
+    return "\n".join([
+        "MAS VPS PAPER ONLY — vps_paper_mirror, not official MAS",
+        f"source={short(source_sha)} | picks={len(picks)}: {rendered}",
+        f"artifact={artifact}",
+    ])
+
+
+def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:
+    result = subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True, timeout=1800)
+    (out / f"{Path(command[-1]).name}.stdout.log").write_text(result.stdout, encoding="utf-8")
+    (out / f"{Path(command[-1]).name}.stderr.log").write_text(result.stderr, encoding="utf-8")
+    if result.returncode:
+        raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}")
+
+
+def main() -> int:
+    parser = argparse.ArgumentParser()
+    parser.add_argument("--validate-only", action="store_true")
+    parser.add_argument("--print-config", action="store_true",
+                        help="resolve and print deployment configuration, then exit")
+    # Two lanes, separate artifact directories. The morning lane opens the book;
+    # the afternoon lane marks it to market via --check-now, which is what stamps
+    # entry fills and populates pnl_pct. run() names its log files after the last
+    # argv token, so a second export into the same directory would overwrite the
+    # morning dashboard and leave its run-meta dashboard_sha256 pointing at bytes
+    # that no longer exist. Phase subdirectories keep each bundle's hash honest.
+    parser.add_argument("--phase", choices=("morning", "afternoon"), default="morning")
+    args = parser.parse_args()
+    try:
+        REPO, PYTHON, OUT_ROOT, ENV_FILES = resolve_config()
+        if args.print_config:
+            for k, v in (("repo", REPO), ("python", PYTHON), ("out_root", OUT_ROOT)):
+                print(f"{k}={v}")
+            print("env_files=" + os.pathsep.join(str(p) for p in ENV_FILES))
+            return 0
+        base = dict(os.environ)
+        for path in ENV_FILES:
+            load_env_file(path, base)
+        env = build_mirror_env(base)
+        validate_mirror_env(env)
+        validate_resolved_settings(resolved_settings(env, PYTHON, REPO))
+        if args.validate_only:
+            print("MAS VPS paper mirror configuration valid")
+            return 0
+        if not PYTHON.is_file():
+            raise RuntimeError(f"missing Python 3.12 project venv: {PYTHON}")
+        # Partition on the EXCHANGE date, not UTC. A run between 00:00-04:00 UTC
+        # is still the previous trading day in New York, and partitioning on UTC
+        # would file it under tomorrow. #78 was this same defect in a smoke test.
+        run_date = datetime.now(ZoneInfo("America/New_York")).date().isoformat()
+        out = OUT_ROOT / run_date / args.phase
+        out.mkdir(parents=True, exist_ok=True)
+        if args.phase == "morning":
+            run([str(PYTHON), "-m", "alembic", "upgrade", "head"], env, out, REPO)
+            run([str(PYTHON), "-m", "src.worker", "--run-now"], env, out, REPO)
+        else:
+            # No alembic: the checkout only fast-forwards on the morning lane, so
+            # there is nothing to migrate and it is a needless failure surface.
+            run([str(PYTHON), "-m", "src.worker", "--check-now"], env, out, REPO)
+        dashboard = out / "dashboard-data.json"
+        run([str(PYTHON), "scripts/export_dashboard_data.py", "--out", str(dashboard), "--days", "90"], env, out, REPO)
+        manifest = {
+            # run_date is the partition key and is now the EXCHANGE date.
+            # run_date_utc is retained (7 prior artifacts carry it) but now holds
+            # the actual UTC date, so neither key is ever a mislabelled value.
+            "run_date": run_date,
+            "run_date_tz": "America/New_York",
+            "run_date_utc": datetime.now(timezone.utc).date().isoformat(),
+            "phase": args.phase,
+            "completed_at_utc": datetime.now(timezone.utc).isoformat(),
+            "source_tier": "vps_paper_mirror_of_github_main",
+            # Identity of THIS FILE, not of the checkout it drives. source_sha
+            # below is `git rev-parse HEAD` in the pipeline checkout and proves
+            # which pipeline ran; it says nothing about which launcher ran.
+            # Without this, a governed copy in the repo and an ungoverned copy
+            # on the host are indistinguishable in the run record — which is the
+            # failure this file was brought into the repo to close.
+            # Verify: git show <commit>:scripts/mas_vps_paper_mirror.py | sha256sum
+            "launcher_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
+            "trading_mode": env["TRADING_MODE"],
+            "execution_mode": env["EXECUTION_MODE"],
+            "pead_enabled": env["PEAD_ENABLED"],
+            "telegram_disabled": True,
+            "dashboard_sha256": hashlib.sha256(dashboard.read_bytes()).hexdigest(),
+            "dashboard": str(dashboard),
+        }
+        (out / "run-meta.json").write_text(json.dumps(manifest, indent=2, sort_keys=True) + "\n", encoding="utf-8")
+        payload = json.loads(dashboard.read_text(encoding="utf-8"))
+        print(format_summary(
+            payload.get("today_picks", []),
+            source_sha=manifest["source_sha"],
+            artifact=str(dashboard),
+        ))
+        return 0
+    except Exception as exc:
+        print(f"⚠️ MAS VPS PAPER mirror failed closed: {type(exc).__name__}: {exc}")
+        return 1
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())
