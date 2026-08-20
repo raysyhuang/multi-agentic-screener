@@ -15,7 +15,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-import mas_github_pipeline_health as gate
+import mas_github_pipeline_health as gate  # noqa: E402
 
 SHA = "a" * 40
 
