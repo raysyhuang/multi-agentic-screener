@@ -56,11 +56,22 @@ Why: two agents writing to two working copies of a same-named repo is the setup 
 |---|---|
 | Required checks | `lint`, `test`, `migrations` |
 | Branches must be current | yes (`strict`) |
-| Approving reviews | 1, **stale reviews dismissed on new commits** |
+| Approving reviews | **0** — the requirement is a pull request, not an approval (see below) |
 | **Admin enforcement** | **on — admins are not exempt** |
+| Conversation resolution | required |
 | Force pushes / branch deletion | disabled |
 
 **This section previously read "`main` has no branch protection … the discipline is currently the only guard."** That was true until it wasn't. Every other guard in this document is a convention; this one is enforced by the server.
+
+> **Why zero approvals — recorded because it is a loosening.** `1` was set on 2026-08-16 and was **unsatisfiable from the moment it was enabled**: every agent pushes with Ray's token, so GitHub records Ray as the author of every PR; GitHub refuses self-approval unconditionally; Ray is the only collaborator; and `enforce_admins` removed the override. Nothing could merge — verified by attempting it. Thirteen PRs accumulated behind a gate no identity could pass.
+>
+> **What was dropped is the approval, not the pull request.** Those are different fields and confusing them is dangerous. Setting `required_pull_request_reviews` to `null` removes the pull-request requirement too — verified by applying it to a throwaway branch, where a direct admin push **succeeded**. `{"required_approving_review_count": 0}` keeps it; the same test then returned `GH006 … Changes must be made through a pull request`. Both results were obtained before `main` was touched.
+>
+> **`dismiss_stale_reviews` is now `false`, changed in the same call.** It is inert at zero approvals — there is nothing to dismiss — but it is **not** inert once approvals return to `1`. Restoring only the count would leave a gate weaker than the original, because an approval would survive commits pushed after it.
+>
+> **The consequence, stated plainly:** "non-author review" is a convention here, not a mechanism. It already was — an unsatisfiable gate reviews nothing — but saying so is the point. With approvals at zero, **required CI is the only gate, and `ci.yml` is a file any PR can edit**; a PR that weakens a check reports success and is then mergeable. That path is closed by a bot identity whose token withholds `Workflows: write`, not by discipline.
+>
+> **When a bot identity exists, restore all three in one call:** `required_approving_review_count: 1`, `dismiss_stale_reviews: true`, `require_last_push_approval: true`.
 
 `enforce_admins` is on for a specific reason: the risk was never Ray hot-fixing at 2am, it was **an agent operating with Ray's credentials inheriting the exemption**. An admin token held by an agent is an admin token.
 
