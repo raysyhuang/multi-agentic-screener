@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -172,6 +173,59 @@ def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}")
 
 
+def launcher_provenance() -> dict:
+    """Where this file was invoked from, so the run record can distinguish a
+    governed checkout from a copy of one.
+
+    `launcher_sha256` alone proves only that the executed bytes match some
+    committed blob — a `cp` of the repo file onto the host, invoked from the
+    host path, produces an identical hash. That rules out a *drifted* copy,
+    which is the likelier failure, but it does not establish provenance.
+
+    These four fields together do:
+
+      launcher_path       the resolved path actually executed
+      launcher_git_head   HEAD of the checkout containing it, if any
+      launcher_git_clean  whether THIS file is unmodified in that checkout
+      launcher_git_remote origin URL, credentials stripped
+
+    A bare copy has no `launcher_git_head`. A clone of an unrelated repo has
+    the wrong `launcher_git_remote`. A locally edited file reports
+    `launcher_git_clean: false`. What remains unproven is only that the
+    scheduler *chose* this path rather than another equally valid checkout —
+    which is a question about the scheduler, not about this run.
+
+    Absence is reported as null rather than raising: a launcher running outside
+    a checkout is a fact worth recording, not a reason to fail the lane.
+    """
+    path = Path(__file__).resolve()
+    info: dict[str, object] = {
+        "launcher_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "launcher_path": str(path),
+        "launcher_git_head": None,
+        "launcher_git_clean": None,
+        "launcher_git_remote": None,
+    }
+    def _git(*args: str) -> str | None:
+        result = subprocess.run(
+            ["git", "-C", str(path.parent), *args],
+            text=True, capture_output=True, timeout=30, check=False,
+        )
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    head = _git("rev-parse", "HEAD")
+    if head is None:
+        return info
+    info["launcher_git_head"] = head
+    status = _git("status", "--porcelain", "--", str(path))
+    info["launcher_git_clean"] = status == ""
+    remote = _git("remote", "get-url", "origin")
+    if remote:
+        # A remote may embed credentials; record the host and path only.
+        info["launcher_git_remote"] = re.sub(r"//[^@/]*@", "//", remote)
+    return info
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate-only", action="store_true")
@@ -243,7 +297,7 @@ def main() -> int:
             # copy. A host copy with identical bytes passes identically. This
             # establishes code-content equivalence only; repointing the
             # scheduler is a separate step and is not evidenced here.
-            "launcher_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            **launcher_provenance(),
             "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
             "trading_mode": env["TRADING_MODE"],
             "execution_mode": env["EXECUTION_MODE"],

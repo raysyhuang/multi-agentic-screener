@@ -213,3 +213,82 @@ def test_manifest_asserts_the_isolation_it_ran_under(deploy, monkeypatch):
     assert manifest["execution_mode"] == "quant_only"
     assert manifest["telegram_disabled"] is True
     assert manifest["dashboard_sha256"]
+
+
+# ── provenance: content hash alone cannot prove invocation ───────────────
+#
+# launcher_sha256 proves the executed bytes match some committed blob. A `cp`
+# of the repo file onto the host, invoked from the host path, produces an
+# identical hash. These fields are what distinguish a governed checkout from a
+# copy of one.
+
+def test_provenance_from_a_real_checkout_reports_head_and_remote():
+    p = launcher.launcher_provenance()
+    assert p["launcher_path"].endswith("scripts/mas_vps_paper_mirror.py")
+    assert p["launcher_git_head"] and len(p["launcher_git_head"]) == 40
+    assert p["launcher_git_remote"] and "multi-agentic-screener" in p["launcher_git_remote"]
+    assert p["launcher_sha256"] == hashlib.sha256(SCRIPT.read_bytes()).hexdigest()
+
+
+def test_provenance_from_a_bare_copy_reports_nulls(tmp_path, monkeypatch):
+    """The case the fields exist for: identical bytes, no checkout behind them."""
+    copy = tmp_path / "mas_vps_paper_mirror.py"
+    copy.write_bytes(SCRIPT.read_bytes())
+    monkeypatch.setattr(launcher, "__file__", str(copy))
+    p = launcher.launcher_provenance()
+    assert p["launcher_sha256"] == hashlib.sha256(SCRIPT.read_bytes()).hexdigest(), \
+        "a bare copy has an identical hash — that is the whole point"
+    assert p["launcher_git_head"] is None
+    assert p["launcher_git_clean"] is None
+    assert p["launcher_git_remote"] is None
+    assert p["launcher_path"] == str(copy)
+
+
+def test_a_modified_file_reports_unclean(tmp_path, monkeypatch):
+    """A locally edited launcher in a real checkout must not look governed."""
+    import subprocess as sp
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    sp.run(["git", "init", "-q", str(repo)], check=True)
+    sp.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    sp.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    target = repo / "scripts" / "mas_vps_paper_mirror.py"
+    target.write_text("original\n")
+    sp.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    sp.run(["git", "-C", str(repo), "commit", "-qm", "x"], check=True)
+
+    monkeypatch.setattr(launcher, "__file__", str(target))
+    assert launcher.launcher_provenance()["launcher_git_clean"] is True
+
+    target.write_text("edited on the host\n")
+    p = launcher.launcher_provenance()
+    assert p["launcher_git_clean"] is False, "an edited file must report unclean"
+    assert p["launcher_git_head"] is not None, "it is still a checkout"
+
+
+def test_credentials_are_stripped_from_the_remote(tmp_path, monkeypatch):
+    import subprocess as sp
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    sp.run(["git", "init", "-q", str(repo)], check=True)
+    sp.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    sp.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    sp.run(["git", "-C", str(repo), "remote", "add", "origin",
+            "https://user:SUPERSECRET@github.com/raysyhuang/multi-agentic-screener.git"], check=True)
+    target = repo / "scripts" / "mas_vps_paper_mirror.py"
+    target.write_text("x\n")
+    sp.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    sp.run(["git", "-C", str(repo), "commit", "-qm", "x"], check=True)
+
+    monkeypatch.setattr(launcher, "__file__", str(target))
+    remote = launcher.launcher_provenance()["launcher_git_remote"]
+    assert "SUPERSECRET" not in remote and "user:" not in remote
+    assert remote == "https://github.com/raysyhuang/multi-agentic-screener.git"
+
+
+def test_manifest_carries_every_provenance_field(deploy, monkeypatch):
+    _, out_root, _ = deploy
+    manifest = _smoke(monkeypatch, out_root, "afternoon")
+    for field in ("launcher_sha256", "launcher_path", "launcher_git_head",
+                  "launcher_git_clean", "launcher_git_remote"):
+        assert field in manifest, f"{field} missing from run-meta.json"
