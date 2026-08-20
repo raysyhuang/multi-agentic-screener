@@ -18,7 +18,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-import mas_daily_thread_brief as brief
+import mas_daily_thread_brief as brief  # noqa: E402
 
 ET = ZoneInfo("America/New_York")
 

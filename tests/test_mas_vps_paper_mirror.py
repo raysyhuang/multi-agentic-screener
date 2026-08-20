@@ -19,7 +19,7 @@ import pytest
 REPO = Path(__file__).resolve().parents[1]
 sys.path.insert(0, str(REPO / "scripts"))
 
-import mas_vps_paper_mirror as launcher
+import mas_vps_paper_mirror as launcher  # noqa: E402
 
 SCRIPT = REPO / "scripts" / "mas_vps_paper_mirror.py"
 GOOD_DB = "postgresql://u:p@127.0.0.1:5432/mas_mirror_main"
@@ -27,7 +27,8 @@ GOOD_DB = "postgresql://u:p@127.0.0.1:5432/mas_mirror_main"
 
 @pytest.fixture
 def deploy(tmp_path, monkeypatch):
-    repo = tmp_path / "checkout"; (repo / ".venv/bin").mkdir(parents=True)
+    repo = tmp_path / "checkout"
+    (repo / ".venv/bin").mkdir(parents=True)
     (repo / ".venv/bin/python").write_text("")
     out_root = tmp_path / "out"
     envfile = tmp_path / "mas.env"
@@ -62,7 +63,8 @@ def test_python_defaults_to_the_checkout_venv(deploy):
 
 def test_env_files_preserve_precedence_order(deploy, monkeypatch, tmp_path):
     a, b = tmp_path / "a.env", tmp_path / "b.env"
-    a.write_text("X=1\n"); b.write_text("X=2\n")
+    a.write_text("X=1\n")
+    b.write_text("X=2\n")
     import os
     monkeypatch.setenv("MAS_MIRROR_ENV_FILES", os.pathsep.join([str(a), str(b)]))
     _, _, _, env_files = launcher.resolve_config()
