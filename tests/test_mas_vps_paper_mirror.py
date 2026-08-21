@@ -290,5 +290,94 @@ def test_manifest_carries_every_provenance_field(deploy, monkeypatch):
     _, out_root, _ = deploy
     manifest = _smoke(monkeypatch, out_root, "afternoon")
     for field in ("launcher_sha256", "launcher_path", "launcher_git_head",
-                  "launcher_git_clean", "launcher_git_remote"):
+                  "launcher_git_tracked", "launcher_git_clean", "launcher_git_remote"):
         assert field in manifest, f"{field} missing from run-meta.json"
+
+
+def _repo_with_commit(tmp_path):
+    import subprocess as sp
+    repo = tmp_path / "repo"
+    (repo / "scripts").mkdir(parents=True)
+    sp.run(["git", "init", "-q", str(repo)], check=True)
+    sp.run(["git", "-C", str(repo), "config", "user.email", "t@t"], check=True)
+    sp.run(["git", "-C", str(repo), "config", "user.name", "t"], check=True)
+    target = repo / "scripts" / "mas_vps_paper_mirror.py"
+    target.write_text("original\n")
+    (repo / ".gitignore").write_text(".venv/\n")
+    sp.run(["git", "-C", str(repo), "add", "-A"], check=True)
+    sp.run(["git", "-C", str(repo), "commit", "-qm", "x"], check=True)
+    return repo, target
+
+
+def test_an_ignored_copy_inside_the_checkout_is_not_governed(tmp_path, monkeypatch):
+    """The hole this rewrite closes.
+
+    `git status --porcelain` emits nothing for IGNORED files, so an ignored
+    copy read as clean while reporting the real HEAD, the real remote and a
+    matching sha256 -- four fields all saying governed, for a `cp`.
+
+    Not exotic: `.venv/` is ignored, and `.venv/bin/python` is where this
+    launcher's own MAS_MIRROR_PYTHON fallback points, so it is guaranteed to
+    exist inside the governed checkout on that host.
+    """
+    import subprocess as sp
+    repo, tracked = _repo_with_commit(tmp_path)
+    ignored = repo / ".venv" / "bin" / "L.py"
+    ignored.parent.mkdir(parents=True)
+    ignored.write_bytes(tracked.read_bytes())
+
+    # precondition: git status really is silent about it
+    status = sp.run(["git", "-C", str(repo), "status", "--porcelain", "--", str(ignored)],
+                    text=True, capture_output=True, check=False)
+    assert status.stdout.strip() == "", "premise: an ignored file produces no status output"
+
+    monkeypatch.setattr(launcher, "__file__", str(ignored))
+    p = launcher.launcher_provenance()
+    assert p["launcher_git_head"] is not None, "it really is inside a checkout"
+    assert p["launcher_git_tracked"] is False, "an ignored copy is not tracked"
+    assert p["launcher_git_clean"] is False, "and must never read as clean"
+
+
+def test_an_untracked_copy_is_also_not_governed(tmp_path, monkeypatch):
+    repo, tracked = _repo_with_commit(tmp_path)
+    untracked = repo / "scripts" / "copy.py"
+    untracked.write_bytes(tracked.read_bytes())
+    monkeypatch.setattr(launcher, "__file__", str(untracked))
+    p = launcher.launcher_provenance()
+    assert p["launcher_git_tracked"] is False
+    assert p["launcher_git_clean"] is False
+
+
+def test_the_tracked_original_is_governed(tmp_path, monkeypatch):
+    repo, tracked = _repo_with_commit(tmp_path)
+    monkeypatch.setattr(launcher, "__file__", str(tracked))
+    p = launcher.launcher_provenance()
+    assert p["launcher_git_tracked"] is True
+    assert p["launcher_git_clean"] is True
+
+
+def test_password_containing_an_at_sign_is_fully_stripped():
+    """A regex over `//...@` truncates at the FIRST @: `user:p@ss@host` becomes
+    `ss@host`, which both leaks and misreports the host."""
+    dirty = "https://user:p@ss@github.com/raysyhuang/multi-agentic-screener.git"
+    clean = launcher._sanitise_remote(dirty)
+    assert clean == "https://github.com/raysyhuang/multi-agentic-screener.git"
+    assert "p@ss" not in clean and "ss@" not in clean
+
+
+def test_scp_form_remote_is_left_alone():
+    url = "git@github.com:raysyhuang/multi-agentic-screener.git"
+    assert launcher._sanitise_remote(url) == url
+
+
+def test_a_hung_git_does_not_fail_the_lane(tmp_path, monkeypatch):
+    """check=False does NOT suppress TimeoutExpired. Letting it escape would
+    fail the lane at manifest time -- after the pipeline had already succeeded
+    -- discarding run-meta.json entirely."""
+    import subprocess as sp
+    def hang(*args, **kwargs):
+        raise sp.TimeoutExpired(cmd="git", timeout=30)
+    monkeypatch.setattr(launcher.subprocess, "run", hang)
+    p = launcher.launcher_provenance()
+    assert p["launcher_git_head"] is None
+    assert p["launcher_sha256"], "the hash is computed without git and must survive"

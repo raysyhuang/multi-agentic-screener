@@ -6,11 +6,10 @@ import argparse
 import hashlib
 import json
 import os
-import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 # ── Deployment configuration ─────────────────────────────────────────────
@@ -173,56 +172,96 @@ def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}")
 
 
+def _sanitise_remote(url: str) -> str:
+    """Strip any embedded credentials from a git remote.
+
+    A regex over `//...@` is wrong: a password containing `@` truncates the
+    host. `https://user:p@ss@github.com/a/b.git` becomes `https://ss@github…`,
+    which both leaks and misreports. urlsplit handles it, and it is what this
+    file already uses for DATABASE_URL.
+    """
+    if "://" not in url:
+        return url  # scp form (git@host:path) carries no password
+    parsed = urlsplit(url)
+    if not parsed.hostname:
+        return url
+    netloc = parsed.hostname + (f":{parsed.port}" if parsed.port else "")
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+
+
 def launcher_provenance() -> dict:
     """Where this file was invoked from, so the run record can distinguish a
-    governed checkout from a copy of one.
+    governed checkout from a copy sitting inside one.
 
     `launcher_sha256` alone proves only that the executed bytes match some
-    committed blob — a `cp` of the repo file onto the host, invoked from the
-    host path, produces an identical hash. That rules out a *drifted* copy,
-    which is the likelier failure, but it does not establish provenance.
+    committed blob — a `cp` produces an identical hash. That rules out a
+    *drifted* copy, which is the likelier failure, but not provenance.
 
-    These four fields together do:
+    `git status --porcelain` cannot carry that weight either: **ignored files
+    produce no status output, so an ignored copy reads as clean.** That is not
+    exotic — `.venv/` is ignored, and `.venv/bin/python` is exactly where this
+    launcher's own MAS_MIRROR_PYTHON fallback points, so it is a directory
+    guaranteed to exist inside the governed checkout on that host. A copy there
+    would have reported the real HEAD, the real remote, clean, and a matching
+    hash: four fields all saying governed, for a `cp`.
 
-      launcher_path       the resolved path actually executed
-      launcher_git_head   HEAD of the checkout containing it, if any
-      launcher_git_clean  whether THIS file is unmodified in that checkout
-      launcher_git_remote origin URL, credentials stripped
+    So trackedness is established by asking HEAD directly:
 
-    A bare copy has no `launcher_git_head`. A clone of an unrelated repo has
-    the wrong `launcher_git_remote`. A locally edited file reports
-    `launcher_git_clean: false`. What remains unproven is only that the
-    scheduler *chose* this path rather than another equally valid checkout —
-    which is a question about the scheduler, not about this run.
+        git rev-parse HEAD:./<name>   -> the blob recorded at HEAD, or an error
+        git hash-object <path>        -> the blob of the bytes on disk
 
-    Absence is reported as null rather than raising: a launcher running outside
-    a checkout is a fact worth recording, not a reason to fail the lane.
+    Equal means the executed bytes ARE the committed blob at that HEAD, and
+    trackedness comes free — an untracked or ignored path has no entry at HEAD
+    to compare against.
+
+    What is still not proven: that the scheduler chose THIS checkout rather
+    than another equally valid one. That is not unanswerable, it is simply not
+    answerable *from an artifact* — the choice lives in the scheduler unit that
+    sets MAS_MIRROR_REPO, which is host config and not yet versioned.
+
+    Absence is null, never an exception. A launcher outside a checkout is a
+    fact worth recording, not a reason to fail a lane whose pipeline already
+    succeeded.
     """
     path = Path(__file__).resolve()
     info: dict[str, object] = {
         "launcher_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
         "launcher_path": str(path),
         "launcher_git_head": None,
+        "launcher_git_tracked": None,
         "launcher_git_clean": None,
         "launcher_git_remote": None,
     }
+
     def _git(*args: str) -> str | None:
-        result = subprocess.run(
-            ["git", "-C", str(path.parent), *args],
-            text=True, capture_output=True, timeout=30, check=False,
-        )
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(path.parent), *args],
+                text=True, capture_output=True, timeout=30, check=False,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            # check=False does NOT suppress TimeoutExpired. Letting it escape
+            # would fail the lane at manifest time, after the pipeline had
+            # already succeeded, discarding run-meta.json.
+            return None
         return result.stdout.strip() if result.returncode == 0 else None
 
     head = _git("rev-parse", "HEAD")
     if head is None:
         return info
     info["launcher_git_head"] = head
-    status = _git("status", "--porcelain", "--", str(path))
-    info["launcher_git_clean"] = status == ""
+
+    blob_at_head = _git("rev-parse", f"HEAD:./{path.name}")
+    info["launcher_git_tracked"] = blob_at_head is not None
+    if blob_at_head is not None:
+        blob_on_disk = _git("hash-object", str(path))
+        info["launcher_git_clean"] = blob_on_disk is not None and blob_on_disk == blob_at_head
+    else:
+        info["launcher_git_clean"] = False
+
     remote = _git("remote", "get-url", "origin")
     if remote:
-        # A remote may embed credentials; record the host and path only.
-        info["launcher_git_remote"] = re.sub(r"//[^@/]*@", "//", remote)
+        info["launcher_git_remote"] = _sanitise_remote(remote)
     return info
 
 
