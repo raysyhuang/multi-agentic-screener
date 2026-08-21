@@ -267,6 +267,8 @@ def test_the_matched_strings_still_exist_in_the_captured_payloads():
     assert any(j["name"] == "Run scheduled pipeline" for j in jobs), "job name drifted"
     steps = [s["name"] for j in jobs if j["name"] == "Run scheduled pipeline" for s in j["steps"]]
     assert "Run morning pipeline" in steps, "step name drifted"
+    # Not matched by worker_ran; asserted because the attestation step going
+    # missing would break the gate through a different path.
     assert "Attest the run recorded itself" in steps, "attestation step drifted"
 
 

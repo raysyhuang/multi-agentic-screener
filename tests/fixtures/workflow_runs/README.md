@@ -3,15 +3,33 @@
 Real `gh run view <id> --json jobs` output from `Scheduled Pipelines (GitHub-hosted)`,
 checked in unmodified.
 
-**Why these exist.** `mas_github_pipeline_health.worker_ran` matches four strings against
-this workflow — the job name `Run scheduled pipeline`, the step name `Run morning pipeline`,
-and elsewhere the workflow name and the `mas-run-attestation` artifact name. None of those
-appear literally in `scheduled-pipelines.yml`: the step is
-`Run ${{ steps.resolve.outputs.pipeline }} pipeline`, resolved at runtime.
+**Why these exist.** The health gate matches four strings against this workflow: the job name
+`Run scheduled pipeline`, the step name `Run morning pipeline`, the workflow name, and the
+`mas-run-attestation` artifact name. None appear literally in `scheduled-pipelines.yml` — the
+step is `Run ${{ steps.resolve.outputs.pipeline }} pipeline`, resolved at runtime.
 
-Hand-written test dicts cannot catch a rename, because they are written to match the code
-rather than the workflow. A captured payload can. If someone renames a step and these
-fixtures are not re-captured, the tests that read them fail — which is the point.
+**These fixtures cover two of the four, deliberately.** The job name and step name are what
+`worker_ran` reads, and if either drifts the gate fails **silently to pending** — the lane
+stops and nothing goes red. The workflow name and the artifact name live on different
+endpoints, are not present in a `--json jobs` capture, and if either drifts the gate fails
+**loudly, to unhealthy and red**. The silent pair is the one worth fixturing.
+
+**What these catch, and what they do not.** Stated precisely, because the obvious reading is
+backwards.
+
+They catch **code-side drift**: someone edits `worker_ran` so it no longer matches a payload
+this workflow really produces, and a test fails.
+
+They do **not** catch **workflow-side drift**, which is the actual outage shape. Rename the
+step in `scheduled-pipelines.yml`, touch no Python, and every test here keeps passing against
+the old capture while production breaks — the gate reports pending forever and nothing goes
+red. Closing that direction needs an assertion against the YAML itself: the template
+`Run ${{ steps.resolve.outputs.pipeline }} pipeline` together with the `morning` case value at
+the resolve step. Two hops and ugly, but it is the only thing tying the code's literal to the
+file that produces it. Not done here.
+
+Hand-written dicts catch neither direction: they are written to match the code, so they only
+assert that the code agrees with itself.
 
 **The failure this guards against is not hypothetical.** If `worker_ran` silently stops
 matching, the health gate never reports healthy, the daily brief skips the mirror every
