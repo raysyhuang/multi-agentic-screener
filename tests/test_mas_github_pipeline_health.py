@@ -221,3 +221,63 @@ def test_documentation_changes_are_not_pipeline_relevant(path):
 def test_short_sha_is_twelve_characters():
     assert gate.short(SHA) == "a" * 12
     assert gate.short("") == "unknown"
+
+
+# ── golden fixtures: real captured payloads, not hand-written dicts ──────
+#
+# worker_ran matches strings against a workflow file where they do not appear
+# literally -- the step is `Run ${{ steps.resolve.outputs.pipeline }} pipeline`,
+# resolved at runtime. Synthetic dicts are written to match the code, so they
+# cannot catch a rename. These are `gh run view --json jobs` captures from real
+# runs, checked in unmodified. See tests/fixtures/workflow_runs/README.md.
+
+FIXTURES = REPO / "tests" / "fixtures" / "workflow_runs"
+
+
+def _jobs(name: str) -> list[dict]:
+    import json
+    return json.loads((FIXTURES / f"{name}.json").read_text())["jobs"]
+
+
+def test_real_morning_worker_run_is_recognised():
+    """Run 32358395667 — the run the health gate cited as the actual morning
+    worker on 2026-08-20. If a rename breaks this, the gate never reports
+    healthy, the brief skips the mirror every day, and nothing goes red. That
+    is the 2026-08-14..08-20 outage by another route."""
+    assert gate.worker_ran(_jobs("morning_worker_ran")) is True
+
+
+def test_real_dst_duplicate_is_not_a_worker_run():
+    """Run 32363434075 — green overall, `Run morning pipeline` skipped. Two
+    cron lines fire per slot and the off-season one is a no-op, so a green
+    workflow is not evidence the worker did anything."""
+    assert gate.worker_ran(_jobs("morning_dst_skip")) is False
+
+
+def test_real_afternoon_run_does_not_satisfy_the_morning_gate():
+    """Run 32301227211 — the afternoon lane succeeded, but its step is named
+    `Run afternoon pipeline`. The morning gate must not accept it."""
+    assert gate.worker_ran(_jobs("afternoon_worker_ran")) is False
+
+
+def test_the_matched_strings_still_exist_in_the_captured_payloads():
+    """Assert the literals the code depends on, against real captures rather
+    than against the code's own assumptions."""
+    jobs = _jobs("morning_worker_ran")
+    assert any(j["name"] == "Run scheduled pipeline" for j in jobs), "job name drifted"
+    steps = [s["name"] for j in jobs if j["name"] == "Run scheduled pipeline" for s in j["steps"]]
+    assert "Run morning pipeline" in steps, "step name drifted"
+    # Not matched by worker_ran; asserted because the attestation step going
+    # missing would break the gate through a different path.
+    assert "Attest the run recorded itself" in steps, "attestation step drifted"
+
+
+def test_fixtures_are_unmodified_captures():
+    """Each fixture must retain the shape gh emits, so a re-capture is a drop-in."""
+    import json
+    for name in ("morning_worker_ran", "morning_dst_skip", "afternoon_worker_ran"):
+        payload = json.loads((FIXTURES / f"{name}.json").read_text())
+        assert set(payload) == {"jobs"}, f"{name}: not a raw `--json jobs` capture"
+        assert payload["jobs"], f"{name}: no jobs"
+        for job in payload["jobs"]:
+            assert "name" in job and "steps" in job
