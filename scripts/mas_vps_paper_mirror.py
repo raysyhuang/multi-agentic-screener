@@ -9,7 +9,7 @@ import os
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
-from urllib.parse import urlsplit
+from urllib.parse import urlsplit, urlunsplit
 from zoneinfo import ZoneInfo
 
 # ── Deployment configuration ─────────────────────────────────────────────
@@ -172,6 +172,99 @@ def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}")
 
 
+def _sanitise_remote(url: str) -> str:
+    """Strip any embedded credentials from a git remote.
+
+    A regex over `//...@` is wrong: a password containing `@` truncates the
+    host. `https://user:p@ss@github.com/a/b.git` becomes `https://ss@github…`,
+    which both leaks and misreports. urlsplit handles it, and it is what this
+    file already uses for DATABASE_URL.
+    """
+    if "://" not in url:
+        return url  # scp form (git@host:path) carries no password
+    parsed = urlsplit(url)
+    if not parsed.hostname:
+        return url
+    netloc = parsed.hostname + (f":{parsed.port}" if parsed.port else "")
+    return urlunsplit((parsed.scheme, netloc, parsed.path, "", ""))
+
+
+def launcher_provenance() -> dict:
+    """Where this file was invoked from, so the run record can distinguish a
+    governed checkout from a copy sitting inside one.
+
+    `launcher_sha256` alone proves only that the executed bytes match some
+    committed blob — a `cp` produces an identical hash. That rules out a
+    *drifted* copy, which is the likelier failure, but not provenance.
+
+    `git status --porcelain` cannot carry that weight either: **ignored files
+    produce no status output, so an ignored copy reads as clean.** That is not
+    exotic — `.venv/` is ignored, and `.venv/bin/python` is exactly where this
+    launcher's own MAS_MIRROR_PYTHON fallback points, so it is a directory
+    guaranteed to exist inside the governed checkout on that host. A copy there
+    would have reported the real HEAD, the real remote, clean, and a matching
+    hash: four fields all saying governed, for a `cp`.
+
+    So trackedness is established by asking HEAD directly:
+
+        git rev-parse HEAD:./<name>   -> the blob recorded at HEAD, or an error
+        git hash-object <path>        -> the blob of the bytes on disk
+
+    Equal means the executed bytes ARE the committed blob at that HEAD, and
+    trackedness comes free — an untracked or ignored path has no entry at HEAD
+    to compare against.
+
+    What is still not proven: that the scheduler chose THIS checkout rather
+    than another equally valid one. That is not unanswerable, it is simply not
+    answerable *from an artifact* — the choice lives in the scheduler unit that
+    sets MAS_MIRROR_REPO, which is host config and not yet versioned.
+
+    Absence is null, never an exception. A launcher outside a checkout is a
+    fact worth recording, not a reason to fail a lane whose pipeline already
+    succeeded.
+    """
+    path = Path(__file__).resolve()
+    info: dict[str, object] = {
+        "launcher_sha256": hashlib.sha256(path.read_bytes()).hexdigest(),
+        "launcher_path": str(path),
+        "launcher_git_head": None,
+        "launcher_git_tracked": None,
+        "launcher_git_clean": None,
+        "launcher_git_remote": None,
+    }
+
+    def _git(*args: str) -> str | None:
+        try:
+            result = subprocess.run(
+                ["git", "-C", str(path.parent), *args],
+                text=True, capture_output=True, timeout=30, check=False,
+            )
+        except (subprocess.TimeoutExpired, OSError):
+            # check=False does NOT suppress TimeoutExpired. Letting it escape
+            # would fail the lane at manifest time, after the pipeline had
+            # already succeeded, discarding run-meta.json.
+            return None
+        return result.stdout.strip() if result.returncode == 0 else None
+
+    head = _git("rev-parse", "HEAD")
+    if head is None:
+        return info
+    info["launcher_git_head"] = head
+
+    blob_at_head = _git("rev-parse", f"HEAD:./{path.name}")
+    info["launcher_git_tracked"] = blob_at_head is not None
+    if blob_at_head is not None:
+        blob_on_disk = _git("hash-object", str(path))
+        info["launcher_git_clean"] = blob_on_disk is not None and blob_on_disk == blob_at_head
+    else:
+        info["launcher_git_clean"] = False
+
+    remote = _git("remote", "get-url", "origin")
+    if remote:
+        info["launcher_git_remote"] = _sanitise_remote(remote)
+    return info
+
+
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--validate-only", action="store_true")
@@ -243,7 +336,7 @@ def main() -> int:
             # copy. A host copy with identical bytes passes identically. This
             # establishes code-content equivalence only; repointing the
             # scheduler is a separate step and is not evidenced here.
-            "launcher_sha256": hashlib.sha256(Path(__file__).read_bytes()).hexdigest(),
+            **launcher_provenance(),
             "source_sha": subprocess.check_output(["git", "rev-parse", "HEAD"], cwd=REPO, text=True).strip(),
             "trading_mode": env["TRADING_MODE"],
             "execution_mode": env["EXECUTION_MODE"],
