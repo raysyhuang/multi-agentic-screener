@@ -250,15 +250,20 @@ function recordList(container, rows) {
    close to the target, and how close to expiry. The dashboard previously showed
    only unrealized P&L, which answers none of them. */
 function holdText(o) {
-  const held = o.days_held, plan = o.hold_days;
-  if (held == null) return "–";
-  if (held < 0) return `enters in ${-held}d`;
-  return plan ? `${held}/${plan}d` : `${held}d`;
+  const held = o.days_held, plan = o.hold_days, status = o.days_held_status;
+  if (status === "pre_entry") return "not entered";
+  if (status === "benchmark_unavailable") return "age unavailable";
+  if (status === "missing_entry_date") return "entry date unavailable";
+  if (held == null) return "age unavailable";
+  return plan ? `${held}/${plan} sessions` : `${held} sessions`;
 }
 
 function positionNote(o) {
   // Which boundary is nearest, in the position's own terms.
-  if (o.days_held != null && o.days_held < 0) return "not yet entered";
+  const status = o.days_held_status;
+  if (status === "pre_entry") return "not yet entered";
+  if (status === "benchmark_unavailable") return "benchmark age unavailable";
+  if (status === "missing_entry_date") return "entry date unavailable";
   if (o.hold_days && o.days_held != null && o.days_held >= o.hold_days) return "at/past planned exit";
   const p = o.unrealized_pnl_pct;
   if (p == null || !o.entry_price || !o.stop_loss || !o.target_1) return "open";

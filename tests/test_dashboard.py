@@ -47,6 +47,15 @@ def app_client():
         yield app, mock_session
 
 
+def test_dashboard_position_age_states_are_explicit():
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert 'status === "pre_entry"' in script
+    assert 'status === "benchmark_unavailable"' in script
+    assert 'status === "missing_entry_date"' in script
+    assert 'o.days_held < 0' not in script
+
+
 @pytest.mark.asyncio
 async def test_dashboard_returns_200(app_client):
     """/dashboard should return 200 with HTML content."""
