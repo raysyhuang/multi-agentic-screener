@@ -133,13 +133,45 @@ def test_settings_resolution_never_leaks_credentials_on_bad_output(monkeypatch, 
     """stdout carries database_url and telegram tokens; a JSONDecodeError
     embeds a snippet of what it failed on, and main() prints the exception."""
     def fake_run(*a, **k):
-        return subprocess.CompletedProcess(a, 0, stdout='{"database_url": "postgres://u:SECRET@h/db"', stderr="")
+        return subprocess.CompletedProcess(a, 0, stdout='{"database_url": "postgres://u:***@h/db"', stderr="")
     monkeypatch.setattr(launcher.subprocess, "run", fake_run)
     with pytest.raises(RuntimeError) as excinfo:
         launcher.resolved_settings({}, tmp_path / "py", tmp_path)
     message = str(excinfo.value)
     assert "SECRET" not in message and "postgres://" not in message
     assert "stdout withheld" in message
+
+
+def test_run_redacts_credentials_before_writing_logs(monkeypatch, tmp_path):
+    secret = "provider-secret-value"
+    stderr = "\n".join((
+        "GET https://api.polygon.io/v2/aggs?apiKey=" + secret + "&limit=5000",
+        "GET https://api.stlouisfed.org/fred?series_id=VIXCLS&api_key=" + secret,
+        "POST https://issuer.test/oauth?client_secret=" + secret + "&grant_type=client_credentials",
+        "POST https://issuer.test/login?password=" + secret + "&accessToken=" + secret,
+        "GET https://example.test/?x=1&amp;access_token=" + secret,
+        "GET https://example.test/%3Fapi-key%3D" + secret + "%26limit%3D1",
+        "Authorization: Bearer " + secret,
+        "> Authorization: Bearer " + secret,
+        'headers={"Authorization": "Bearer ' + secret + '"}',
+        "DEBUG x-api-key: " + secret,
+        "x-api-key: " + secret,
+    ))
+    stdout = "curl -H 'Authorization: Bearer " + secret + "' https://example.test"
+    monkeypatch.setattr(
+        launcher.subprocess,
+        "run",
+        lambda *a, **k: subprocess.CompletedProcess(a, 0, stdout=stdout, stderr=stderr),
+    )
+
+    launcher.run(["python", "--check-now"], {}, tmp_path, tmp_path)
+
+    saved = (tmp_path / "--check-now.stderr.log").read_text()
+    saved_stdout = (tmp_path / "--check-now.stdout.log").read_text()
+    assert secret not in saved
+    assert secret not in saved_stdout
+    assert "apiKey=%2A%2A%2A" in saved
+    assert "api_key=%2A%2A%2A" in saved
 
 
 # ── the exchange-date partition key ──────────────────────────────────────

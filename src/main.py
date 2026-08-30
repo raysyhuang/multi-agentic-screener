@@ -294,7 +294,7 @@ def _trading_date_et(now: datetime | None = None) -> date:
 
 
 async def run_morning_pipeline() -> bool:
-    """Main daily pipeline — runs at 6:00 AM ET.
+    """Main daily pipeline — scheduled at 6:17 AM ET on GitHub Actions.
 
     Fail-closed: any unhandled exception guarantees a NoTrade DB record
     and Telegram alert rather than a silent abort.

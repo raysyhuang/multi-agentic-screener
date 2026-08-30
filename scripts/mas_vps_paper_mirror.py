@@ -6,6 +6,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 from datetime import UTC, datetime
 from pathlib import Path
@@ -164,10 +165,31 @@ def format_summary(picks: list[dict], *, source_sha: str, artifact: str) -> str:
     ])
 
 
+def _redact_log(text: str) -> str:
+    """Remove query/header credentials before persisting child logs."""
+    credential_name = r"(?:key|token|secret|password|passwd|credential|signature|auth)"
+    text = re.sub(
+        rf"(?i)([?&](?:amp;)?[^?&=\s\"']*{credential_name}[^?&=\s\"']*=)[^&\s\"']+",
+        r"\1%2A%2A%2A",
+        text,
+    )
+    text = re.sub(
+        rf"(?i)((?:%3f|%26)[^%\s\"']*{credential_name}[^%\s\"']*%3d).*?(?=%26|[\s\"']|$)",
+        r"\1%2A%2A%2A",
+        text,
+    )
+    return re.sub(
+        r"(?i)([\"']?(?:authorization|proxy-authorization|x-api-key)[\"']?\s*[:=]\s*[\"']?"
+        r"(?:(?:bearer|basic)\s+)?)[^\s,;}\]\"']+",
+        r"\1***",
+        text,
+    )
+
+
 def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:
     result = subprocess.run(command, cwd=repo, env=env, text=True, capture_output=True, timeout=1800, check=False)
-    (out / f"{Path(command[-1]).name}.stdout.log").write_text(result.stdout, encoding="utf-8")
-    (out / f"{Path(command[-1]).name}.stderr.log").write_text(result.stderr, encoding="utf-8")
+    (out / f"{Path(command[-1]).name}.stdout.log").write_text(_redact_log(result.stdout), encoding="utf-8")
+    (out / f"{Path(command[-1]).name}.stderr.log").write_text(_redact_log(result.stderr), encoding="utf-8")
     if result.returncode:
         raise RuntimeError(f"command failed ({result.returncode}): {' '.join(command)}")
 
