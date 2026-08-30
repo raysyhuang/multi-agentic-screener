@@ -13,6 +13,20 @@ from tests.test_db import test_exit_config_persistence  # noqa: F401
 from src.db.models import Base, DailyRun, Outcome, Signal
 
 
+def test_position_days_held_counts_only_observed_market_sessions():
+    import scripts.export_dashboard_data as exp
+
+    observed = {
+        date(2026, 8, 4), date(2026, 8, 5), date(2026, 8, 6),
+        date(2026, 8, 7), date(2026, 8, 10),
+    }
+    assert exp._position_days_held(date(2026, 8, 4), observed) == 5
+    assert exp._position_days_held(date(2026, 8, 7), observed) == 2
+    assert exp._position_days_held(date(2026, 8, 11), observed) is None
+    assert exp._position_days_held(None, observed) is None
+    assert exp._position_days_held(date(2026, 8, 4), set()) is None
+
+
 def _signal(run_date, ticker, model, source, sid=None):
     return Signal(
         id=sid, run_date=run_date, ticker=ticker, direction="LONG",
@@ -85,8 +99,10 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     assert [t["ticker"] for t in snap["trades"]["mean_reversion|mr_manual_sleeve"]] == ["BBB"]
     # Skips counted, not simulated as trades.
     assert snap["skip_counts"] == {"mean_reversion|mr_manual_sleeve": 1}
-    # Open positions listed separately.
+    # Open positions listed separately, with age derived from observed SPY bars.
     assert [o["ticker"] for o in snap["open_positions"]] == ["DDD"]
+    assert snap["open_positions"][0]["days_held"] == 1
+    assert snap["open_positions"][0]["days_held_basis"] == "observed_spy_sessions"
     # Run history includes health status.
     assert [r["health"] for r in snap["run_history"]] == ["OK", "WARN"]
     # Baselines present for the expectation bands.

@@ -100,6 +100,19 @@ def test_workflow_flags_exist_in_worker():
     assert referenced <= valid, f"workflow references removed flags: {referenced - valid}"
 
 
+def test_morning_actions_crons_avoid_the_congested_top_of_hour():
+    """The 06:00 ET cron arrived 10-11 hours late on two consecutive sessions.
+    Keep the DST pair off minute zero, and keep the resolver cases in sync."""
+    from pathlib import Path
+
+    workflow = Path(".github/workflows/scheduled-pipelines.yml").read_text()
+    for cron in ("17 10 * * 1-5", "17 11 * * 1-5"):
+        assert f'cron: "{cron}"' in workflow
+        assert f'"{cron}")' in workflow
+    assert 'cron: "0 10 * * 1-5"' not in workflow
+    assert 'cron: "0 11 * * 1-5"' not in workflow
+
+
 def test_worker_unknown_flag_exits_nonzero(monkeypatch):
     """An unrecognized worker flag must exit(2), never start the scheduler."""
     import asyncio

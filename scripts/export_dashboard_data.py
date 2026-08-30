@@ -134,6 +134,14 @@ def _iso(d) -> str | None:
     return d.isoformat() if d is not None else None
 
 
+def _position_days_held(entry: date | None, observed_sessions: set[date]) -> int | None:
+    """Count completed market sessions from observed benchmark bars only."""
+    if entry is None or not observed_sessions:
+        return None
+    held = sum(session >= entry for session in observed_sessions)
+    return held or None
+
+
 def _stream_key(model: str | None, source: str | None) -> str:
     return f"{model or 'unknown'}|{source or 'unknown'}"
 
@@ -346,10 +354,12 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
             # how far a live position is from its stop, its target and its expiry
             # — the three things that decide whether it needs attention today.
             entry_px = o.entry_price or s.entry_price
+            days_held = _position_days_held(o.entry_date, set(bench_closes.get("spy", {})))
             open_positions.append({
                 "ticker": o.ticker, "stream": key,
                 "entry_date": _iso(o.entry_date),
-                "days_held": (date.today() - o.entry_date).days if o.entry_date else None,
+                "days_held": days_held,
+                "days_held_basis": "observed_spy_sessions" if days_held is not None else "unavailable",
                 "unrealized_pnl_pct": o.pnl_pct,
                 "entry_price": entry_px,
                 "stop_loss": s.stop_loss,

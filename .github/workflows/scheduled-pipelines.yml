@@ -25,9 +25,12 @@ name: Scheduled Pipelines (GitHub-hosted)
 
 on:
   schedule:
-    # Morning pipeline — 06:00 ET Mon-Fri   (EDT 10:00 UTC / EST 11:00 UTC)
-    - cron: "0 10 * * 1-5"
-    - cron: "0 11 * * 1-5"
+    # Morning pipeline — 06:17 ET Mon-Fri   (EDT 10:17 UTC / EST 11:17 UTC)
+    # Minute 17 deliberately avoids GitHub's congested top-of-hour scheduler.
+    # The old :00 pair arrived 10–11 hours late on 2026-08-27/28, after the
+    # premarket authority gate had already failed closed.
+    - cron: "17 10 * * 1-5"
+    - cron: "17 11 * * 1-5"
     # Afternoon position check — 16:30 ET Mon-Fri   (EDT 20:30 UTC / EST 21:30 UTC)
     - cron: "30 20 * * 1-5"
     - cron: "30 21 * * 1-5"
@@ -117,8 +120,8 @@ jobs:
             # delay-proof (GitHub fires crons 1-2h late routinely) — unlike
             # exact-hour matching, which silently skipped every late run.
             case "$SCHED" in
-              "0 10 * * 1-5")  PIPELINE="morning";   LINE_ZONE="EDT" ;;
-              "0 11 * * 1-5")  PIPELINE="morning";   LINE_ZONE="EST" ;;
+              "17 10 * * 1-5") PIPELINE="morning";   LINE_ZONE="EDT" ;;
+              "17 11 * * 1-5") PIPELINE="morning";   LINE_ZONE="EST" ;;
               "30 20 * * 1-5") PIPELINE="afternoon"; LINE_ZONE="EDT" ;;
               "30 21 * * 1-5") PIPELINE="afternoon"; LINE_ZONE="EST" ;;
               *) echo "::error::Unknown schedule '$SCHED'"; exit 1 ;;
