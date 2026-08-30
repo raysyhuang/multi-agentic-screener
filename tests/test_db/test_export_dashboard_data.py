@@ -20,11 +20,11 @@ def test_position_days_held_counts_only_observed_market_sessions():
         date(2026, 8, 4), date(2026, 8, 5), date(2026, 8, 6),
         date(2026, 8, 7), date(2026, 8, 10),
     }
-    assert exp._position_days_held(date(2026, 8, 4), observed) == 5
-    assert exp._position_days_held(date(2026, 8, 7), observed) == 2
-    assert exp._position_days_held(date(2026, 8, 11), observed) is None
-    assert exp._position_days_held(None, observed) is None
-    assert exp._position_days_held(date(2026, 8, 4), set()) is None
+    assert exp._position_age(date(2026, 8, 4), observed) == (5, "observed")
+    assert exp._position_age(date(2026, 8, 7), observed) == (2, "observed")
+    assert exp._position_age(date(2026, 8, 11), observed) == (None, "pre_entry")
+    assert exp._position_age(None, observed) == (None, "missing_entry_date")
+    assert exp._position_age(date(2026, 8, 4), set()) == (None, "benchmark_unavailable")
 
 
 def _signal(run_date, ticker, model, source, sid=None):
@@ -103,6 +103,7 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     assert [o["ticker"] for o in snap["open_positions"]] == ["DDD"]
     assert snap["open_positions"][0]["days_held"] == 1
     assert snap["open_positions"][0]["days_held_basis"] == "observed_spy_sessions"
+    assert snap["open_positions"][0]["days_held_status"] == "observed"
     # Run history includes health status.
     assert [r["health"] for r in snap["run_history"]] == ["OK", "WARN"]
     # Baselines present for the expectation bands.

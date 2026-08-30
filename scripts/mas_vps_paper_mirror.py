@@ -178,12 +178,38 @@ def _redact_log(text: str) -> str:
         r"\1%2A%2A%2A",
         text,
     )
-    return re.sub(
+    text = re.sub(
         r"(?i)([\"']?(?:authorization|proxy-authorization|x-api-key)[\"']?\s*[:=]\s*[\"']?"
         r"(?:(?:bearer|basic)\s+)?)[^\s,;}\]\"']+",
         r"\1***",
         text,
     )
+    credential_identifier = (
+        r"(?:(?:[a-z0-9]+[_-])*(?:api[_-]?key|access[_-]?token|token|secret|password|passwd|"
+        r"credential|signature)(?:[_-][a-z0-9]+)*)"
+    )
+    text = re.sub(
+        rf"(?i)(?<![a-z0-9_-])([\"']?{credential_identifier}[\"']?\s*(?:=|:)\s*)([\"']).*?\2",
+        lambda match: f"{match.group(1)}{match.group(2)}***{match.group(2)}",
+        text,
+    )
+    text = re.sub(
+        rf"(?i)(?<![a-z0-9_-])([\"']?{credential_identifier}[\"']?\s*(?:=|:)\s*)(?!%2A%2A%2A)[^,\s;)}}\]\"']+",
+        r"\1***",
+        text,
+    )
+    text = re.sub(
+        rf"(?i)(/(?:{credential_name})/)[^/?#\s\"']+",
+        r"\1***",
+        text,
+    )
+    text = re.sub(
+        r"(?i)(\b(?:postgres(?:ql)?|mysql|mariadb|mongodb(?:\+srv)?|redis|amqps?)://"
+        r"[^:\s/@]*:)[^\s/]*(@[^@\s/]+)",
+        r"\1***\2",
+        text,
+    )
+    return text
 
 
 def run(command: list[str], env: dict[str, str], out: Path, repo: Path) -> None:

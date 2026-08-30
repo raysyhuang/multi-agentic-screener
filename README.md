@@ -2,7 +2,7 @@
 
 A quant-first stock screening system that scans NYSE/NASDAQ daily to surface short-term trade candidates using complementary deterministic signal models.
 
-The system runs autonomously: morning pipeline at 6:00 AM ET and afternoon position checks at 4:30 PM ET.
+The system runs autonomously: morning pipeline at 6:17 AM ET and afternoon position checks at 4:30 PM ET.
 
 > **Fully deterministic — zero LLM.** The LLM agent stack was removed (2026-07-19); the app is lean quant-only. The repo name is historical.
 
@@ -186,7 +186,7 @@ tests/                          # 832 tests across all modules
 ## Daily Orchestration
 
 ```
-  6:00 AM ET   Morning pipeline:
+  6:17 AM ET   Morning pipeline:
     Steps 1-4    Macro regime → Universe → OHLCV → Features
     Step 5       Signal generation (MR + Sniper, regime-gated; PEAD paper trial if enabled)
     Steps 6-7    Ranking + Validation gate

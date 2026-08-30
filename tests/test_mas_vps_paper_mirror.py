@@ -174,6 +174,40 @@ def test_run_redacts_credentials_before_writing_logs(monkeypatch, tmp_path):
     assert "api_key=%2A%2A%2A" in saved
 
 
+def test_redact_log_covers_assignments_paths_and_dsns():
+    secret = "defense-in-depth-value"
+    spaced = "secret value with spaces"
+    at_sign = "p@ssword"
+    text = "\n".join((
+        "POLYGON_API_KEY=" + secret,
+        '{"api_key":"' + secret + '"}',
+        'client_secret="' + spaced + '"',
+        "PolygonClient(api_key=" + secret + ")",
+        "GET https://example.test/token/" + secret + "/resource",
+        "DATABASE_URL=postgresql://worker:" + secret + "@db.internal/mas",
+        "REDIS_URL=redis://:" + secret + "@cache.internal/0",
+        "DATABASE_URL=postgresql://worker:" + at_sign + "@db.internal/mas",
+    ))
+
+    redacted = launcher._redact_log(text)
+
+    assert secret not in redacted
+    assert spaced not in redacted
+    assert at_sign not in redacted
+    assert "postgresql://worker:***@db.internal/mas" in redacted
+    assert "redis://:***@cache.internal/0" in redacted
+    assert launcher._redact_log("Authorization: Bearer topsecret") == "Authorization: Bearer ***"
+
+
+def test_redact_log_preserves_noncredential_diagnostics():
+    diagnostic = (
+        "author=alice\nauthentication_mode=oauth\nmonkey=banana\ntokenizer=bert\n"
+        "mytoken=value\nnotpassword=value\nxsecret=value"
+    )
+
+    assert launcher._redact_log(diagnostic) == diagnostic
+
+
 # ── the exchange-date partition key ──────────────────────────────────────
 
 def test_run_date_uses_the_exchange_date_not_utc():
