@@ -34,6 +34,8 @@ on:
     # Afternoon position check — 16:30 ET Mon-Fri   (EDT 20:30 UTC / EST 21:30 UTC)
     - cron: "30 20 * * 1-5"
     - cron: "30 21 * * 1-5"
+  repository_dispatch:
+    types: [mas-morning-fallback]
   workflow_dispatch:
     inputs:
       pipeline:
@@ -46,9 +48,9 @@ on:
           - afternoon
 
 concurrency:
-  # Serialize per pipeline; never cancel an in-flight run (the pipelines are
-  # idempotent/re-run safe, but we don't want to interrupt a live run).
-  group: mas-pipeline-${{ github.event.schedule || github.event.inputs.pipeline }}
+  # Serialize all lanes. The completed-peer guard can then suppress whichever
+  # of cron/fallback arrives second without a symmetric in-progress race.
+  group: mas-scheduled-pipelines
   cancel-in-progress: false
 
 jobs:
@@ -56,6 +58,10 @@ jobs:
     name: Run scheduled pipeline
     runs-on: ubuntu-latest
     timeout-minutes: 45
+    if: github.event_name != 'repository_dispatch' || github.actor == 'raysyhuang'
+    permissions:
+      actions: read
+      contents: read
     outputs:
       # Whether the pipeline actually ran (vs a DST-guard skip on the duplicate
       # cron line) — gates the dashboard publish so Pages deploys once per slot.
@@ -70,6 +76,8 @@ jobs:
       governance_status: ${{ steps.attest.outputs.governance_status }}
       final_output_status: ${{ steps.attest.outputs.final_output_status }}
     env:
+      # Read-only Actions API access for cron/fallback completed-peer dedupe.
+      GH_TOKEN: ${{ github.token }}
       # --- Database (external managed Postgres — replaces Heroku Postgres) ---
       DATABASE_URL: ${{ secrets.DATABASE_URL }}
       # --- Telegram alerts ---
@@ -107,9 +115,47 @@ jobs:
 
       - name: Resolve pipeline & DST guard
         id: resolve
+        env:
+          CLIENT_PAYLOAD_JSON: ${{ toJSON(github.event.client_payload) }}
         run: |
           set -euo pipefail
-          if [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
+          if [ "${{ github.event_name }}" = "repository_dispatch" ]; then
+            PIPELINE="morning"
+            RUN="true"
+            PAYLOAD_KEYS=$(jq -r 'keys | sort | join(",")' <<< "$CLIENT_PAYLOAD_JSON")
+            if [ "$PAYLOAD_KEYS" != "expected_date,expected_sha" ]; then
+              echo "::error::Fallback payload schema mismatch"
+              exit 1
+            fi
+            EXPECTED_DATE=$(jq -er '.expected_date | select(type == "string")' <<< "$CLIENT_PAYLOAD_JSON")
+            EXPECTED_SHA=$(jq -er '.expected_sha | select(type == "string")' <<< "$CLIENT_PAYLOAD_JSON")
+            if ! [[ "$EXPECTED_DATE" =~ ^[0-9]{4}-[0-9]{2}-[0-9]{2}$ ]]; then
+              echo "::error::Fallback expected_date is not ISO date shaped"
+              exit 1
+            fi
+            if ! [[ "$EXPECTED_SHA" =~ ^[0-9a-f]{40}$ ]]; then
+              echo "::error::Fallback expected_sha is not a lowercase 40-hex SHA"
+              exit 1
+            fi
+            ACTUAL_DATE=$(TZ=America/New_York date +%F)
+            ET_HOUR=$(TZ=America/New_York date +%H)
+            ET_MINUTE=$(TZ=America/New_York date +%M)
+            ET_CLOCK_MINUTE=$((10#$ET_HOUR * 60 + 10#$ET_MINUTE))
+            if (( ET_CLOCK_MINUTE < 387 || ET_CLOCK_MINUTE >= 540 )); then
+              echo "::error::Fallback arrived outside governed 06:27-09:00 ET window"
+              exit 1
+            fi
+            if [ "$EXPECTED_DATE" != "$ACTUAL_DATE" ]; then
+              echo "::error::Fallback ET date mismatch: expected=$EXPECTED_DATE actual=$ACTUAL_DATE"
+              exit 1
+            fi
+            if [ "$EXPECTED_SHA" != "$GITHUB_SHA" ]; then
+              echo "::error::Fallback SHA mismatch: requested=$EXPECTED_SHA actual=$GITHUB_SHA"
+              exit 1
+            fi
+            echo "MAS_FALLBACK_EXPECTED_DATE=$EXPECTED_DATE" >> "$GITHUB_ENV"
+            echo "Governed cron fallback: pipeline=morning ET_date=$ACTUAL_DATE sha=${GITHUB_SHA:0:12}"
+          elif [ "${{ github.event_name }}" = "workflow_dispatch" ]; then
             PIPELINE="${{ github.event.inputs.pipeline }}"
             RUN="true"
             echo "Manual dispatch: pipeline=$PIPELINE"
@@ -139,6 +185,15 @@ jobs:
             afternoon) FLAG="--check-now" ;;
             *) echo "::error::Unknown pipeline '$PIPELINE'"; exit 1 ;;
           esac
+          if [ "$RUN" = "true" ] && [ "$PIPELINE" = "morning" ] \
+             && { [ "${{ github.event_name }}" = "schedule" ] \
+                  || [ "${{ github.event_name }}" = "repository_dispatch" ]; }; then
+            SHOULD_RUN=$(python scripts/mas_schedule_fallback.py --workflow-should-run)
+            if [ "$SHOULD_RUN" != "true" ]; then
+              RUN="false"
+              echo "::notice::Skipping — counterpart cron/fallback already completed today's current-main morning worker."
+            fi
+          fi
           {
             echo "pipeline=$PIPELINE"
             echo "flag=$FLAG"
@@ -191,8 +246,11 @@ jobs:
             printf '{"run_id":"%s","attested":false,"healthy":false,' "$RUN_ID" > "$OUT"
             printf '"governance_status":"unknown","final_output_status":"unknown",' >> "$OUT"
             printf '"artifact_stages":[],"db_error":"AttestationScriptFailed",' >> "$OUT"
-            printf '"github_run_id":"%s","github_run_attempt":"%s","commit":"%s"}' \
+            printf '"github_run_id":"%s","github_run_attempt":"%s","commit":"%s",' \
               "${GITHUB_RUN_ID:-}" "${GITHUB_RUN_ATTEMPT:-}" "${GITHUB_SHA:-}" >> "$OUT"
+            printf '"trigger_event":"%s","fallback_expected_date":%s}' \
+              "${GITHUB_EVENT_NAME:-}" \
+              "$(if [ -n "${MAS_FALLBACK_EXPECTED_DATE:-}" ]; then printf '"%s"' "$MAS_FALLBACK_EXPECTED_DATE"; else printf 'null'; fi)" >> "$OUT"
             echo "::error::attestation script exited $rc without writing a file; wrote an unhealthy fallback"
           fi
           exit $rc

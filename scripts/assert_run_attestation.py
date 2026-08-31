@@ -108,6 +108,8 @@ async def _check(run_id: str, out_path: Path | None) -> int:
         "github_run_id": os.environ.get("GITHUB_RUN_ID", ""),
         "github_run_attempt": os.environ.get("GITHUB_RUN_ATTEMPT", ""),
         "commit": os.environ.get("GITHUB_SHA", ""),
+        "trigger_event": os.environ.get("GITHUB_EVENT_NAME", ""),
+        "fallback_expected_date": os.environ.get("MAS_FALLBACK_EXPECTED_DATE") or None,
     }
 
     for key in ("run_id", "governance_status", "final_output_status"):

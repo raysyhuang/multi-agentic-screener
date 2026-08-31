@@ -113,6 +113,20 @@ def test_morning_actions_crons_avoid_the_congested_top_of_hour():
     assert 'cron: "0 11 * * 1-5"' not in workflow
 
 
+def test_workflow_has_guarded_repository_fallback_and_serial_dedupe():
+    from pathlib import Path
+
+    workflow = Path(".github/workflows/scheduled-pipelines.yml").read_text()
+    assert "repository_dispatch:" in workflow
+    assert "mas-morning-fallback" in workflow
+    assert "expected_date" in workflow and "expected_sha" in workflow
+    assert "mas-scheduled-pipelines" in workflow
+    assert "--workflow-should-run" in workflow
+    assert "${{ github.event.client_payload.expected_date" not in workflow
+    assert "${{ github.event.client_payload.expected_sha" not in workflow
+    assert "MAS_FALLBACK_EXPECTED_DATE=$EXPECTED_DATE" in workflow
+
+
 def test_worker_unknown_flag_exits_nonzero(monkeypatch):
     """An unrecognized worker flag must exit(2), never start the scheduler."""
     import asyncio
