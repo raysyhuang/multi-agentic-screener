@@ -26,6 +26,7 @@ def attestation(**overrides) -> dict:
         "governance_status": "success", "final_output_status": "success",
         "artifact_stages": [], "db_error": None,
         "github_run_id": 12345, "github_run_attempt": 1, "commit": SHA,
+        "trigger_event": "schedule", "fallback_expected_date": None,
     }
     base.update(overrides)
     return base
@@ -84,6 +85,29 @@ def test_pending_and_unhealthy_do_not_match_the_healthy_prefix():
 
 def test_valid_attestation_passes():
     gate.validate_attestation(attestation(), run_id=12345, head_sha=SHA)
+
+
+def test_valid_fallback_attestation_binds_trigger_and_et_date():
+    payload = attestation(
+        trigger_event="repository_dispatch", fallback_expected_date="2026-08-20",
+    )
+    gate.validate_attestation(
+        payload, run_id=12345, head_sha=SHA, trigger_event="repository_dispatch",
+        expected_et_date="2026-08-20",
+    )
+
+
+def test_trigger_mismatch_or_missing_fallback_date_is_refused():
+    with pytest.raises(RuntimeError, match="trigger event mismatch"):
+        gate.validate_attestation(
+            attestation(), run_id=12345, head_sha=SHA,
+            trigger_event="repository_dispatch",
+        )
+    with pytest.raises(RuntimeError, match="expected ET date"):
+        gate.validate_attestation(
+            attestation(trigger_event="repository_dispatch"),
+            run_id=12345, head_sha=SHA, trigger_event="repository_dispatch",
+        )
 
 
 @pytest.mark.parametrize("field", ["run_id", "attested", "healthy", "commit"])
@@ -178,6 +202,12 @@ def test_manual_dispatch_cannot_authorize_the_brief():
     runs = [_run(1, event="workflow_dispatch")]
     jobs = {1: _job("Run morning pipeline", "success")}
     assert gate.select_current_et_actual_run(runs, jobs, NOW) is None
+
+
+def test_governed_repository_fallback_can_authorize_the_brief():
+    runs = [_run(1, event="repository_dispatch")]
+    jobs = {1: _job("Run morning pipeline", "success")}
+    assert gate.select_current_et_actual_run(runs, jobs, NOW)["databaseId"] == 1
 
 
 def test_failed_run_is_not_selected():

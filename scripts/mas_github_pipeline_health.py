@@ -89,12 +89,16 @@ def attestation_for_run(run_id: int) -> dict:
         raise RuntimeError(f"invalid attestation artifact: {type(exc).__name__}") from exc
 
 
-def validate_attestation(attestation: dict, *, run_id: int, head_sha: str) -> None:
+def validate_attestation(
+    attestation: dict, *, run_id: int, head_sha: str,
+    trigger_event: str = "schedule", expected_et_date: str | None = None,
+) -> None:
     """Require durable DB evidence for exactly this successful GitHub worker."""
     required = {
         "run_id", "attested", "healthy", "governance_status",
         "final_output_status", "artifact_stages", "db_error",
         "github_run_id", "github_run_attempt", "commit",
+        "trigger_event", "fallback_expected_date",
     }
     if set(attestation) != required:
         raise RuntimeError("attestation schema mismatch")
@@ -102,6 +106,15 @@ def validate_attestation(attestation: dict, *, run_id: int, head_sha: str) -> No
         raise RuntimeError("attestation GitHub run id mismatch")
     if str(attestation["commit"]) != head_sha:
         raise RuntimeError("attestation commit mismatch")
+    if attestation["trigger_event"] != trigger_event:
+        raise RuntimeError("attestation trigger event mismatch")
+    if trigger_event == "repository_dispatch" and (
+        not attestation["fallback_expected_date"]
+        or attestation["fallback_expected_date"] != expected_et_date
+    ):
+        raise RuntimeError("fallback attestation has missing or mismatched expected ET date")
+    if trigger_event == "schedule" and attestation["fallback_expected_date"] is not None:
+        raise RuntimeError("scheduled attestation unexpectedly claims fallback provenance")
     if not attestation["attested"] or not attestation["healthy"]:
         raise RuntimeError("attestation reports unhealthy run")
     if attestation["governance_status"] != "success" or attestation["final_output_status"] != "success":
@@ -138,9 +151,10 @@ def et_date(run: dict) -> datetime.date:
 def select_current_et_actual_run(runs: list[dict], jobs_by_id: dict[int, list[dict]], now: datetime) -> dict | None:
     today = now.astimezone(ET).date()
     for candidate in runs:
-        # A manual dispatch is useful for retrieval proof, but must not authorize
-        # the daily paper brief in place of the authoritative scheduled worker.
-        if candidate.get("event") != "schedule":
+        # workflow_dispatch remains retrieval/testing only. The configured
+        # repository_dispatch event is the governed external fallback for a late
+        # GitHub cron; it still must prove a real worker step and attestation.
+        if candidate.get("event") not in {"schedule", "repository_dispatch"}:
             continue
         if candidate.get("status") != "completed" or candidate.get("conclusion") != "success":
             continue
@@ -223,6 +237,8 @@ def main() -> int:
             attestation_for_run(actual_run_id),
             run_id=actual_run_id,
             head_sha=actual_sha,
+            trigger_event=str(actual.get("event") or ""),
+            expected_et_date=et_date(actual).isoformat(),
         )
         note = "" if not changed else " | newer docs/dashboard-only main changes accepted"
         print(f"MAS GitHub pipeline healthy | VPS/main={short(local_sha)} | actual morning worker={short(actual_sha)} | run=success | {actual['url']}{note}")
