@@ -211,7 +211,7 @@ def main() -> int:
     expected_date = now.astimezone(ET).date().isoformat()
     dispatch_fallback(expected_date=expected_date, expected_sha=head_sha)
     print(
-        "⚠️ MAS GitHub cron fallback dispatched"
+        "ℹ️ MAS GitHub cron fallback engaged"
         f" | ET date={expected_date} | main={head_sha[:12]}"
         " | reason=no actual or in-flight current-main morning worker by fallback gate"
     )
