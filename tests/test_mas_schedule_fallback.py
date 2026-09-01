@@ -101,3 +101,16 @@ def test_fallback_window_tracks_eastern_time_and_weekdays():
     assert fallback.fallback_window_state(
         datetime(2026, 8, 30, 10, 32, tzinfo=UTC)
     ) == "weekend"
+
+
+def test_scheduled_morning_deadline_is_behavioral_and_event_scoped():
+    before = datetime(2026, 8, 31, 12, 59, tzinfo=UTC)  # 08:59 EDT
+    boundary = datetime(2026, 8, 31, 13, 0, tzinfo=UTC)  # 09:00 EDT
+    observed_late = datetime(2026, 8, 31, 17, 38, tzinfo=UTC)  # 13:38 EDT
+
+    assert fallback.automatic_morning_within_deadline("schedule", "morning", before)
+    assert not fallback.automatic_morning_within_deadline("schedule", "morning", boundary)
+    assert not fallback.automatic_morning_within_deadline("schedule", "morning", observed_late)
+    assert fallback.automatic_morning_within_deadline("schedule", "afternoon", observed_late)
+    assert fallback.automatic_morning_within_deadline("workflow_dispatch", "morning", observed_late)
+    assert fallback.automatic_morning_within_deadline("repository_dispatch", "morning", observed_late)

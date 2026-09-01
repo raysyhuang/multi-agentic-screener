@@ -113,6 +113,16 @@ def test_morning_actions_crons_avoid_the_congested_top_of_hour():
     assert 'cron: "0 11 * * 1-5"' not in workflow
 
 
+def test_scheduled_morning_worker_cannot_run_after_0900_et():
+    """A delayed GitHub cron must not manufacture premarket picks after open."""
+    from pathlib import Path
+
+    workflow = Path(".github/workflows/scheduled-pipelines.yml").read_text()
+    assert "--automatic-morning-within-deadline" in workflow
+    assert 'if [ "$DEADLINE_OK" != "true" ]; then\n              RUN="false"' in workflow
+    assert "Scheduled morning arrived at or after 09:00 ET; refusing a late premarket run" in workflow
+
+
 def test_workflow_has_guarded_repository_fallback_and_serial_dedupe():
     from pathlib import Path
 

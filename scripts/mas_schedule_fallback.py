@@ -129,6 +129,14 @@ def fallback_window_state(now: datetime) -> str:
     return "missed"
 
 
+def automatic_morning_within_deadline(event_name: str, pipeline: str, now: datetime) -> bool:
+    """Reject only delayed automatic morning cron runs at/after 09:00 ET."""
+    if event_name != "schedule" or pipeline != "morning":
+        return True
+    local = now.astimezone(ET)
+    return local.hour * 60 + local.minute < 9 * 60
+
+
 def _jobs_for_completed_successes(runs: list[dict], now: datetime, head_sha: str) -> dict[int, list[dict]]:
     return {
         int(run["databaseId"]): job_steps(int(run["databaseId"]))
@@ -166,9 +174,17 @@ def dispatch_fallback(*, expected_date: str, expected_sha: str) -> None:
 def main() -> int:
     parser = argparse.ArgumentParser()
     parser.add_argument("--workflow-should-run", action="store_true")
+    parser.add_argument("--automatic-morning-within-deadline", action="store_true")
+    parser.add_argument("--pipeline", choices=("morning", "afternoon"))
     args = parser.parse_args()
 
     now = datetime.now(UTC)
+    if args.automatic_morning_within_deadline:
+        if not args.pipeline:
+            parser.error("--pipeline is required with --automatic-morning-within-deadline")
+        event = os.environ.get("GITHUB_EVENT_NAME", "")
+        print("true" if automatic_morning_within_deadline(event, args.pipeline, now) else "false")
+        return 0
     if not args.workflow_should_run:
         window = fallback_window_state(now)
         if window in {"weekend", "before"}:
