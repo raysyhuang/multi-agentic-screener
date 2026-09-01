@@ -36,6 +36,30 @@ def test_watchdog_dispatches_when_no_current_run_exists():
     assert fallback.needs_dispatch([], {}, SHA, NOW) is True
 
 
+def test_successful_dispatch_is_informational_not_a_failure_alert(monkeypatch, capsys):
+    class Clock(datetime):
+        @classmethod
+        def now(cls, tz=None):
+            return NOW
+
+    dispatched = []
+    monkeypatch.setattr(fallback, "datetime", Clock)
+    monkeypatch.setattr(fallback, "current_main_sha", lambda: SHA)
+    monkeypatch.setattr(fallback, "github_runs", lambda: [])
+    monkeypatch.setattr(
+        fallback,
+        "dispatch_fallback",
+        lambda **payload: dispatched.append(payload),
+    )
+    monkeypatch.setattr(sys, "argv", ["mas_schedule_fallback.py"])
+
+    assert fallback.main() == 0
+    output = capsys.readouterr().out
+    assert output.startswith("ℹ️ MAS GitHub cron fallback engaged")
+    assert not output.startswith("⚠️")
+    assert dispatched == [{"expected_date": "2026-08-31", "expected_sha": SHA}]
+
+
 def test_actual_scheduled_worker_prevents_fallback():
     assert fallback.needs_dispatch([run(1)], {1: jobs()}, SHA, NOW) is False
 
