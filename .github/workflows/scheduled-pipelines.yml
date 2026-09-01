@@ -13,11 +13,9 @@ name: Scheduled Pipelines (GitHub-hosted)
 # across daylight-saving changes. For each logical job we register TWO cron
 # lines — one at the EDT (UTC-4) offset and one at the EST (UTC-5) offset — and
 # a guard step below runs a line only when its offset matches the CURRENT
-# Eastern timezone (EDT vs EST). Zone-matching is delay-proof: GitHub routinely
-# fires crons 1-2h late, and the previous exact-hour guard silently skipped
-# every late run (all four 2026-07-21 slots were skipped this way — only the
-# Heroku parallel worker actually ran that day). Net effect: exactly one line
-# per slot matches year-round, and it runs whenever GitHub gets around to it.
+# Eastern timezone (EDT vs EST). Morning delays are tolerated only before
+# 09:00 ET; later delivery must not manufacture a premarket run after open.
+# The external governed fallback owns timely recovery when GitHub cron is late.
 #
 # NOTE: scheduled workflows only fire from the repository's DEFAULT branch, so
 # this file must be merged to `main` before the crons take effect. Until then,
@@ -175,8 +173,14 @@ jobs:
             CUR_ZONE=$(TZ=America/New_York date +%Z)
             RUN="true"
             [ "$CUR_ZONE" != "$LINE_ZONE" ] && RUN="false"
+            DEADLINE_OK=$(python scripts/mas_schedule_fallback.py \
+              --automatic-morning-within-deadline --pipeline "$PIPELINE")
+            if [ "$DEADLINE_OK" != "true" ]; then
+              RUN="false"
+              echo "::warning::Scheduled morning arrived at or after 09:00 ET; refusing a late premarket run"
+            fi
             echo "schedule='$SCHED' pipeline=$PIPELINE line_zone=$LINE_ZONE current_zone=$CUR_ZONE -> run=$RUN"
-            if [ "$RUN" != "true" ]; then
+            if [ "$CUR_ZONE" != "$LINE_ZONE" ]; then
               echo "::notice::Skipping — this cron line is the $LINE_ZONE offset; Eastern is currently $CUR_ZONE."
             fi
           fi
