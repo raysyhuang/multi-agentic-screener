@@ -45,7 +45,9 @@ def _packet(
         industries = np.asarray(["bank", "energy", "tech"] * ((per_date + 2) // 3))[:per_date]
         noise = rng.normal(scale=0.22, size=per_date)
         factor = 2.8 * values[:, 0] - 1.9 * values[:, 1] + 0.8 * values[:, 2] + noise
-        factor += np.asarray([1.2 if item == "tech" else -0.7 if item == "bank" else 0 for item in industries])
+        factor += np.asarray(
+            [1.2 if item == "tech" else -0.7 if item == "bank" else 0 for item in industries]
+        )
         if factor_mode == "zero_factor":
             factor[:] = 1.0
         elif factor_mode == "near_factor":
@@ -61,11 +63,15 @@ def _packet(
         elif factor_mode == "near_residual":
             factor = values[:, 0] + (np.arange(per_date) % 2) * 1e-15
         for index in range(per_date):
-            rows.append([
-                (start + timedelta(days=day_index)).isoformat(), f"S{index:04d}",
-                f"{factor[index]:.17g}", industries[index],
-                *[f"{value:.17g}" for value in values[index]],
-            ])
+            rows.append(
+                [
+                    (start + timedelta(days=day_index)).isoformat(),
+                    f"S{index:04d}",
+                    f"{factor[index]:.17g}",
+                    industries[index],
+                    *[f"{value:.17g}" for value in values[index]],
+                ]
+            )
     with matrix.open("w", encoding="utf-8", newline="") as handle:
         writer = csv.writer(handle, lineterminator="\n")
         writer.writerow(["date", "symbol", "factor_value", "industry", *controls])
@@ -82,8 +88,11 @@ def _packet(
         "industry_column": "industry",
         "continuous_controls": controls,
         "control_roles": {
-            "size": "size", "liquidity": "liquidity", "beta": "beta",
-            "volatility": "volatility", "existing_factors": controls[4:],
+            "size": "size",
+            "liquidity": "liquidity",
+            "beta": "beta",
+            "volatility": "volatility",
+            "existing_factors": controls[4:],
         },
         "point_in_time_industry_attestation": True,
         "controls_known_by_signal_cutoff_attestation": True,
@@ -133,7 +142,10 @@ def test_synthetic_exposure_is_removed_and_outputs_are_exact(tmp_path, monkeypat
     matrix, _, output, summary = _run(tmp_path, monkeypatch)
     assert summary["verdict"] == "DIAGNOSTIC_ONLY_NOT_SELECTION"
     assert {path.name for path in output.iterdir()} == {
-        "residuals.csv", "date_diagnostics.csv", "summary.json", "artifact_manifest.json"
+        "residuals.csv",
+        "date_diagnostics.csv",
+        "summary.json",
+        "artifact_manifest.json",
     }
     with matrix.open(encoding="utf-8", newline="") as handle:
         source = list(csv.DictReader(handle))
@@ -142,7 +154,9 @@ def test_synthetic_exposure_is_removed_and_outputs_are_exact(tmp_path, monkeypat
     assert [(row["date"], row["symbol"]) for row in residuals] == [
         (row["date"], row["symbol"]) for row in source
     ]
-    assert [float(row["raw_factor"]) for row in residuals] == [float(row["factor_value"]) for row in source]
+    assert [float(row["raw_factor"]) for row in residuals] == [
+        float(row["factor_value"]) for row in source
+    ]
     raw = np.asarray([float(row["raw_factor"]) for row in residuals[:60]])
     size = np.asarray([float(row["size"]) for row in source[:60]])
     preprocessed = np.asarray([float(row["preprocessed_factor"]) for row in residuals[:60]])
@@ -154,7 +168,9 @@ def test_synthetic_exposure_is_removed_and_outputs_are_exact(tmp_path, monkeypat
     assert summary["diagnostics"]["max_abs_industry_residual_mean"] < 1e-8
 
 
-def test_residual_is_exact_affine_normalization_of_ols_remainder_not_rewinsorized(tmp_path, monkeypatch):
+def test_residual_is_exact_affine_normalization_of_ols_remainder_not_rewinsorized(
+    tmp_path, monkeypatch
+):
     matrix, manifest_path, output, _ = _run(tmp_path, monkeypatch)
     _, parsed, dates, controls, _, _ = diagnostic._load_packet(
         matrix.read_bytes(), manifest_path.read_bytes()
@@ -162,16 +178,23 @@ def test_residual_is_exact_affine_normalization_of_ols_remainder_not_rewinsorize
     group = [item for item in parsed if item[0] == dates[0]]
     factor = diagnostic._winsor_zscore(np.asarray([item[2] for item in group]), "factor")
     raw_controls = np.asarray([item[4] for item in group])
-    standardized = np.column_stack([
-        diagnostic._winsor_zscore(raw_controls[:, index], name) for index, name in enumerate(controls)
-    ])
+    standardized = np.column_stack(
+        [
+            diagnostic._winsor_zscore(raw_controls[:, index], name)
+            for index, name in enumerate(controls)
+        ]
+    )
     industries = sorted({item[3] for item in group})
-    dummies = np.column_stack([[float(item[3] == category) for item in group] for category in industries[1:]])
+    dummies = np.column_stack(
+        [[float(item[3] == category) for item in group] for category in industries[1:]]
+    )
     design = np.column_stack([np.ones(len(group)), standardized, dummies])
     expected = factor - design @ np.linalg.lstsq(design, factor, rcond=None)[0]
     expected = (expected - expected.mean()) / expected.std(ddof=1)
     with (output / "residuals.csv").open(encoding="utf-8", newline="") as handle:
-        actual = np.asarray([float(row["residual_factor"]) for row in list(csv.DictReader(handle))[:60]])
+        actual = np.asarray(
+            [float(row["residual_factor"]) for row in list(csv.DictReader(handle))[:60]]
+        )
     np.testing.assert_allclose(actual, expected, rtol=0, atol=1e-14)
 
 
@@ -194,81 +217,163 @@ def _manifest_change(field, value):
         else:
             manifest[field] = value
         _write_manifest(path, manifest)
+
     return change
 
 
 _DELETE = object()
 
 
-@pytest.mark.parametrize("field,value", [
-    ("schema_version", True), ("schema_version", 2), ("status", "PASS"), ("factor_id", ""),
-    ("market", "CRYPTO"), ("date_start", "2025/01/02"), ("date_end", "2025-1-3"),
-    ("row_count", True), ("date_count", 2.0), ("min_cross_section", 29),
-    ("industry_column", ""), ("continuous_controls", ["size", "liquidity", "beta"]),
-    ("continuous_controls", ["size", "liquidity", "beta", "size"]),
-    ("continuous_controls", ["size", "liquidity", "beta", ""]),
-    ("continuous_controls", ["size", "liquidity", "beta", "factor_value"]),
-    ("winsor_lower", 0.02), ("winsor_upper", 0.98), ("max_condition_number", True),
-    ("max_condition_number", float("inf")),
-    ("max_condition_number", 1e9), ("max_abs_residual_exposure", 0.0),
-    ("max_abs_residual_exposure", 1e-7), ("matrix_sha256", "ABC"),
-    ("input_bundle_sha256", "A" * 64), ("experiment_config_sha256", "x" * 64),
-    ("research_contract_sha256", "3" * 63),
-    ("point_in_time_industry_attestation", False),
-    ("controls_known_by_signal_cutoff_attestation", False),
-    ("factor_known_by_signal_cutoff_attestation", False),
-    ("factor_id", _DELETE), ("promotion_approved", True),
-], ids=lambda item: str(item))
-def test_manifest_exact_schema_types_policy_attestations_fail_closed(tmp_path, monkeypatch, field, value):
+@pytest.mark.parametrize(
+    "field,value",
+    [
+        ("schema_version", True),
+        ("schema_version", 2),
+        ("status", "PASS"),
+        ("factor_id", ""),
+        ("market", "CRYPTO"),
+        ("date_start", "2025/01/02"),
+        ("date_end", "2025-1-3"),
+        ("row_count", True),
+        ("date_count", 2.0),
+        ("min_cross_section", 29),
+        ("industry_column", ""),
+        ("continuous_controls", ["size", "liquidity", "beta"]),
+        ("continuous_controls", ["size", "liquidity", "beta", "size"]),
+        ("continuous_controls", ["size", "liquidity", "beta", ""]),
+        ("continuous_controls", ["size", "liquidity", "beta", "factor_value"]),
+        ("winsor_lower", 0.02),
+        ("winsor_upper", 0.98),
+        ("max_condition_number", True),
+        ("max_condition_number", float("inf")),
+        ("max_condition_number", 1e9),
+        ("max_abs_residual_exposure", 0.0),
+        ("max_abs_residual_exposure", 1e-7),
+        ("matrix_sha256", "ABC"),
+        ("input_bundle_sha256", "A" * 64),
+        ("experiment_config_sha256", "x" * 64),
+        ("research_contract_sha256", "3" * 63),
+        ("point_in_time_industry_attestation", False),
+        ("controls_known_by_signal_cutoff_attestation", False),
+        ("factor_known_by_signal_cutoff_attestation", False),
+        ("factor_id", _DELETE),
+        ("promotion_approved", True),
+    ],
+    ids=lambda item: str(item),
+)
+def test_manifest_exact_schema_types_policy_attestations_fail_closed(
+    tmp_path, monkeypatch, field, value
+):
     _invalid(tmp_path, monkeypatch, _manifest_change(field, value))
 
 
-@pytest.mark.parametrize("roles", [
-    {"size": "size"},
-    {"size": "size", "liquidity": "size", "beta": "beta", "volatility": "volatility", "existing_factors": ["existing_0"]},
-    {"size": "missing", "liquidity": "liquidity", "beta": "beta", "volatility": "volatility", "existing_factors": ["existing_0"]},
-    {"size": "size", "liquidity": "liquidity", "beta": "beta", "volatility": "volatility", "existing_factors": []},
-    {"size": "size", "liquidity": "liquidity", "beta": "beta", "volatility": "volatility", "existing_factors": ["existing_0"], "other": "size"},
-])
+@pytest.mark.parametrize(
+    "roles",
+    [
+        {"size": "size"},
+        {
+            "size": "size",
+            "liquidity": "size",
+            "beta": "beta",
+            "volatility": "volatility",
+            "existing_factors": ["existing_0"],
+        },
+        {
+            "size": "missing",
+            "liquidity": "liquidity",
+            "beta": "beta",
+            "volatility": "volatility",
+            "existing_factors": ["existing_0"],
+        },
+        {
+            "size": "size",
+            "liquidity": "liquidity",
+            "beta": "beta",
+            "volatility": "volatility",
+            "existing_factors": [],
+        },
+        {
+            "size": "size",
+            "liquidity": "liquidity",
+            "beta": "beta",
+            "volatility": "volatility",
+            "existing_factors": ["existing_0"],
+            "other": "size",
+        },
+    ],
+)
 def test_control_roles_are_exact_distinct_present_and_ordered(tmp_path, monkeypatch, roles):
     _invalid(tmp_path, monkeypatch, _manifest_change("control_roles", roles))
 
 
-@pytest.mark.parametrize("change", [
-    "header", "unsorted", "duplicate", "bad_date", "empty_symbol", "empty_industry",
-    "missing_cell", "whitespace", "underscore", "nan", "hash", "row_count", "date_count",
-])
+@pytest.mark.parametrize(
+    "change",
+    [
+        "header",
+        "unsorted",
+        "duplicate",
+        "bad_date",
+        "empty_symbol",
+        "empty_industry",
+        "missing_cell",
+        "whitespace",
+        "underscore",
+        "nan",
+        "hash",
+        "row_count",
+        "date_count",
+    ],
+)
 def test_matrix_contract_and_counts_fail_closed(tmp_path, monkeypatch, change):
     def mutate(matrix, manifest_path):
         rows = _rows(matrix)
         manifest = _manifest(manifest_path)
-        if change == "header": rows[0][2] = "factor"
-        elif change == "unsorted": rows[1], rows[2] = rows[2], rows[1]
-        elif change == "duplicate": rows[2][1] = rows[1][1]
-        elif change == "bad_date": rows[1][0] = "2025/01/02"
-        elif change == "empty_symbol": rows[1][1] = ""
-        elif change == "empty_industry": rows[1][3] = ""
-        elif change == "missing_cell": rows[1].pop()
-        elif change == "whitespace": rows[1][2] = " 0.1"
-        elif change == "underscore": rows[1][2] = "1_0"
-        elif change == "nan": rows[1][2] = "nan"
-        elif change == "row_count": manifest["row_count"] += 1
-        elif change == "date_count": manifest["date_count"] += 1
+        if change == "header":
+            rows[0][2] = "factor"
+        elif change == "unsorted":
+            rows[1], rows[2] = rows[2], rows[1]
+        elif change == "duplicate":
+            rows[2][1] = rows[1][1]
+        elif change == "bad_date":
+            rows[1][0] = "2025/01/02"
+        elif change == "empty_symbol":
+            rows[1][1] = ""
+        elif change == "empty_industry":
+            rows[1][3] = ""
+        elif change == "missing_cell":
+            rows[1].pop()
+        elif change == "whitespace":
+            rows[1][2] = " 0.1"
+        elif change == "underscore":
+            rows[1][2] = "1_0"
+        elif change == "nan":
+            rows[1][2] = "nan"
+        elif change == "row_count":
+            manifest["row_count"] += 1
+        elif change == "date_count":
+            manifest["date_count"] += 1
         if change not in {"row_count", "date_count", "hash"}:
             _write_rows(matrix, rows)
             manifest["matrix_sha256"] = _sha(matrix)
         elif change == "hash":
             matrix.write_bytes(matrix.read_bytes() + b"\n")
         _write_manifest(manifest_path, manifest)
+
     _invalid(tmp_path, monkeypatch, mutate)
 
 
-@pytest.mark.parametrize("mode,match", [
-    ("zero_factor", "factor.*dispersion"), ("near_factor", "factor.*dispersion"),
-    ("zero_control", "control size.*dispersion"), ("near_control", "control size.*dispersion"),
-    ("rank_deficient", "rank deficient"), ("zero_residual", "residual.*dispersion"),
-    ("near_residual", "residual.*dispersion"),
-])
+@pytest.mark.parametrize(
+    "mode,match",
+    [
+        ("zero_factor", "factor.*dispersion"),
+        ("near_factor", "factor.*dispersion"),
+        ("zero_control", "control size.*dispersion"),
+        ("near_control", "control size.*dispersion"),
+        ("rank_deficient", "rank deficient"),
+        ("zero_residual", "residual.*dispersion"),
+        ("near_residual", "residual.*dispersion"),
+    ],
+)
 def test_numerically_unevaluable_designs_are_refused(tmp_path, monkeypatch, mode, match):
     monkeypatch.setattr(diagnostic, "_code_identity", lambda _root: IDENTITY)
     matrix, manifest = _packet(tmp_path, factor_mode=mode)
@@ -279,19 +384,30 @@ def test_numerically_unevaluable_designs_are_refused(tmp_path, monkeypatch, mode
 
 def test_too_few_rows_and_industries_are_refused(tmp_path, monkeypatch):
     def too_few(_matrix, manifest_path):
-        manifest = _manifest(manifest_path); manifest["min_cross_section"] = 61; _write_manifest(manifest_path, manifest)
+        manifest = _manifest(manifest_path)
+        manifest["min_cross_section"] = 61
+        _write_manifest(manifest_path, manifest)
+
     _invalid(tmp_path / "few", monkeypatch, too_few)
+
     def one_industry(matrix, manifest_path):
         rows = _rows(matrix)
-        for row in rows[1:]: row[3] = "only"
+        for row in rows[1:]:
+            row[3] = "only"
         _write_rows(matrix, rows)
-        manifest = _manifest(manifest_path); manifest["matrix_sha256"] = _sha(matrix); _write_manifest(manifest_path, manifest)
+        manifest = _manifest(manifest_path)
+        manifest["matrix_sha256"] = _sha(matrix)
+        _write_manifest(manifest_path, manifest)
+
     _invalid(tmp_path / "industry", monkeypatch, one_industry)
 
 
 def test_columns_must_be_fewer_than_rows(tmp_path, monkeypatch):
     def minimum(_matrix, manifest_path):
-        manifest = _manifest(manifest_path); manifest["min_cross_section"] = 30; _write_manifest(manifest_path, manifest)
+        manifest = _manifest(manifest_path)
+        manifest["min_cross_section"] = 30
+        _write_manifest(manifest_path, manifest)
+
     _invalid(tmp_path, monkeypatch, minimum, per_date=30, dates=1, control_count=28)
 
 
@@ -310,17 +426,29 @@ def test_deterministic_hashes_and_exact_verdict_vocabulary(tmp_path, monkeypatch
     monkeypatch.setattr(diagnostic, "_code_identity", lambda _root: IDENTITY)
     matrix, manifest = _packet(tmp_path)
     outputs = [tmp_path / "a", tmp_path / "b"]
-    for output in outputs: run_diagnostic(matrix, manifest, output)
+    for output in outputs:
+        run_diagnostic(matrix, manifest, output)
     manifests = [json.loads((item / "artifact_manifest.json").read_text()) for item in outputs]
     assert manifests[0]["files"] == manifests[1]["files"]
     assert manifests[0]["composite_sha256"] == manifests[1]["composite_sha256"]
     assert set(manifests[0]["files"]) == {"residuals.csv", "date_diagnostics.csv", "summary.json"}
-    for name, digest in manifests[0]["files"].items(): assert _sha(outputs[0] / name) == digest
+    for name, digest in manifests[0]["files"].items():
+        assert _sha(outputs[0] / name) == digest
     combined = "".join(path.read_text() for path in outputs[0].iterdir())
     assert "DIAGNOSTIC_ONLY_NOT_SELECTION" in combined
     assert all(word not in combined for word in ['"PASS"', '"APPROVE"', '"CANDIDATE"'])
     summary = json.loads((outputs[0] / "summary.json").read_text())
-    for field in ("factor_id", "market", "control_roles", "date_start", "date_end", "row_count", "date_count", "assumptions", "code_sha"):
+    for field in (
+        "factor_id",
+        "market",
+        "control_roles",
+        "date_start",
+        "date_end",
+        "row_count",
+        "date_count",
+        "assumptions",
+        "code_sha",
+    ):
         assert field in summary and field in manifests[0]
     assert "not validated alpha/OOS" in summary["restriction"]
 
@@ -331,10 +459,17 @@ def test_output_no_overwrite_preserves_every_existing_destination(tmp_path, monk
     matrix, manifest = _packet(tmp_path)
     output = tmp_path / "evidence"
     target = tmp_path / "target"
-    if kind == "directory": output.mkdir(); (output / "keep").write_text("safe")
-    elif kind == "file": output.write_text("safe")
-    elif kind == "dangling_symlink": output.symlink_to(target, target_is_directory=True)
-    else: target.mkdir(); (target / "keep").write_text("safe"); output.symlink_to(target, target_is_directory=True)
+    if kind == "directory":
+        output.mkdir()
+        (output / "keep").write_text("safe")
+    elif kind == "file":
+        output.write_text("safe")
+    elif kind == "dangling_symlink":
+        output.symlink_to(target, target_is_directory=True)
+    else:
+        target.mkdir()
+        (target / "keep").write_text("safe")
+        output.symlink_to(target, target_is_directory=True)
     with pytest.raises(DiagnosticError, match="overwrite"):
         run_diagnostic(matrix, manifest, output)
     assert os.path.lexists(output)
@@ -344,8 +479,11 @@ def test_output_no_overwrite_preserves_every_existing_destination(tmp_path, monk
 def test_keyboard_interrupt_cleans_temp_and_no_partial_output(tmp_path, monkeypatch):
     monkeypatch.setattr(diagnostic, "_code_identity", lambda _root: IDENTITY)
     matrix, manifest = _packet(tmp_path)
-    monkeypatch.setattr(diagnostic, "_sha256", lambda _path: (_ for _ in ()).throw(KeyboardInterrupt()))
-    with pytest.raises(KeyboardInterrupt): run_diagnostic(matrix, manifest, tmp_path / "evidence")
+    monkeypatch.setattr(
+        diagnostic, "_sha256", lambda _path: (_ for _ in ()).throw(KeyboardInterrupt())
+    )
+    with pytest.raises(KeyboardInterrupt):
+        run_diagnostic(matrix, manifest, tmp_path / "evidence")
     assert not (tmp_path / "evidence").exists()
     assert not list(tmp_path.glob(".evidence.tmp-*"))
 
@@ -355,10 +493,12 @@ def test_input_toctou_at_final_boundary_is_refused(tmp_path, monkeypatch, which)
     monkeypatch.setattr(diagnostic, "_code_identity", lambda _root: IDENTITY)
     matrix, manifest = _packet(tmp_path)
     original = diagnostic._revalidate_inputs
+
     def mutate(expected):
         path = matrix if which == "matrix" else manifest
         path.write_bytes(path.read_bytes() + b"\n")
         original(expected)
+
     monkeypatch.setattr(diagnostic, "_revalidate_inputs", mutate)
     with pytest.raises(DiagnosticError, match=f"{which} changed"):
         run_diagnostic(matrix, manifest, tmp_path / "evidence")
@@ -396,21 +536,37 @@ def _git(root: Path, *args: str) -> str:
 
 
 def _repo(tmp_path: Path) -> Path:
-    repo = tmp_path / "repo"; (repo / "src").mkdir(parents=True); (repo / "scripts").mkdir()
-    (repo / "src" / "a.py").write_text("VALUE = 1\n"); (repo / "scripts" / "b.py").write_text("print('x')\n")
-    _git(repo, "init", "-q"); _git(repo, "config", "user.email", "t@example.com"); _git(repo, "config", "user.name", "T")
-    _git(repo, "add", "."); _git(repo, "commit", "-qm", "base"); return repo
+    repo = tmp_path / "repo"
+    (repo / "src").mkdir(parents=True)
+    (repo / "scripts").mkdir()
+    (repo / "src" / "a.py").write_text("VALUE = 1\n")
+    (repo / "scripts" / "b.py").write_text("print('x')\n")
+    _git(repo, "init", "-q")
+    _git(repo, "config", "user.email", "t@example.com")
+    _git(repo, "config", "user.name", "T")
+    _git(repo, "add", ".")
+    _git(repo, "commit", "-qm", "base")
+    return repo
 
 
 def test_code_identity_binds_head_and_refuses_dirty_staged_ignored_and_symlink_dirs(tmp_path):
     for index, mutation in enumerate(("dirty", "staged", "ignored", "symlink_dir")):
-        repo = _repo(tmp_path / str(index)); assert _code_identity(repo)["code_sha"] == _git(repo, "rev-parse", "HEAD")
-        if mutation == "dirty": (repo / "src" / "a.py").write_text("VALUE = 2\n")
-        elif mutation == "staged": (repo / "scripts" / "c.py").write_text("X=1\n"); _git(repo, "add", "scripts/c.py")
-        elif mutation == "ignored": (repo / ".gitignore").write_text("src/x.py\n"); (repo / "src" / "x.py").write_text("X=1\n")
+        repo = _repo(tmp_path / str(index))
+        assert _code_identity(repo)["code_sha"] == _git(repo, "rev-parse", "HEAD")
+        if mutation == "dirty":
+            (repo / "src" / "a.py").write_text("VALUE = 2\n")
+        elif mutation == "staged":
+            (repo / "scripts" / "c.py").write_text("X=1\n")
+            _git(repo, "add", "scripts/c.py")
+        elif mutation == "ignored":
+            (repo / ".gitignore").write_text("src/x.py\n")
+            (repo / "src" / "x.py").write_text("X=1\n")
         else:
-            external = tmp_path / f"external{index}"; external.mkdir(); (repo / "src" / "plugin").symlink_to(external, target_is_directory=True)
-        with pytest.raises(DiagnosticError): _code_identity(repo)
+            external = tmp_path / f"external{index}"
+            external.mkdir()
+            (repo / "src" / "plugin").symlink_to(external, target_is_directory=True)
+        with pytest.raises(DiagnosticError):
+            _code_identity(repo)
 
 
 def test_code_identity_refuses_committed_python_symlink(tmp_path):
@@ -428,9 +584,12 @@ def test_code_identity_refuses_committed_python_symlink(tmp_path):
 def test_code_identity_mutation_at_final_boundary_is_refused(tmp_path, monkeypatch):
     matrix, manifest = _packet(tmp_path)
     calls = 0
+
     def identity(_root):
-        nonlocal calls; calls += 1
+        nonlocal calls
+        calls += 1
         return IDENTITY if calls == 1 else {**IDENTITY, "code_bundle_sha256": "c" * 64}
+
     monkeypatch.setattr(diagnostic, "_code_identity", identity)
     with pytest.raises(DiagnosticError, match="executable project files changed"):
         run_diagnostic(matrix, manifest, tmp_path / "evidence")
@@ -439,8 +598,23 @@ def test_code_identity_mutation_at_final_boundary_is_refused(tmp_path, monkeypat
 
 def test_cli_returns_two_without_artifacts_on_refusal(tmp_path, monkeypatch, capsys):
     from scripts import research_factor_orthogonalization
-    matrix, manifest = _packet(tmp_path); data = _manifest(manifest); data["status"] = "PASS"; _write_manifest(manifest, data)
-    monkeypatch.setattr("sys.argv", ["orthogonalize", "--matrix", str(matrix), "--manifest", str(manifest), "--output", str(tmp_path / "out")])
+
+    matrix, manifest = _packet(tmp_path)
+    data = _manifest(manifest)
+    data["status"] = "PASS"
+    _write_manifest(manifest, data)
+    monkeypatch.setattr(
+        "sys.argv",
+        [
+            "orthogonalize",
+            "--matrix",
+            str(matrix),
+            "--manifest",
+            str(manifest),
+            "--output",
+            str(tmp_path / "out"),
+        ],
+    )
     assert research_factor_orthogonalization.main() == 2
     assert "refused" in capsys.readouterr().err
     assert not (tmp_path / "out").exists()
