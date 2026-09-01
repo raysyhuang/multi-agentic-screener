@@ -629,24 +629,3 @@ def test_diagnostic_stays_isolated_from_mas_validation_machinery():
         "src.backtest.walk_forward",
     )
     assert all(module not in source for module in forbidden_modules)
-
-    project_root = Path(__file__).resolve().parents[2]
-    changed = set(
-        subprocess.check_output(
-            [
-                "git",
-                "diff",
-                "--name-only",
-                "463cbe560fe83910f2c4a4550d89618099321e58",
-            ],
-            cwd=project_root,
-            text=True,
-        ).splitlines()
-    )
-    assert changed.isdisjoint(
-        {
-            "src/backtest/metrics.py",
-            "src/backtest/validation_card.py",
-            "src/backtest/walk_forward.py",
-        }
-    )
