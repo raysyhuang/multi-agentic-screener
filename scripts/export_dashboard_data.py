@@ -176,6 +176,14 @@ def _portfolio(trades: dict[str, list]) -> dict | None:
         rows = [r for k in streams for r in trades.get(k, [])]
         if not rows:
             continue
+        # Portfolio admission is a point-in-time decision. Public trade rows are
+        # presented by exit date, but future exit/holding duration must never
+        # decide which same-day signal gets a scarce concurrency slot.
+        rows.sort(key=lambda r: (
+            r.get("entry_date") or "",
+            r.get("signal_date") or "",
+            r.get("ticker") or "",
+        ))
         res = simulate_book(book_trades(rows), max_concurrent=PORTFOLIO_MAX_CONCURRENT,
                             start_capital=PORTFOLIO_START_CAPITAL)
         configs.append({

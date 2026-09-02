@@ -27,6 +27,30 @@ def test_position_days_held_counts_only_observed_market_sessions():
     assert exp._position_age(date(2026, 8, 4), set()) == (None, "benchmark_unavailable")
 
 
+def test_portfolio_slot_selection_never_uses_future_exit_order(monkeypatch):
+    import scripts.export_dashboard_data as exp
+
+    monkeypatch.setattr(exp, "PORTFOLIO_MAX_CONCURRENT", 1)
+    # Public trade rows are presented in exit order, so the losing same-day row
+    # arrives first. Portfolio selection must reorder on point-in-time fields:
+    # both entered together, and ticker is the deterministic frozen tie-break.
+    trades = {
+        "mean_reversion|mas_official": [
+            {"ticker": "ZZZ", "signal_date": "2026-01-01", "entry_date": "2026-01-02",
+             "exit_date": "2026-01-02", "pnl_pct": -10.0},
+            {"ticker": "AAA", "signal_date": "2026-01-01", "entry_date": "2026-01-02",
+             "exit_date": "2026-01-09", "pnl_pct": 10.0},
+        ]
+    }
+
+    portfolio = exp._portfolio(trades)
+    assert portfolio is not None
+    mr = next(config for config in portfolio["configs"] if config["key"] == "mr")
+
+    assert mr["trades"] == 1 and mr["skipped"] == 1
+    assert mr["return_pct"] == 10.0
+
+
 def _signal(run_date, ticker, model, source, sid=None):
     return Signal(
         id=sid, run_date=run_date, ticker=ticker, direction="LONG",

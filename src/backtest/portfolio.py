@@ -6,12 +6,14 @@ max drawdown, Sharpe — instead of a per-trade sum. The point of combining
 weakly-correlated streams (sniper + MR) is that the *book's* risk-adjusted
 return exceeds either stream alone; this module is what measures that.
 
-Event-driven, equal-weight slots, exits processed before same-day entries so
-freed capital redeploys immediately. Cash earns 0%; open positions are held at
+Event-driven, equal-weight slots. Previously open positions exit before new
+entries so freed capital redeploys immediately; a new position's own same-day
+exit is processed after its entry. Cash earns 0%; open positions are held at
 cost (we only know entry/exit, not daily marks), so equity is sampled at exit
-events — standard for a trade-list backtest. This is the productionised core of
-the research CLI ``scripts/sniper_equity_curve.py`` (which keeps extra modes);
-keep the two in sync if the capital model ever changes.
+events — standard for a trade-list backtest. This is the Dashboard's production
+accounting engine. The research CLI ``scripts/sniper_equity_curve.py`` retains a
+separate event loop and must not be treated as evidence-equivalent unless its
+ordering is reconciled independently.
 
 Sharpe is computed on a calendar-day forward-filled equity curve and annualised
 at sqrt(252). At small trade counts it is DIRECTIONAL only: a stream that rarely
@@ -40,7 +42,9 @@ def _sharpe(equity_curve: list[tuple[date, float]]) -> float | None:
     None if the curve is too short or has zero variance."""
     if len(equity_curve) < 3:
         return None
-    pts = sorted(equity_curve)
+    # Sort by date only. Python's sort is stable, so same-day points retain
+    # execution order and the last one remains that day's close.
+    pts = sorted(equity_curve, key=lambda point: point[0])
     start, end = pts[0][0], pts[-1][0]
     span = (end - start).days
     if span < 2:
@@ -73,20 +77,34 @@ def simulate_book(
     every trade a per-trade sum implicitly assumes.
     """
     trades = [t for t in trades if t.entry and t.exit and t.pnl_pct is not None]
+    invalid = next((t for t in trades if t.exit < t.entry), None)
+    if invalid is not None:
+        raise ValueError(
+            "portfolio trade has exit before entry "
+            f"({invalid.entry.isoformat()} > {invalid.exit.isoformat()})"
+        )
     if not trades:
         return {
             "taken": 0, "skipped": 0, "peak_concurrent": 0, "multiple": 1.0,
             "total_return_pct": 0.0, "max_drawdown_pct": 0.0, "sharpe": None,
             "equity_curve": [],
         }
-    trades = sorted(trades, key=lambda t: (t.entry, t.exit))
+    # Preserve the caller's frozen order among same-day entries. Sorting by exit
+    # would use future holding duration to decide which signal gets a scarce slot.
+    trades = sorted(trades, key=lambda t: t.entry)
 
-    # (date, kind, trade). kind 0 = exit, 1 = entry → exits sort first.
-    events: list[tuple[date, int, BookTrade]] = []
-    for t in trades:
-        events.append((t.exit, 0, t))
-        events.append((t.entry, 1, t))
-    events.sort(key=lambda e: (e[0], e[1]))
+    # Event order within a day:
+    #   0. exits for positions opened on an earlier day (free capital),
+    #   1. new entries,
+    #   2. exits for positions opened that same day.
+    # A blanket exits-before-entries rule silently drops same-day round trips:
+    # their exit is visited before the position exists and is never retried.
+    events: list[tuple[date, int, int, BookTrade]] = []
+    for trade_id, t in enumerate(trades):
+        exit_kind = 2 if t.entry == t.exit else 0
+        events.append((t.exit, exit_kind, trade_id, t))
+        events.append((t.entry, 1, trade_id, t))
+    events.sort(key=lambda e: (e[0], e[1], e[2]))
 
     cash = start_capital
     open_positions: dict[int, float] = {}
@@ -96,11 +114,10 @@ def simulate_book(
     def equity() -> float:
         return cash + sum(open_positions.values())
 
-    for ev_date, kind, t in events:
-        tid = id(t)
-        if kind == 0:  # exit
-            if tid in open_positions:
-                notional = open_positions.pop(tid)
+    for ev_date, kind, trade_id, t in events:
+        if kind in (0, 2):  # prior-day exit or same-day round-trip exit
+            if trade_id in open_positions:
+                notional = open_positions.pop(trade_id)
                 cash += notional * (1.0 + t.pnl_pct / 100.0)
                 equity_curve.append((ev_date, equity()))
         else:  # entry
@@ -112,9 +129,17 @@ def simulate_book(
                 skipped += 1
                 continue
             cash -= notional
-            open_positions[tid] = notional
+            open_positions[trade_id] = notional
             taken += 1
             peak_concurrent = max(peak_concurrent, len(open_positions))
+
+    # Every accepted input is a closed trade. Fail loudly rather than publish a
+    # portfolio card if an event-ordering regression strands one at cost again.
+    if open_positions or len(equity_curve) != taken + 1:
+        raise RuntimeError(
+            "portfolio accounting did not close every taken trade "
+            f"(taken={taken}, exits={len(equity_curve) - 1}, open={len(open_positions)})"
+        )
 
     final_eq = equity()
     peak = -float("inf")
