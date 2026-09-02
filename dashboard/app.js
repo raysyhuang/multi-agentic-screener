@@ -429,13 +429,17 @@ async function main() {
 function renderStatic(data) {
   const streams = data.trades || {};
   const keys = Object.keys(streams).filter((k) => streams[k].length);
+  const positions = data.open_positions || [];
+  const pendingEntries = positions.filter((o) => o.days_held_status === "pre_entry");
+  const openPositions = positions.filter((o) => o.days_held_status !== "pre_entry");
+  const ageUnknownPositions = openPositions.filter((o) => o.days_held_status !== "observed");
 
   renderFreshness(data);
   // The freshness chip below owns "when"; this line owns "what".
   const lrH = data.latest_run || {};
   $("hero-sub").textContent =
     `${(lrH.regime || "–").toUpperCase()} regime · ${lrH.universe ?? "–"} names scanned · `
-    + `${(data.today_picks || []).length} picks · ${(data.open_positions || []).length} open`;
+    + `${(data.today_picks || []).length} picks · ${openPositions.length} open · ${pendingEntries.length} pending entry`;
   $("footer-meta").textContent =
     `Window: last ${data.window_days} days · generated ${data.generated_at} · streams: ${keys.length}`;
 
@@ -451,7 +455,9 @@ function renderStatic(data) {
     tiles.push({ k: streamMeta(k).label, v: `${pct(wr, 0)} · ${avg >= 0 ? "+" : ""}${fmt(avg)}%`,
       s: b ? `expect ~${pct(b.wr, 0)} · ${b.avg >= 0 ? "+" : ""}${fmt(b.avg)}%` : "", color: streamMeta(k).color });
   }
-  tiles.push({ k: "Open positions", v: String(data.open_positions?.length ?? 0) });
+  tiles.push({ k: "Open positions", v: String(openPositions.length),
+    s: `${pendingEntries.length} pending entry` +
+      (ageUnknownPositions.length ? ` · ${ageUnknownPositions.length} age unavailable` : "") });
   $("today-tiles").append(...tiles.map((t) => {
     const d = el("div"); d.className = "tile";
     d.append(Object.assign(el("div"), { className: "k", textContent: t.k }));

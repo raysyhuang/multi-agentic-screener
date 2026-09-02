@@ -4,7 +4,9 @@ from __future__ import annotations
 
 from datetime import date
 
-from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
+import pytest
+
+from src.backtest.portfolio import BookTrade, _sharpe, exit_day_overlap, simulate_book
 
 
 def _t(entry, exit_, pnl):
@@ -36,6 +38,67 @@ def test_exits_free_capital_before_same_day_entries():
     trades = [_t(1, 5, 4.0), _t(5, 9, 4.0)]
     r = simulate_book(trades, max_concurrent=1, start_capital=100_000.0)
     assert r["taken"] == 2 and r["skipped"] == 0
+
+
+def test_same_day_round_trip_enters_before_its_own_exit():
+    # A trade that enters and stops on day 5 must contribute its loss. The
+    # generic "exits before entries" ordering used to ignore the exit, leave
+    # the position at cost, and silently report zero return.
+    r = simulate_book([_t(5, 5, -10.0)], max_concurrent=10, start_capital=100_000.0)
+
+    assert r["taken"] == 1 and r["skipped"] == 0
+    assert abs(r["total_return_pct"] - (-1.0)) < 1e-9
+    assert len(r["equity_curve"]) == 2  # seed + exactly one accounted exit
+
+
+def test_sharpe_uses_the_last_equity_point_as_the_same_day_close():
+    # Sorting full (date, equity) tuples reorders same-day points by value and
+    # can replace the actual close with that day's high-water mark.
+    curve = [
+        (date(2026, 1, 1), 100_000.0),
+        (date(2026, 1, 2), 102_000.0),
+        (date(2026, 1, 2), 99_000.0),
+        (date(2026, 1, 3), 100_000.0),
+    ]
+    daily_closes = [curve[0], curve[2], curve[3]]
+
+    assert _sharpe(curve) == _sharpe(daily_closes)
+
+
+def test_binding_cap_preserves_input_order_for_same_day_entries():
+    # Exit date is future information and must not decide which same-day signal
+    # gets the only slot. The caller's frozen order owns that decision.
+    trades = [_t(1, 9, 10.0), _t(1, 1, -10.0)]
+
+    r = simulate_book(trades, max_concurrent=1, start_capital=100_000.0)
+
+    assert r["taken"] == 1 and r["skipped"] == 1
+    assert abs(r["total_return_pct"] - 10.0) < 1e-9
+
+
+def test_exit_before_entry_is_rejected_before_replay():
+    with pytest.raises(ValueError, match="exit before entry"):
+        simulate_book([_t(9, 1, -10.0)])
+
+
+def test_repeated_trade_object_is_accounted_as_two_input_rows():
+    trade = _t(1, 5, 10.0)
+
+    r = simulate_book([trade, trade], max_concurrent=2, start_capital=100_000.0)
+
+    assert r["taken"] == 2 and r["skipped"] == 0
+    assert abs(r["total_return_pct"] - 10.0) < 1e-9
+    assert len(r["equity_curve"]) == 3
+
+
+def test_prior_exit_frees_slot_before_same_day_round_trip_and_new_entry():
+    trades = [_t(1, 5, 10.0), _t(5, 5, -10.0), _t(5, 9, 5.0)]
+
+    r = simulate_book(trades, max_concurrent=1, start_capital=100_000.0)
+
+    assert r["taken"] == 2 and r["skipped"] == 1
+    assert abs(r["total_return_pct"] - (-1.0)) < 1e-9
+    assert len(r["equity_curve"]) == 3
 
 
 def test_drawdown_and_sharpe_present_on_a_losing_then_winning_path():
