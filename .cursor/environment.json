@@ -1,0 +1,19 @@
+{
+  "name": "Multi-Strategy Quant Screener",
+  "user": "ubuntu",
+  "install": "bash /agent/repos/multi-agentic-screener/.cursor/install.sh",
+  "start": "bash /agent/repos/multi-agentic-screener/.cursor/start.sh",
+  "terminals": [
+    {
+      "name": "dashboard",
+      "description": "FastAPI dashboard on http://localhost:8000. Ensures PostgreSQL + migrations are up (idempotent) before launching the server.",
+      "command": "bash /agent/repos/multi-agentic-screener/.cursor/start.sh && cd /agent/repos/multi-agentic-screener && uvicorn api.app:app --host 0.0.0.0 --port 8000 --reload"
+    }
+  ],
+  "ports": [
+    {
+      "name": "dashboard",
+      "port": 8000
+    }
+  ]
+}
