@@ -146,6 +146,14 @@ class Settings(BaseSettings):
     # sleeve signals scored, persisted, or shown in the alert.
     mr_manual_sleeve_enabled: bool = False
 
+    # --- Quality Veto Layer ---
+    # Three pre-ranking vetoes: extended tape, dilution shock, data sanity.
+    # Shadow-only by default: vetoes mark candidates with skip_reason but do NOT
+    # remove them from the official pick stream. Requires selected-vs-selected
+    # evidence (≥30 shadow rows per §0.4) before live flip.
+    quality_veto_enabled: bool = True
+    quality_veto_shadow_only: bool = True  # False = hard veto (removes from picks)
+
     fmp_daily_call_budget: int = 750
     fmp_budget_warn_threshold_pct: float = 0.80
     fmp_enforce_daily_budget: bool = False
