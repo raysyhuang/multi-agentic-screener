@@ -1,0 +1,28 @@
+{
+  "schema_version": "mas_truth_paper_track_v1",
+  "track_id": "mas-truth-paper-v1",
+  "description": "Isolated forward-paper recording track for the reconciliation-hardened MAS candidate. This track must never be used for live selection or execution.",
+  "candidate_ref": "b54c7591f3a0228c535608d5b3387ce7f66a150f",
+  "candidate_branch": "truth-lean",
+  "effective_date": "2026-07-21",
+  "execution_mode": "quant_only",
+  "trading_mode": "PAPER",
+  "telegram_alert_prefix": "MAS-TRUTH-PAPER",
+  "database_secret": "DATABASE_URL_TRUTH_LEAN",
+  "required_secrets": [
+    "DATABASE_URL_TRUTH_LEAN",
+    "POLYGON_API_KEY",
+    "FMP_API_KEY",
+    "FRED_API_KEY",
+    "FINNHUB_API_KEY",
+    "TELEGRAM_BOT_TOKEN",
+    "TELEGRAM_CHAT_ID"
+  ],
+  "recording_contract": {
+    "record_all_signals": true,
+    "record_filled_no_fill_cancel_and_censored": true,
+    "record_no_trade_and_failure_runs": true,
+    "allow_live_execution": false,
+    "immutable_candidate_ref": true
+  }
+}
