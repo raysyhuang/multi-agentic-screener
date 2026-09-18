@@ -28,11 +28,22 @@ from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
 
-# The "book" = the two systematic official streams run together. The manual
-# sleeve is deliberately excluded: it reproduces the official MR picks verbatim
-# and adds only negative-alpha breadth (see the 2026-07 manual-sleeve forensic),
-# so it dilutes the book rather than diversifying it.
-BOOK_STREAMS = ["sniper|mas_official", "mean_reversion|mas_official"]
+# The "book" = the systematic official streams run together. The manual sleeve
+# is deliberately excluded: it reproduces the official MR picks verbatim and
+# adds only negative-alpha breadth (see the 2026-07 manual-sleeve forensic), so
+# it dilutes the book rather than diversifying it. Sniper left the book on
+# 2026-09-18 (config.sniper_in_book) and now records as `sniper|sniper_shadow`;
+# its official rows stay visible as their own stream until they age out of the
+# window, but they no longer define the book.
+BOOK_STREAMS = ["mean_reversion|mas_official"]
+# Per-stream portfolio rows: each stream alone, then the book. A row is emitted
+# only while the stream has closed trades in the window, so the retired official
+# sniper row disappears on its own once its last trade leaves the 90d window.
+PORTFOLIO_SPECS = [
+    ("sniper", "Sniper only (official, retired 2026-09-18)", ["sniper|mas_official"]),
+    ("mr", "MR official only", ["mean_reversion|mas_official"]),
+    ("book", "Book (MR official)", BOOK_STREAMS),
+]
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -111,8 +122,14 @@ def _bench_return(closes: dict, entry: _date | None, exit_: _date | None) -> flo
 #  - MR official: reconciled 90d live +0.46%/trade (n=23, provisional)
 #  - MR sleeve: reconciled ~breakeven (-0.01%)
 BASELINES = {
-    "sniper|mas_official": {"label": "Sniper (official)", "wr": 0.543, "avg": 0.54,
-                            "source": "truth-matrix Run E (2026-07-19)"},
+    "sniper|mas_official": {"label": "Sniper (official, retired 2026-09-18)", "wr": 0.543,
+                            "avg": 0.54, "source": "truth-matrix Run E (2026-07-19)"},
+    # Sniper shadow stream (retired from the book 2026-09-18, still recorded).
+    # Same expectation band as the official stream — it is the same strategy at
+    # the same config, only the accounting changed. 90d live at retirement:
+    # n=32, 41% WR, -0.34%/trade.
+    "sniper|sniper_shadow": {"label": "Sniper (shadow)", "wr": 0.543, "avg": 0.54,
+                             "source": "truth-matrix Run E — shadow, not in the book"},
     "mean_reversion|mas_official": {"label": "MR (official)", "wr": 0.522, "avg": 0.46,
                                     "source": "90d reconciliation (provisional, n=23)"},
     "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": 0.493, "avg": -0.01,
@@ -151,11 +168,9 @@ def _stream_key(model: str | None, source: str | None) -> str:
 
 
 def _portfolio(trades: dict[str, list]) -> dict | None:
-    """The book (sniper + MR official) vs each stream alone, as a real
-    concurrency-capped account. Front-end assigns colors; we ship data only."""
+    """The book vs each official stream alone, as a real concurrency-capped
+    account. Front-end assigns colors; we ship data only."""
     sniper_key, mr_key = "sniper|mas_official", "mean_reversion|mas_official"
-    if not (trades.get(sniper_key) or trades.get(mr_key)):
-        return None
 
     def book_trades(rows: list) -> list[BookTrade]:
         out = []
@@ -166,13 +181,8 @@ def _portfolio(trades: dict[str, list]) -> dict | None:
                                      exit=date.fromisoformat(x), pnl_pct=r["pnl_pct"]))
         return out
 
-    specs = [
-        ("sniper", "Sniper only", [sniper_key]),
-        ("mr", "MR official only", [mr_key]),
-        ("book", "Book (sniper + MR)", BOOK_STREAMS),
-    ]
     configs, equity = [], {}
-    for ckey, label, streams in specs:
+    for ckey, label, streams in PORTFOLIO_SPECS:
         rows = [r for k in streams for r in trades.get(k, [])]
         if not rows:
             continue
@@ -198,14 +208,20 @@ def _portfolio(trades: dict[str, list]) -> dict | None:
                         for d, eq in res["equity_curve"]]
     if not configs:
         return None
+    # Exit-day overlap between the two historical book streams is only a
+    # statement about the book while BOTH are in it; with sniper retired it is
+    # omitted rather than reported as a property of a book it no longer describes.
+    overlap = None
+    if sniper_key in BOOK_STREAMS and mr_key in BOOK_STREAMS:
+        overlap = exit_day_overlap({"sniper": trades.get(sniper_key, []),
+                                    "mr": trades.get(mr_key, [])})
     return {
         "book_streams": BOOK_STREAMS,
         "start_capital": PORTFOLIO_START_CAPITAL,
         "max_concurrent": PORTFOLIO_MAX_CONCURRENT,
         "configs": configs,
         "equity": equity,
-        "overlap": exit_day_overlap({"sniper": trades.get(sniper_key, []),
-                                     "mr": trades.get(mr_key, [])}),
+        "overlap": overlap,
     }
 
 

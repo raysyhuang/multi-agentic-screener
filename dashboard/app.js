@@ -3,7 +3,10 @@
    one axis, thin marks, 2px gaps, legends for >=2 series, tooltips, tnum text. */
 
 const STREAM_META = {
-  "sniper|mas_official":          { label: "Sniper (official)",    color: "#533afd" },
+  "sniper|mas_official":          { label: "Sniper (official, retired 2026-09-18)", color: "#533afd" },
+  // Sniper left the book 2026-09-18 and keeps recording as a SHADOW stream
+  // (config.sniper_in_book). Own entry so it never renders as a raw key.
+  "sniper|sniper_shadow":         { label: "Sniper (shadow)",      color: "#d94fc6" },
   "mean_reversion|mas_official":  { label: "MR (official)",        color: "#2874ad" },
   "mean_reversion|mr_manual_sleeve": { label: "MR (manual sleeve)", color: "#ea2261" },
   "pead|pead_paper":              { label: "PEAD (paper)",         color: "#0f8a6d" },
@@ -544,9 +547,11 @@ function renderCharts(data, streams, keys) {
     }
   }
 
-  // Portfolio — the book (sniper + MR official) vs each stream alone, replayed
-  // as a real concurrency-capped account. Book Sharpe > either alone = the
-  // diversification payoff; the manual sleeve is excluded (it only dilutes).
+  // Portfolio — the book vs each official stream alone, replayed as a real
+  // concurrency-capped account. The exporter decides which rows exist
+  // (pf.configs / pf.book_streams); since 2026-09-18 the book is MR official
+  // only and the retired sniper row lingers until its trades age out. The
+  // manual sleeve is excluded (it only dilutes).
   const pf = data.portfolio, pfCard = $("portfolio-card");
   if (!pf || !pf.configs?.length) {
     if (pfCard) pfCard.style.display = "none";
@@ -593,7 +598,10 @@ function renderCharts(data, streams, keys) {
     $("portfolio-table").append(tbl);
     }
 
-    const pfOrder = [["book", "Book (sniper + MR)"], ["sniper", "Sniper only"], ["mr", "MR official only"]];
+    // Labels come from the exporter's configs so the chart never names a book
+    // composition the data no longer has.
+    const pfLabel = Object.fromEntries(pf.configs.map((c) => [c.key, c.label]));
+    const pfOrder = ["book", "sniper", "mr"].map((k) => [k, pfLabel[k] || k]);
     const pfSeries = pfOrder.filter(([k]) => pf.equity?.[k]?.length).map(([k, lbl]) => ({
       label: lbl, color: pfColor(k),
       points: pf.equity[k].map((p) => ({ x: Date.parse(p.date), y: p.ret,
@@ -606,11 +614,16 @@ function renderCharts(data, streams, keys) {
         legend($("portfolio-chart"), pfSeries.map((s) => ({ label: s.label, color: s.color })));
     }
 
-    const ov = pf.overlap || {};
-    $("portfolio-note").textContent =
-      `Sniper and MR official shared only ${ov.shared_days ?? "–"} exit-days ` +
-      `(of ${ov.sniper_exit_days ?? "–"} and ${ov.mr_exit_days ?? "–"}) — they seldom fire together, ` +
-      `so the book's risk-adjusted return can exceed either alone. ` +
+    // Overlap is only reported while BOTH sniper and MR define the book; the
+    // exporter ships null otherwise (sniper retired 2026-09-18).
+    const ov = pf.overlap;
+    const overlapNote = ov
+      ? `Sniper and MR official shared only ${ov.shared_days ?? "–"} exit-days ` +
+        `(of ${ov.sniper_exit_days ?? "–"} and ${ov.mr_exit_days ?? "–"}) — they seldom fire together, ` +
+        `so the book's risk-adjusted return can exceed either alone. `
+      : `The book is ${(pf.book_streams || []).map((k) => streamMeta(k).label).join(" + ") || "empty"}; ` +
+        `sniper was retired from it on 2026-09-18 and now records as a shadow stream. `;
+    $("portfolio-note").textContent = overlapNote +
       `*Sharpe is directional at this trade count: a stream that rarely deploys leaves capital idle, ` +
       `flattening volatility and inflating Sharpe — trust the ranking across rows, not the absolute value.`;
   }

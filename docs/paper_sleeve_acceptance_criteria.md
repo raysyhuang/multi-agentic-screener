@@ -215,6 +215,8 @@ Independently recomputed from the raw production export by Victor and reproduced
 
 Reference artifact for the figures above: `generated_at 2026-08-14T20:59:45Z`, `sha256` beginning `f4de7a2e7bf566b0`. A pinned comparator record must carry: stream, metric, value, n, date range, `generated_at`, and full sha256.
 
+> **Amendment 2026-09-18 — the comparator survives sniper's retirement from the live book.** `sniper|mas_official` left the official book on 2026-09-18 (`config.sniper_in_book=False`; the strategy continues unchanged as the shadow stream `sniper|sniper_shadow`, tracked and never traded). Condition 5 reads the comparator from the **pinned artifact** — `outputs/research/frozen/data-2026-08-14T205945Z.json`, sha256 `f4de7a2e7bf566b0935ca08ebea5e84cc501c4f72773bab1b7a5eb6b84d512a0`, mean alpha vs SPY **+0.6408%** (n=60) — not from whatever the live book happens to be on evaluation day. The comparator is therefore **unchanged and condition 5 remains evaluable**. This is not a re-pin and not a loosening: the number a sleeve must beat is the same number. Re-pinning to the MR-only book (+0.18% mean alpha on the 2026-09-17 export, n=49) was considered and **rejected** — it would lower the bar with no reason other than that the comparator's stream had been retired, which is rule 3's excluded reason. Judged by effect (rule 6): no threshold moves. No decision was pending on any stream at the time (the measurement window has not opened), so rule 2 is satisfied.
+
 ### ⚠️ Which artifact — the field path does not resolve uniquely
 
 **The mirror bundle and the production Pages export use identical stream keys.** `alpha_summary["sniper|mas_official"]["spy"]["ci_lo"]` resolves in **both** and returns **different books** — the mirror had n=3 for that key on 2026-08-15 while production had n=60.
@@ -248,17 +250,19 @@ The rules for this document:
 
 The decisional table below is unchanged and remains authoritative: `ci_lo > 0` on alpha vs SPY is the only quantity that decides anything. This section constrains interpretation; it does not add a decision rule.
 
-### ⚠️ BLOCKING PREREQUISITE — comparator pinning is unassigned
+### ✅ Comparator pinning — DONE 2026-08-16 (this table closed 2026-09-18)
 
-The pinning requirement above sits **on the critical path to any Tier 2 read**, and as of this writing **no one owns it**. If it stays unassigned, the first stream to reach n = 30 arrives at a bar it cannot be evaluated against, and the likely response under time pressure is to quote a remembered number — which is the failure this document exists to prevent.
+The pinning requirement above sits **on the critical path to any Tier 2 read**. When this section was written no one owned it; it was pinned the same day and this table was never updated, so for a month the document said "unassigned" about a prerequisite that had been met. Closed on the record now, as part of the 2026-09-18 amendment above.
 
 | Field | Value |
 |---|---|
-| **Owner** | **UNASSIGNED — Ray to name** |
-| **Due** | Before the first stream reaches n = 30 |
-| **Blocks** | Tier 2 for every stream |
+| **Owner** | Victor (Claude Code, VPS Boston) — pinned 2026-08-16 |
+| **Record** | `outputs/research/COMPARATOR_PINNED_2026-08-16.md` (method: `COMPARATOR_PINNING_METHOD.md`) |
+| **Artifact** | `outputs/research/frozen/data-2026-08-14T205945Z.json`, sha256 `f4de7a2e7bf566b0935ca08ebea5e84cc501c4f72773bab1b7a5eb6b84d512a0` |
+| **Comparator** | `sniper|mas_official`: mean alpha vs SPY **+0.6408%**, n=60, CI [−0.5856, +1.8895], `significant: false` |
+| **Blocks** | Nothing — Tier 2 condition 5 is evaluable |
 
-**Definition of done:** the comparator is re-derived from the reconciliation artifact — not from memory, not from this document, not from a dashboard rendering — and recorded here as: metric, value, row count, date range, and the source artifact's identifier. Both live books, and the sign conflict resolved with evidence rather than by preference.
+**Definition of done (met):** the comparator was re-derived from a saved, hashed artifact — not from memory, not from this document, not from a dashboard rendering — and recorded with metric, value, row count and source identifier; both live books were pinned and the sign conflict was resolved with evidence in the pinning record (the −0.97% MAS-GH figure RETRACTED, −0.14% IBKR UNLOCATABLE).
 
 Until that exists, streams may reach n = 30 and be *described*, but **no Tier 2 determination may be made.**
 

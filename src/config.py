@@ -229,6 +229,17 @@ class Settings(BaseSettings):
     sniper_holding_period: int = 7
     sniper_max_positions: int = 3
     sniper_time_stop_days: int = 1
+    # Sniper left the official book on 2026-09-18 and runs as a SHADOW stream
+    # (signal_source="sniper_shadow"): still scored, ranked under its own cap,
+    # persisted and exit-tracked, never in `pipeline_result.approved`, the alert's
+    # official block, the validation gate or the dashboard book. The record keeps
+    # accruing so a paper re-entry can be judged on data. Evidence stack behind the
+    # retirement: live n=32 at 41% WR / -0.34%/trade with the entire loss in 7
+    # day-1 gap-through time_stops; Run E +0.27%/trade Sh 0.37; score IC +0.002;
+    # negative forward returns at every horizon. Discretionary — the pre-registered
+    # S1 stop (ci_hi < 0 at n>=30) did NOT fire (ci_hi +1.51). True restores the
+    # pre-2026-09-18 wiring (sniper competes with MR for official slots).
+    sniper_in_book: bool = False
 
     # --- Post-Earnings Drift (PEAD) — paper trial, default OFF ---
     # Backtest survives (outputs/research/pead_FINDINGS.md) but earns a paper

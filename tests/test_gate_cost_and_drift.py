@@ -61,7 +61,7 @@ def test_drift_baselines_are_the_honest_numbers_not_the_retired_fantasy():
 def test_drift_covers_every_live_stream():
     """A stream with no baseline is reported but never alerts, so a missing key
     silently disables monitoring for it."""
-    for key in ("sniper|mas_official", "mean_reversion|mas_official",
+    for key in ("sniper|mas_official", "sniper|sniper_shadow", "mean_reversion|mas_official",
                 "pead|pead_paper", "pead|pead_neglected"):
         assert key in BASELINES
 
