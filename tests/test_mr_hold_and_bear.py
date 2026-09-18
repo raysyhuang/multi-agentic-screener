@@ -12,7 +12,9 @@ import pandas as pd
 
 from scripts.choppy_sniper_regime_test import spy_market_regime
 from scripts.gen_mr_trades import LIVE_MR
-from scripts.mr_hold_and_bear import bear_rule, equity, stamp_market_regime, summarize
+from scripts.mr_hold_and_bear import (
+    bear_rule, boot_ci, cluster_boot_ci, equity, stamp_market_regime, summarize,
+)
 
 
 def _spy(closes: list[float]) -> pd.DataFrame:
@@ -30,6 +32,54 @@ def test_spy_market_regime_labels_by_date_from_a_frame():
     assert reg[keys[59]] == "bull"
     assert reg[keys[-1]] == "bear"
     assert all(k == k[:10] and len(k) == 10 for k in keys)  # YYYY-MM-DD keys
+
+
+def test_lagged_regime_labels_an_entry_with_the_previous_sessions_regime():
+    """An entry at D's open cannot know D's close. With the regime flipping ON
+    day D, lag_sessions=1 must label D with D-1's regime (the unlagged series
+    labels D with D's own close-derived regime — the leak Codex caught)."""
+    closes = [100 + i for i in range(60)] + [40.0] * 30   # bull ... then collapse
+    unlagged = spy_market_regime(spy=_spy(closes))
+    lagged = spy_market_regime(spy=_spy(closes), lag_sessions=1)
+    keys = sorted(unlagged)
+    # Find the first day the unlagged label leaves "bull" (the flip day D).
+    flip = next(i for i in range(1, len(keys))
+                if unlagged[keys[i]] != unlagged[keys[i - 1]] and unlagged[keys[i - 1]] == "bull")
+    d_flip, d_prev = keys[flip], keys[flip - 1]
+    assert unlagged[d_flip] != "bull" and unlagged[d_prev] == "bull"
+    assert lagged[d_flip] == "bull"                      # D carries D-1's label
+    assert lagged[keys[flip + 1]] == unlagged[d_flip]    # D+1 carries D's
+    assert lagged[keys[0]] == "unknown"                  # nothing completed before day 1
+    assert all(lagged[keys[i]] == unlagged[keys[i - 1]] for i in range(1, len(keys)))
+    assert set(lagged) == set(unlagged)                  # same date keys, shifted labels
+
+
+def test_cluster_bootstrap_collapses_when_every_trade_shares_one_date():
+    """All trades on one entry date = one cluster: every resample is the whole
+    sample, so the cluster CI is the point estimate, while the iid CI is not."""
+    x = [-2.0, -1.0, 0.0, 1.0, 2.0, 5.0, -3.0, 0.5]
+    lo, hi = cluster_boot_ci(x, ["2025-03-03"] * len(x))
+    mean = sum(x) / len(x)
+    assert lo == hi == mean
+    ilo, ihi = boot_ci(x)
+    assert ilo < mean < ihi and (ihi - ilo) > 0
+
+
+def test_cluster_bootstrap_reduces_to_iid_with_one_trade_per_date():
+    x = [-2.0, -1.0, 0.0, 1.0, 2.0, 5.0, -3.0, 0.5]
+    dates = [f"2025-03-{d:02d}" for d in range(3, 3 + len(x))]
+    # Same seed, same draw sequence over the same number of units -> identical.
+    assert cluster_boot_ci(x, dates) == boot_ci(x)
+
+
+def test_cluster_bootstrap_is_wider_than_iid_when_dates_cluster():
+    """Ten identical-sign trades per date across two opposite dates: the iid
+    interval sees 20 draws, the cluster interval sees 2 — it must be wider."""
+    x = [1.0] * 10 + [-1.0] * 10
+    dates = ["2025-03-03"] * 10 + ["2025-03-04"] * 10
+    ilo, ihi = boot_ci(x)
+    clo, chi = cluster_boot_ci(x, dates)
+    assert (chi - clo) > (ihi - ilo)
 
 
 def test_stamp_uses_entry_date_not_ticker_regime():
@@ -61,6 +111,9 @@ def test_summarize_splits_bear_from_the_rest():
     assert s["ex_bear"]["n"] == 12 and s["ex_bear"]["avg"] == 2.0
     assert s["all"]["n"] == 24 and s["all"]["avg"] == 0.5
     assert s["bear"]["ci_lo"] <= s["bear"]["avg"] <= s["bear"]["ci_hi"]
+    # One entry date per cell -> the cluster interval collapses to the mean.
+    assert s["bear"]["entry_dates"] == 1
+    assert s["bear"]["cluster_ci_lo"] == s["bear"]["cluster_ci_hi"] == s["bear"]["avg"]
 
 
 def test_bear_rule_is_the_pre_registered_one():

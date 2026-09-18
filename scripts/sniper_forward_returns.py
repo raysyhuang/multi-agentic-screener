@@ -98,21 +98,35 @@ _ap = argparse.ArgumentParser(description=__doc__)
 _ap.add_argument("--input", help="frozen dashboard export to replay instead of fetching")
 _ap.add_argument("--dump-trades", action="store_true",
                  help="also write the per-pick CSV (contains realised P&L) under outputs/")
-_ap.add_argument("--stream", default="sniper|mas_official",
+DEFAULT_STREAM = "sniper|mas_official"
+DEFAULT_HORIZONS = "21,42"
+_ap.add_argument("--stream", default=DEFAULT_STREAM,
                  help="dashboard trade stream key, e.g. mean_reversion|mas_official")
-_ap.add_argument("--horizons", default="21,42",
+_ap.add_argument("--horizons", default=DEFAULT_HORIZONS,
                  help="comma-separated forward horizons in trading bars (default 21,42)")
 _ap.add_argument("--baseline-input", default=None,
                  help="an EARLIER frozen bundle; picks present in it are 'overlap', the rest "
                       "are strictly out-of-sample relative to a finding made on that bundle")
 ARGS = _ap.parse_args()
 
+# With none of the newer flags the script prints exactly what it printed before
+# --stream/--horizons existed (the 2026-08-13 sniper forward-decay run is
+# reproducible from it). The per-horizon paired statistics, cluster CIs and the
+# stream line only appear in EXTENDED mode.
+EXTENDED = (ARGS.stream != DEFAULT_STREAM or ARGS.horizons != DEFAULT_HORIZONS
+            or ARGS.baseline_input is not None)
+
 # Human labels for the summary lines. Anything not listed prints as "+Nd".
 _HORIZON_LABELS = {5: "~1wk", 7: "~1.5wk", 21: "~1mo", 42: "~2mo", 63: "~3mo"}
+_WINDOW_LABELS = {5: "5-bar", 7: "7-bar", 21: "1-month", 42: "2-month", 63: "3-month"}
 
 
 def _hlabel(h: int) -> str:
     return _HORIZON_LABELS.get(h, f"+{h}d")
+
+
+def _wlabel(h: int) -> str:
+    return _WINDOW_LABELS.get(h, f"{h}-bar")
 
 if ARGS.input:
     _raw = Path(ARGS.input).read_bytes()
@@ -125,7 +139,8 @@ print(f"input: {_origin}\n  sha256 {hashlib.sha256(_raw).hexdigest()}")
 data = json.loads(_raw)
 if ARGS.stream not in data["trades"]:
     raise SystemExit(f"stream {ARGS.stream!r} not in bundle; have {sorted(data['trades'])}")
-print(f"stream: {ARGS.stream}")
+if EXTENDED:
+    print(f"stream: {ARGS.stream}")
 trades = sorted(data["trades"][ARGS.stream], key=lambda t: (t["signal_date"], t["ticker"]))
 
 tickers = sorted({t["ticker"] for t in trades})
@@ -145,6 +160,9 @@ if not HORIZONS:
 
 
 def forward(tk: str, entry_date: str) -> dict:
+    """Buy-and-hold from the entry bar's open to the close h bars later, plus the
+    calendar dates of those two bars (so the benchmark can be measured over the
+    SAME dates rather than over its own bar count — see spy_between)."""
     d = frames.get(tk)
     out: dict[str, float | None] = {}
     if d is None:
@@ -160,16 +178,19 @@ def forward(tk: str, entry_date: str) -> dict:
         i = int(idx[0])
     entry = float(d.loc[i, "open"])
     out["entry_open"] = entry
+    out["entry_bar_date"] = d.loc[i, "date"]
     for h in HORIZONS:
         j = i + h
         if j < len(d):
             out[f"r{h}"] = (float(d.loc[j, "close"]) / entry - 1) * 100
             out[f"bars{h}"] = h
+            out[f"exit_bar_date{h}"] = d.loc[j, "date"]
         else:
             # partial: not enough forward data yet
             last = len(d) - 1
             out[f"r{h}"] = None
             out[f"bars{h}"] = last - i
+            out[f"exit_bar_date{h}"] = None
         # path extremes over the horizon
         seg = d.loc[i: min(i + h, len(d) - 1)]
         out[f"mfe{h}"] = (seg["high"].max() / entry - 1) * 100
@@ -177,10 +198,26 @@ def forward(tk: str, entry_date: str) -> dict:
     return out
 
 
+def spy_between(date_a, date_b) -> float | None:
+    """SPY open on date_a -> close on date_b, over EXACTLY those dates. None if
+    SPY lacks either bar, so a pick never gets an alpha measured over a
+    different window than its own return (a ticker missing a bar used to shift
+    its horizon date while SPY kept counting its own bars)."""
+    d = frames.get("SPY")
+    if d is None or date_a is None or date_b is None:
+        return None
+    ia = d.index[d["date"] == date_a]
+    ib = d.index[d["date"] == date_b]
+    if len(ia) == 0 or len(ib) == 0:
+        return None
+    return (float(d.loc[int(ib[0]), "close"]) / float(d.loc[int(ia[0]), "open"]) - 1) * 100
+
+
 rows = []
+_misaligned = 0   # horizon-rows where SPY's own bar count would have used different dates
 for t in trades:
     f = forward(t["ticker"], t["entry_date"])
-    s = forward("SPY", t["entry_date"])
+    s_own = forward("SPY", t["entry_date"])   # legacy: SPY counted its own bars
     row = {
         "signal_date": t["signal_date"],
         "entry_date": t["entry_date"],
@@ -190,16 +227,24 @@ for t in trades:
         "exit_reason": t["exit_reason"],
     }
     for h in HORIZONS:
+        spy_r = spy_between(f.get("entry_bar_date"), f.get(f"exit_bar_date{h}"))
+        if (f.get(f"r{h}") is not None
+                and (s_own.get("entry_bar_date") != f.get("entry_bar_date")
+                     or s_own.get(f"exit_bar_date{h}") != f.get(f"exit_bar_date{h}"))):
+            _misaligned += 1
         row[f"fwd_{h}"] = f.get(f"r{h}")
-        row[f"spy_{h}"] = s.get(f"r{h}")
+        row[f"spy_{h}"] = spy_r
         row[f"alpha_{h}"] = (
-            None if f.get(f"r{h}") is None or s.get(f"r{h}") is None
-            else f[f"r{h}"] - s[f"r{h}"]
+            None if f.get(f"r{h}") is None or spy_r is None
+            else f[f"r{h}"] - spy_r
         )
         row[f"mfe_{h}"] = f.get(f"mfe{h}")
         row[f"mae_{h}"] = f.get(f"mae{h}")
         row[f"bars_{h}"] = f.get(f"bars{h}")
     rows.append(row)
+if EXTENDED:
+    print(f"ticker/SPY window alignment: {_misaligned} horizon-row(s) would have used "
+          f"different dates under SPY's own bar count (now measured on identical dates)")
 
 df = pd.DataFrame(rows)
 if ARGS.dump_trades:
@@ -240,7 +285,7 @@ for h in HORIZONS:
 
 # Apples-to-apples: restrict to picks that have ALL requested windows complete
 both = df.dropna(subset=[f"fwd_{h}" for h in HORIZONS])
-print(f"\n=== MATCHED COHORT (picks with a full {_hlabel(_last).lstrip('~')} window, n={len(both)}) ===")
+print(f"\n=== MATCHED COHORT (picks with a full {_wlabel(_last)} window, n={len(both)}) ===")
 rr = both["realized_pnl"]
 print(f"Realized: mean={rr.mean():+.2f}% median={rr.median():+.2f}% win={100 * (rr > 0).mean():.0f}%")
 for h in HORIZONS:
@@ -250,33 +295,81 @@ print(f"SPY same windows +{_last}d: mean={sp.mean():+.2f}%")
 
 
 def _boot_ci(x: list[float], n_boot: int = 10_000, seed: int = 20260918) -> tuple[float, float]:
-    """Seeded percentile bootstrap 95% CI of the mean. Resamples picks iid, so
-    same-day clustering makes it narrower than it should be — read directionally."""
+    """Seeded percentile bootstrap 95% CI of the mean, resampling picks iid.
+    Same-day picks share one market path, so this interval is too narrow; the
+    cluster interval below is the honest one."""
     rng = random.Random(seed)
     k = len(x)
     means = sorted(sum(x[rng.randrange(k)] for _ in range(k)) / k for _ in range(n_boot))
     return means[int(0.025 * n_boot)], means[int(0.975 * n_boot)]
 
 
-# Did the exit come too early? Paired per-pick delta of holding h bars instead
-# of taking the live exit, with a bootstrap CI and a split-half by entry date
-# (the FORWARD_DECAY_FINDINGS stress test: a delta whose halves disagree in sign
-# is not a finding).
-comp = both.assign(**{f"delta_{h}": both[f"fwd_{h}"] - both["realized_pnl"] for h in HORIZONS})
-comp = comp.sort_values(["entry_date", "ticker"]).reset_index(drop=True)
-_mid = len(comp) // 2
-for h in HORIZONS:
-    d = comp[f"delta_{h}"].tolist()
-    if not d:
-        continue
+def _cluster_boot_ci(x: list[float], groups: list, n_boot: int = 10_000,
+                     seed: int = 20260918) -> tuple[float, float]:
+    """Seeded percentile bootstrap 95% CI of the mean that resamples ENTRY DATES
+    (clusters) with replacement and keeps every pick on a drawn date. Picks that
+    entered together are not independent draws of the strategy; with one date
+    per pick this reduces to the iid interval."""
+    rng = random.Random(seed)
+    by_g: dict = {}
+    for v, g in zip(x, groups):
+        by_g.setdefault(g, []).append(v)
+    keys = sorted(by_g)
+    sums = [sum(by_g[k]) for k in keys]
+    cnts = [len(by_g[k]) for k in keys]
+    m = len(keys)
+    means = []
+    for _ in range(n_boot):
+        tot = cnt = 0.0
+        for _j in range(m):
+            i = rng.randrange(m)
+            tot += sums[i]
+            cnt += cnts[i]
+        means.append(tot / cnt)
+    means.sort()
+    return means[int(0.025 * n_boot)], means[int(0.975 * n_boot)]
+
+
+def _paired_block(sub: pd.DataFrame, h: int, label: str) -> None:
+    """Paired per-pick delta of holding h bars instead of taking the live exit:
+    n, mean, median, iid CI, cluster-by-entry-date CI, hit rate, split-half by
+    entry date (the FORWARD_DECAY_FINDINGS stress test: halves disagreeing in
+    sign is not a finding)."""
+    s = sub.dropna(subset=[f"fwd_{h}"]).sort_values(["entry_date", "ticker"]).reset_index(drop=True)
+    d = (s[f"fwd_{h}"] - s["realized_pnl"]).tolist()
+    if len(d) < 3:
+        print(f"  {label} @{h}b: n={len(d)} (too few complete windows)")
+        return
     lo, hi = _boot_ci(d)
-    med = float(pd.Series(d).median())
-    h1 = comp[f"delta_{h}"].iloc[:_mid].mean() if _mid else float("nan")
-    h2 = comp[f"delta_{h}"].iloc[_mid:].mean()
-    print(f"Holding {_hlabel(h).lstrip('~')} instead of exiting: mean delta {sum(d) / len(d):+.2f}pp "
-          f"95% CI [{lo:+.2f}, {hi:+.2f}], median {med:+.2f}pp, "
-          f"better on {100 * sum(1 for v in d if v > 0) / len(d):.0f}% of picks, "
-          f"split-half {h1:+.2f} / {h2:+.2f}")
+    clo, chi = _cluster_boot_ci(d, s["entry_date"].tolist())
+    mid = len(d) // 2
+    h1 = sum(d[:mid]) / mid if mid else float("nan")
+    h2 = sum(d[mid:]) / (len(d) - mid)
+    print(f"  {label} @{h}b: n={len(d)} delta {sum(d) / len(d):+.2f}pp "
+          f"iid 95% CI [{lo:+.2f}, {hi:+.2f}] cluster-by-date 95% CI [{clo:+.2f}, {chi:+.2f}], "
+          f"median {float(pd.Series(d).median()):+.2f}pp, "
+          f"hit {100 * sum(1 for v in d if v > 0) / len(d):.0f}%, split-half {h1:+.2f} / {h2:+.2f}, "
+          f"fwd mean {s[f'fwd_{h}'].mean():+.2f}%, alpha vs SPY {s[f'alpha_{h}'].mean():+.2f}%, "
+          f"realized {s['realized_pnl'].mean():+.2f}%, entry dates {s['entry_date'].nunique()}")
+
+
+# Did the exit come too early? Legacy (default flags): the two one-line deltas
+# on the matched cohort, unchanged since 2026-08-13. Extended: the same paired
+# delta per horizon on EVERY pick with a complete window at that horizon (the
+# newest picks are exactly the ones that lack the longer windows, so the
+# matched cohort under-represents them), plus the matched cohort for comparison.
+comp = both.assign(**{f"delta_{h}": both[f"fwd_{h}"] - both["realized_pnl"] for h in HORIZONS})
+if not EXTENDED:
+    print(f"\nHolding 1mo instead of exiting: mean delta {comp['delta_21'].mean():+.2f}pp, "
+          f"better on {100 * (comp['delta_21'] > 0).mean():.0f}% of picks")
+    print(f"Holding 2mo instead of exiting: mean delta {comp['delta_42'].mean():+.2f}pp, "
+          f"better on {100 * (comp['delta_42'] > 0).mean():.0f}% of picks")
+else:
+    print("\n=== PAIRED DELTA: hold h bars instead of taking the live exit ===")
+    for h in HORIZONS:
+        _paired_block(df, h, "ALL picks with a complete window")
+    for h in HORIZONS:
+        _paired_block(both, h, f"MATCHED cohort (all {len(HORIZONS)} windows complete)")
 
 # Out-of-sample check against an earlier bundle. The dashboard window rolls, so
 # a re-run months later still shares most of its picks with the run that made
@@ -294,16 +387,6 @@ if ARGS.baseline_input:
     for label, sub in (("NEW (out-of-sample)", df[~df["in_baseline"]]),
                        ("OVERLAP (in baseline)", df[df["in_baseline"]])):
         for h in HORIZONS:
-            s = sub.dropna(subset=[f"fwd_{h}"])
-            d = (s[f"fwd_{h}"] - s["realized_pnl"]).tolist()
-            if len(d) < 3:
-                print(f"  {label} @{h}b: n={len(d)} (too few complete windows)")
-                continue
-            lo, hi = _boot_ci(d)
-            print(f"  {label} @{h}b: n={len(d)} delta {sum(d) / len(d):+.2f}pp "
-                  f"95% CI [{lo:+.2f}, {hi:+.2f}], median {float(pd.Series(d).median()):+.2f}pp, "
-                  f"hit {100 * sum(1 for v in d if v > 0) / len(d):.0f}%, "
-                  f"fwd mean {s[f'fwd_{h}'].mean():+.2f}%, alpha vs SPY {s[f'alpha_{h}'].mean():+.2f}%, "
-                  f"realized {s['realized_pnl'].mean():+.2f}%")
+            _paired_block(sub, h, label)
 
 

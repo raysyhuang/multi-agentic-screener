@@ -23,17 +23,24 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parent.parent
 sys.path.insert(0, str(ROOT))
 
-import pandas as pd
+import pandas as pd  # noqa: E402
 
 random.seed(23)
 
 
 def spy_market_regime(cache_file: str | Path | None = None,
-                      spy: pd.DataFrame | None = None) -> dict:
+                      spy: pd.DataFrame | None = None,
+                      lag_sessions: int = 0) -> dict:
     """{YYYY-MM-DD: bull|bear|choppy|unknown} from SPY SMA20/50, per DATE.
 
     Pass ``spy`` (a date/close frame) directly, or ``cache_file`` (parquet with a
     ``_ticker`` column); the default is the 3Y Polygon cache in outputs/research.
+
+    ``lag_sessions=0`` labels date D from D's own close — right for a decision
+    taken at or after that close. A trade ENTERED at D's open cannot know D's
+    close, so callers stamping entries must pass ``lag_sessions=1``: D then
+    carries the label of the last completed session before it (the first
+    ``lag_sessions`` dates become "unknown").
     """
     if spy is None:
         path = Path(cache_file) if cache_file else ROOT / "outputs/research/ohlcv_polygon_3y.parquet"
@@ -53,6 +60,10 @@ def spy_market_regime(cache_file: str | Path | None = None,
             out[d] = "bear"
         else:
             out[d] = "choppy"
+    if lag_sessions:
+        keys = list(out)
+        out = {k: (out[keys[i - lag_sessions]] if i >= lag_sessions else "unknown")
+               for i, k in enumerate(keys)}
     return out
 
 

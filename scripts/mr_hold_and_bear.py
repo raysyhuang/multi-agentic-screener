@@ -13,8 +13,10 @@ Caveat that governs both: the backtest population is edgeless at live
 selectivity (MEMORY: MR raw -0.047%/trade), so nothing here is an expectancy
 claim. It is a relative read only.
 
-Regime is the SPY MARKET regime per entry date (scripts.choppy_sniper_regime_test
-.spy_market_regime) — NEVER the trade's own `regime` field, which
+Regime is the SPY MARKET regime as of the last completed session BEFORE the
+entry date (scripts.choppy_sniper_regime_test.spy_market_regime with
+lag_sessions=1 — an open entry cannot see its own day's close) — NEVER the
+trade's own `regime` field, which
 run_model_backtest stamps once per TICKER from its full history.
 
 Pre-registered bear rule (copied from scripts/pead_regime_stamp.py):
@@ -55,7 +57,11 @@ BEAR_RULE_NO_GATE = 0.5      # %/trade
 
 
 def boot_ci(x: list[float], n_boot: int = 10_000, seed: int = SEED) -> tuple[float, float]:
-    """Seeded percentile bootstrap 95% CI of the mean (iid resample of trades)."""
+    """Seeded percentile bootstrap 95% CI of the mean (iid resample of trades).
+
+    Too narrow for this population: thousands of trades share a few hundred
+    entry dates and one market path each. Kept for comparison; the decisional
+    interval is cluster_boot_ci."""
     rng = random.Random(seed)
     k = len(x)
     if k == 0:
@@ -64,8 +70,41 @@ def boot_ci(x: list[float], n_boot: int = 10_000, seed: int = SEED) -> tuple[flo
     return means[int(0.025 * n_boot)], means[int(0.975 * n_boot)]
 
 
+def cluster_boot_ci(x: list[float], groups: list, n_boot: int = 10_000,
+                    seed: int = SEED) -> tuple[float, float]:
+    """Seeded percentile bootstrap 95% CI of the mean that resamples ENTRY DATES
+    with replacement and keeps every trade on a drawn date (trade-weighted mean
+    of the resample). Trades entered on the same day are one draw of the
+    market, not n independent draws; with one trade per date this reduces to
+    the iid interval."""
+    if not x:
+        return (float("nan"), float("nan"))
+    rng = random.Random(seed)
+    by_g: dict = {}
+    for v, g in zip(x, groups):
+        by_g.setdefault(g, []).append(v)
+    keys = sorted(by_g)
+    sums = [sum(by_g[k]) for k in keys]
+    cnts = [len(by_g[k]) for k in keys]
+    m = len(keys)
+    means = []
+    for _ in range(n_boot):
+        tot = cnt = 0.0
+        for _j in range(m):
+            i = rng.randrange(m)
+            tot += sums[i]
+            cnt += cnts[i]
+        means.append(tot / cnt)
+    means.sort()
+    return means[int(0.025 * n_boot)], means[int(0.975 * n_boot)]
+
+
 def stamp_market_regime(trades: list[dict], regime_by_date: dict[str, str]) -> list[dict]:
-    """Attach `mkt` = SPY market regime on the trade's entry_date (ISO string)."""
+    """Attach `mkt` = SPY market regime keyed on the trade's entry_date (ISO
+    string). The caller decides what the label on that date MEANS: for an entry
+    at the open it must be the LAGGED series (spy_market_regime(lag_sessions=1)),
+    i.e. the regime as of the last completed session — never the entry day's own
+    close, which the entry could not have seen."""
     out = []
     for t in trades:
         d = str(t["entry_date"])[:10]
@@ -78,15 +117,18 @@ def _cell(rows: list[dict]) -> dict:
     if not p:
         return {"n": 0}
     lo, hi = boot_ci(p)
+    clo, chi = cluster_boot_ci(p, [str(r["entry_date"])[:10] for r in rows])
     by_year: dict[str, list[float]] = defaultdict(list)
     for r in rows:
         by_year[str(r["entry_date"])[:4]].append(r["pnl_pct"])
     return {
         "n": len(p),
+        "entry_dates": len({str(r["entry_date"])[:10] for r in rows}),
         "wr": round(sum(1 for x in p if x > 0) / len(p), 4),
         "avg": round(st.mean(p), 4),
         "median": round(st.median(p), 4),
         "ci_lo": round(lo, 4), "ci_hi": round(hi, 4),
+        "cluster_ci_lo": round(clo, 4), "cluster_ci_hi": round(chi, 4),
         "sum": round(sum(p), 2),
         "per_year": {y: {"n": len(v), "avg": round(st.mean(v), 4)}
                      for y, v in sorted(by_year.items()) if len(v) >= 10},
@@ -136,29 +178,47 @@ def run(cache_file: Path) -> dict:
     combined = pd.read_parquet(cache_file)
     price = {t: g.drop(columns=["_ticker"]).reset_index(drop=True)
              for t, g in combined.groupby("_ticker")}
-    regime_by_date = spy_market_regime(cache_file=cache_file)
+    # Entries are at the OPEN, so the regime an entry can know is the one as of
+    # the previous session's close: lag_sessions=1. The unlagged series is kept
+    # only to report how many labels the correction moved (Codex review
+    # 2026-09-18 caught the first version stamping entries with their own day's
+    # close).
+    regime_by_date = spy_market_regime(cache_file=cache_file, lag_sessions=1)
+    regime_unlagged = spy_market_regime(cache_file=cache_file, lag_sessions=0)
     dates = pd.to_datetime(combined["date"])
     prov = {
         "cache_file": str(cache_file),
         "rows": int(len(combined)), "tickers": int(combined["_ticker"].nunique()),
         "date_min": str(dates.min().date()), "date_max": str(dates.max().date()),
         "provenance_manifest": "none beside cache (pre-dates the .provenance.json convention)",
-        "regime_source": "SPY SMA20/50 per date (scripts.choppy_sniper_regime_test.spy_market_regime)",
+        "regime_source": ("SPY SMA20/50 as of the last completed session before entry "
+                          "(scripts.choppy_sniper_regime_test.spy_market_regime, lag_sessions=1)"),
     }
     print(f"Loaded {prov['tickers']} tickers, {prov['rows']} rows, "
           f"{prov['date_min']} -> {prov['date_max']}")
 
-    results: dict = {"params_base": LIVE_MR, "holds": {}, "provenance": prov, "seed": SEED}
+    results: dict = {"params_base": LIVE_MR, "holds": {}, "provenance": prov, "seed": SEED,
+                     "ci_note": ("ci_* = iid trade resample; cluster_ci_* = entry-date cluster "
+                                 "resample (the honest interval)")}
     for hold in HOLDS:
         params = {**LIVE_MR, "holding_period": hold}
         res = run_model_backtest("mean_reversion", price, params)
-        trades = stamp_market_regime([{
+        raw = [{
             "ticker": t.ticker, "entry_date": t.entry_date, "exit_date": t.exit_date,
             "pnl_pct": t.pnl_pct, "exit_reason": t.exit_reason, "holding_days": t.holding_days,
-        } for t in res.trades], regime_by_date)
+        } for t in res.trades]
+        trades = stamp_market_regime(raw, regime_by_date)
+        unlagged = stamp_market_regime(raw, regime_unlagged)
+        changed = sum(1 for a, b in zip(trades, unlagged) if a["mkt"] != b["mkt"])
         summ = summarize(trades)
         eq = equity(trades)
-        results["holds"][str(hold)] = {"by_regime": summ, "equity": eq}
+        results["holds"][str(hold)] = {
+            "by_regime": summ, "equity": eq,
+            "label_lag": {"changed": changed, "of": len(trades),
+                          "bear_unlagged": _cell([t for t in unlagged if t["mkt"] == "bear"])},
+        }
+        print(f"\n  regime lag: {changed} of {len(trades)} entry labels differ from the "
+              f"unlagged (entry-day close) stamp")
         _print_hold(hold, summ, eq)
 
     results["bear_rule"] = {h: bear_rule(v["by_regime"].get("bear", {"n": 0}))
@@ -170,17 +230,19 @@ def run(cache_file: Path) -> dict:
 
 
 def _print_hold(hold: int, summ: dict, eq: dict) -> None:
-    print(f"\n=== MR hold={hold} — by MARKET regime (SPY-based) ===")
-    print(f"  {'regime':<8}{'n':>6}{'WR':>7}{'avg%':>9}{'95% CI':>18}{'median':>8}"
-          f"{'hold':>6}   per-year / exits")
+    print(f"\n=== MR hold={hold} — by MARKET regime (SPY-based, lagged 1 session) ===")
+    print(f"  {'regime':<8}{'n':>6}{'dates':>6}{'WR':>7}{'avg%':>9}{'iid 95% CI':>18}"
+          f"{'cluster 95% CI':>18}{'median':>8}{'hold':>6}   per-year / exits")
     for reg in ("all", "bull", "choppy", "bear", "ex_bear"):
         c = summ.get(reg)
         if not c or not c.get("n"):
             continue
         ys = "  ".join(f"{y}:{v['avg']:+.2f}(n={v['n']})" for y, v in c["per_year"].items())
         ex = " ".join(f"{k}={v}" for k, v in sorted(c["exit_reasons"].items()))
-        print(f"  {reg:<8}{c['n']:>6}{100 * c['wr']:>6.1f}%{c['avg']:>+9.3f}"
-              f"  [{c['ci_lo']:+.3f},{c['ci_hi']:+.3f}]{c['median']:>+8.2f}{c['avg_hold_days']:>6.1f}"
+        print(f"  {reg:<8}{c['n']:>6}{c['entry_dates']:>6}{100 * c['wr']:>6.1f}%{c['avg']:>+9.3f}"
+              f"  [{c['ci_lo']:+.3f},{c['ci_hi']:+.3f}]"
+              f"  [{c['cluster_ci_lo']:+.3f},{c['cluster_ci_hi']:+.3f}]"
+              f"{c['median']:>+8.2f}{c['avg_hold_days']:>6.1f}"
               f"   {ys} | {ex}")
     print(f"  equity (cap {MAX_CONCURRENT}, ${START_CAPITAL:,.0f}): taken={eq['taken']} "
           f"skipped={eq['skipped']} peak={eq['peak_concurrent']} "
