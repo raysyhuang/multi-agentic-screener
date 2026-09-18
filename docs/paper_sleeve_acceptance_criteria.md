@@ -262,7 +262,7 @@ The pinning requirement above sits **on the critical path to any Tier 2 read**. 
 | **Comparator** | `sniper|mas_official`: mean alpha vs SPY **+0.6408%**, n=60, CI [−0.5856, +1.8895], `significant: false` |
 | **Blocks** | Nothing — Tier 2 condition 5 is evaluable |
 
-**Definition of done (met):** the comparator was re-derived from a saved, hashed artifact — not from memory, not from this document, not from a dashboard rendering — and recorded with metric, value, row count and source identifier; both live books were pinned and the sign conflict was resolved with evidence in the pinning record (the −0.97% MAS-GH figure RETRACTED, −0.14% IBKR UNLOCATABLE).
+**Definition of done (met for the MAS book; IBKR remains open):** the MAS `sniper|mas_official` comparator was re-derived from a saved, hashed artifact — not from memory, not from this document, not from a dashboard rendering — and recorded with metric, value, row count and source identifier. The sign conflict on the MAS-GH figure was resolved with evidence (−0.97% RETRACTED). The IBKR book was **not** pinned: its −0.14% figure is recorded as UNLOCATABLE in the pinning record and needs a source before it can be ruled on. Tier 2 condition 5 is evaluable against the MAS comparator; no claim is made about an IBKR comparator.
 
 Until that exists, streams may reach n = 30 and be *described*, but **no Tier 2 determination may be made.**
 

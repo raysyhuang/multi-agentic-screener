@@ -808,33 +808,64 @@ def format_near_miss_resolution_alert(resolved: list[dict]) -> str:
 # Outcome Alert
 # ---------------------------------------------------------------------------
 
+# Sources whose positions are exit-managed but are NOT the official book; the
+# afternoon alert lists them under their own caption so their P&L never blends
+# into the book's headline totals.
+_NON_BOOK_SOURCE_LABELS = {
+    "pead_paper": "PEAD paper",
+    "pead_neglected": "PEAD neglected-beat (paper)",
+    "sniper_shadow": "Sniper shadow",
+    "mr_manual_sleeve": "MR manual sleeve",
+}
+
+
+def _outcome_line(o: dict) -> str:
+    ticker = o.get("ticker", "???")
+    pnl = o.get("pnl_pct", 0)
+    status = o.get("exit_reason", "open")
+    emoji = _pnl_emoji(pnl)
+    if status == "open":
+        return f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% (open)"
+    return f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% ({_esc(status)})"
+
+
 def format_outcome_alert(outcomes: list[dict]) -> str:
-    """Format daily outcome update."""
+    """Format daily outcome update.
+
+    Rows may carry ``signal_source``. Official-book rows (``mas_official``, or
+    no source — legacy callers) make up the headline totals; paper / shadow
+    rows are listed separately and labeled, never counted in the book's
+    position count, wins or net.
+    """
     if not outcomes:
         return ""
 
-    total_pnl = sum(o.get("pnl_pct", 0) for o in outcomes)
-    wins = sum(1 for o in outcomes if (o.get("pnl_pct", 0) or 0) > 0)
+    book = [o for o in outcomes
+            if (o.get("signal_source") or "mas_official") == "mas_official"]
+    other = [o for o in outcomes if o not in book]
 
-    lines = [
-        f"<b>{_prefix()} \U0001f4c8 Daily Outcomes</b>",
-        "",
-        f"   Positions: <b>{len(outcomes)}</b>   "
-        f"Wins: <b>{wins}/{len(outcomes)}</b>   "
-        f"Net: <b>{total_pnl:+.2f}%</b>",
-        "",
-    ]
+    lines = [f"<b>{_prefix()} \U0001f4c8 Daily Outcomes</b>", ""]
+    if book:
+        total_pnl = sum(o.get("pnl_pct", 0) or 0 for o in book)
+        wins = sum(1 for o in book if (o.get("pnl_pct", 0) or 0) > 0)
+        lines.append(
+            f"   Positions: <b>{len(book)}</b>   "
+            f"Wins: <b>{wins}/{len(book)}</b>   "
+            f"Net: <b>{total_pnl:+.2f}%</b>"
+        )
+        lines.append("")
+        lines.extend(_outcome_line(o) for o in book)
+    else:
+        lines.append("   No official-book positions.")
 
-    for o in outcomes:
-        ticker = o.get("ticker", "???")
-        pnl = o.get("pnl_pct", 0)
-        status = o.get("exit_reason", "open")
-        emoji = _pnl_emoji(pnl)
-
-        if status == "open":
-            lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% (open)")
-        else:
-            lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% ({_esc(status)})")
+    if other:
+        lines.append("")
+        lines.append(_section_line())
+        lines.append("<b>Paper / shadow</b> <i>(tracked, not in the book)</i>")
+        for o in other:
+            src = o.get("signal_source") or "unknown"
+            label = _NON_BOOK_SOURCE_LABELS.get(src, src)
+            lines.append(f"{_outcome_line(o)}  <code>{_esc(label)}</code>")
 
     return "\n".join(lines)
 

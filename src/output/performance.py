@@ -81,6 +81,15 @@ async def check_open_positions() -> tuple[
             logger.info("No open positions to check")
             return [], [], [], []
 
+        # Stream of each open position, so the afternoon alert can keep the
+        # official book's totals separate from paper / shadow positions that
+        # are exit-managed here but are not in the book.
+        _src_rows = await session.execute(
+            select(Signal.id, Signal.signal_source)
+            .where(Signal.id.in_([o.signal_id for o in open_outcomes]))
+        )
+        source_by_signal_id = {sid: src for sid, src in _src_rows.all()}
+
         # Evaluate P&L and collect OHLCV DataFrames for reuse
         position_dfs: dict[int, pd.DataFrame] = {}
         eval_failures = 0
@@ -100,6 +109,7 @@ async def check_open_positions() -> tuple[
                         "pnl_pct": update_data.get("pnl_pct", 0),
                         "exit_reason": update_data.get("exit_reason", "open"),
                         "still_open": update_data.get("still_open", True),
+                        "signal_source": source_by_signal_id.get(outcome.signal_id),
                     })
                     if update_data.get("still_open") is False:
                         just_closed_ids.append(outcome.id)
@@ -1452,11 +1462,15 @@ async def get_mode_comparison() -> list[dict]:
         )
         runs = result.scalars().all()
 
-        # Get outcomes for each mode's signals
+        # Get outcomes for each mode's signals — OFFICIAL book only. Paper and
+        # shadow streams carry skip_reason=None (their exits are managed), so
+        # without the source filter they would move the per-mode stats.
         all_outcomes_result = await session.execute(
             select(Outcome, Signal)
             .join(Signal, Outcome.signal_id == Signal.id)
-            .where(Outcome.still_open == False, Outcome.skip_reason.is_(None))
+            .where(Outcome.still_open == False,  # noqa: E712
+                   Outcome.skip_reason.is_(None),
+                   Signal.signal_source == DEFAULT_SIGNAL_SOURCE)
         )
         all_rows = all_outcomes_result.all()
 

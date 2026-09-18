@@ -47,35 +47,72 @@ def _open(sid, ticker, still_open=True):
                    still_open=still_open, exit_date=None if still_open else RUN)
 
 
-@pytest.mark.asyncio
-async def test_open_sniper_count_spans_official_and_shadow_sources(monkeypatch):
-    """One legacy official sniper + one shadow sniper open = 2 slots used; a
-    PEAD position, a closed sniper and a manual-sleeve MR row never count."""
+async def _db_with(rows):
     engine = create_async_engine("sqlite+aiosqlite:///:memory:")
     async with engine.begin() as conn:
         await conn.run_sync(Base.metadata.create_all)
     factory = async_sessionmaker(engine, expire_on_commit=False)
     async with factory() as s:
-        s.add_all([
-            _sig(1, "AAA", "sniper", "mas_official"), _open(1, "AAA"),
-            _sig(2, "BBB", "sniper", "sniper_shadow"), _open(2, "BBB"),
-            _sig(3, "CCC", "sniper", "sniper_shadow"), _open(3, "CCC", still_open=False),
-            _sig(4, "DDD", "pead", "pead_neglected"), _open(4, "DDD"),
-            _sig(5, "EEE", "mean_reversion", "mr_manual_sleeve"), _open(5, "EEE"),
-        ])
+        s.add_all(rows)
         await s.commit()
-
-    from src import main as m
 
     @asynccontextmanager
     async def _fake_session():
         async with factory() as session:
             yield session
 
-    monkeypatch.setattr(m, "get_session", _fake_session)
+    return engine, _fake_session
+
+
+@pytest.mark.asyncio
+async def test_open_sniper_count_spans_official_and_shadow_sources(monkeypatch):
+    """One legacy official sniper + one shadow sniper open = 2 slots used. A
+    PEAD position, a closed sniper, a manual-sleeve MR row AND an open sniper
+    under some OTHER source never count — the last one is what pins that the
+    predicate is a source allow-list, not "any sniper"."""
+    engine, fake = await _db_with([
+        _sig(1, "AAA", "sniper", "mas_official"), _open(1, "AAA"),
+        _sig(2, "BBB", "sniper", "sniper_shadow"), _open(2, "BBB"),
+        _sig(3, "CCC", "sniper", "sniper_shadow"), _open(3, "CCC", still_open=False),
+        _sig(4, "DDD", "pead", "pead_neglected"), _open(4, "DDD"),
+        _sig(5, "EEE", "mean_reversion", "mr_manual_sleeve"), _open(5, "EEE"),
+        _sig(6, "FFF", "sniper", "cursor_quality_veto"), _open(6, "FFF"),
+    ])
+    from src import main as m
+
+    monkeypatch.setattr(m, "get_session", fake)
     assert set(m.SNIPER_CAP_SOURCES) == {"mas_official", "sniper_shadow"}
     assert await m._count_open_sniper_positions() == 2
     await engine.dispose()
+
+
+@pytest.mark.asyncio
+async def test_official_cooldown_ignores_shadow_history_but_shadow_sees_all(monkeypatch):
+    """Yesterday's SHADOW sniper pick of AAA must not suppress today's official
+    MR AAA (a quarantined stream may not shape the book); the shadow stream's
+    own cooldown still sees every row, including official history."""
+    from types import SimpleNamespace
+
+    from src import main as m
+    from src.signals.ranker import apply_cooldown
+
+    engine, fake = await _db_with([
+        _sig(1, "AAA", "sniper", "sniper_shadow"),
+        _sig(2, "BBB", "mean_reversion", "mas_official"),
+    ])
+    monkeypatch.setattr(m, "get_session", fake)
+    monkeypatch.setattr(m, "date", type("D", (), {"today": staticmethod(lambda: RUN)}))
+    recent = await m._get_recent_signals(days=7)
+    await engine.dispose()
+
+    assert {r["signal_source"] for r in recent} == {"sniper_shadow", "mas_official"}
+    official_recent = [r for r in recent if r.get("signal_source") not in m.SHADOW_SOURCES]
+    today = [SimpleNamespace(ticker="AAA", signal_date=RUN),
+             SimpleNamespace(ticker="BBB", signal_date=RUN)]
+    kept_official = {s.ticker for s in apply_cooldown(today, official_recent)}
+    kept_shadow = {s.ticker for s in apply_cooldown(today, recent)}
+    assert kept_official == {"AAA"}        # shadow AAA history ignored; official BBB suppressed
+    assert kept_shadow == set()            # shadow cooldown sees both
 
 
 def test_count_open_sniper_positions_is_failsafe_on_db_error(monkeypatch):
@@ -128,3 +165,34 @@ def test_shadow_section_renders_on_every_alert_branch(kwargs):
 def test_shadow_section_with_no_setups_says_so():
     msg = format_daily_alert(_OFFICIAL, "bull", "2026-09-18", sniper_shadow_picks=[])
     assert "Sniper — Shadow" in msg and "No sniper setups today" in msg
+
+
+def test_afternoon_outcomes_keep_shadow_out_of_the_book_totals():
+    """The afternoon alert's headline count/wins/net is the OFFICIAL book only;
+    shadow and paper rows are listed under their own caption with a label."""
+    from src.output.telegram import format_outcome_alert
+
+    msg = format_outcome_alert([
+        {"ticker": "XOM", "pnl_pct": 2.0, "exit_reason": "target", "signal_source": "mas_official"},
+        {"ticker": "SMCI", "pnl_pct": -6.0, "exit_reason": "time_stop", "signal_source": "sniper_shadow"},
+        {"ticker": "RBRK", "pnl_pct": 16.0, "exit_reason": "open", "signal_source": "pead_neglected"},
+        {"ticker": "LEGACY", "pnl_pct": -1.0, "exit_reason": "stop"},   # no source = official (legacy)
+    ])
+    assert "Positions: <b>2</b>" in msg and "Wins: <b>1/2</b>" in msg and "Net: <b>+1.00%</b>" in msg
+    assert "Paper / shadow" in msg and "not in the book" in msg
+    assert "Sniper shadow" in msg and "PEAD neglected-beat" in msg
+    assert msg.index("XOM") < msg.index("Paper / shadow") < msg.index("SMCI")
+
+
+def test_book_streams_follow_the_admission_flag():
+    """Dashboard book composition is derived from the same setting the pipeline
+    admits on, so restoring sniper cannot leave execution and the book disagreeing."""
+    import scripts.export_dashboard_data as exp
+
+    assert exp.book_streams(False) == ["mean_reversion|mas_official"]
+    assert exp.book_streams(True) == ["sniper|mas_official", "mean_reversion|mas_official"]
+    assert [k for k, _, _ in exp.portfolio_specs(True)] == ["sniper", "mr", "book"]
+    assert exp.portfolio_specs(True)[2][2] == exp.book_streams(True)
+    assert "retired" in exp.portfolio_specs(False)[0][1]
+    assert "retired" not in exp.portfolio_specs(True)[0][1]
+    assert exp.BOOK_STREAMS == exp.book_streams(Settings(_env_file=None).sniper_in_book)

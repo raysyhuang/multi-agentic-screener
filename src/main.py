@@ -1433,9 +1433,15 @@ async def _run_pipeline_core(
     if confluence_tickers:
         logger.info("Confluence tickers (%d): %s", len(confluence_tickers), ", ".join(confluence_tickers))
 
-    # Signal cooldown: suppress recently-fired tickers
+    # Signal cooldown: suppress recently-fired tickers. The OFFICIAL cooldown
+    # must not see shadow-stream history: a shadow sniper pick of AAA yesterday
+    # is not a book position, so it must not knock out an eligible official MR
+    # AAA today (that would let the quarantined stream shape the book — the
+    # reverse of the quarantine). The shadow stream's own cooldown sees
+    # everything, so it stays at least as strict as the book flow it left.
     recent_signals = await _get_recent_signals(days=7)
-    all_signals = apply_cooldown(all_signals, recent_signals)
+    official_recent = [r for r in recent_signals if r.get("signal_source") not in SHADOW_SOURCES]
+    all_signals = apply_cooldown(all_signals, official_recent)
     post_cooldown_signals = list(all_signals)
 
     # Preserve a separate mean-reversion manual sleeve before cross-model dedup
@@ -1611,11 +1617,16 @@ async def _run_pipeline_core(
     if sniper_signals:
         sniper_signals = apply_cooldown(sniper_signals, recent_signals)
         _annotate_signal_stream(sniper_signals, signal_source="sniper_shadow")
+        # Rank the same pool depth the official flow ranks (top_n_for_
+        # interpretation, default 10) BEFORE the correlation filter, then cut
+        # to free slots. Ranking only sniper_max_positions first would let a
+        # correlated pair consume the pool and drop an independent 4th name
+        # the book flow would have taken — a looser strategy, not the same one.
         sniper_shadow_ranked = rank_candidates(
             sniper_signals,
             regime=regime_assessment.regime,
             features_by_ticker=features_by_ticker,
-            top_n=settings.sniper_max_positions,
+            top_n=settings.top_n_for_interpretation,
         )
         sniper_shadow_ranked = filter_correlated_picks(sniper_shadow_ranked, price_data)
         _shadow_slots = max(0, settings.sniper_max_positions - open_sniper)
@@ -2418,15 +2429,27 @@ async def _run_pipeline_core(
     _log_memory("pipeline_complete")
 
 
+# Streams that are recorded but never in the book. Their history must not feed
+# the OFFICIAL cooldown (see the call site) — that would let a quarantined pick
+# suppress a book pick.
+SHADOW_SOURCES: frozenset[str] = frozenset({"sniper_shadow"})
+
+
 async def _get_recent_signals(days: int = 7) -> list[dict]:
-    """Fetch recent signals from DB for cooldown filtering."""
+    """Fetch recent signals from DB for cooldown filtering.
+
+    Each row carries `signal_source` so callers can decide which streams'
+    history applies to them (`apply_cooldown` itself keys on ticker only).
+    """
     try:
         async with get_session() as session:
             cutoff = date.today() - timedelta(days=days)
             result = await session.execute(
-                select(Signal.ticker, Signal.run_date).where(Signal.run_date >= cutoff)
+                select(Signal.ticker, Signal.run_date, Signal.signal_source)
+                .where(Signal.run_date >= cutoff)
             )
-            return [{"ticker": r[0], "run_date": r[1]} for r in result.all()]
+            return [{"ticker": r[0], "run_date": r[1], "signal_source": r[2]}
+                    for r in result.all()]
     except Exception as e:
         logger.warning("Failed to fetch recent signals for cooldown: %s", e)
         return []
@@ -2524,12 +2547,19 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
     """Check for model decay using recent vs baseline outcomes."""
     try:
         async with get_session() as session:
-            # Recent outcomes (last 30 days)
+            # Decay is a statement about the OFFICIAL book. Paper / shadow
+            # streams (PEAD, sniper_shadow) are persisted with skip_reason=None
+            # so their exits are managed, which means a bare skip_reason filter
+            # would let them move the live-vs-baseline decay flags. Join to
+            # Signal and keep mas_official only.
             cutoff_recent = date.today() - timedelta(days=30)
             result = await session.execute(
-                select(Outcome).where(
-                    Outcome.still_open == False,
+                select(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == False,  # noqa: E712
                     Outcome.skip_reason.is_(None),
+                    Signal.signal_source == "mas_official",
                     Outcome.entry_date >= cutoff_recent,
                 )
             )
@@ -2538,9 +2568,12 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
             # Baseline outcomes (30-90 days ago)
             cutoff_baseline = date.today() - timedelta(days=90)
             result = await session.execute(
-                select(Outcome).where(
-                    Outcome.still_open == False,
+                select(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == False,  # noqa: E712
                     Outcome.skip_reason.is_(None),
+                    Signal.signal_source == "mas_official",
                     Outcome.entry_date >= cutoff_baseline,
                     Outcome.entry_date < cutoff_recent,
                 )

@@ -3,9 +3,12 @@
    one axis, thin marks, 2px gaps, legends for >=2 series, tooltips, tnum text. */
 
 const STREAM_META = {
-  "sniper|mas_official":          { label: "Sniper (official, retired 2026-09-18)", color: "#533afd" },
+  "sniper|mas_official":          { label: "Sniper (official)",    color: "#533afd" },
   // Sniper left the book 2026-09-18 and keeps recording as a SHADOW stream
-  // (config.sniper_in_book). Own entry so it never renders as a raw key.
+  // (config.sniper_in_book). Own entry so it never renders as a raw key. Whether
+  // sniper is currently IN the book is stated by the exporter (pf.book_streams /
+  // portfolio labels), not hard-coded here, so flipping the flag back cannot
+  // leave the page describing a composition the data no longer has.
   "sniper|sniper_shadow":         { label: "Sniper (shadow)",      color: "#d94fc6" },
   "mean_reversion|mas_official":  { label: "MR (official)",        color: "#2874ad" },
   "mean_reversion|mr_manual_sleeve": { label: "MR (manual sleeve)", color: "#ea2261" },

@@ -25,6 +25,7 @@ from datetime import date as _date
 from sqlalchemy import select
 
 from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
+from src.config import get_settings
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
 
@@ -32,18 +33,34 @@ from src.db.session import get_session
 # is deliberately excluded: it reproduces the official MR picks verbatim and
 # adds only negative-alpha breadth (see the 2026-07 manual-sleeve forensic), so
 # it dilutes the book rather than diversifying it. Sniper left the book on
-# 2026-09-18 (config.sniper_in_book) and now records as `sniper|sniper_shadow`;
-# its official rows stay visible as their own stream until they age out of the
-# window, but they no longer define the book.
-BOOK_STREAMS = ["mean_reversion|mas_official"]
-# Per-stream portfolio rows: each stream alone, then the book. A row is emitted
-# only while the stream has closed trades in the window, so the retired official
-# sniper row disappears on its own once its last trade leaves the 90d window.
-PORTFOLIO_SPECS = [
-    ("sniper", "Sniper only (official, retired 2026-09-18)", ["sniper|mas_official"]),
-    ("mr", "MR official only", ["mean_reversion|mas_official"]),
-    ("book", "Book (MR official)", BOOK_STREAMS),
-]
+# 2026-09-18 (config.sniper_in_book=False) and now records as
+# `sniper|sniper_shadow`; its official rows stay visible as their own stream
+# until they age out of the window, but they no longer define the book. The
+# composition is read from the SAME setting the pipeline admits on, so flipping
+# the flag back cannot leave execution and the dashboard disagreeing.
+SNIPER_KEY, MR_KEY = "sniper|mas_official", "mean_reversion|mas_official"
+
+
+def book_streams(sniper_in_book: bool) -> list[str]:
+    return [SNIPER_KEY, MR_KEY] if sniper_in_book else [MR_KEY]
+
+
+def portfolio_specs(sniper_in_book: bool) -> list[tuple[str, str, list[str]]]:
+    """Per-stream portfolio rows: each official stream alone, then the book. A
+    row is emitted only while the stream has closed trades in the window, so a
+    retired stream's row disappears on its own once its last trade ages out."""
+    sniper_label = "Sniper only" if sniper_in_book else "Sniper only (official, retired 2026-09-18)"
+    book_label = "Book (sniper + MR)" if sniper_in_book else "Book (MR official)"
+    return [
+        ("sniper", sniper_label, [SNIPER_KEY]),
+        ("mr", "MR official only", [MR_KEY]),
+        ("book", book_label, book_streams(sniper_in_book)),
+    ]
+
+
+_SNIPER_IN_BOOK = get_settings().sniper_in_book
+BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK)
+PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK)
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -122,8 +139,10 @@ def _bench_return(closes: dict, entry: _date | None, exit_: _date | None) -> flo
 #  - MR official: reconciled 90d live +0.46%/trade (n=23, provisional)
 #  - MR sleeve: reconciled ~breakeven (-0.01%)
 BASELINES = {
-    "sniper|mas_official": {"label": "Sniper (official, retired 2026-09-18)", "wr": 0.543,
-                            "avg": 0.54, "source": "truth-matrix Run E (2026-07-19)"},
+    "sniper|mas_official": {"label": "Sniper (official)" if _SNIPER_IN_BOOK
+                            else "Sniper (official, retired 2026-09-18)",
+                            "wr": 0.543, "avg": 0.54,
+                            "source": "truth-matrix Run E (2026-07-19)"},
     # Sniper shadow stream (retired from the book 2026-09-18, still recorded).
     # Same expectation band as the official stream — it is the same strategy at
     # the same config, only the accounting changed. 90d live at retirement:
@@ -170,7 +189,7 @@ def _stream_key(model: str | None, source: str | None) -> str:
 def _portfolio(trades: dict[str, list]) -> dict | None:
     """The book vs each official stream alone, as a real concurrency-capped
     account. Front-end assigns colors; we ship data only."""
-    sniper_key, mr_key = "sniper|mas_official", "mean_reversion|mas_official"
+    sniper_key, mr_key = SNIPER_KEY, MR_KEY
 
     def book_trades(rows: list) -> list[BookTrade]:
         out = []

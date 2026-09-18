@@ -207,6 +207,9 @@ async def daily_report(report_date: str):
                 "ticker": s.ticker,
                 "direction": s.direction,
                 "signal_model": s.signal_model,
+                # Paper / shadow streams share this table; the report labels
+                # anything that is not the official book.
+                "signal_source": s.signal_source,
                 "entry_price": s.entry_price,
                 "stop_loss": s.stop_loss,
                 "target_1": s.target_1,
@@ -696,6 +699,7 @@ async def list_outcomes(
             "max_adverse": _safe_float(outcome.max_adverse),
             "still_open": outcome.still_open,
             "signal_model": signal.signal_model,
+            "signal_source": signal.signal_source,
             "regime": signal.regime,
             "confidence": signal.confidence,
             "direction": signal.direction,
@@ -729,6 +733,7 @@ async def ticker_outcomes(ticker: str):
             "pnl_pct": _safe_float(o.pnl_pct),
             "still_open": o.still_open,
             "signal_model": s.signal_model,
+            "signal_source": s.signal_source,
             "regime": s.regime,
             "confidence": s.confidence,
         }
