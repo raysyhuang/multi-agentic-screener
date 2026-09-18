@@ -140,14 +140,19 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     assert snap["benchmark_available"] is True
     assert snap["benchmarks"]["spy"].startswith("S&P")
 
-    # Portfolio block: the book (sniper + MR official) as a real account. Here
-    # only the official sniper trade qualifies (sleeve is excluded by design),
-    # so the sniper config exists and its equity curve is seeded + one exit.
+    # Portfolio block: the book (MR official since 2026-09-18) plus each official
+    # stream alone as a real account. Here only the retired official sniper
+    # trade qualifies (sleeve is excluded by design), so the sniper row still
+    # exists while its trades are in the window, its equity curve is seeded +
+    # one exit, and the book row — MR only, no MR trades — is absent.
     pf = snap["portfolio"]
-    assert pf is not None and pf["book_streams"] == ["sniper|mas_official", "mean_reversion|mas_official"]
+    assert pf is not None and pf["book_streams"] == ["mean_reversion|mas_official"]
     cfg = {c["key"]: c for c in pf["configs"]}
     assert "sniper" in cfg and cfg["sniper"]["trades"] == 1
+    assert "book" not in cfg
     assert len(pf["equity"]["sniper"]) == 2  # seed + one exit
+    # Sniper no longer defines the book, so exit-day overlap is not reported.
+    assert pf["overlap"] is None
     # Manual sleeve never enters the book.
     assert "mr_manual_sleeve" not in "".join("".join(c["streams"]) for c in pf["configs"])
     await engine.dispose()
