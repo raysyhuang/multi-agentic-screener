@@ -357,6 +357,60 @@ def _render_pead_paper_section(pead_picks: list[dict]) -> list[str]:
     return lines
 
 
+def _render_sniper_shadow_section(shadow_picks: list[dict]) -> list[str]:
+    """Render the sniper SHADOW section appended to the daily alert.
+
+    Sniper was retired from the official book on 2026-09-18 and runs as a
+    shadow stream: tracked so a paper re-entry can be judged on data, never
+    executed and never counted in the book. Labeled so its picks are never
+    mistaken for live capital.
+    """
+    lines: list[str] = []
+    lines.append(_section_line())
+    lines.append(
+        f"\U0001f47b <b>Sniper — Shadow</b> ({len(shadow_picks)} pick"
+        f"{'' if len(shadow_picks) == 1 else 's'})"
+    )
+    lines.append(
+        "<i>Retired from the book 2026-09-18, SHADOW ONLY — tracked, "
+        "not traded and not in the book.</i>"
+    )
+    lines.append("")
+
+    if not shadow_picks:
+        lines.append("   No sniper setups today.")
+        lines.append("")
+        return lines
+
+    for pick in shadow_picks:
+        ticker = pick.get("ticker", "???")
+        direction = pick.get("direction", "LONG")
+        entry = pick.get("entry_price", 0)
+        stop = pick.get("stop_loss", 0)
+        target = pick.get("target_1", 0)
+        confidence = pick.get("confidence", 0)
+        holding = pick.get("holding_period", 7)
+        also_in_mas = pick.get("also_in_mas", False)
+
+        risk_pct = abs(entry - stop) / entry * 100 if entry > 0 else 0
+        reward_pct = abs(target - entry) / entry * 100 if entry > 0 else 0
+        rr = reward_pct / risk_pct if risk_pct > 0 else 0
+        dir_arrow = "▲" if direction == "LONG" else "▼"
+        conf_bar = _bar(confidence, 100, 10)
+
+        lines.append(f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>sniper</code>")
+        if also_in_mas:
+            lines.append("   \U0001f501 also an official pick today")
+        lines.extend([
+            f"   {conf_bar} {confidence:.0f}/100",
+            f"   Entry <b>${entry:.2f}</b>  →  Target <b>${target:.2f}</b> (+{reward_pct:.1f}%)",
+            f"   Stop  <b>${stop:.2f}</b>  ({risk_pct:.1f}% risk)   R:R <b>{rr:.1f}:1</b>   {holding}d",
+        ])
+        lines.append("")
+
+    return lines
+
+
 def format_daily_alert(
     picks: list[dict],
     regime: str,
@@ -369,12 +423,17 @@ def format_daily_alert(
     manual_sleeve_picks: list[dict] | None = None,
     pead_paper_picks: list[dict] | None = None,
     credit_context: dict | None = None,
+    sniper_shadow_picks: list[dict] | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message.
 
     ``manual_sleeve_picks`` is the parallel MR Manual Sleeve stream. It is
     rendered in its own labeled section after the MAS picks (or directly
     after the validation/empty-state body) so MAS tracking stays clean.
+
+    ``pead_paper_picks`` and ``sniper_shadow_picks`` are the quarantined
+    streams (PEAD paper trial; sniper retired from the book 2026-09-18). Each
+    renders in its own labeled section, never blended into the official picks.
 
     ``credit_context`` optionally carries the HY-OAS credit-spread state
     (hy_oas / hy_oas_stress / hy_oas_chg20) appended to the regime line as
@@ -415,6 +474,10 @@ def format_daily_alert(
             lines.append("")
             lines.extend(_render_pead_paper_section(pead_paper_picks))
 
+        if sniper_shadow_picks is not None:
+            lines.append("")
+            lines.extend(_render_sniper_shadow_section(sniper_shadow_picks))
+
         if model_scorecard:
             lines.append("")
             lines.extend(_render_scorecard(model_scorecard))
@@ -447,6 +510,10 @@ def format_daily_alert(
         if pead_paper_picks is not None:
             lines.append("")
             lines.extend(_render_pead_paper_section(pead_paper_picks))
+
+        if sniper_shadow_picks is not None:
+            lines.append("")
+            lines.extend(_render_sniper_shadow_section(sniper_shadow_picks))
 
         if model_scorecard:
             lines.append("")
@@ -506,6 +573,9 @@ def format_daily_alert(
 
     if pead_paper_picks is not None:
         lines.extend(_render_pead_paper_section(pead_paper_picks))
+
+    if sniper_shadow_picks is not None:
+        lines.extend(_render_sniper_shadow_section(sniper_shadow_picks))
 
     # Model scorecard (appended if provided)
     if model_scorecard:
@@ -738,33 +808,64 @@ def format_near_miss_resolution_alert(resolved: list[dict]) -> str:
 # Outcome Alert
 # ---------------------------------------------------------------------------
 
+# Sources whose positions are exit-managed but are NOT the official book; the
+# afternoon alert lists them under their own caption so their P&L never blends
+# into the book's headline totals.
+_NON_BOOK_SOURCE_LABELS = {
+    "pead_paper": "PEAD paper",
+    "pead_neglected": "PEAD neglected-beat (paper)",
+    "sniper_shadow": "Sniper shadow",
+    "mr_manual_sleeve": "MR manual sleeve",
+}
+
+
+def _outcome_line(o: dict) -> str:
+    ticker = o.get("ticker", "???")
+    pnl = o.get("pnl_pct", 0)
+    status = o.get("exit_reason", "open")
+    emoji = _pnl_emoji(pnl)
+    if status == "open":
+        return f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% (open)"
+    return f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% ({_esc(status)})"
+
+
 def format_outcome_alert(outcomes: list[dict]) -> str:
-    """Format daily outcome update."""
+    """Format daily outcome update.
+
+    Rows may carry ``signal_source``. Official-book rows (``mas_official``, or
+    no source — legacy callers) make up the headline totals; paper / shadow
+    rows are listed separately and labeled, never counted in the book's
+    position count, wins or net.
+    """
     if not outcomes:
         return ""
 
-    total_pnl = sum(o.get("pnl_pct", 0) for o in outcomes)
-    wins = sum(1 for o in outcomes if (o.get("pnl_pct", 0) or 0) > 0)
+    book = [o for o in outcomes
+            if (o.get("signal_source") or "mas_official") == "mas_official"]
+    other = [o for o in outcomes if o not in book]
 
-    lines = [
-        f"<b>{_prefix()} \U0001f4c8 Daily Outcomes</b>",
-        "",
-        f"   Positions: <b>{len(outcomes)}</b>   "
-        f"Wins: <b>{wins}/{len(outcomes)}</b>   "
-        f"Net: <b>{total_pnl:+.2f}%</b>",
-        "",
-    ]
+    lines = [f"<b>{_prefix()} \U0001f4c8 Daily Outcomes</b>", ""]
+    if book:
+        total_pnl = sum(o.get("pnl_pct", 0) or 0 for o in book)
+        wins = sum(1 for o in book if (o.get("pnl_pct", 0) or 0) > 0)
+        lines.append(
+            f"   Positions: <b>{len(book)}</b>   "
+            f"Wins: <b>{wins}/{len(book)}</b>   "
+            f"Net: <b>{total_pnl:+.2f}%</b>"
+        )
+        lines.append("")
+        lines.extend(_outcome_line(o) for o in book)
+    else:
+        lines.append("   No official-book positions.")
 
-    for o in outcomes:
-        ticker = o.get("ticker", "???")
-        pnl = o.get("pnl_pct", 0)
-        status = o.get("exit_reason", "open")
-        emoji = _pnl_emoji(pnl)
-
-        if status == "open":
-            lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% (open)")
-        else:
-            lines.append(f"   {emoji} <b>{_esc(ticker)}</b>: {pnl:+.2f}% ({_esc(status)})")
+    if other:
+        lines.append("")
+        lines.append(_section_line())
+        lines.append("<b>Paper / shadow</b> <i>(tracked, not in the book)</i>")
+        for o in other:
+            src = o.get("signal_source") or "unknown"
+            label = _NON_BOOK_SOURCE_LABELS.get(src, src)
+            lines.append(f"{_outcome_line(o)}  <code>{_esc(label)}</code>")
 
     return "\n".join(lines)
 

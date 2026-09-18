@@ -116,6 +116,9 @@
           <span class="ticker-name">{{ pick.ticker }}</span>
           <span style="color: var(--green); margin-left: 0.5rem;">{{ pick.direction }}</span>
           <span style="color: var(--muted); margin-left: 0.5rem; font-size: 0.8rem;">{{ pick.signal_model }}</span>
+          {% if pick.signal_source and pick.signal_source != 'mas_official' %}
+          <span style="color: var(--yellow); margin-left: 0.5rem; font-size: 0.8rem;">{{ pick.signal_source }} — not in the book</span>
+          {% endif %}
         </div>
         <div style="text-align: right;">
           <div style="font-size: 0.75rem; color: var(--muted); margin-bottom: 4px;">
