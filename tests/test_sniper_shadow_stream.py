@@ -13,7 +13,7 @@ from __future__ import annotations
 
 import asyncio
 from contextlib import asynccontextmanager
-from datetime import date
+from datetime import date, timedelta
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -96,19 +96,21 @@ async def test_official_cooldown_ignores_shadow_history_but_shadow_sees_all(monk
     from src import main as m
     from src.signals.ranker import apply_cooldown
 
-    engine, fake = await _db_with([
-        _sig(1, "AAA", "sniper", "sniper_shadow"),
-        _sig(2, "BBB", "mean_reversion", "mas_official"),
-    ])
+    # Rows are dated relative to the real clock: `_get_recent_signals` and
+    # `apply_cooldown` each call `date.today()` from their own module, so
+    # freezing one clock but not the other would make this test expire.
+    yesterday = date.today() - timedelta(days=1)
+    a, b = _sig(1, "AAA", "sniper", "sniper_shadow"), _sig(2, "BBB", "mean_reversion", "mas_official")
+    a.run_date = b.run_date = yesterday
+    engine, fake = await _db_with([a, b])
     monkeypatch.setattr(m, "get_session", fake)
-    monkeypatch.setattr(m, "date", type("D", (), {"today": staticmethod(lambda: RUN)}))
     recent = await m._get_recent_signals(days=7)
     await engine.dispose()
 
     assert {r["signal_source"] for r in recent} == {"sniper_shadow", "mas_official"}
     official_recent = [r for r in recent if r.get("signal_source") not in m.SHADOW_SOURCES]
-    today = [SimpleNamespace(ticker="AAA", signal_date=RUN),
-             SimpleNamespace(ticker="BBB", signal_date=RUN)]
+    today = [SimpleNamespace(ticker="AAA", signal_date=date.today()),
+             SimpleNamespace(ticker="BBB", signal_date=date.today())]
     kept_official = {s.ticker for s in apply_cooldown(today, official_recent)}
     kept_shadow = {s.ticker for s in apply_cooldown(today, recent)}
     assert kept_official == {"AAA"}        # shadow AAA history ignored; official BBB suppressed
