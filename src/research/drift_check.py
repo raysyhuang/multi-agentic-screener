@@ -38,7 +38,9 @@ logger = logging.getLogger(__name__)
 # Honest per-trade expectation bands, mirroring the dashboard's BASELINES.
 # `avg` is the per-trade percentage the stream is expected to earn.
 BASELINES: dict[str, dict] = {
-    "sniper|mas_official": {"label": "Sniper (official)", "wr": 0.543, "avg": 0.54},
+    "sniper|mas_official": {"label": "Sniper (official, retired 2026-09-18)", "wr": 0.543, "avg": 0.54},
+    # Retired from the book 2026-09-18; same strategy/config, so the same band.
+    "sniper|sniper_shadow": {"label": "Sniper (shadow)", "wr": 0.543, "avg": 0.54},
     "mean_reversion|mas_official": {"label": "MR (official)", "wr": 0.522, "avg": 0.46},
     "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": 0.493, "avg": -0.01},
     "pead|pead_paper": {"label": "PEAD (paper)", "wr": 0.57, "avg": 1.80},

@@ -1221,6 +1221,11 @@ async def _run_pipeline_core(
     # official book, the executed picks, or the sniper/MR slot budget. Collected
     # apart from all_signals so an unproven event edge can't displace live picks.
     pead_signals: list = []
+    # Sniper SHADOW stream (settings.sniper_in_book=False, default since
+    # 2026-09-18): same quarantine shape as PEAD — collected apart from
+    # all_signals so it never competes for official slots, ranked with its own
+    # cap, persisted as signal_source="sniper_shadow". See config.sniper_in_book.
+    sniper_signals: list = []
 
     # Ticker blacklist: backtest-proven poor mean reversion candidates
     _blacklist_raw = settings.mean_reversion_blacklist
@@ -1294,8 +1299,10 @@ async def _run_pipeline_core(
                     logger.info("Sniper earnings blackout: %s reports in %sd "
                                 "(<= %dd hold) — skip to avoid mid-hold gap",
                                 ticker, dte, settings.sniper_holding_period)
-                else:
+                elif settings.sniper_in_book:
                     all_signals.append(sniper_sig)
+                else:
+                    sniper_signals.append(sniper_sig)  # shadow stream, not the book
 
         # Post-earnings drift (paper trial): long a fresh, high-quality earnings
         # beat (E1: both beats + reaction band). Fires on names that reported the
@@ -1426,9 +1433,15 @@ async def _run_pipeline_core(
     if confluence_tickers:
         logger.info("Confluence tickers (%d): %s", len(confluence_tickers), ", ".join(confluence_tickers))
 
-    # Signal cooldown: suppress recently-fired tickers
+    # Signal cooldown: suppress recently-fired tickers. The OFFICIAL cooldown
+    # must not see shadow-stream history: a shadow sniper pick of AAA yesterday
+    # is not a book position, so it must not knock out an eligible official MR
+    # AAA today (that would let the quarantined stream shape the book — the
+    # reverse of the quarantine). The shadow stream's own cooldown sees
+    # everything, so it stays at least as strict as the book flow it left.
     recent_signals = await _get_recent_signals(days=7)
-    all_signals = apply_cooldown(all_signals, recent_signals)
+    official_recent = [r for r in recent_signals if r.get("signal_source") not in SHADOW_SOURCES]
+    all_signals = apply_cooldown(all_signals, official_recent)
     post_cooldown_signals = list(all_signals)
 
     # Preserve a separate mean-reversion manual sleeve before cross-model dedup
@@ -1592,6 +1605,42 @@ async def _run_pipeline_core(
         logger.info("PEAD paper stream selected %d candidates (%d neglected-beat variant)",
                     len(pead_ranked), _n_neg)
 
+    # Sniper SHADOW stream — the retired official sniper, kept recording. Same
+    # cooldown, regime gate (rank_candidates still bear-blocks it), correlation
+    # filter and concurrency cap it had in the book, so the shadow record measures
+    # the same strategy and not a looser one. The open-position count is shared
+    # with the official cap below: `_count_open_sniper_positions` counts BOTH
+    # sources, otherwise a shadow cap would read zero forever and never bind —
+    # the exact defect the PEAD cap comment in config.py documents.
+    open_sniper = await _count_open_sniper_positions()
+    sniper_shadow_ranked = []
+    if sniper_signals:
+        sniper_signals = apply_cooldown(sniper_signals, recent_signals)
+        _annotate_signal_stream(sniper_signals, signal_source="sniper_shadow")
+        # Rank the same pool depth the official flow ranks (top_n_for_
+        # interpretation, default 10) BEFORE the correlation filter, then cut
+        # to free slots. Ranking only sniper_max_positions first would let a
+        # correlated pair consume the pool and drop an independent 4th name
+        # the book flow would have taken — a looser strategy, not the same one.
+        sniper_shadow_ranked = rank_candidates(
+            sniper_signals,
+            regime=regime_assessment.regime,
+            features_by_ticker=features_by_ticker,
+            top_n=settings.top_n_for_interpretation,
+        )
+        sniper_shadow_ranked = filter_correlated_picks(sniper_shadow_ranked, price_data)
+        _shadow_slots = max(0, settings.sniper_max_positions - open_sniper)
+        if len(sniper_shadow_ranked) > _shadow_slots:
+            logger.warning(
+                "Sniper shadow concurrency cap BINDING: %d candidate(s) dropped "
+                "(%d open, %d max concurrent)",
+                len(sniper_shadow_ranked) - _shadow_slots, open_sniper,
+                settings.sniper_max_positions,
+            )
+        sniper_shadow_ranked = sniper_shadow_ranked[:_shadow_slots]
+        logger.info("Sniper shadow stream selected %d candidates (not in the book)",
+                    len(sniper_shadow_ranked))
+
     # Release OHLCV data — largest memory consumer, no longer needed
     del price_data
     price_data = None
@@ -1613,6 +1662,7 @@ async def _run_pipeline_core(
     logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
     mr_manual_result = None
     pead_result = None
+    sniper_shadow_result = None
 
     if execution_mode != ExecutionMode.QUANT_ONLY:
         logger.error(
@@ -1623,8 +1673,9 @@ async def _run_pipeline_core(
     # truth matrix — the 82% backtest was a fill artifact), and the validated
     # 18%-drawdown risk profile assumed a max of sniper_max_positions concurrent
     # sniper trades. Enforce that live by only admitting sniper picks up to the
-    # remaining open slots.
-    open_sniper = await _count_open_sniper_positions()
+    # remaining open slots. (`open_sniper` was read once, above, and is shared
+    # with the shadow stream's cap; with sniper_in_book=False no sniper reaches
+    # `ranked`, so this cap is inert and only the ledger fields remain.)
     sniper_slots = max(0, settings.sniper_max_positions - open_sniper)
     if open_sniper:
         logger.info(
@@ -1682,6 +1733,19 @@ async def _run_pipeline_core(
         )
         official_tickers = {pick.ticker for pick in pipeline_result.approved}
         for pick in pead_result.approved:
+            pick.also_in_mas = pick.ticker in official_tickers
+
+    if sniper_shadow_ranked:
+        # Sniper shadow stream: own result, never merged into the official
+        # `pipeline_result` (so it skips the validation gate, the trade plan and
+        # the official alert block exactly as PEAD does).
+        sniper_shadow_result = _build_quant_only_result(
+            sniper_shadow_ranked,
+            regime_context,
+            max_picks=settings.sniper_max_positions,
+        )
+        official_tickers = {pick.ticker for pick in pipeline_result.approved}
+        for pick in sniper_shadow_result.approved:
             pick.also_in_mas = pick.ticker in official_tickers
 
     # Divergence ledger removed with the LLM overlay — quant_only has no
@@ -2035,6 +2099,12 @@ async def _run_pipeline_core(
             # or the "pead_neglected" variant) so both variants' outcomes are tracked
             # separately; never counted in the official book.
             picks_to_persist.extend(pead_result.approved)
+        if sniper_shadow_result:
+            # Shadow stream — persisted as "sniper_shadow" so the afternoon exit
+            # walker manages it like any sniper position (exit logic keys on
+            # signal_model) while every stat surface that defaults to
+            # mas_official leaves it out of the book.
+            picks_to_persist.extend(sniper_shadow_result.approved)
 
         _exit_config_snapshot = build_exit_config_snapshot(settings)
         _shadow_signal_objs: set = set()
@@ -2307,6 +2377,22 @@ async def _run_pipeline_core(
             for pick in pead_result.approved
         ]
 
+    sniper_shadow_picks: list[dict] | None = None
+    if sniper_shadow_result is not None:
+        sniper_shadow_picks = [
+            {
+                "ticker": pick.ticker,
+                "direction": pick.direction,
+                "entry_price": pick.entry_price,
+                "stop_loss": pick.stop_loss,
+                "target_1": pick.target_1,
+                "confidence": pick.confidence,
+                "holding_period": pick.holding_period,
+                "also_in_mas": pick.also_in_mas,
+            }
+            for pick in sniper_shadow_result.approved
+        ]
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -2318,6 +2404,7 @@ async def _run_pipeline_core(
         model_scorecard=model_scorecard or None,
         manual_sleeve_picks=sleeve_picks_for_alert,
         pead_paper_picks=pead_paper_picks,
+        sniper_shadow_picks=sniper_shadow_picks,
         # HY-OAS credit-spread state as daily context on the regime line (the
         # bear-tilt itself stays config-gated/off — see config.regime_hy_oas_enabled).
         credit_context={
@@ -2342,26 +2429,43 @@ async def _run_pipeline_core(
     _log_memory("pipeline_complete")
 
 
+# Streams that are recorded but never in the book. Their history must not feed
+# the OFFICIAL cooldown (see the call site) — that would let a quarantined pick
+# suppress a book pick.
+SHADOW_SOURCES: frozenset[str] = frozenset({"sniper_shadow"})
+
+
 async def _get_recent_signals(days: int = 7) -> list[dict]:
-    """Fetch recent signals from DB for cooldown filtering."""
+    """Fetch recent signals from DB for cooldown filtering.
+
+    Each row carries `signal_source` so callers can decide which streams'
+    history applies to them (`apply_cooldown` itself keys on ticker only).
+    """
     try:
         async with get_session() as session:
             cutoff = date.today() - timedelta(days=days)
             result = await session.execute(
-                select(Signal.ticker, Signal.run_date).where(Signal.run_date >= cutoff)
+                select(Signal.ticker, Signal.run_date, Signal.signal_source)
+                .where(Signal.run_date >= cutoff)
             )
-            return [{"ticker": r[0], "run_date": r[1]} for r in result.all()]
+            return [{"ticker": r[0], "run_date": r[1], "signal_source": r[2]}
+                    for r in result.all()]
     except Exception as e:
         logger.warning("Failed to fetch recent signals for cooldown: %s", e)
         return []
 
 
-async def _count_open_sniper_positions() -> int:
-    """Count currently-open sniper positions (official sleeve).
+SNIPER_CAP_SOURCES: tuple[str, ...] = ("mas_official", "sniper_shadow")
 
-    Used to enforce the concurrent sniper-position risk cap. Fail-safe: on any
-    DB error return 0 so a transient failure widens the cap rather than blocking
-    the pipeline.
+
+async def _count_open_sniper_positions() -> int:
+    """Count currently-open sniper positions across the official and shadow sources.
+
+    Used to enforce the concurrent sniper-position risk cap. Both sources count:
+    legacy official positions still consume real slots after the 2026-09-18
+    retirement, and a shadow-only filter would have read zero on the day the
+    stream moved and never bound again. Fail-safe: on any DB error return 0 so a
+    transient failure widens the cap rather than blocking the pipeline.
     """
     try:
         async with get_session() as session:
@@ -2372,7 +2476,7 @@ async def _count_open_sniper_positions() -> int:
                 .where(
                     Outcome.still_open == True,  # noqa: E712
                     Signal.signal_model == "sniper",
-                    Signal.signal_source == "mas_official",
+                    Signal.signal_source.in_(SNIPER_CAP_SOURCES),
                 )
             )
             return int(result.scalar() or 0)
@@ -2443,12 +2547,19 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
     """Check for model decay using recent vs baseline outcomes."""
     try:
         async with get_session() as session:
-            # Recent outcomes (last 30 days)
+            # Decay is a statement about the OFFICIAL book. Paper / shadow
+            # streams (PEAD, sniper_shadow) are persisted with skip_reason=None
+            # so their exits are managed, which means a bare skip_reason filter
+            # would let them move the live-vs-baseline decay flags. Join to
+            # Signal and keep mas_official only.
             cutoff_recent = date.today() - timedelta(days=30)
             result = await session.execute(
-                select(Outcome).where(
-                    Outcome.still_open == False,
+                select(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == False,  # noqa: E712
                     Outcome.skip_reason.is_(None),
+                    Signal.signal_source == "mas_official",
                     Outcome.entry_date >= cutoff_recent,
                 )
             )
@@ -2457,9 +2568,12 @@ async def _check_and_record_decay(gov: GovernanceContext) -> None:
             # Baseline outcomes (30-90 days ago)
             cutoff_baseline = date.today() - timedelta(days=90)
             result = await session.execute(
-                select(Outcome).where(
-                    Outcome.still_open == False,
+                select(Outcome)
+                .join(Signal, Outcome.signal_id == Signal.id)
+                .where(
+                    Outcome.still_open == False,  # noqa: E712
                     Outcome.skip_reason.is_(None),
+                    Signal.signal_source == "mas_official",
                     Outcome.entry_date >= cutoff_baseline,
                     Outcome.entry_date < cutoff_recent,
                 )
