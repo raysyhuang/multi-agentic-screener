@@ -1,0 +1,643 @@
+{
+  "backtest": {
+    "n": 1357,
+    "quintiles": [
+      {
+        "q": 1,
+        "lo": 1.0852521714657422,
+        "hi": 2.831382285875988,
+        "n": 271,
+        "wr": 0.5498154981549815,
+        "avg": 0.5038667896678967,
+        "worst5_sum": -114.8411
+      },
+      {
+        "q": 2,
+        "lo": 2.831382285875988,
+        "hi": 3.469343221084784,
+        "n": 271,
+        "wr": 0.5608856088560885,
+        "avg": 0.21429298892988932,
+        "worst5_sum": -148.7274
+      },
+      {
+        "q": 3,
+        "lo": 3.469343221084784,
+        "hi": 3.9064318040501753,
+        "n": 271,
+        "wr": 0.4833948339483395,
+        "avg": -0.17981365313653136,
+        "worst5_sum": -127.9608
+      },
+      {
+        "q": 4,
+        "lo": 3.9120346901136784,
+        "hi": 4.729236851127099,
+        "n": 271,
+        "wr": 0.5055350553505535,
+        "avg": 0.2324059040590406,
+        "worst5_sum": -131.4513
+      },
+      {
+        "q": 5,
+        "lo": 4.729236851127099,
+        "hi": 9.618574539792334,
+        "n": 273,
+        "wr": 0.5201465201465202,
+        "avg": 0.4061567765567765,
+        "worst5_sum": -166.5513
+      }
+    ],
+    "thresholds": {
+      "p95": {
+        "threshold": 6.676773587736198,
+        "kept": 1295,
+        "dropped": 62,
+        "wr": 0.525096525096525,
+        "avg": 0.21499011583011585,
+        "worst5_sum": -688.0656,
+        "per_year_avg": [
+          0.0772125,
+          0.20095151515151516,
+          0.25159543726235745
+        ],
+        "dropped_avg": 0.6668129032258064
+      },
+      "p90": {
+        "threshold": 5.976223617888919,
+        "kept": 1225,
+        "dropped": 132,
+        "wr": 0.5257142857142857,
+        "avg": 0.20919469387755102,
+        "worst5_sum": -648.5292,
+        "per_year_avg": [
+          0.0772125,
+          0.17193687707641198,
+          0.25524211229946525
+        ],
+        "dropped_avg": 0.4809931818181818
+      },
+      "p80": {
+        "threshold": 4.732000869129487,
+        "kept": 1092,
+        "dropped": 265,
+        "wr": 0.5238095238095238,
+        "avg": 0.1860121794871795,
+        "worst5_sum": -541.378,
+        "per_year_avg": [
+          0.056993567251461985,
+          0.17471149425287358,
+          0.2239086363636364
+        ],
+        "dropped_avg": 0.44011056603773585
+      },
+      "p70": {
+        "threshold": 4.20671088475985,
+        "kept": 950,
+        "dropped": 407,
+        "wr": 0.5284210526315789,
+        "avg": 0.234152,
+        "worst5_sum": -465.6122,
+        "per_year_avg": [
+          -0.0026903614457831275,
+          0.27446,
+          0.28851165755919855
+        ],
+        "dropped_avg": 0.23909140049140049
+      }
+    },
+    "baseline": {
+      "n": 1357,
+      "wr": 0.5239498894620487,
+      "avg": 0.2356334561532793,
+      "worst5_sum": -715.1224,
+      "per_year_avg": [
+        0.0772125,
+        0.331600518134715,
+        0.22410993710691823
+      ]
+    },
+    "year_windows": [
+      [
+        "2023-10-23",
+        "2024-10-23"
+      ],
+      [
+        "2024-10-23",
+        "2025-10-23"
+      ],
+      [
+        "2025-10-23",
+        "2026-10-23"
+      ]
+    ]
+  },
+  "live": {
+    "input": "outputs/research/frozen/data-2026-09-17T230250Z.json",
+    "input_sha256": "dbd9e336c524a924ecf348db74e02246965d7b4dcc7c0061a2d59cfc78f51ef6",
+    "stream": "sniper|mas_official",
+    "n_rows": 32,
+    "n_scored": 32,
+    "no_feature": [],
+    "exit_reasons": {
+      "trail_stop": 25,
+      "time_stop": 7
+    },
+    "baseline": {
+      "n": 32,
+      "wr": 0.40625,
+      "avg": -0.343975
+    },
+    "quintiles": [
+      {
+        "q": 1,
+        "lo": 2.2446060179335627,
+        "hi": 2.94993504003847,
+        "n": 6,
+        "wr": 0.3333333333333333,
+        "avg": -1.63805,
+        "time_stops": 2
+      },
+      {
+        "q": 2,
+        "lo": 3.057615623487931,
+        "hi": 3.4979633019010183,
+        "n": 6,
+        "wr": 0.16666666666666666,
+        "avg": -2.48515,
+        "time_stops": 3
+      },
+      {
+        "q": 3,
+        "lo": 3.4979633019010183,
+        "hi": 3.9887187939942588,
+        "n": 6,
+        "wr": 0.5,
+        "avg": -0.2567,
+        "time_stops": 0
+      },
+      {
+        "q": 4,
+        "lo": 4.096517653168288,
+        "hi": 5.321725004211179,
+        "n": 6,
+        "wr": 0.16666666666666666,
+        "avg": 0.4129833333333332,
+        "time_stops": 1
+      },
+      {
+        "q": 5,
+        "lo": 5.377187275440385,
+        "hi": 8.161935403894693,
+        "n": 8,
+        "wr": 0.75,
+        "avg": 1.5992875,
+        "time_stops": 1
+      }
+    ],
+    "threshold_effects": {
+      "backtest p95": {
+        "threshold": 6.676773587736198,
+        "kept": 30,
+        "dropped": 2,
+        "dropped_by_reason": {
+          "trail_stop": 2
+        },
+        "kept_wr": 0.36666666666666664,
+        "kept_avg": -0.4897233333333333,
+        "kept_worst5_sum": -12.294,
+        "dropped_avg": 1.84225
+      },
+      "backtest p90": {
+        "threshold": 5.976223617888919,
+        "kept": 27,
+        "dropped": 5,
+        "dropped_by_reason": {
+          "trail_stop": 5
+        },
+        "kept_wr": 0.3333333333333333,
+        "kept_avg": -0.5879814814814814,
+        "kept_worst5_sum": -12.294,
+        "dropped_avg": 0.9736600000000001
+      },
+      "backtest p80": {
+        "threshold": 4.732000869129487,
+        "kept": 22,
+        "dropped": 10,
+        "dropped_by_reason": {
+          "trail_stop": 8,
+          "time_stop": 2
+        },
+        "kept_wr": 0.3181818181818182,
+        "kept_avg": -0.7201090909090909,
+        "kept_worst5_sum": -9.27,
+        "dropped_avg": 0.48352000000000006
+      },
+      "backtest p70": {
+        "threshold": 4.20671088475985,
+        "kept": 20,
+        "dropped": 12,
+        "dropped_by_reason": {
+          "trail_stop": 10,
+          "time_stop": 2
+        },
+        "kept_wr": 0.3,
+        "kept_avg": -1.5102149999999999,
+        "kept_worst5_sum": -9.27,
+        "dropped_avg": 1.5997583333333334
+      },
+      "live p95": {
+        "threshold": 7.665429453099741,
+        "kept": 31,
+        "dropped": 1,
+        "dropped_by_reason": {
+          "trail_stop": 1
+        },
+        "kept_wr": 0.3870967741935484,
+        "kept_avg": -0.43197096774193544,
+        "kept_worst5_sum": -12.294,
+        "dropped_avg": 2.3839
+      },
+      "live p90": {
+        "threshold": 6.062179069042613,
+        "kept": 29,
+        "dropped": 3,
+        "dropped_by_reason": {
+          "trail_stop": 3
+        },
+        "kept_wr": 0.3448275862068966,
+        "kept_avg": -0.5440344827586207,
+        "kept_worst5_sum": -12.294,
+        "dropped_avg": 1.5899333333333334
+      },
+      "live p80": {
+        "threshold": 5.400266275587839,
+        "kept": 26,
+        "dropped": 6,
+        "dropped_by_reason": {
+          "trail_stop": 6
+        },
+        "kept_wr": 0.3076923076923077,
+        "kept_avg": -0.8707115384615385,
+        "kept_worst5_sum": -12.294,
+        "dropped_avg": 1.93855
+      },
+      "live p70": {
+        "threshold": 4.732002381252272,
+        "kept": 23,
+        "dropped": 9,
+        "dropped_by_reason": {
+          "trail_stop": 7,
+          "time_stop": 2
+        },
+        "kept_wr": 0.30434782608695654,
+        "kept_avg": -0.7908869565217391,
+        "kept_worst5_sum": -9.27,
+        "dropped_avg": 0.7981333333333334
+      }
+    },
+    "rows": [
+      {
+        "ticker": "INTC",
+        "signal_date": "2026-07-01",
+        "entry_date": "2026-07-02",
+        "exit_reason": "trail_stop",
+        "pnl": -5.1118,
+        "mfe": 1.3144,
+        "mae": -8.845,
+        "gap_vol": 6.062179069042613
+      },
+      {
+        "ticker": "RKT",
+        "signal_date": "2026-07-01",
+        "entry_date": "2026-07-02",
+        "exit_reason": "trail_stop",
+        "pnl": -1.6447,
+        "mfe": 1.1574,
+        "mae": -4.5952,
+        "gap_vol": 2.9280891636472255
+      },
+      {
+        "ticker": "FLEX",
+        "signal_date": "2026-07-03",
+        "entry_date": "2026-07-06",
+        "exit_reason": "trail_stop",
+        "pnl": -4.2166,
+        "mfe": 5.2985,
+        "mae": -9.6164,
+        "gap_vol": 3.5450765789655394
+      },
+      {
+        "ticker": "KLAC",
+        "signal_date": "2026-07-02",
+        "entry_date": "2026-07-06",
+        "exit_reason": "time_stop",
+        "pnl": -12.294,
+        "mfe": 0.0,
+        "mae": -14.4814,
+        "gap_vol": 5.377187275440385
+      },
+      {
+        "ticker": "RDDT",
+        "signal_date": "2026-07-02",
+        "entry_date": "2026-07-06",
+        "exit_reason": "trail_stop",
+        "pnl": 1.2471,
+        "mfe": 4.7346,
+        "mae": -0.867,
+        "gap_vol": 2.94993504003847
+      },
+      {
+        "ticker": "SMH",
+        "signal_date": "2026-07-03",
+        "entry_date": "2026-07-06",
+        "exit_reason": "trail_stop",
+        "pnl": -4.6436,
+        "mfe": 1.7367,
+        "mae": -6.7188,
+        "gap_vol": 3.807660560273013
+      },
+      {
+        "ticker": "AMD",
+        "signal_date": "2026-07-06",
+        "entry_date": "2026-07-07",
+        "exit_reason": "trail_stop",
+        "pnl": -2.348,
+        "mfe": 1.6545,
+        "mae": -3.5389,
+        "gap_vol": 4.732002381252272
+      },
+      {
+        "ticker": "NET",
+        "signal_date": "2026-07-06",
+        "entry_date": "2026-07-07",
+        "exit_reason": "trail_stop",
+        "pnl": 3.1561,
+        "mfe": 5.7879,
+        "mae": -2.0946,
+        "gap_vol": 2.6652196788209674
+      },
+      {
+        "ticker": "AMAT",
+        "signal_date": "2026-07-07",
+        "entry_date": "2026-07-08",
+        "exit_reason": "trail_stop",
+        "pnl": 14.4309,
+        "mfe": 15.0339,
+        "mae": -0.2679,
+        "gap_vol": 4.691784569887664
+      },
+      {
+        "ticker": "STX",
+        "signal_date": "2026-07-07",
+        "entry_date": "2026-07-08",
+        "exit_reason": "trail_stop",
+        "pnl": 13.457,
+        "mfe": 15.449,
+        "mae": -0.0999,
+        "gap_vol": 5.400266275587839
+      },
+      {
+        "ticker": "ANET",
+        "signal_date": "2026-07-08",
+        "entry_date": "2026-07-09",
+        "exit_reason": "trail_stop",
+        "pnl": -1.1087,
+        "mfe": 1.405,
+        "mae": -3.9463,
+        "gap_vol": 3.4979633019010183
+      },
+      {
+        "ticker": "TSM",
+        "signal_date": "2026-07-08",
+        "entry_date": "2026-07-09",
+        "exit_reason": "time_stop",
+        "pnl": -3.018,
+        "mfe": 0.1159,
+        "mae": -4.265,
+        "gap_vol": 3.184264955565689
+      },
+      {
+        "ticker": "KLAC",
+        "signal_date": "2026-07-10",
+        "entry_date": "2026-07-13",
+        "exit_reason": "trail_stop",
+        "pnl": 6.763,
+        "mfe": 7.1914,
+        "mae": -1.2993,
+        "gap_vol": 5.526043847043905
+      },
+      {
+        "ticker": "UMC",
+        "signal_date": "2026-07-10",
+        "entry_date": "2026-07-13",
+        "exit_reason": "trail_stop",
+        "pnl": 2.3839,
+        "mfe": 3.4617,
+        "mae": -2.4322,
+        "gap_vol": 8.161935403894693
+      },
+      {
+        "ticker": "LRCX",
+        "signal_date": "2026-07-13",
+        "entry_date": "2026-07-14",
+        "exit_reason": "time_stop",
+        "pnl": -5.6111,
+        "mfe": 0.6296,
+        "mae": -9.922,
+        "gap_vol": 5.321725004211179
+      },
+      {
+        "ticker": "U",
+        "signal_date": "2026-07-13",
+        "entry_date": "2026-07-14",
+        "exit_reason": "trail_stop",
+        "pnl": 7.2694,
+        "mfe": 8.0444,
+        "mae": -0.5971,
+        "gap_vol": 3.108407837649703
+      },
+      {
+        "ticker": "JBLU",
+        "signal_date": "2026-07-14",
+        "entry_date": "2026-07-15",
+        "exit_reason": "trail_stop",
+        "pnl": 2.23,
+        "mfe": 6.7293,
+        "mae": -0.8475,
+        "gap_vol": 3.6767998903730783
+      },
+      {
+        "ticker": "VG",
+        "signal_date": "2026-07-14",
+        "entry_date": "2026-07-15",
+        "exit_reason": "trail_stop",
+        "pnl": -0.3509,
+        "mfe": 0.7283,
+        "mae": -4.3726,
+        "gap_vol": 3.9887187939942588
+      },
+      {
+        "ticker": "ANET",
+        "signal_date": "2026-07-17",
+        "entry_date": "2026-07-20",
+        "exit_reason": "trail_stop",
+        "pnl": 3.0493,
+        "mfe": 5.1867,
+        "mae": -0.4665,
+        "gap_vol": 3.4979633019010183
+      },
+      {
+        "ticker": "KLAC",
+        "signal_date": "2026-07-17",
+        "entry_date": "2026-07-20",
+        "exit_reason": "trail_stop",
+        "pnl": 1.0853,
+        "mfe": 1.5311,
+        "mae": -4.9375,
+        "gap_vol": 6.127216829498899
+      },
+      {
+        "ticker": "DELL",
+        "signal_date": "2026-08-04",
+        "entry_date": "2026-08-05",
+        "exit_reason": "trail_stop",
+        "pnl": -3.6317,
+        "mfe": 3.9906,
+        "mae": -8.7915,
+        "gap_vol": 4.162779592057278
+      },
+      {
+        "ticker": "JBLU",
+        "signal_date": "2026-08-04",
+        "entry_date": "2026-08-05",
+        "exit_reason": "time_stop",
+        "pnl": -4.5047,
+        "mfe": 0.2239,
+        "mae": -5.4899,
+        "gap_vol": 3.2473776223776256
+      },
+      {
+        "ticker": "ANET",
+        "signal_date": "2026-08-05",
+        "entry_date": "2026-08-06",
+        "exit_reason": "trail_stop",
+        "pnl": 2.3916,
+        "mfe": 2.8025,
+        "mae": -2.6492,
+        "gap_vol": 3.7299819804319645
+      },
+      {
+        "ticker": "FROG",
+        "signal_date": "2026-08-10",
+        "entry_date": "2026-08-11",
+        "exit_reason": "trail_stop",
+        "pnl": -2.0513,
+        "mfe": 2.0263,
+        "mae": -2.9482,
+        "gap_vol": 2.654786392471447
+      },
+      {
+        "ticker": "FSLR",
+        "signal_date": "2026-08-10",
+        "entry_date": "2026-08-11",
+        "exit_reason": "time_stop",
+        "pnl": -9.27,
+        "mfe": 0.0284,
+        "mae": -9.9441,
+        "gap_vol": 3.057615623487931
+      },
+      {
+        "ticker": "ONTO",
+        "signal_date": "2026-08-07",
+        "entry_date": "2026-08-10",
+        "exit_reason": "trail_stop",
+        "pnl": 5.2103,
+        "mfe": 8.6192,
+        "mae": -7.9892,
+        "gap_vol": 6.048832287222714
+      },
+      {
+        "ticker": "COHR",
+        "signal_date": "2026-08-13",
+        "entry_date": "2026-08-14",
+        "exit_reason": "trail_stop",
+        "pnl": 1.3006,
+        "mfe": 10.1583,
+        "mae": -3.5583,
+        "gap_vol": 7.665429453099741
+      },
+      {
+        "ticker": "DELL",
+        "signal_date": "2026-08-13",
+        "entry_date": "2026-08-14",
+        "exit_reason": "trail_stop",
+        "pnl": -0.069,
+        "mfe": 0.859,
+        "mae": -5.5279,
+        "gap_vol": 4.503574569984424
+      },
+      {
+        "ticker": "GTLB",
+        "signal_date": "2026-08-14",
+        "entry_date": "2026-08-17",
+        "exit_reason": "trail_stop",
+        "pnl": -4.2789,
+        "mfe": 0.6931,
+        "mae": -4.4197,
+        "gap_vol": 3.2562847168195312
+      },
+      {
+        "ticker": "NET",
+        "signal_date": "2026-08-18",
+        "entry_date": "2026-08-19",
+        "exit_reason": "time_stop",
+        "pnl": -7.2467,
+        "mfe": 0.4194,
+        "mae": -7.5133,
+        "gap_vol": 2.5235283085940496
+      },
+      {
+        "ticker": "QLYS",
+        "signal_date": "2026-08-18",
+        "entry_date": "2026-08-19",
+        "exit_reason": "time_stop",
+        "pnl": -3.2888,
+        "mfe": 0.272,
+        "mae": -3.5879,
+        "gap_vol": 2.2446060179335627
+      },
+      {
+        "ticker": "HPE",
+        "signal_date": "2026-08-19",
+        "entry_date": "2026-08-20",
+        "exit_reason": "trail_stop",
+        "pnl": -0.2932,
+        "mfe": 1.3701,
+        "mae": -1.6727,
+        "gap_vol": 4.096517653168288
+      }
+    ],
+    "provenance": {
+      "provider": "polygon",
+      "fallback_reason": null,
+      "requested": 26,
+      "returned": 26,
+      "missing": [],
+      "failures": {}
+    }
+  },
+  "cache_file": "/Users/rayhuang/Documents/Python Project/Multi-Agentic Screener/outputs/research/ohlcv_3y_cache.parquet",
+  "entry": {
+    "use_spy": true,
+    "min_score": 70,
+    "atr_pct_floor": 5.0,
+    "stop_atr_mult": 1.5,
+    "target_atr_mult": 3.0,
+    "holding_period": 7,
+    "gap_through": true,
+    "sniper_time_stop_days": 1,
+    "trail_activate_pct": 0.5,
+    "trail_distance_pct": 0.3
+  }
+}
