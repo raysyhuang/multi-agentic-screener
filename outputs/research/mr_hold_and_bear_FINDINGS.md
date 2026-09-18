@@ -16,7 +16,7 @@ The first version of this document was reviewed by Codex (2026-09-18) and six de
 | Headline denominators wrong (said 22 picks / 49-pick window) | every n is the n actually used | OOS row is **n=16** complete 5-bar windows (of 22 new picks); the +1.33pp is the **n=27** overlap; the all-picks delta is **+0.47pp, n=43** |
 | Per-horizon paired stats not reproducible from the documented command | `sniper_forward_returns.py` now prints a paired block per horizon (all complete windows + matched cohort) with iid and cluster CIs | none (the 43-pick row was computed by hand before; now it prints) |
 | Ticker/SPY horizon windows could use different dates | SPY measured over the ticker's exact bar dates; alpha None if SPY lacks a bar | **0 rows affected** on this cohort |
-| Default stdout of `sniper_forward_returns.py` changed | all new output gated behind `--stream/--horizons/--baseline-input` | default run is byte-identical to `origin/main` |
+| Default stdout of `sniper_forward_returns.py` changed | all new report blocks gated behind `--stream/--horizons/--baseline-input` | default **layout** is identical to `origin/main`; the SPY-window alignment fix (row above) is NOT gated — it corrects the benchmark on the default path too, so a default run can print different `spy_*`/`alpha_*` values than `origin/main` whenever a ticker is missing a bar. On this cohort 0 rows are affected, so the reproduced 2026-08-13 sniper run matches; that is a property of the data, not a guarantee |
 
 Pre-registration honesty: the bear rule below was adopted for MR **in the session plan (2026-09-18), not in a prior commit**; it is copied verbatim from `scripts/pead_regime_stamp.py`, where it was pre-registered for PEAD.
 

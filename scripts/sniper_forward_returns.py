@@ -109,10 +109,13 @@ _ap.add_argument("--baseline-input", default=None,
                       "are strictly out-of-sample relative to a finding made on that bundle")
 ARGS = _ap.parse_args()
 
-# With none of the newer flags the script prints exactly what it printed before
-# --stream/--horizons existed (the 2026-08-13 sniper forward-decay run is
-# reproducible from it). The per-horizon paired statistics, cluster CIs and the
-# stream line only appear in EXTENDED mode.
+# With none of the newer flags the script prints the same REPORT LAYOUT it
+# printed before --stream/--horizons existed; the per-horizon paired statistics,
+# cluster CIs and the stream line only appear in EXTENDED mode. One thing is
+# deliberately NOT gated: SPY is now measured over the ticker's actual bar
+# dates (`spy_between`) on every path, so a default run can print different
+# spy_*/alpha_* values than the pre-fix script for any pick whose ticker is
+# missing a bar. The 2026-08-13 sniper run has 0 such rows and reproduces.
 EXTENDED = (ARGS.stream != DEFAULT_STREAM or ARGS.horizons != DEFAULT_HORIZONS
             or ARGS.baseline_input is not None)
 
