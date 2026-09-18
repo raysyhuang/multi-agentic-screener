@@ -28,10 +28,18 @@ import pandas as pd
 random.seed(23)
 
 
-def spy_market_regime() -> dict:
-    df = pd.read_parquet(ROOT / "outputs/research/ohlcv_polygon_3y.parquet").rename(
-        columns={"_ticker": "ticker"})
-    spy = df[df["ticker"] == "SPY"].sort_values("date").reset_index(drop=True)
+def spy_market_regime(cache_file: str | Path | None = None,
+                      spy: pd.DataFrame | None = None) -> dict:
+    """{YYYY-MM-DD: bull|bear|choppy|unknown} from SPY SMA20/50, per DATE.
+
+    Pass ``spy`` (a date/close frame) directly, or ``cache_file`` (parquet with a
+    ``_ticker`` column); the default is the 3Y Polygon cache in outputs/research.
+    """
+    if spy is None:
+        path = Path(cache_file) if cache_file else ROOT / "outputs/research/ohlcv_polygon_3y.parquet"
+        df = pd.read_parquet(path).rename(columns={"_ticker": "ticker"})
+        spy = df[df["ticker"] == "SPY"]
+    spy = spy.sort_values("date").reset_index(drop=True)
     c = spy["close"].astype(float)
     s50, s20 = c.rolling(50).mean(), c.rolling(20).mean()
     out = {}
