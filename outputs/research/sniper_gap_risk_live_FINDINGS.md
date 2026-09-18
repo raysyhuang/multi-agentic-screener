@@ -6,7 +6,7 @@
 
 ## Verdict: **FAIL — no threshold comes close.**
 
-The best any threshold does is remove **2 of 7** `time_stop` losers, and only by also removing **8–10 of 25** `trail_stop` exits. The 7 day-1 gap-throughs that account for the whole live sniper loss are **not** gappy names by the trailing-60d measure: 5 of the 7 sit *below* the live cohort's median gap-vol, and the calmest quintile holds 2 of them. The gappiest live quintile is the cohort's *best* bucket (WR 75%, +1.60%/trade). Filtering on trailing gap-vol makes the live cohort **worse** at every threshold tried.
+The best any threshold does is remove **2 of 7** `time_stop` losers, and only by also removing **7 to 10 of 25** `trail_stop` exits (live p70 4.7%: 2 time_stops / 7 trail_stops; backtest p80 4.7%: 2 / 8; backtest p70 4.2%: 2 / 10). Every other threshold removes **0** time_stops. Exhaustively: across all 32 possible cutoffs of the stored gap-vol scores, none removes ≥5 time_stops while removing ≤3 trail_stops. The 7 day-1 gap-throughs that account for the whole live sniper loss are **not** gappy names by the trailing-60d measure: 5 of the 7 sit *below* the live cohort's median gap-vol, and the calmest quintile holds 2 of them. The gappiest live quintile is the cohort's *best* bucket (WR 75%, +1.60%/trade). Filtering on trailing gap-vol makes the live cohort **worse** at every threshold tried.
 
 This is a mechanism finding, not a tuning miss: the losses come from names whose overnight behaviour looked ordinary before entry. Trailing gap-vol is not the ex-ante variable. **The gap-risk lever is closed for sniper unless a different ex-ante feature is proposed and pre-registered.**
 
@@ -76,7 +76,7 @@ No threshold improves the average; the worst-5% sum shrinks only because fewer t
 ## Provenance
 
 - **Live cohort input:** `outputs/research/frozen/data-2026-09-17T230250Z.json`, sha256 `dbd9e336c524a924ecf348db74e02246965d7b4dcc7c0061a2d59cfc78f51ef6`, 255,290 bytes, `generated_at` 2026-09-17T23:02:50Z, window_days 90 (manifest: `MANIFEST-2026-09-17T230250Z.json`).
-- **Live prices:** `fetch_ohlcv(..., source="polygon", strict=True, no_cache=True)`, 2025-03-20 → 2026-09-18. `get_last_ohlcv_provenance()` = `{"provider": "polygon", "fallback_reason": null, "requested": 26, "returned": 26, "missing": [], "failures": {}}` (26 distinct tickers + SPY).
+- **Live prices:** `fetch_ohlcv(..., source="polygon", strict=True, no_cache=True)`, 2025-03-20 → 2026-09-18. `get_last_ohlcv_provenance()` = `{"provider": "polygon", "fallback_reason": null, "requested": 26, "returned": 26, "missing": [], "failures": {}}` (25 distinct tickers across the 32 rows, + SPY = 26 requests).
 - **Backtest cohort:** `outputs/research/ohlcv_3y_cache.parquet` (501 tickers, 2023-07 → 2026-07; gitignored, not in the PR). No beside-file provenance manifest exists for this cache; it predates the manifest convention.
 - **Machine-readable:** `outputs/research/sniper_gap_risk_live.json` (both cohorts' tables, the live per-row scores, provenance dict, input sha).
 
@@ -90,4 +90,6 @@ PYTHONPATH=. python scripts/sniper_gap_risk.py \
 python -m pytest tests/test_sniper_gap_risk_cohort.py -q
 ```
 
-The default path (no `--cohort`) prints exactly what it did before this change.
+The default path (no `--cohort`) keeps its analysis formulas and printed formats unchanged, with one exception: on `origin/main` it crashes with a `TypeError` in the per-year stability split (a `datetime.date` window compared against the pandas `Timestamp` signal date; pandas ≥ 2 refuses the comparison). This PR normalises the signal date to a plain `date` in `run_backtest_cohort` (`scripts/sniper_gap_risk.py`), so the default run now completes; its numbers are the backtest-cohort tables above.
+
+**Pre-registration timing:** the read in § "Pre-registered read" was stated in the session plan before the run, but the read and the result landed in the same commit, so git history cannot show that it preceded the run. Treat the timing as asserted, not independently verifiable. The arithmetic does not depend on it: no cutoff of the 32 stored scores satisfies the rule (see Verdict).
