@@ -1,0 +1,22 @@
+{
+  "frozen_at_utc": "2026-09-18",
+  "frozen_by": "Claude Code (Ray's authoritative checkout)",
+  "source_url": "https://raysyhuang.github.io/multi-agentic-screener/data.json",
+  "generated_at": "2026-09-17T23:02:50.517184+00:00",
+  "sha256": "dbd9e336c524a924ecf348db74e02246965d7b4dcc7c0061a2d59cfc78f51ef6",
+  "bytes": 255290,
+  "window_days": 90,
+  "why": "Input to the 2026-09-18 model review and its research PRs (sniper ex-ante gap-risk on the live cohort; MR hold-length / bear-cohort). The Pages export is overwritten every run on a rolling window_days=90, so a finding must cite this frozen copy and hash, not the URL. Same convention as the 2026-08-14 comparator pin; that pin and MANIFEST.json are untouched.",
+  "counts": {
+    "trade_rows": 147,
+    "run_history": 65,
+    "open_positions": 4,
+    "streams": [
+      "mean_reversion|mas_official",
+      "mean_reversion|mr_manual_sleeve",
+      "pead|pead_neglected",
+      "pead|pead_paper",
+      "sniper|mas_official"
+    ]
+  }
+}
