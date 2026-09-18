@@ -40,14 +40,19 @@ def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("--cache-file", default="outputs/research/ohlcv_polygon_3y.parquet")
     ap.add_argument("--out", default="outputs/research/mr_trades_polygon.csv")
+    ap.add_argument("--holding-period", type=int, default=LIVE_MR["holding_period"],
+                    help="max hold in trading days (default = live 3); the ONLY knob "
+                         "that differs from LIVE_MR, for the hold-length study")
     args = ap.parse_args()
 
     combined = pd.read_parquet(args.cache_file)
     price_data = {t: g.drop(columns=["_ticker"]).reset_index(drop=True)
                   for t, g in combined.groupby("_ticker")}
-    print(f"Loaded {len(price_data)} tickers; running live-faithful MR backtest...")
+    params = {**LIVE_MR, "holding_period": args.holding_period}
+    print(f"Loaded {len(price_data)} tickers; running live-faithful MR backtest "
+          f"(hold={args.holding_period})...")
 
-    result = run_model_backtest("mean_reversion", price_data, LIVE_MR)
+    result = run_model_backtest("mean_reversion", price_data, params)
     trades = result.trades
     m = result.metrics
     print(f"MR trades: {m.total_trades}  WR={m.win_rate:.1%}  "

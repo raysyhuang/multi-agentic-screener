@@ -1,0 +1,744 @@
+{
+  "params_base": {
+    "rsi2_threshold": 10.0,
+    "min_score": 50.0,
+    "stop_atr_mult": 0.75,
+    "target_atr_mult": 1.5,
+    "holding_period": 3,
+    "trail_activate_pct": 0.5,
+    "trail_distance_pct": 0.3,
+    "gap_through": true
+  },
+  "holds": {
+    "3": {
+      "by_regime": {
+        "all": {
+          "n": 27822,
+          "entry_dates": 682,
+          "wr": 0.5223,
+          "avg": 0.039,
+          "median": 0.0961,
+          "ci_lo": 0.0098,
+          "ci_hi": 0.0685,
+          "cluster_ci_lo": -0.1658,
+          "cluster_ci_hi": 0.2877,
+          "sum": 1085.22,
+          "per_year": {
+            "2023": {
+              "n": 1384,
+              "avg": -0.1071
+            },
+            "2024": {
+              "n": 10529,
+              "avg": -0.1133
+            },
+            "2025": {
+              "n": 10018,
+              "avg": 0.2922
+            },
+            "2026": {
+              "n": 5891,
+              "avg": -0.0849
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 21897,
+            "stop": 5498,
+            "expiry": 252,
+            "target": 175
+          },
+          "avg_hold_days": 1.72
+        },
+        "bull": {
+          "n": 18201,
+          "entry_dates": 471,
+          "wr": 0.5008,
+          "avg": -0.1261,
+          "median": 0.0026,
+          "ci_lo": -0.1575,
+          "ci_hi": -0.0949,
+          "cluster_ci_lo": -0.2445,
+          "cluster_ci_hi": -0.0093,
+          "sum": -2294.36,
+          "per_year": {
+            "2023": {
+              "n": 367,
+              "avg": 0.4162
+            },
+            "2024": {
+              "n": 8117,
+              "avg": -0.1971
+            },
+            "2025": {
+              "n": 6163,
+              "avg": -0.1009
+            },
+            "2026": {
+              "n": 3554,
+              "avg": -0.0634
+            }
+          },
+          "exit_reasons": {
+            "stop": 3936,
+            "trail_stop": 13933,
+            "expiry": 200,
+            "target": 132
+          },
+          "avg_hold_days": 1.76
+        },
+        "choppy": {
+          "n": 5007,
+          "entry_dates": 125,
+          "wr": 0.5788,
+          "avg": 0.2159,
+          "median": 0.3295,
+          "ci_lo": 0.1491,
+          "ci_hi": 0.2815,
+          "cluster_ci_lo": -0.063,
+          "cluster_ci_hi": 0.4813,
+          "sum": 1081.18,
+          "per_year": {
+            "2023": {
+              "n": 130,
+              "avg": 0.3868
+            },
+            "2024": {
+              "n": 2160,
+              "avg": 0.153
+            },
+            "2025": {
+              "n": 1978,
+              "avg": 0.2394
+            },
+            "2026": {
+              "n": 739,
+              "avg": 0.3072
+            }
+          },
+          "exit_reasons": {
+            "stop": 798,
+            "trail_stop": 4145,
+            "target": 25,
+            "expiry": 39
+          },
+          "avg_hold_days": 1.74
+        },
+        "bear": {
+          "n": 4614,
+          "entry_dates": 86,
+          "wr": 0.5459,
+          "avg": 0.4981,
+          "median": 0.2392,
+          "ci_lo": 0.3922,
+          "ci_hi": 0.6047,
+          "cluster_ci_lo": -0.6593,
+          "cluster_ci_hi": 1.6844,
+          "sum": 2298.39,
+          "per_year": {
+            "2023": {
+              "n": 887,
+              "avg": -0.396
+            },
+            "2024": {
+              "n": 252,
+              "avg": 0.3033
+            },
+            "2025": {
+              "n": 1877,
+              "avg": 1.6384
+            },
+            "2026": {
+              "n": 1598,
+              "avg": -0.3141
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 3819,
+            "stop": 764,
+            "target": 18,
+            "expiry": 13
+          },
+          "avg_hold_days": 1.54
+        },
+        "ex_bear": {
+          "n": 23208,
+          "entry_dates": 596,
+          "wr": 0.5176,
+          "avg": -0.0523,
+          "median": 0.0733,
+          "ci_lo": -0.0808,
+          "ci_hi": -0.0237,
+          "cluster_ci_lo": -0.1624,
+          "cluster_ci_hi": 0.0573,
+          "sum": -1213.18,
+          "per_year": {
+            "2023": {
+              "n": 497,
+              "avg": 0.4085
+            },
+            "2024": {
+              "n": 10277,
+              "avg": -0.1235
+            },
+            "2025": {
+              "n": 8141,
+              "avg": -0.0182
+            },
+            "2026": {
+              "n": 4293,
+              "avg": 0.0004
+            }
+          },
+          "exit_reasons": {
+            "stop": 4734,
+            "trail_stop": 18078,
+            "expiry": 239,
+            "target": 157
+          },
+          "avg_hold_days": 1.75
+        }
+      },
+      "equity": {
+        "taken": 5489,
+        "skipped": 22333,
+        "peak_concurrent": 10,
+        "total_return_pct": -55.01929214431094,
+        "max_drawdown_pct": 61.118692522100716,
+        "sharpe": -1.2018600879701709
+      },
+      "label_lag": {
+        "changed": 1725,
+        "of": 27822,
+        "bear_unlagged": {
+          "n": 4810,
+          "entry_dates": 86,
+          "wr": 0.553,
+          "avg": 0.4972,
+          "median": 0.2685,
+          "ci_lo": 0.3948,
+          "ci_hi": 0.6003,
+          "cluster_ci_lo": -0.6122,
+          "cluster_ci_hi": 1.604,
+          "sum": 2391.36,
+          "per_year": {
+            "2023": {
+              "n": 886,
+              "avg": -0.3978
+            },
+            "2024": {
+              "n": 251,
+              "avg": 0.3651
+            },
+            "2025": {
+              "n": 2070,
+              "avg": 1.5223
+            },
+            "2026": {
+              "n": 1603,
+              "avg": -0.3113
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 4000,
+            "stop": 779,
+            "target": 18,
+            "expiry": 13
+          },
+          "avg_hold_days": 1.55
+        }
+      }
+    },
+    "5": {
+      "by_regime": {
+        "all": {
+          "n": 27822,
+          "entry_dates": 682,
+          "wr": 0.5234,
+          "avg": 0.04,
+          "median": 0.1013,
+          "ci_lo": 0.0107,
+          "ci_hi": 0.0696,
+          "cluster_ci_lo": -0.1644,
+          "cluster_ci_hi": 0.2882,
+          "sum": 1112.91,
+          "per_year": {
+            "2023": {
+              "n": 1384,
+              "avg": -0.1015
+            },
+            "2024": {
+              "n": 10529,
+              "avg": -0.1122
+            },
+            "2025": {
+              "n": 10018,
+              "avg": 0.2931
+            },
+            "2026": {
+              "n": 5891,
+              "avg": -0.0852
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 22063,
+            "stop": 5536,
+            "target": 182,
+            "expiry": 41
+          },
+          "avg_hold_days": 1.73
+        },
+        "bull": {
+          "n": 18201,
+          "entry_dates": 471,
+          "wr": 0.5023,
+          "avg": -0.1239,
+          "median": 0.0092,
+          "ci_lo": -0.1555,
+          "ci_hi": -0.0925,
+          "cluster_ci_lo": -0.2425,
+          "cluster_ci_hi": -0.007,
+          "sum": -2254.68,
+          "per_year": {
+            "2023": {
+              "n": 367,
+              "avg": 0.4352
+            },
+            "2024": {
+              "n": 8117,
+              "avg": -0.1945
+            },
+            "2025": {
+              "n": 6163,
+              "avg": -0.0994
+            },
+            "2026": {
+              "n": 3554,
+              "avg": -0.0627
+            }
+          },
+          "exit_reasons": {
+            "stop": 3970,
+            "trail_stop": 14060,
+            "target": 138,
+            "expiry": 33
+          },
+          "avg_hold_days": 1.78
+        },
+        "choppy": {
+          "n": 5007,
+          "entry_dates": 125,
+          "wr": 0.5796,
+          "avg": 0.2135,
+          "median": 0.3325,
+          "ci_lo": 0.1468,
+          "ci_hi": 0.2794,
+          "cluster_ci_lo": -0.066,
+          "cluster_ci_hi": 0.478,
+          "sum": 1069.15,
+          "per_year": {
+            "2023": {
+              "n": 130,
+              "avg": 0.3874
+            },
+            "2024": {
+              "n": 2160,
+              "avg": 0.1475
+            },
+            "2025": {
+              "n": 1978,
+              "avg": 0.2396
+            },
+            "2026": {
+              "n": 739,
+              "avg": 0.3063
+            }
+          },
+          "exit_reasons": {
+            "stop": 801,
+            "trail_stop": 4175,
+            "target": 26,
+            "expiry": 5
+          },
+          "avg_hold_days": 1.76
+        },
+        "bear": {
+          "n": 4614,
+          "entry_dates": 86,
+          "wr": 0.5459,
+          "avg": 0.4981,
+          "median": 0.2434,
+          "ci_lo": 0.3924,
+          "ci_hi": 0.605,
+          "cluster_ci_lo": -0.6596,
+          "cluster_ci_hi": 1.6844,
+          "sum": 2298.44,
+          "per_year": {
+            "2023": {
+              "n": 887,
+              "avg": -0.3952
+            },
+            "2024": {
+              "n": 252,
+              "avg": 0.3142
+            },
+            "2025": {
+              "n": 1877,
+              "avg": 1.6384
+            },
+            "2026": {
+              "n": 1598,
+              "avg": -0.3163
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 3828,
+            "stop": 765,
+            "target": 18,
+            "expiry": 3
+          },
+          "avg_hold_days": 1.54
+        },
+        "ex_bear": {
+          "n": 23208,
+          "entry_dates": 596,
+          "wr": 0.519,
+          "avg": -0.0511,
+          "median": 0.0786,
+          "ci_lo": -0.0799,
+          "ci_hi": -0.0225,
+          "cluster_ci_lo": -0.1607,
+          "cluster_ci_hi": 0.0585,
+          "sum": -1185.53,
+          "per_year": {
+            "2023": {
+              "n": 497,
+              "avg": 0.4227
+            },
+            "2024": {
+              "n": 10277,
+              "avg": -0.1227
+            },
+            "2025": {
+              "n": 8141,
+              "avg": -0.017
+            },
+            "2026": {
+              "n": 4293,
+              "avg": 0.0009
+            }
+          },
+          "exit_reasons": {
+            "stop": 4771,
+            "trail_stop": 18235,
+            "target": 164,
+            "expiry": 38
+          },
+          "avg_hold_days": 1.77
+        }
+      },
+      "equity": {
+        "taken": 5429,
+        "skipped": 22393,
+        "peak_concurrent": 10,
+        "total_return_pct": -55.769557375238534,
+        "max_drawdown_pct": 61.76722151429143,
+        "sharpe": -1.235349318948568
+      },
+      "label_lag": {
+        "changed": 1725,
+        "of": 27822,
+        "bear_unlagged": {
+          "n": 4810,
+          "entry_dates": 86,
+          "wr": 0.5528,
+          "avg": 0.4935,
+          "median": 0.2714,
+          "ci_lo": 0.3914,
+          "ci_hi": 0.5967,
+          "cluster_ci_lo": -0.6181,
+          "cluster_ci_hi": 1.6015,
+          "sum": 2373.97,
+          "per_year": {
+            "2023": {
+              "n": 886,
+              "avg": -0.3969
+            },
+            "2024": {
+              "n": 251,
+              "avg": 0.3071
+            },
+            "2025": {
+              "n": 2070,
+              "avg": 1.5223
+            },
+            "2026": {
+              "n": 1603,
+              "avg": -0.3135
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 4010,
+            "stop": 780,
+            "target": 18,
+            "expiry": 2
+          },
+          "avg_hold_days": 1.56
+        }
+      }
+    },
+    "7": {
+      "by_regime": {
+        "all": {
+          "n": 27822,
+          "entry_dates": 682,
+          "wr": 0.5237,
+          "avg": 0.041,
+          "median": 0.1032,
+          "ci_lo": 0.0116,
+          "ci_hi": 0.0705,
+          "cluster_ci_lo": -0.1634,
+          "cluster_ci_hi": 0.2894,
+          "sum": 1139.93,
+          "per_year": {
+            "2023": {
+              "n": 1384,
+              "avg": -0.1015
+            },
+            "2024": {
+              "n": 10529,
+              "avg": -0.1101
+            },
+            "2025": {
+              "n": 10018,
+              "avg": 0.2938
+            },
+            "2026": {
+              "n": 5891,
+              "avg": -0.0855
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 22079,
+            "stop": 5542,
+            "target": 185,
+            "expiry": 16
+          },
+          "avg_hold_days": 1.74
+        },
+        "bull": {
+          "n": 18201,
+          "entry_dates": 471,
+          "wr": 0.5027,
+          "avg": -0.1231,
+          "median": 0.0104,
+          "ci_lo": -0.1547,
+          "ci_hi": -0.0917,
+          "cluster_ci_lo": -0.2415,
+          "cluster_ci_hi": -0.0063,
+          "sum": -2240.42,
+          "per_year": {
+            "2023": {
+              "n": 367,
+              "avg": 0.4352
+            },
+            "2024": {
+              "n": 8117,
+              "avg": -0.1933
+            },
+            "2025": {
+              "n": 6163,
+              "avg": -0.0983
+            },
+            "2026": {
+              "n": 3554,
+              "avg": -0.0632
+            }
+          },
+          "exit_reasons": {
+            "stop": 3974,
+            "trail_stop": 14073,
+            "target": 141,
+            "expiry": 13
+          },
+          "avg_hold_days": 1.78
+        },
+        "choppy": {
+          "n": 5007,
+          "entry_dates": 125,
+          "wr": 0.5798,
+          "avg": 0.2141,
+          "median": 0.3325,
+          "ci_lo": 0.1473,
+          "ci_hi": 0.2798,
+          "cluster_ci_lo": -0.0647,
+          "cluster_ci_hi": 0.4783,
+          "sum": 1071.98,
+          "per_year": {
+            "2023": {
+              "n": 130,
+              "avg": 0.3874
+            },
+            "2024": {
+              "n": 2160,
+              "avg": 0.1483
+            },
+            "2025": {
+              "n": 1978,
+              "avg": 0.2401
+            },
+            "2026": {
+              "n": 739,
+              "avg": 0.3063
+            }
+          },
+          "exit_reasons": {
+            "stop": 802,
+            "trail_stop": 4177,
+            "target": 26,
+            "expiry": 2
+          },
+          "avg_hold_days": 1.76
+        },
+        "bear": {
+          "n": 4614,
+          "entry_dates": 86,
+          "wr": 0.5459,
+          "avg": 0.5003,
+          "median": 0.2434,
+          "ci_lo": 0.3952,
+          "ci_hi": 0.6073,
+          "cluster_ci_lo": -0.6556,
+          "cluster_ci_hi": 1.6855,
+          "sum": 2308.38,
+          "per_year": {
+            "2023": {
+              "n": 887,
+              "avg": -0.3952
+            },
+            "2024": {
+              "n": 252,
+              "avg": 0.3564
+            },
+            "2025": {
+              "n": 1877,
+              "avg": 1.6381
+            },
+            "2026": {
+              "n": 1598,
+              "avg": -0.3164
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 3829,
+            "stop": 766,
+            "target": 18,
+            "expiry": 1
+          },
+          "avg_hold_days": 1.54
+        },
+        "ex_bear": {
+          "n": 23208,
+          "entry_dates": 596,
+          "wr": 0.5193,
+          "avg": -0.0503,
+          "median": 0.0797,
+          "ci_lo": -0.0791,
+          "ci_hi": -0.0216,
+          "cluster_ci_lo": -0.1602,
+          "cluster_ci_hi": 0.0594,
+          "sum": -1168.45,
+          "per_year": {
+            "2023": {
+              "n": 497,
+              "avg": 0.4227
+            },
+            "2024": {
+              "n": 10277,
+              "avg": -0.1215
+            },
+            "2025": {
+              "n": 8141,
+              "avg": -0.0161
+            },
+            "2026": {
+              "n": 4293,
+              "avg": 0.0004
+            }
+          },
+          "exit_reasons": {
+            "stop": 4776,
+            "trail_stop": 18250,
+            "target": 167,
+            "expiry": 15
+          },
+          "avg_hold_days": 1.77
+        }
+      },
+      "equity": {
+        "taken": 5420,
+        "skipped": 22402,
+        "peak_concurrent": 10,
+        "total_return_pct": -55.08215606118618,
+        "max_drawdown_pct": 61.173032068937836,
+        "sharpe": -1.211626312039878
+      },
+      "label_lag": {
+        "changed": 1725,
+        "of": 27822,
+        "bear_unlagged": {
+          "n": 4810,
+          "entry_dates": 86,
+          "wr": 0.5528,
+          "avg": 0.4957,
+          "median": 0.2714,
+          "ci_lo": 0.3935,
+          "ci_hi": 0.5989,
+          "cluster_ci_lo": -0.6135,
+          "cluster_ci_hi": 1.6043,
+          "sum": 2384.44,
+          "per_year": {
+            "2023": {
+              "n": 886,
+              "avg": -0.3969
+            },
+            "2024": {
+              "n": 251,
+              "avg": 0.3494
+            },
+            "2025": {
+              "n": 2070,
+              "avg": 1.5223
+            },
+            "2026": {
+              "n": 1603,
+              "avg": -0.3136
+            }
+          },
+          "exit_reasons": {
+            "trail_stop": 4011,
+            "stop": 780,
+            "target": 18,
+            "expiry": 1
+          },
+          "avg_hold_days": 1.56
+        }
+      }
+    }
+  },
+  "provenance": {
+    "cache_file": "/Users/rayhuang/Documents/Python Project/Multi-Agentic Screener/outputs/research/ohlcv_polygon_3y.parquet",
+    "rows": 374634,
+    "tickers": 504,
+    "date_min": "2023-07-26",
+    "date_max": "2026-07-24",
+    "provenance_manifest": "none beside cache (pre-dates the .provenance.json convention)",
+    "regime_source": "SPY SMA20/50 as of the last completed session before entry (scripts.choppy_sniper_regime_test.spy_market_regime, lag_sessions=1)"
+  },
+  "seed": 20260918,
+  "ci_note": "ci_* = iid trade resample; cluster_ci_* = entry-date cluster resample (the honest interval)",
+  "bear_rule": {
+    "3": "NO ACTION (bear avg +0.498% between 0 and +0.5% @ n=4614)",
+    "5": "NO ACTION (bear avg +0.498% between 0 and +0.5% @ n=4614)",
+    "7": "NO GATE (bear avg +0.500% >= +0.5% @ n=4614)"
+  }
+}
