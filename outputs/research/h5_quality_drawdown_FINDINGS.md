@@ -67,10 +67,25 @@ These are variants and cannot rescue the verdict. Each cell reads: QUALITY exces
 - **The cheaper cut is the strongest cell, and it is post-hoc.** At P/E ≤ 15 over 20 sessions, the level clears zero under both screens. Its difference from CONTROL clears zero only under the adjusted screen. It is one of seven descriptive cuts, on a non-primary horizon, chosen after the results were visible. It is recorded as an **observation**, not a lead. Taking it further would need its own pre-registration and data this study did not see.
 - **The window is short.** The 252-session lookback puts the first events in mid-2024, so the sample covers about two calendar years. This was stated in advance.
 
+## Final review: the control is not depth-matched
+
+The registry text calls for a control with *equal* drawdown. As run, CONTROL met the same ≥ 25% threshold but was not matched on depth, and QUALITY's drawdowns were deeper:
+
+| Mean peak ratio (raw screen) | Mean | Median |
+|---|---|---|
+| QUALITY | 0.673 | 0.725 |
+| CONTROL | 0.704 | 0.736 |
+
+When CONTROL is reweighted to QUALITY's drawdown-depth distribution (Codex, final review):
+- CONTROL's 60-session excess moves from −0.01% to **+0.27%**.
+- QUALITY − CONTROL shrinks from +0.57pp to **+0.29pp**.
+
+Part of the "quality" advantage is therefore simply "deeper drawdown". The verdict (REJECTED) is unchanged, and the mechanism estimate is confounded. A retest should match on depth.
+
 ## Caveats
 
 - **EPS basis.** P/E divides a split-adjusted price by FMP's reported EPS. Codex spot-checked NVDA, AVGO, SMCI and CMG and found historical EPS is split-adjusted, so the two are consistent. That check does not certify every ticker.
-- **Look-ahead in the fundamentals.** None by construction: a report is usable from the second session on or after its date. EPS is FMP's adjusted actual, not GAAP.
+- **Look-ahead in the fundamentals.** A report is used only from the second session on or after its **recorded** date. Both that date and the report contents come from today's FMP cache, not point-in-time vintages, so later revisions to report dates, actuals or estimates could leak in; this is unquantified. EPS is FMP's adjusted actual, not GAAP. The P/E numerator is a split-adjusted price, and the code does not verify that every ticker's EPS is split-adjusted too.
 - **Universe.** The same survivorship-reduced universe as H1 (`h1_pead_wide_FINDINGS.md` § 6). Current index membership is not used.
 - **Scope.** Stage 0 only: no stops, no costs.
 

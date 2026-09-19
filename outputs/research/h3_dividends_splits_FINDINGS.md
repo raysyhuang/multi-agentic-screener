@@ -17,7 +17,7 @@ The criteria are in the docstring of `scripts/h3_dividends_splits.py`. It was co
 2. **Key prior-dividend history on declaration date or ex-date.** Some rows have no declaration date. Missing an earlier dividend would turn a regular payer into a false "initiation".
 3. **Fetch dividends per universe ticker, full history, one page each.** Whole-market ex-date days are flooded by mutual-fund share classes; one day alone had more than 1,000 F-tickers.
 
-The data was fetched at 09:57:04Z (`data/cache/corp_actions/manifest.json`). It covers 4,721 tickers with no failures: 124,375 dividends and 6,524 splits. The first study run was at 09:57:10Z. After the review fixes it was re-run; the final JSONs were generated at 2026-09-19T11:25:35Z (adjusted screen) and 11:25:55Z (raw screen).
+The data was fetched at 09:57:04Z (`data/cache/corp_actions/manifest.json`). It covers 4,721 tickers with no failures: 124,375 dividends and 6,524 splits. The first study run was at 09:57:10Z. After the review fixes it was re-run; the final JSONs were generated at 2026-09-19T12:53:31Z (adjusted screen) and 12:53:50Z (raw screen), after split events were routed through `clean_splits` (same events and decisional CIs; only the non-decisional iid CI moved, because event order changed).
 
 - **H3a.** A cash dividend (`CD`, USD) counts as an event if it is either:
   - an initiation: no CD in the previous 400 days; or

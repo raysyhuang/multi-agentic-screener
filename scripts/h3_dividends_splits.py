@@ -260,14 +260,12 @@ def dividend_events(divs: list[dict], tickers: set[str], splits: list[dict] | No
 
 
 def split_events(splits: list[dict], tickers: set[str]) -> list[dict]:
-    out = []
-    for s in splits:
-        t = str(s.get("ticker") or "").replace(".", "-").upper()
-        if t not in tickers or not s.get("execution_date"):
-            continue
-        fwd = float(s.get("split_to") or 0) > float(s.get("split_from") or 0)
-        out.append({"ticker": t, "event_date": s["execution_date"], "kind": "forward" if fwd else "reverse"})
-    return out
+    """One event per (ticker, execution date), through the same cleaner as the
+    price screen: identical duplicates count once, conflicting same-day rows
+    are dropped rather than yielding two contradictory events."""
+    return [{"ticker": s["ticker"], "event_date": s["execution_date"],
+             "kind": "forward" if s["split_to"] > s["split_from"] else "reverse"}
+            for s in es.clean_splits(splits, tickers)]
 
 
 def place(events: list[dict], panel: es.Panel, offset: int) -> list[dict]:

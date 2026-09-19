@@ -114,3 +114,19 @@ Because they sat in the same-day base rates, they pushed most excess returns **u
 - The 60-session horizon and the least-liquid tercile, the two leads from § 4, **no longer clear zero** either. They are downgraded from leads to observations.
 - The only cell still clearly positive is S&P E1. Its sample is today's index members replayed backwards, and that membership is look-ahead of unknown size (§ 5).
 - The H1 verdict is unchanged: REJECTED.
+
+## 8. Final review (Codex, gpt-5.6-sol, on `main` after #123)
+
+Every headline number was reproduced exactly from the scripts. Three caveats bound what this study can support.
+
+- **Membership look-ahead cuts both ways.** "Non-S&P" uses today's S&P 500 list for every date. A name deleted from the index during the window is counted as non-S&P throughout, and a name added later is counted as S&P before it joined. The *non-member* cohort therefore carries look-ahead just as the member cohort does. The H1 rejection is a statement about "names not in today's index", not about point-in-time non-members. Making the literal claim would need historical constituents. The all-names cells are unaffected by this.
+- **Delisting returns: the magnitude is not settled.** A name with no bar at the horizon end has no forward return. It is dropped from both the event cohorts and the same-day base rate, instead of being counted at its delisting value. Before the final 20 sessions this covers 11,082 of 2,231,544 eligible name-days (0.5%, 615 tickers), a mix of delistings, suspensions and data gaps. As a stress test, treating every such mid-window disappearance as a loss moves all-names E1 (volume timing, raw screen) as follows:
+
+  | Loss assumed for missing returns | All-names E1 | Non-S&P E1 |
+  |---|---|---|
+  | none (dropped, as reported) | +0.22% | +0.03% |
+  | −50% | +0.49% | +0.30% |
+  | −100% | +0.74% | +0.57% |
+
+  These are bounds, not estimates. None of them establishes condition (b), and the verdict stands. What they do mean is that "+0.2%" is not a number to recalibrate the paper sleeve to. **The supported conclusion is directional:** the broad-universe evidence is far weaker than the +1.8–2.4% the S&P-only backtest showed.
+- **Fundamentals are not point-in-time vintages.** The session lag keeps each report out until it is public. The report *contents*, however, come from today's FMP cache, so any later restatement of actuals, estimates or report dates would leak in. This is unquantified.
