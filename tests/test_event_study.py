@@ -163,3 +163,15 @@ def test_block_ci_wraparound_and_weighting_match_an_explicit_computation():
     means.sort()
     assert lo == pytest.approx(means[int(0.025 * len(means))])
     assert hi == pytest.approx(means[int(0.975 * len(means))])
+
+
+def test_block_diff_ci_collapses_for_constant_cohorts_and_detects_a_gap():
+    cal = pd.to_datetime(pd.bdate_range("2026-01-05", periods=80))
+    d = list(cal)
+    point, lo, hi = es.block_diff_ci([2.0] * 80, d, [0.5] * 80, d, cal, block=10, n_boot=500)
+    assert point == pytest.approx(1.5) and lo == pytest.approx(1.5) and hi == pytest.approx(1.5)
+    rng = np.random.default_rng(1)
+    a = list(1.0 + rng.normal(0, 1, 80))
+    b = list(rng.normal(0, 1, 80))
+    point, lo, hi = es.block_diff_ci(a, d, b, d, cal, block=10, n_boot=2000)
+    assert lo > 0 and hi > lo

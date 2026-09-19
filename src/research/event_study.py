@@ -107,6 +107,43 @@ def block_boot_ci(x: list[float], entry_dates: list, calendar: pd.Index, block: 
     return float(means[int(0.025 * len(means))]), float(means[int(0.975 * len(means))])
 
 
+def block_diff_ci(xa: list[float], da: list, xb: list[float], db: list, calendar: pd.Index,
+                  block: int = 20, n_boot: int = 10_000, seed: int = SEED) -> tuple[float, float, float]:
+    """mean(a) - mean(b) with a circular moving-block CI: each draw picks the same
+    blocks of calendar sessions for both cohorts and recomputes both
+    observation-weighted means, so the difference keeps the dependence between
+    overlapping windows that a per-date resample would break."""
+    if not xa or not xb:
+        return (float("nan"), float("nan"), float("nan"))
+    n = len(calendar)
+    pos = {pd.Timestamp(d): i for i, d in enumerate(calendar)}
+
+    def _arrays(x, d):
+        s_, c_ = np.zeros(n), np.zeros(n)
+        for v, dd in zip(x, d):
+            i = pos.get(pd.Timestamp(dd))
+            if i is not None:
+                s_[i] += v
+                c_[i] += 1
+        wrap = np.arange(n + block) % n
+        return (np.concatenate([[0.0], np.cumsum(s_[wrap])]),
+                np.concatenate([[0.0], np.cumsum(c_[wrap])]))
+
+    psa, pca = _arrays(xa, da)
+    psb, pcb = _arrays(xb, db)
+    n_blocks = max(1, -(-n // block))
+    rng = np.random.default_rng(seed)
+    starts = rng.integers(0, n, size=(n_boot, n_blocks))
+    ta = (psa[starts + block] - psa[starts]).sum(axis=1)
+    na = (pca[starts + block] - pca[starts]).sum(axis=1)
+    tb = (psb[starts + block] - psb[starts]).sum(axis=1)
+    nb = (pcb[starts + block] - pcb[starts]).sum(axis=1)
+    ok = (na > 0) & (nb > 0)
+    diffs = np.sort(ta[ok] / na[ok] - tb[ok] / nb[ok])
+    point = float(np.mean(xa) - np.mean(xb))
+    return point, float(diffs[int(0.025 * len(diffs))]), float(diffs[int(0.975 * len(diffs))])
+
+
 def market_regime(spy: pd.DataFrame, lag_sessions: int = 0) -> dict[str, str]:
     """{YYYY-MM-DD: bull|bear|choppy|unknown} from SPY SMA20/50, per date.
 
