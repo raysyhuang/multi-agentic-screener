@@ -81,3 +81,11 @@ def test_fundamentals_become_usable_at_the_second_session(tmp_path, monkeypatch)
 def test_onsets_count_an_episode_once_until_rearmed():
     flag = pd.Series([False] * 25 + [True] * 5 + [False] * 5 + [True] * 3 + [False] * 25 + [True] * 2)
     assert h5.onsets(flag, rearm=20) == [25, 63]
+
+
+def test_a_prior_dividend_without_a_declaration_date_still_blocks_an_initiation():
+    divs = [{"ticker": "AAA", "ex_dividend_date": "2024-02-15", "cash_amount": 0.10, "frequency": 4,
+             "dividend_type": "CD", "currency": "USD"},                      # no declaration_date
+            _div("AAA", "2024-05-01", 0.10)]
+    ev = h3.dividend_events(divs, {"AAA"})
+    assert ev == []                     # not an initiation: a dividend existed 76 days earlier

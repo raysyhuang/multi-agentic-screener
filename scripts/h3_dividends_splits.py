@@ -40,6 +40,13 @@ in the output.
   Descriptive only (registry variants): initiations and increases separately;
   horizon 60; reverse splits; liquidity terciles.
 
+PRE-DATA AMENDMENT (committed before any fetch succeeded): Polygon's next_url
+drops the date filter on this endpoint, so the fetch queries one day at a time
+and never follows the cursor; and because some dividend rows have no
+declaration date, dividends are fetched by declaration date AND by ex-date, and
+prior-dividend history uses either date (an unseen prior dividend would fake an
+"initiation"). The event definitions and G1 criteria above are unchanged.
+
 Usage:
   python scripts/h3_dividends_splits.py --stage fetch
   python scripts/h3_dividends_splits.py --stage study --json-out outputs/research/h3_dividends_splits.json
@@ -73,43 +80,71 @@ G1_MIN_EXCESS = 0.50
 G1_MIN_YEAR_N = 30
 
 
-async def _fetch_all(path: str, date_field: str, start: date, end: date) -> list[dict]:
-    """Page through a Polygon reference endpoint one calendar month at a time
-    (small windows keep each query well under the page cap; cursor pagination
-    has silently truncated large listings before)."""
+_SHARDS = [(None, "A")] + [(chr(c), chr(c + 1)) for c in range(ord("A"), ord("Z"))] + [("Z", None)]
+PAGE = 1000
+
+
+async def _fetch_all(path: str, date_field: str, start: date, end: date, step_days: int = 1) -> list[dict]:
+    """Fetch a Polygon reference endpoint WITHOUT following `next_url`.
+
+    Observed 2026-09-19: on /v3/reference/dividends the cursor in `next_url`
+    does NOT carry the date filter — page two returned rows with no
+    declaration date at all, and a month-long pull ran away past 50 pages. So
+    each query covers a window small enough to fit one page; a window that
+    comes back FULL (exactly `PAGE` rows, i.e. possibly truncated) is re-split
+    by leading ticker character, and a full shard is an error rather than a
+    silent loss. Every returned row must carry a date inside its window."""
     client = PolygonClient()
     out: list[dict] = []
-    m = date(start.year, start.month, 1)
     async with httpx.AsyncClient(timeout=60) as cl:
-        while m <= end:
-            nxt = date(m.year + (m.month == 12), m.month % 12 + 1, 1)
-            url = BASE_URL + path
-            params = client._params(**{f"{date_field}.gte": str(m),
-                                       f"{date_field}.lt": str(min(nxt, end + timedelta(days=1))),
-                                       "limit": 1000})
-            pages = 0
-            while url:
-                resp = await _request_with_backoff(cl, url, params)
-                j = resp.json()
-                out.extend(j.get("results") or [])
-                url = j.get("next_url")
-                params = client._params() if url else {}
-                pages += 1
-                if pages > 50:
-                    raise SystemExit(f"refusing: >50 pages for {path} {m} — pagination runaway")
-            m = nxt
+
+        async def _one(lo: date, hi: date, gte: str | None = None, lt: str | None = None) -> list[dict]:
+            q = {f"{date_field}.gte": str(lo), f"{date_field}.lt": str(hi), "limit": PAGE}
+            if gte:
+                q["ticker.gte"] = gte
+            if lt:
+                q["ticker.lt"] = lt
+            resp = await _request_with_backoff(cl, BASE_URL + path, client._params(**q))
+            rows = resp.json().get("results") or []
+            bad = [r for r in rows if not (str(lo) <= str(r.get(date_field) or "")[:10] < str(hi))]
+            if bad:
+                raise SystemExit(f"refusing: {len(bad)} rows outside [{lo},{hi}) on {path} — filter ignored")
+            return rows
+
+        d = start
+        while d <= end:
+            hi = min(d + timedelta(days=step_days), end + timedelta(days=1))
+            rows = await _one(d, hi)
+            if len(rows) >= PAGE:
+                rows = []
+                for gte, lt in _SHARDS:
+                    part = await _one(d, hi, gte, lt)
+                    if len(part) >= PAGE:
+                        raise SystemExit(f"refusing: shard {gte}-{lt} on {d} is full ({PAGE}) — would truncate")
+                    rows.extend(part)
+            out.extend(rows)
+            d = hi
+    ids = [r.get("id") for r in out]
+    if len(ids) != len(set(ids)):
+        raise SystemExit("refusing: duplicate ids across windows")
     return out
 
 
 def stage_fetch() -> dict:
     CACHE.mkdir(parents=True, exist_ok=True)
     end = date.today()
-    divs = asyncio.run(_fetch_all("/v3/reference/dividends", "declaration_date", HISTORY_START, end))
-    splits = asyncio.run(_fetch_all("/v3/reference/splits", "execution_date", HISTORY_START, end))
+    # Twice: some dividend rows carry no declaration_date, so a declaration-date
+    # filter alone would never see them — and an unseen earlier dividend would
+    # turn a regular payer into a false "initiation". Union by id.
+    by_decl = asyncio.run(_fetch_all("/v3/reference/dividends", "declaration_date", HISTORY_START, end, step_days=1))
+    by_ex = asyncio.run(_fetch_all("/v3/reference/dividends", "ex_dividend_date", HISTORY_START, end, step_days=1))
+    divs = list({r["id"]: r for r in by_decl + by_ex}.values())
+    splits = asyncio.run(_fetch_all("/v3/reference/splits", "execution_date", HISTORY_START, end, step_days=7))
     (CACHE / "dividends.json").write_text(json.dumps(divs))
     (CACHE / "splits.json").write_text(json.dumps(splits))
     man = {"fetched_at": datetime.now(timezone.utc).isoformat(), "window": [str(HISTORY_START), str(end)],
-           "dividends": len(divs), "splits": len(splits),
+           "dividends": len(divs), "dividends_by_declaration_date": len(by_decl),
+           "dividends_by_ex_date": len(by_ex), "splits": len(splits),
            "sha256": {f: hashlib.sha256((CACHE / f).read_bytes()).hexdigest()
                       for f in ("dividends.json", "splits.json")}}
     (CACHE / "manifest.json").write_text(json.dumps(man, indent=1))
@@ -120,8 +155,14 @@ def stage_fetch() -> dict:
 def dividend_events(divs: list[dict], tickers: set[str]) -> list[dict]:
     """INITIATION and INCREASE events per the registered definitions. Only
     declarations on/before each event are consulted."""
+    # Every CD row counts as PRIOR history (keyed on its declaration date, or its
+    # ex-date when the declaration date is missing); only rows WITH a declaration
+    # date can be events, because the event date must be the announcement.
     rows = [d for d in divs if d.get("dividend_type") == "CD" and (d.get("currency") or "USD") == "USD"
-            and d.get("declaration_date") and d.get("cash_amount") and d.get("ticker")]
+            and (d.get("declaration_date") or d.get("ex_dividend_date")) and d.get("cash_amount")
+            and d.get("ticker")]
+    for d in rows:
+        d["_key"] = d.get("declaration_date") or d["ex_dividend_date"]
     by_t: dict[str, list[dict]] = {}
     for d in rows:
         t = str(d["ticker"]).replace(".", "-").upper()
@@ -129,16 +170,16 @@ def dividend_events(divs: list[dict], tickers: set[str]) -> list[dict]:
             by_t.setdefault(t, []).append(d)
     events = []
     for t, ds in by_t.items():
-        ds.sort(key=lambda d: (d["declaration_date"], d.get("ex_dividend_date") or ""))
+        ds.sort(key=lambda d: (d["_key"], d.get("ex_dividend_date") or ""))
         seen_decl: set[str] = set()
         for k, d in enumerate(ds):
-            decl = d["declaration_date"]
-            if decl in seen_decl:          # several payouts declared together: judge the first
+            decl = d.get("declaration_date")
+            if not decl or decl in seen_decl:   # no announcement date, or several declared together
                 continue
             seen_decl.add(decl)
             dd = date.fromisoformat(decl)
-            prior = [p for p in ds[:k] if p["declaration_date"] < decl
-                     and (dd - date.fromisoformat(p["declaration_date"])).days <= LOOKBACK_DAYS]
+            prior = [p for p in ds[:k] if p["_key"] < decl
+                     and (dd - date.fromisoformat(p["_key"])).days <= LOOKBACK_DAYS]
             if dd - timedelta(days=LOOKBACK_DAYS) < HISTORY_START:
                 continue                    # lookback not covered by fetched history
             kind = None
