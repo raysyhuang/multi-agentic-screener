@@ -37,8 +37,18 @@ against `generated_at` in the output.)
   windows of 5 and 20 sessions; miss threshold -5%; min_score 50; the mirror
   image POST_BEAT (surprise >= +10%).
 
+AMENDMENT 2026-09-19 (after the registered run, from Codex review — NOT part
+of the registered criteria above): the "Ordering" assumption is wrong. FMP gives
+a report date, not a release time; an after-close report dated D is NOT known at
+D's close, when the MR decision is made, so flagging same-day reports uses
+information the decision could not have had. `--known next_day` flags a report
+only from the session AFTER its date (sessions_since_report >= 1), which is
+look-ahead-free for every release time. It is reported as a correction found
+after the registered run, never as the registered verdict.
+
 Usage:
   python scripts/h2_mr_post_miss.py --json-out outputs/research/h2_mr_post_miss.json
+  python scripts/h2_mr_post_miss.py --known next_day --json-out outputs/research/h2_mr_post_miss_next_day.json
 """
 from __future__ import annotations
 
@@ -55,7 +65,7 @@ sys.path.insert(0, str(REPO))
 import pandas as pd  # noqa: E402
 
 from scripts.gen_mr_trades import LIVE_MR  # noqa: E402
-from scripts.h1_pead_wide import build_events  # noqa: E402
+from scripts.h1_pead_wide import build_events, earnings_fingerprint  # noqa: E402
 from scripts.h4_consecutive_beats import diff_cluster_ci  # noqa: E402
 from src.research import event_study as es  # noqa: E402
 from src.research.signal_backtest import run_model_backtest  # noqa: E402
@@ -94,15 +104,21 @@ def tag_trades(trades: pd.DataFrame, events: list[dict], panel: es.Panel) -> pd.
     return out
 
 
-def split(df: pd.DataFrame, *, miss: float, window: int, beat: bool = False):
-    recent = df["sessions_since_report"].notna() & (df["sessions_since_report"] <= window)
+def split(df: pd.DataFrame, *, miss: float, window: int, beat: bool = False, min_since: int = 0):
+    since = df["sessions_since_report"]
+    recent = since.notna() & (since >= min_since) & (since <= window)
     hit = (df["last_surprise"] >= -miss) if beat else (df["last_surprise"] <= miss)
     flag = recent & hit.fillna(False)
     return df[flag], df[~flag]
 
 
-def cell(df: pd.DataFrame, *, miss: float = MISS, window: int = WINDOW, beat: bool = False) -> dict:
-    a, b = split(df, miss=miss, window=window, beat=beat)
+MIN_SINCE = 0      # set from --known in main(); 0 = registered, 1 = next_day
+
+
+def cell(df: pd.DataFrame, *, miss: float = MISS, window: int = WINDOW, beat: bool = False,
+         min_since: int | None = None) -> dict:
+    a, b = split(df, miss=miss, window=window, beat=beat,
+                 min_since=MIN_SINCE if min_since is None else min_since)
     out = {"n_flag": int(len(a)), "n_rest": int(len(b)),
            "mean_flag": float(a["pnl_pct"].mean()) if len(a) else None,
            "mean_rest": float(b["pnl_pct"].mean()) if len(b) else None,
@@ -114,12 +130,25 @@ def cell(df: pd.DataFrame, *, miss: float = MISS, window: int = WINDOW, beat: bo
     return out
 
 
-def run_mr(prices: dict[str, pd.DataFrame], panel: es.Panel, min_score: float) -> pd.DataFrame:
-    res = run_model_backtest("mean_reversion", prices, {**LIVE_MR, "min_score": min_score})
-    rows = [{"ticker": t.ticker, "signal_date": pd.Timestamp(t.signal_date),
-             "entry_date": pd.Timestamp(t.entry_date), "pnl_pct": t.pnl_pct,
-             "score": t.score, "exit_reason": t.exit_reason} for t in res.trades]
-    df = pd.DataFrame(rows)
+def run_mr(prices: dict[str, pd.DataFrame], panel: es.Panel, min_score: float,
+           cache_key: str | None = None) -> pd.DataFrame:
+    """Live-faithful MR trades. Cached per (prices sha, min_score, LIVE_MR) so a
+    re-analysis with a different flag rule does not re-run a 20-minute backtest;
+    the cache is keyed on the inputs, so it cannot serve stale trades."""
+    cache = None
+    if cache_key:
+        tag = hashlib.sha256(json.dumps([cache_key, min_score, LIVE_MR], sort_keys=True).encode()).hexdigest()[:16]
+        cache = REPO / "outputs" / "research" / f"h2_mr_trades_{tag}.parquet"
+    if cache is not None and cache.exists():
+        df = pd.read_parquet(cache)
+    else:
+        res = run_model_backtest("mean_reversion", prices, {**LIVE_MR, "min_score": min_score})
+        rows = [{"ticker": t.ticker, "signal_date": pd.Timestamp(t.signal_date),
+                 "entry_date": pd.Timestamp(t.entry_date), "pnl_pct": t.pnl_pct,
+                 "score": t.score, "exit_reason": t.exit_reason} for t in res.trades]
+        df = pd.DataFrame(rows)
+        if cache is not None:
+            df.to_parquet(cache, index=False)
     ok = [(d in panel.eligible.index) and (t in panel.eligible.columns) and bool(panel.eligible.at[d, t])
           for t, d in zip(df["ticker"], df["entry_date"])]
     print(f"MR min_score={min_score:g}: {len(df)} trades, {sum(ok)} liquid as of the prior close")
@@ -130,7 +159,10 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--known", choices=["registered", "next_day"], default="registered")
     args = ap.parse_args()
+    global MIN_SINCE
+    MIN_SINCE = 1 if args.known == "next_day" else 0
 
     raw_bytes = Path(args.prices).read_bytes()
     combined = pd.read_parquet(args.prices)
@@ -139,11 +171,14 @@ def main() -> None:
     panel = es.build_panel(prices)
     events = build_events(panel, list(prices))
 
+    prices_sha = hashlib.sha256(raw_bytes).hexdigest()
     result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
-                    "prices_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+                    "known": args.known, "min_sessions_since_report": MIN_SINCE,
+                    "earnings": earnings_fingerprint(list(prices)),
+                    "prices_sha256": prices_sha,
                     "params": {"live_min_score": LIVE_MIN_SCORE, "miss": MISS, "window": WINDOW,
                                "mr": LIVE_MR}, "cells": {}}
-    live = tag_trades(run_mr(prices, panel, LIVE_MIN_SCORE), events, panel)
+    live = tag_trades(run_mr(prices, panel, LIVE_MIN_SCORE, prices_sha), events, panel)
     primary = cell(live)
     result["cells"]["primary_ms75_miss10_w10"] = primary
     by_year = {}
@@ -154,7 +189,7 @@ def main() -> None:
     for name, kw in (("w5", {"window": 5}), ("w20", {"window": 20}), ("miss5", {"miss": -5.0}),
                      ("post_beat10", {"beat": True})):
         result["cells"][f"desc_ms75_{name}"] = cell(live, **kw)
-    loose = tag_trades(run_mr(prices, panel, 50.0), events, panel)
+    loose = tag_trades(run_mr(prices, panel, 50.0, prices_sha), events, panel)
     result["cells"]["desc_ms50_miss10_w10"] = cell(loose)
 
     d = primary.get("diff") or {}

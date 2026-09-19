@@ -73,6 +73,39 @@ def cluster_boot_ci(x: list[float], groups: list, n_boot: int = 10_000,
     return means[int(0.025 * n_boot)], means[int(0.975 * n_boot)]
 
 
+def block_boot_ci(x: list[float], entry_dates: list, calendar: pd.Index, block: int = 20,
+                  n_boot: int = 10_000, seed: int = SEED) -> tuple[float, float]:
+    """Seeded circular MOVING-BLOCK bootstrap 95% CI of the observation-weighted
+    mean. Resamples runs of `block` consecutive calendar sessions, so events
+    whose holding windows overlap (adjacent entry dates share most of a 20-session
+    path) are resampled together. The date-cluster interval treats adjacent dates
+    as independent and is too narrow for overlapping windows; report both."""
+    if not x:
+        return (float("nan"), float("nan"))
+    pos = {pd.Timestamp(d): i for i, d in enumerate(calendar)}
+    n = len(calendar)
+    sums = [0.0] * n
+    cnts = [0] * n
+    for v, d in zip(x, entry_dates):
+        i = pos.get(pd.Timestamp(d))
+        if i is None:
+            continue
+        sums[i] += v
+        cnts[i] += 1
+    n_blocks = max(1, -(-n // block))
+    # Block sums via prefix sums over the circularly extended series.
+    ext_s = np.concatenate([np.asarray(sums), np.asarray(sums[:block])])
+    ext_c = np.concatenate([np.asarray(cnts, dtype=float), np.asarray(cnts[:block], dtype=float)])
+    ps = np.concatenate([[0.0], np.cumsum(ext_s)])
+    pc = np.concatenate([[0.0], np.cumsum(ext_c)])
+    rng = np.random.default_rng(seed)
+    starts = rng.integers(0, n, size=(n_boot, n_blocks))
+    tot = (ps[starts + block] - ps[starts]).sum(axis=1)
+    cnt = (pc[starts + block] - pc[starts]).sum(axis=1)
+    means = np.sort(tot[cnt > 0] / cnt[cnt > 0])
+    return float(means[int(0.025 * len(means))]), float(means[int(0.975 * len(means))])
+
+
 def market_regime(spy: pd.DataFrame, lag_sessions: int = 0) -> dict[str, str]:
     """{YYYY-MM-DD: bull|bear|choppy|unknown} from SPY SMA20/50, per date.
 
@@ -106,6 +139,7 @@ class Panel:
     """Wide (calendar x ticker) matrices sharing one index of session dates."""
     open: pd.DataFrame
     close: pd.DataFrame
+    volume: pd.DataFrame
     eligible: pd.DataFrame      # bool: liquid enough AS OF the prior close
     bucket: pd.DataFrame        # 0..N_BUCKETS-1 liquidity tercile among eligible, else NaN
 
@@ -141,7 +175,7 @@ def build_panel(prices: dict[str, pd.DataFrame], *, min_price: float = MIN_PRICE
     ranked = dollar_vol.where(eligible).rank(axis=1, pct=True)
     bucket = np.ceil(ranked * n_buckets) - 1
     bucket = bucket.clip(lower=0, upper=n_buckets - 1)
-    return Panel(open=o, close=c, eligible=eligible.fillna(False), bucket=bucket)
+    return Panel(open=o, close=c, volume=v, eligible=eligible.fillna(False), bucket=bucket)
 
 
 def forward_returns(panel: Panel, horizon: int) -> pd.DataFrame:
@@ -194,20 +228,30 @@ def event_excess(panel: Panel, events: list[dict], horizons: list[int]) -> pd.Da
     return pd.DataFrame(rows)
 
 
-def summarize_excess(df: pd.DataFrame, horizon: int, *, group: str = "entry_date") -> dict:
-    """n, mean excess, hit rate, iid CI and the (decisional) date-cluster CI."""
+def summarize_excess(df: pd.DataFrame, horizon: int, *, group: str = "entry_date",
+                     calendar: pd.Index | None = None) -> dict:
+    """n, mean excess, hit rate, iid CI, the date-cluster CI (the registered G1
+    interval) and — when a calendar is given — a moving-block CI with block =
+    horizon, which respects overlapping holding windows. Also reports how many
+    events had no exit bar (`n_censored`): those are dropped, not assumed flat,
+    and a delisting inside the window is one way to get there."""
     col = f"excess_{horizon}"
+    n_censored = int((df[f"fwd_{horizon}"].isna()).sum()) if f"fwd_{horizon}" in df else 0
     sub = df[df[col].notna()]
     x = sub[col].tolist()
     if not x:
-        return {"n": 0}
+        return {"n": 0, "n_censored": n_censored}
     lo, hi = boot_ci(x)
     clo, chi = cluster_boot_ci(x, [str(g)[:10] for g in sub[group]])
-    return {
-        "n": len(x), "n_dates": int(sub[group].astype(str).str[:10].nunique()),
+    out = {
+        "n": len(x), "n_censored": n_censored,
+        "n_dates": int(sub[group].astype(str).str[:10].nunique()),
         "mean_excess": float(np.mean(x)), "median_excess": float(np.median(x)),
         "hit": float(np.mean([v > 0 for v in x])),
         "mean_fwd": float(sub[f"fwd_{horizon}"].mean()),
         "mean_base": float(sub[f"base_{horizon}"].mean()),
         "iid_ci": [lo, hi], "cluster_ci": [clo, chi],
     }
+    if calendar is not None:
+        out["block_ci"] = list(block_boot_ci(x, list(sub[group]), calendar, block=horizon))
+    return out

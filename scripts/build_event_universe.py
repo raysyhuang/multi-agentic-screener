@@ -154,13 +154,40 @@ async def stage_candidates(years: float, min_price: float, min_dollar_vol: float
     return doc
 
 
-async def stage_earnings(tickers: list[str], rate_per_sec: float, max_tickers: int | None) -> dict:
+def _needs_refresh(path: Path, refresh_before: date | None) -> bool:
+    """A cached file is refetched when it was written before `refresh_before`
+    (e.g. the S&P caches from July), or when it holds a report at least 3 days
+    in the past whose actual EPS is still null and which was never updated after
+    its report date — FMP fills actuals in after the fact, so that row is stale,
+    not a true "no actual"."""
+    if not path.exists():
+        return True
+    if refresh_before is not None:
+        written = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date()
+        if written < refresh_before:
+            return True
+    try:
+        rows = json.loads(path.read_text())
+    except ValueError:
+        return True
+    today = date.today()
+    for r in rows:
+        d = str(r.get("date") or "")[:10]
+        if d and r.get("epsActual") is None and d <= str(today - timedelta(days=3)):
+            upd = str(r.get("lastUpdated") or "")[:10]
+            if not upd or upd < d:        # never updated since the report: stale, not "no actual"
+                return True
+    return False
+
+
+async def stage_earnings(tickers: list[str], rate_per_sec: float, max_tickers: int | None,
+                         refresh_before: date | None = None) -> dict:
     """Fill the shared earnings cache. A fetch ERROR is recorded and NOT cached
     (so it retries); an empty result IS cached as [] — 'FMP has no earnings for
     this symbol' is a fact about the symbol, and it is how funds that slipped
     through the type filter identify themselves."""
     EARNINGS_CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    todo = [t for t in tickers if not (EARNINGS_CACHE_DIR / f"{t}.json").exists()]
+    todo = [t for t in tickers if _needs_refresh(EARNINGS_CACHE_DIR / f"{t}.json", refresh_before)]
     if max_tickers:
         todo = todo[:max_tickers]
     print(f"earnings: {len(tickers) - len(todo)} cached, {len(todo)} to fetch "
@@ -238,6 +265,8 @@ def main() -> None:
     ap.add_argument("--min-dollar-vol", type=float, default=2_000_000.0)
     ap.add_argument("--fmp-rate", type=float, default=4.0, help="FMP calls per second (Starter = 300/min)")
     ap.add_argument("--max-tickers", type=int, default=None, help="smoke-run cap for the earnings stage")
+    ap.add_argument("--refresh-before", type=date.fromisoformat, default=None,
+                    help="refetch any earnings cache file written before this date (YYYY-MM-DD)")
     args = ap.parse_args()
 
     if args.stage in ("candidates", "all"):
@@ -246,7 +275,7 @@ def main() -> None:
         cand = json.loads(CANDIDATES_JSON.read_text())
     tickers = cand["tickers"]
     if args.stage in ("earnings", "all"):
-        asyncio.run(stage_earnings(tickers, args.fmp_rate, args.max_tickers))
+        asyncio.run(stage_earnings(tickers, args.fmp_rate, args.max_tickers, args.refresh_before))
     if args.stage in ("prices", "all"):
         stage_prices(tickers, args.years)
 

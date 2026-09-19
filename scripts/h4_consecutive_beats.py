@@ -54,31 +54,41 @@ sys.path.insert(0, str(REPO))
 import pandas as pd  # noqa: E402
 
 from scripts.h1_pead_wide import (  # noqa: E402
-    G1_MIN_YEAR_N, MIN_SURPRISE, PRIMARY_H, build_events, by_year, g1_verdict,
+    G1_MIN_YEAR_N, MIN_SURPRISE, PRIMARY_H, build_events, by_year, earnings_fingerprint, g1_verdict,
+    report_rows,
 )
+from src.signals.post_earnings_drift import eps_surprise_pct  # noqa: E402
 from src.research import event_study as es  # noqa: E402
 from src.research.sp500_tickers import SP500_TICKERS  # noqa: E402
 
 PREV_GAP_DAYS = (60, 130)
 
 
-def tag_previous(events: list[dict]) -> list[dict]:
-    """Attach `prev_surprise` = the same ticker's immediately preceding report's
-    surprise if it falls 60-130 calendar days earlier, else None. Uses only
-    reports dated before the event — nothing forward-looking."""
-    by_t: dict[str, list[dict]] = {}
+def tag_previous(events: list[dict], history: dict[str, list[tuple[str, float | None]]] | None = None) -> list[dict]:
+    """Attach `prev_surprise` = the same ticker's immediately preceding REPORT's
+    surprise if it falls 60-130 calendar days earlier, else None.
+
+    `history` maps ticker -> every report as (ISO date, surprise-or-None), from
+    the FULL earnings history — not just the events inside the price window, so
+    the first in-window event still finds its predecessor. A preceding report
+    whose surprise is unknown is still the predecessor (it is a boundary, not
+    skipped), which leaves prev_surprise None. Without `history` the events
+    themselves are used (the registered behaviour). Only earlier reports are
+    ever consulted."""
+    if history is None:
+        history = {}
+        for ev in events:
+            history.setdefault(ev["ticker"], []).append((ev["report_date"], ev["surprise"]))
+    hist = {t: sorted(v) for t, v in history.items()}
     for ev in events:
-        by_t.setdefault(ev["ticker"], []).append(ev)
-    for evs in by_t.values():
-        evs.sort(key=lambda e: e["report_date"])
-        for k, ev in enumerate(evs):
-            ev["prev_surprise"] = None
-            if k == 0:
-                continue
-            prev = evs[k - 1]
-            gap = (date.fromisoformat(ev["report_date"]) - date.fromisoformat(prev["report_date"])).days
-            if PREV_GAP_DAYS[0] <= gap <= PREV_GAP_DAYS[1]:
-                ev["prev_surprise"] = prev["surprise"]
+        ev["prev_surprise"] = None
+        prior = [h for h in hist.get(ev["ticker"], []) if h[0] < ev["report_date"]]
+        if not prior:
+            continue
+        pdate, psurp = prior[-1]
+        gap = (date.fromisoformat(ev["report_date"]) - date.fromisoformat(pdate)).days
+        if PREV_GAP_DAYS[0] <= gap <= PREV_GAP_DAYS[1]:
+            ev["prev_surprise"] = psurp
     return events
 
 
@@ -113,14 +123,22 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
+    ap.add_argument("--predecessors", choices=["window", "full"], default="full",
+                    help="window = the registered run's lookup (events inside the price window); "
+                         "full = every report in the earnings history (Codex fix)")
     args = ap.parse_args()
 
     raw_bytes = Path(args.prices).read_bytes()
     combined = pd.read_parquet(args.prices)
     prices = {t: g.drop(columns=["_ticker"]) for t, g in combined.groupby("_ticker") if t != "SPY"}
     panel = es.build_panel(prices)
-    # ALL reports are needed to find each event's predecessor, so tag before filtering.
-    events = tag_previous(build_events(panel, list(prices)))
+    events = build_events(panel, list(prices), timing=args.timing)
+    history = None
+    if args.predecessors == "full":
+        history = {t: [(str(r["date"])[:10], eps_surprise_pct(r.get("epsActual"), r.get("epsEstimated")))
+                       for r in report_rows(t)] for t in prices}
+    events = tag_previous(events, history)
     ex = es.event_excess(panel, events, [PRIMARY_H])
     ex["entry_date"] = pd.to_datetime(ex["entry_date"])
     sp500 = {t.replace(".", "-").upper() for t in SP500_TICKERS}
@@ -133,11 +151,13 @@ def main() -> None:
     first = beats[beats["prev_surprise"].notna() & (beats["prev_surprise"] < MIN_SURPRISE)]
 
     result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
+                    "timing": args.timing, "predecessors": args.predecessors,
                     "prices_sha256": hashlib.sha256(raw_bytes).hexdigest(),
+                    "earnings": earnings_fingerprint(list(prices)),
                     "n_beats_eligible": int(len(beats)), "n_no_previous_report": int(len(no_prev)),
                     "cells": {}}
     for name, sub in (("consecutive", cons), ("first", first)):
-        cell = {"all": es.summarize_excess(sub, PRIMARY_H), "by_year": by_year(sub, PRIMARY_H),
+        cell = {"all": es.summarize_excess(sub, PRIMARY_H, calendar=panel.dates), "by_year": by_year(sub, PRIMARY_H),
                 "sp500": es.summarize_excess(sub[sub["in_sp500"]], PRIMARY_H),
                 "non_sp500": es.summarize_excess(sub[~sub["in_sp500"]], PRIMARY_H)}
         result["cells"][name] = cell

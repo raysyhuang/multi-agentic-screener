@@ -1,105 +1,92 @@
-# H1 — PEAD outside the S&P 500: REJECTED at G1 (2026-09-19)
+# H1 — PEAD outside the S&P 500: REJECTED at G1 (2026-09-19, v2 after Codex review)
 
-**Verdict: REJECTED.** On the survivorship-free universe, the pre-registered primary cohort (E1-gated beats on names outside the S&P 500) has a 20-session excess return of **+0.19%**, with a date-cluster 95% CI of **[−0.58, +0.95]**. The pass rule required at least +0.50% and a CI lower bound above 0. The neglected-beat variant is **−0.22%**, CI [−1.46, +1.02].
+**Verdict: REJECTED.** The pre-registered primary cohort was E1-gated beats on names outside the S&P 500. It fails under every variant we checked:
 
-**The consequence goes further than H1.** Live PEAD trades mostly outside the S&P 500. Measured on the whole universe live samples from, E1 is **+0.36%**, CI [−0.32, +1.03], and neglected-beat is **+0.08%**, CI [−1.04, +1.22] (post-hoc, § 4). The +1.8 to +2.4%/trade figures that justified the paper sleeve came from a current-S&P-500 sample replayed backwards. They do not describe the population the sleeve trades.
+| Run | Non-S&P E1, 20-session excess | Date-cluster CI | Moving-block CI |
+|---|---|---|---|
+| Registered run (v1, `h1_pead_wide.json`) | +0.19% (n=1,797) | [−0.58, +0.95] | — |
+| Refreshed earnings, registered timing (v2) | +0.21% (n=1,810) | [−0.56, +0.97] | [−0.66, +1.11] |
+| Refreshed earnings, look-ahead-free timing (v2) | +0.38% (n=2,191) | [−0.12, +0.89] | [−0.32, +1.08] |
+
+G1 required an excess of at least +0.50% and a cluster CI lower bound above 0. No row meets either.
+
+**What this does and does not say about the live PEAD sleeve.** At the 20-session hold the sleeve uses, PEAD on the broad research universe is small and not established. With a live-like liquidity floor it is essentially zero. At a 60-session horizon it is positive under both timing rules and both bootstrap methods, but that was found after the fact (§ 4).
+
+The v1 version of this document said the live-traded population earns +0.2–0.4% and that S&P-only evidence carries a measured +0.2% survivorship penalty. The Codex review showed neither is established, and both are withdrawn (§ 5).
 
 ## 1. Pre-registration
 
-The criteria are in the docstring of `scripts/h1_pead_wide.py`. That file was committed in `5f6235a` and pushed at **2026-09-19T04:45:51Z**. At that time the wide price parquet did not exist; its provenance shows `generated_at` 2026-09-19T05:06:08Z, and the run itself happened after that. Verify with `git log --format='%h %ad' --date=iso -- scripts/h1_pead_wide.py`.
+The criteria are in the docstring of `scripts/h1_pead_wide.py`. It was committed in `5f6235a` and pushed at 2026-09-19T04:45:51Z, before the wide price parquet was generated at 05:06:08Z. That ordering covers the recorded artifacts only. It is not proof that no earlier computation occurred.
 
-- **Primary cohort.** E1-gated beats: EPS surprise ≥ 10%, revenue surprise ≥ 2%, and a signal-bar reaction in [+2%, +12%]. Only names not in the S&P 500 list are included, and each must be liquid as of the prior close (price ≥ $5, 20-session mean dollar volume ≥ $2M). These are the live gates, unchanged.
-- **Metric.** Excess return from the entry-bar open to the close 20 sessions later, measured against the same-day, same-liquidity-tercile mean of all eligible names.
-- **G1 pass condition.** All three of the following:
-  - (a) mean excess ≥ +0.50%;
+- **Primary cohort.** E1 beats (EPS surprise ≥10%, revenue surprise ≥2%, reaction in [+2%, +12%]), non-S&P, liquid as of the prior close. Liquid means price ≥ $5 and 20-session mean dollar volume ≥ $2M.
+- **Metric.** 20-session excess over the same-day, same-liquidity-tercile base rate.
+- **G1 conditions.**
+  - (a) mean ≥ +0.50%;
   - (b) date-cluster CI lower bound > 0;
-  - (c) positive in ≥ 2 of the 3 years with n ≥ 30.
+  - (c) positive in at least 2 years with n ≥ 30. The docstring says "3 calendar years"; the code evaluates the 4 observed years.
 
-## 2. Result (`outputs/research/h1_pead_wide.json`)
+## 2. Changes after the Codex review, and why
 
-| Universe | Cohort | n | Entry dates | Excess 20d | Cluster 95% CI | Hit |
-|---|---|---|---|---|---|---|
-| **non-S&P** | **E1 (primary)** | **1,797** | 414 | **+0.19%** | **[−0.58, +0.95]** | 48.4% |
-| non-S&P | E1 + neglected | 614 | 264 | −0.22% | [−1.46, +1.02] | 45.1% |
-| non-S&P | raw beat ≥10% | 11,776 | 654 | +0.23% | [−0.09, +0.55] | 48.0% |
-| S&P 500 | E1 | 308 | 166 | +1.36% | [+0.32, +2.47] | 52.6% |
-| S&P 500 | E1 + neglected | 88 | 69 | +2.15% | [+0.12, +4.69] | 53.4% |
-| S&P 500 | raw beat ≥10% | 1,587 | 350 | +0.77% | [+0.27, +1.29] | 51.1% |
+Each change is recorded as an amendment in the script's docstring. None of them changes the registered criteria.
 
-G1 on the primary cohort:
+| Defect found | Fix | Effect |
+|---|---|---|
+| FMP gives a report date but no release time, and neither data plan has release times (Polygon's Benzinga feed returns 403). For an after-close report, the registered "reaction" is the wrong day. That can pass E1 on noise as well as reject real beats. | `--timing volume`: the reaction bar is whichever of the report-date session and the next one traded more volume. Entry is always the session after that pair, which makes a pre-market report enter one day late. This is look-ahead-free. | Primary rises from +0.21% to +0.38%; still fails |
+| The earnings cache was never refreshed. The S&P files dated from July, so no S&P name had a report after 07-19. | Refetched 687 stale files (`--refresh-before 2026-09-19`). Output JSONs now carry an earnings fingerprint (4,721 files, sha `5262c738…`). | S&P E1 goes from n=308 to n=335 |
+| Adjacent entry dates share most of a 20-session path, and the date-cluster bootstrap resamples them as independent. | Added a circular moving-block CI with block length equal to the horizon, reported next to the cluster CI. | Wider intervals, most visibly for raw beats |
+| Events without an exit bar were dropped silently. | `n_censored` is now reported per cell, e.g. 25 for whole-universe E1. The cause could be a delisting, a ticker change or data loss; these are not separated. | "Survivorship-free" is now "survivorship-reduced" |
 
-| Condition | Result |
-|---|---|
-| (a) mean excess ≥ +0.50% | ✗ |
-| (b) cluster CI lower bound > 0 | ✗ |
-| (c) positive in ≥ 2 of 3 years | ✓ (3 of 4 years positive: 2023 −0.88, 2024 +0.42, 2025 +0.29, 2026 +0.22) |
-| **PASS** | **false** |
+## 3. Results, refreshed earnings (`h1_pead_wide_v2_{registered,volume}.json`)
 
-Supply: the non-S&P E1 cohort produces about 500–590 events a year, roughly 5× the S&P rate. Supply is not the constraint; edge is.
+The E1 rows are the ones the paper sleeve depends on.
 
-**Descriptive only — none of these can rescue the verdict:**
-- By liquidity tercile, non-S&P E1 is:
-  - least liquid: +1.25%, CI [−0.07, +2.59];
-  - middle: +0.27%;
-  - most liquid: **−1.71%**, CI [−3.10, −0.28].
-- The 60-session horizon is stronger than the 20-session horizon in most cells.
+| Cell, excess_20 | Registered timing | Look-ahead-free timing |
+|---|---|---|
+| non-S&P E1 (primary) | +0.21%, cluster [−0.56, +0.97] | +0.38%, cluster [−0.12, +0.89] |
+| non-S&P E1 + neglected | −0.21%, [−1.45, +1.01] | +0.22%, [−0.61, +1.03] |
+| S&P E1 | +1.36%, [+0.36, +2.38], block [+0.27, +2.47] | +1.35%, [+0.44, +2.30], block [+0.24, +2.64] |
+| **All names, E1** | +0.39%, [−0.29, +1.07], block [−0.35, +1.14] | +0.53%, [+0.10, +0.96], **block [−0.06, +1.13]** |
+| All names, E1, live-like liquidity (sensitivity) | **−0.14%**, [−0.94, +0.66] | +0.25%, [−0.29, +0.78] |
+| All names, raw beat ≥10% | +0.29%, [+0.01, +0.56], block [−0.18, +0.72] | +0.38%, [+0.12, +0.63], block [−0.05, +0.77] |
 
-## 3. Reproduction check
+"Live-like liquidity" means 20-session mean share volume ≥ 500k and mean dollar volume ≥ $10M, as of the prior close. It does **not** reproduce the live universe's cap and tiering. It only asks whether the result depends on the thinnest names.
 
-The S&P 500 subset reproduces the published event counts.
-- On the 504-name S&P cache: raw 1,550 vs the published 1,558–1,574; E1 301 vs the published 306.
-- On the wide panel the counts are 1,587 and 308. The price window runs to 2026-09-18, and the base rate now includes every eligible name.
+## 4. Post-hoc leads
 
-The toolkit is therefore counting the same events the engine backtests counted. The difference is the comparison: a same-day, same-bucket base rate rather than absolute return. The bull tape alone was worth +1.8 to +2.2% per 20 sessions to an average name in this window.
+These were found after the verdict. They are registered as leads, not results.
 
-## 4. Post-hoc decomposition (`scripts/h1_decomposition.py`, `outputs/research/h1_decomposition.json`)
+| Lead | Registered timing | Look-ahead-free timing |
+|---|---|---|
+| **All names E1, 60-session horizon** | +1.28%, cluster [+0.23, +2.34], block [+0.40, +2.27] | +1.32%, cluster [+0.48, +2.15], block [+0.44, +2.19] |
+| All names raw beat, 60-session | +0.89%, block [+0.15, +1.62] | +0.87%, block [+0.20, +1.56] |
+| All names E1, least-liquid tercile, 20-session | +1.22%, cluster [−0.08, +2.52] | +1.32%, cluster [+0.53, +2.12] |
 
-This was written after the verdict. It is descriptive, and every cut counts as a variant.
+The 60-session result is the one that holds up. It is positive under both timing rules and both bootstraps, and both CIs exclude zero.
 
-1. **Current S&P 500 membership is look-ahead.** With no event at all, today's S&P 500 members beat the same-day matched base by **+0.19% per 20 sessions** (1.21M name-days; positive in 2023, 2024 and 2026). Non-members come in at −0.04%. Replaying today's member list backwards selects the names that went on to do well, so every S&P-only backtest in this repo carries this tailwind.
-2. **The population live trades.** On the whole survivorship-free universe:
+It is still a lead. It was one of several horizons looked at after the verdict. It also comes from the same 3-year window as everything else here, so it has had no out-of-sample test. The paper sleeve holds 20 sessions. Changing the hold would be a live-config change that needs its own registration and forward data.
 
-   | Cohort | n | Excess 20d | Cluster 95% CI |
-   |---|---|---|---|
-   | E1 | 2,105 | +0.36% | [−0.32, +1.03] |
-   | E1 + neglected | 702 | +0.08% | [−1.04, +1.22] |
-   | raw beat ≥10% | 13,363 | +0.29% | [+0.01, +0.57] |
+## 5. Withdrawn from v1
 
-   Raw beat's 60-session excess is +0.93%, CI [+0.39, +1.46].
-3. **Member vs member.** Measured against an S&P-only same-day base, S&P E1 is +1.11% with CI [−0.00, +2.29], and neglected is +1.79% with CI [−0.22, +4.36]. Neither CI clears zero.
-4. **Same liquidity tercile, opposite signs.** In the most liquid tercile, S&P E1 is +1.31% and non-S&P E1 is −1.71% with a CI entirely below zero. The large names that are *not* current members are mostly names that fell out of, or never reached, the index. The sign flip is consistent with membership look-ahead. It cannot be proven without a point-in-time constituent list, which the halted PIT-universe project was meant to provide.
-
-**Leads, to be re-registered only as new hypotheses and tested on data not used here:**
-- The least-liquid tercile: E1 +1.25%; raw beat +0.83%, CI [+0.32, +1.34].
-- The 60-session horizon.
-
-## 5. What this changes
-
-- **PEAD paper sleeve.** The honest expectation for the live-traded population is roughly **+0.2 to +0.4% excess per 20 sessions, not distinguishable from zero**. It is not the +0.9% forward expectation or the +1.8 to +2.4% backtest figure. The measurement window opened 2026-09-19 under `docs/paper_sleeve_acceptance_criteria.md`, and its Tier-2 bar (cluster CI lower bound > 0 on alpha) is unchanged. This finding makes clearing that bar unlikely, and says so in advance.
-- **Every S&P-only backtest in this repo is survivorship-biased by about +0.2% per 20 sessions**, before any strategy effect.
+- **"The live-traded population earns +0.2–0.4%."** The study averages every name passing a $5 / $2M screen. The live universe additionally applies a 500k-share floor, a 1,000-name cap and dollar-volume tiers. With a live-like floor, E1 is −0.14% under registered timing and +0.25% under look-ahead-free timing. No historical reconstruction of live selection exists, so no live expectancy is claimed.
+- **"S&P-only backtests carry a measured +0.2% survivorship bias."** With no event at all, current S&P members beat the same-day matched base by +0.19% per 20 sessions (379,030 valid observations; v1 reported 1.21M because it counted NaNs). The moving-block CI on that figure is **[−0.14, +0.53]**. In addition, 98.4% of member observations sit in the top liquidity tercile, and a tercile is not a size or factor match. The warning stands: replaying today's membership backwards uses future information. The magnitude of the bias is not identified.
 
 ## 6. Caveats
 
-- **Timing.** FMP does not say whether a report came pre-market or after the close. For an after-close report, the signal bar predates the news and its "reaction" is the wrong day. This discards some real E1 beats; it cannot manufacture them.
-- **Universe.** The candidate universe comes from quarter-start liquidity sampling (types CS/ADRC, 4,723 names, S&P 500 coverage 100%). A name that was liquid only between sample dates is missing. The precise eligibility screen is the per-date, prior-close screen in `src/research/event_study.build_panel`.
-- **Earnings coverage.** 4,696 of 4,723 names are cached. 104 are empty (funds with no earnings). 27 fetch failures are recorded and were not cached (`outputs/research/event_universe_earnings_manifest.json`).
-- **No execution model.** This is Stage-0 excess return: open to close, no stops, no costs. G2 was never reached.
+- **Timing.** Neither timing rule is the truth; release timestamps would be. The look-ahead-free rule gives up a day on pre-market reports. The registered rule mislabels after-close reports.
+- **Universe.** 4,723 CS/ADRC names, sampled at quarter-start liquidity using Polygon's point-in-time listing with `date=`. S&P coverage is 100%. SIVB, FRC and SBNY failed before the window started. Names that were liquid only between sample dates are missing.
+- **Earnings.** 4,721 files. 105 are empty (funds). 4 refetch failures are recorded in `event_universe_earnings_manifest.json`.
+- **Scope.** This is Stage 0: open-to-close excess with no stops and no costs. G2 was never reached.
 
 ## Provenance
 
-- **Prices.** `outputs/research/ohlcv_polygon_wide_3y.parquet`:
-  - sha256 `2d04af2db42ab0519614522a7e8cbd0f38d9532c01b26c34f4e3933e07d25e0c`
-  - 4,722 tickers, 3,219,830 rows, 2023-07-10 → 2026-09-18
-  - provider `polygon`, fallback `null`, requested 4,724, returned 4,722
-  - missing: `AXIAPC`, `GEVW` (both "empty_or_malformed_response")
-  - Sidecar: `.provenance.json`
-- **Earnings.** FMP `/stable/earnings?symbol=` per ticker, cached in `data/cache/earnings/`.
-- **Candidates.** `outputs/research/event_universe_candidates.json`, built by `scripts/build_event_universe.py`.
+- **Prices.** `ohlcv_polygon_wide_3y.parquet`, sha256 `2d04af2db42ab0519614522a7e8cbd0f38d9532c01b26c34f4e3933e07d25e0c`, provider `polygon` with no fallback. It contains 4,722 of the 4,724 requested names; AXIAPC and GEVW are missing.
+- **Earnings.** FMP `/stable/earnings?symbol=`. v2 fingerprint `5262c738a5f4…`.
 
 ## Reproduce
 
 ```bash
-python scripts/build_event_universe.py --stage all
-python scripts/h1_pead_wide.py --json-out outputs/research/h1_pead_wide.json
-python scripts/h1_decomposition.py --json-out outputs/research/h1_decomposition.json
+python scripts/build_event_universe.py --stage all --refresh-before 2026-09-19
+python scripts/h1_pead_wide.py --timing registered --json-out outputs/research/h1_pead_wide_v2_registered.json
+python scripts/h1_pead_wide.py --timing volume     --json-out outputs/research/h1_pead_wide_v2_volume.json
+python scripts/h1_decomposition.py --timing volume --json-out outputs/research/h1_decomposition_v2_volume.json
 ```

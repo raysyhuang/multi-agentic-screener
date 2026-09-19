@@ -44,13 +44,14 @@ def unconditional_excess(panel: es.Panel, fwd: pd.DataFrame, base: pd.DataFrame,
     f = fwd[cols].where(panel.eligible[cols])
     b = panel.bucket[cols]
     parts = [f.where(b == k).sub(base[k], axis=0).stack() for k in base.columns]
-    return pd.concat(parts)
+    return pd.concat(parts).dropna()   # pandas 3 stack() keeps NaNs; they are not observations
 
 
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
     args = ap.parse_args()
 
     raw = Path(args.prices).read_bytes()
@@ -63,26 +64,40 @@ def main() -> None:
     sp_cols = [c for c in fwd.columns if c in sp]
     other_cols = [c for c in fwd.columns if c not in sp]
 
-    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
+    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "timing": args.timing,
                  "prices_sha256": hashlib.sha256(raw).hexdigest(), "posthoc": True}
 
     u_sp = unconditional_excess(panel, fwd, base, sp_cols)
     u_ot = unconditional_excess(panel, fwd, base, other_cols)
+    sp_daily = u_sp.groupby(level=0).agg(["sum", "count"])
+    x_sp = []
+    d_sp = []
+    for d, row in sp_daily.iterrows():   # one value per date: that date's mean excess across members
+        x_sp.append(row["sum"] / row["count"])
+        d_sp.append(d)
+    q1_block = es.block_boot_ci(x_sp, d_sp, panel.dates, block=H)
+    sp_bucket_share = (panel.bucket[sp_cols].where(panel.eligible[sp_cols])
+                       .stack().value_counts(normalize=True).sort_index())
     yrs = u_sp.index.get_level_values(0).year
     out["q1_unconditional_excess20"] = {
-        "sp500_members": {"mean": float(u_sp.mean()), "n_cells": int(len(u_sp)),
+        "sp500_members": {"mean": float(u_sp.mean()), "n_obs": int(len(u_sp)),
+                          "block_ci_of_daily_means": list(q1_block),
+                          "share_by_liquidity_bucket": {int(k): float(v) for k, v in sp_bucket_share.items()},
                           "by_year": {int(y): float(v) for y, v in u_sp.groupby(yrs).mean().items()}},
-        "non_members": {"mean": float(u_ot.mean()), "n_cells": int(len(u_ot))},
+        "non_members": {"mean": float(u_ot.mean()), "n_obs": int(len(u_ot))},
     }
-    print(f"Q1 no-event excess_20: S&P members {u_sp.mean():+.3f}% | non-members {u_ot.mean():+.3f}%")
+    print(f"Q1 no-event excess_20: S&P members {u_sp.mean():+.3f}% (n={len(u_sp):,}, block CI of daily means "
+          f"[{q1_block[0]:+.3f},{q1_block[1]:+.3f}]; bucket shares {sp_bucket_share.round(3).to_dict()}) | "
+          f"non-members {u_ot.mean():+.3f}% (n={len(u_ot):,})")
 
-    ev = build_events(panel, list(prices))
+    ev = build_events(panel, list(prices), timing=args.timing)
     ex = es.event_excess(panel, ev, [H, 60])
     ex["entry_date"] = pd.to_datetime(ex["entry_date"])
     ex = ex[ex["eligible"]]
     q2: dict = {}
     for name, sub in cohorts(ex).items():
-        q2[name] = {"h20": es.summarize_excess(sub, H), "h60": es.summarize_excess(sub, 60),
+        q2[name] = {"h20": es.summarize_excess(sub, H, calendar=panel.dates),
+                    "h60": es.summarize_excess(sub, 60, calendar=panel.dates),
                     "by_bucket_h20": {int(b): es.summarize_excess(g, H) for b, g in sub.groupby("bucket")}}
         s = q2[name]["h20"]
         print(f"Q2 whole universe {name:13s} n={s['n']:5d} excess20={s['mean_excess']:+.3f} "

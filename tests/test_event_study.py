@@ -106,3 +106,22 @@ def test_market_regime_lag_shifts_labels_by_one_completed_session():
     keys = list(same)
     assert lagged[keys[0]] == "unknown"
     assert all(lagged[keys[i]] == same[keys[i - 1]] for i in range(1, len(keys)))
+
+
+def test_block_ci_moves_overlapping_dates_together():
+    """Adjacent dates with the same sign move as one unit in a block resample, so
+    a run of positive days followed by a run of negative days yields a WIDER
+    interval than treating each date as independent."""
+    cal = pd.to_datetime(pd.bdate_range("2026-01-05", periods=200))
+    x = [1.0] * 100 + [-1.0] * 100
+    dates = list(cal)
+    blo, bhi = es.block_boot_ci(x, dates, cal, block=20, n_boot=4000)
+    clo, chi = es.cluster_boot_ci(x, [str(d)[:10] for d in dates], n_boot=4000)
+    assert blo < clo and bhi > chi
+    assert blo < 0 < bhi
+
+
+def test_block_ci_collapses_for_a_constant_series():
+    cal = pd.to_datetime(pd.bdate_range("2026-01-05", periods=60))
+    lo, hi = es.block_boot_ci([0.7] * 60, list(cal), cal, block=10, n_boot=500)
+    assert lo == pytest.approx(0.7) and hi == pytest.approx(0.7)

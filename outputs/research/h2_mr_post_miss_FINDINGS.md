@@ -1,64 +1,60 @@
-# H2 — MR avoid-filter after an earnings miss: REJECTED at G1 (2026-09-19)
+# H2 — MR avoid-filter after an earnings miss: REJECTED at G1 (2026-09-19, v2 after Codex review)
 
-**Verdict: REJECTED.** At the live threshold (min_score 75), MR trades entered within 10 sessions of a ≤ −10% EPS miss do lose money: **−0.30% per trade** (n=1,167). They underperform the other MR trades by **−0.28 percentage points**, and the difference is negative in all four years.
+**Verdict: REJECTED — the sign is right, but the effect is not established.** The hypothesis was that MR trades entered shortly after a ≤ −10% EPS miss do worse than other MR trades. At live selectivity (min_score 75) they do lose money, and they underperform the rest in every year. But condition (b) requires the date-cluster CI upper bound of the difference to be below 0, and it is not in any run:
 
-The pre-registered test also required the difference to be established: the date-cluster 95% CI upper bound had to be below 0. It is **+0.08**. The rule says in advance that "right sign, CI crosses zero" is a fail, because that is exactly how the short-interest and days-to-cover filters looked before they reversed. So the verdict is REJECTED.
+| Run | Post-miss − rest | Date-cluster CI |
+|---|---|---|
+| Registered run (v1) | −0.28pp (n=1,167) | [−0.64, +0.08] |
+| v2, refreshed earnings, registered "known" rule | −0.28pp (n=1,185) | [−0.65, +0.09] |
+| v2, look-ahead-free "known next day" rule | −0.29pp (n=1,084) | **[−0.61, +0.02]** |
+
+**Codex's review found the registered rule leaks information.** The rule treats a report as known on its own date. FMP gives a date but no release time, so an after-close report is not yet known at that day's close, which is when the MR decision is made.
+
+With the leak removed on the review's pre-refresh data, H2 **passed** narrowly: CI [−0.63, −0.007]. After the stale earnings cache was refreshed, the same leak-free rule gives an upper bound of **+0.02**, and H2 fails again.
+
+A verdict that flips on refreshing a data cache is not an established effect in either direction. H2 stays REJECTED under its pre-registered rule, which names "right sign, CI crosses zero" as a failure in advance.
 
 ## Pre-registration
 
-The criteria are in the docstring of `scripts/h2_mr_post_miss.py`, committed in `d44fc9c` and pushed at **2026-09-19T05:14:02Z**. The first run started after that; `generated_at` in `outputs/research/h2_mr_post_miss.json` is later. Unlike H1 and H4, the wide price parquet already existed at commit time, and the docstring says so. What the timestamp proves is that no H2 computation had run.
+- The criteria are in the docstring of `scripts/h2_mr_post_miss.py`. It was committed in `d44fc9c` and pushed at 2026-09-19T05:14:02Z, before any H2 computation.
+- The "known next day" rule is a post-review amendment recorded in the same docstring. It is not a registered criterion.
 
-**Trades.** MR is taken from `scripts/gen_mr_trades.LIVE_MR` at **min_score 75** (the live selectivity) and run through the unified exit engine with gap-through fills. A trade is kept only if the name was liquid as of the prior close. That leaves 48,815 of 56,587 trades on 4,722 names.
+## Results, v2 (`h2_mr_post_miss_v2_{registered,next_day}.json`)
 
-**POST_MISS.** The ticker's most recent report on or before the MR signal had an EPS surprise ≤ −10%, and the MR signal came ≤ 10 sessions after that report's signal bar.
+**Condition by condition:**
 
-## Result
-
-| Test | Value | Pass? |
+| Condition | Registered rule | Next-day rule |
 |---|---|---|
-| (a) n(POST_MISS) ≥ 30 | 1,167 | ✓ |
-| (b) post-miss − rest, cluster CI upper bound < 0 | −0.28pp, CI **[−0.64, +0.08]** | ✗ |
-| (c) mean pnl(POST_MISS) < 0 | −0.30%/trade (win rate 48.7% vs 50.9%) | ✓ |
-| (d) negative in ≥ 2 of the years with n ≥ 10 | 4/4 (2023 n=10: −5.66; 2024: −0.17; 2025: −0.23; 2026: −0.32) | ✓ |
-| **PASS** | | **false** |
+| (a) n ≥ 30 | 1,185 ✓ | 1,084 ✓ |
+| (b) diff CI upper bound < 0 | +0.09 ✗ | +0.02 ✗ |
+| (c) flagged mean < 0 | −0.29% ✓ | −0.31% ✓ |
+| (d) negative in ≥ 2 years (n ≥ 10) | 4/4 ✓ | 3/3 ✓ |
 
-## Descriptive cells
+**Descriptive cells, next-day rule** (variants; none can rescue a fail):
 
-These cells are counted as variants. None of them can rescue the verdict.
-
-| Cell | n flagged | Flagged mean | Difference | Cluster 95% CI |
-|---|---|---|---|---|
-| window 5 sessions | 596 | −0.32% | −0.30pp | [−0.86, +0.25] |
-| **window 20 sessions** | 2,439 | −0.27% | −0.27pp | **[−0.50, −0.04]** |
-| miss ≤ −5% | 1,433 | −0.23% | −0.22pp | [−0.56, +0.12] |
-| mirror: post-**beat** ≥ +10% | 2,598 | +0.11% | +0.14pp | [−0.13, +0.41] |
-| min_score 50 (not live) | 8,424 | +0.02% | −0.03pp | [−0.27, +0.20] |
+| Cell | Diff | CI |
+|---|---|---|
+| 5-session window | −0.33pp | [−0.74, +0.07] |
+| **20-session window** | −0.27pp | **[−0.49, −0.05]** |
+| miss ≤ −5% | −0.25pp | [−0.56, +0.06] |
+| mirror: post-beat | +0.15pp | [−0.11, +0.41] |
+| min_score 50 | −0.01pp | [−0.25, +0.23] |
 
 ## Reading
 
-- **The direction is consistent everywhere.** Post-miss MR trades are worse at every window and threshold, and post-beat trades are better. That is what PEAD's short leg predicts.
-- **The effect is small next to its noise.** About −0.28pp per trade, spread across a few hundred entry dates.
-- **The 20-session window clears zero, but only as a post-hoc result.** It was one of five descriptive cuts, and picking the best of five after seeing them is how the gap-continuation "winner" was manufactured. It is registered as a **lead** to be tested on data this study did not use.
-- **The low-selectivity population shows nothing.** At min_score 50 the difference vanishes (−0.03pp). This is the reverse of the usual pattern, where an effect lives only at low selectivity and dies at live selectivity. Here, whatever there is appears only in the live-selected trades. It is the one respect in which H2 looks better than the filters that died before it.
-- **Live MR has no raw edge on this universe either.** At live selectivity, the non-flagged MR trades average −0.01%. That is consistent with the registry's standing finding that MR's thin live edge is selection, not mechanics.
-
-## What this changes
-
-Nothing in production. The standing lesson from the short-interest and days-to-cover filters is not to ship a filter whose CI crosses zero. The effect is logged as a lead: a post-miss exclusion window of about 20 sessions. It can be re-tested on MR trades after 2026-09-18, which this study never saw. At ~400 flagged trades a year, a decisive forward read needs about a year.
+- **The direction is consistent everywhere.** Every window, every threshold, both "known" rules and every year point the same way, and post-beat trades are mirror-positive. That is the PEAD short leg showing up inside MR's trades.
+- **It is still not established.** At about −0.28pp per trade the effect is small relative to its noise.
+- **The 20-session window is significant under both rules, but it is post-hoc.** It was chosen from five descriptive cuts after the results were visible. It is logged as a lead to test on MR trades from after 2026-09-18, which this study never saw. At roughly 400 flagged trades a year, a decisive forward read needs about a year.
+- **Live MR remains edgeless in raw form.** The unflagged trades average −0.01%.
 
 ## Caveats
 
-- **Stage-0 on backtested MR, not live MR.** The trades come from the unified exit engine at live parameters, not from the live book. The live book has n=49 and is too small to condition on.
-- **Timing and universe.** The after-close timing issue and the universe construction are the same as H1 (`h1_pead_wide_FINDINGS.md` § 6).
-- **Ordering.** A report's signal bar on the same day as the MR signal counts as 0 sessions and is flagged. This is correct only if the report came before the MR decision; the backtest decides MR from the same bar's close, so the ordering holds.
-
-## Provenance
-
-- **Prices.** `outputs/research/ohlcv_polygon_wide_3y.parquet`, sha256 `2d04af2db42ab0519614522a7e8cbd0f38d9532c01b26c34f4e3933e07d25e0c`. Provider `polygon`, no fallback; 2 of 4,724 requested tickers are missing.
-- **Earnings.** FMP per-ticker cache.
+- These are backtested MR trades from the unified exit engine at live parameters, not the live book; the live book has only n=49.
+- The universe and earnings caveats are the same as H1 (`h1_pead_wide_FINDINGS.md` § 6).
 
 ## Reproduce
 
 ```bash
-python scripts/h2_mr_post_miss.py --json-out outputs/research/h2_mr_post_miss.json
+python scripts/h2_mr_post_miss.py --known registered --json-out outputs/research/h2_mr_post_miss_v2_registered.json
+python scripts/h2_mr_post_miss.py --known next_day   --json-out outputs/research/h2_mr_post_miss_v2_next_day.json
 ```
