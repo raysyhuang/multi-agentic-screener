@@ -85,7 +85,7 @@ Part of the "quality" advantage is therefore simply "deeper drawdown". The verdi
 ## Caveats
 
 - **EPS basis.** P/E divides a split-adjusted price by FMP's reported EPS. Codex spot-checked NVDA, AVGO, SMCI and CMG and found historical EPS is split-adjusted, so the two are consistent. That check does not certify every ticker.
-- **Look-ahead in the fundamentals.** The timing is safe: a report is usable only from the second session on or after its date. The contents are not guaranteed to be point-in-time, because they come from today's FMP cache, so later restatements of actuals would leak in; this is unquantified. EPS is FMP's adjusted actual, not GAAP. The P/E numerator is a split-adjusted price, and the code does not verify that every ticker's EPS is split-adjusted too.
+- **Look-ahead in the fundamentals.** A report is used only from the second session on or after its **recorded** date. Both that date and the report contents come from today's FMP cache, not point-in-time vintages, so later revisions to report dates, actuals or estimates could leak in; this is unquantified. EPS is FMP's adjusted actual, not GAAP. The P/E numerator is a split-adjusted price, and the code does not verify that every ticker's EPS is split-adjusted too.
 - **Universe.** The same survivorship-reduced universe as H1 (`h1_pead_wide_FINDINGS.md` § 6). Current index membership is not used.
 - **Scope.** Stage 0 only: no stops, no costs.
 
