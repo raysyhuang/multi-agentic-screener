@@ -186,6 +186,29 @@ class Panel:
         return self.close.index
 
 
+def clean_splits(splits: list[dict], tickers) -> list[dict]:
+    """One split per (ticker, execution date), dash-form tickers, restricted to
+    `tickers`. Identical duplicate rows collapse to one; CONFLICTING same-day
+    rows (Polygon has some, e.g. both 1:10000 and 10000:1 for one OTC name) are
+    dropped — applying both would compound them, and picking one would be a
+    guess. Every consumer of split factors goes through this."""
+    cols = set(tickers)
+    by_key: dict[tuple[str, str], set[tuple[float, float]]] = {}
+    for sp in splits or []:
+        t = str(sp.get("ticker") or "").replace(".", "-").upper()
+        if t in cols and sp.get("execution_date"):
+            by_key.setdefault((t, sp["execution_date"]), set()).add(
+                (float(sp.get("split_from") or 0), float(sp.get("split_to") or 0)))
+    out = []
+    for (t, d), vs in sorted(by_key.items()):
+        if len(vs) != 1:
+            continue
+        (fr, to), = vs
+        if fr > 0 and to > 0:
+            out.append({"ticker": t, "execution_date": d, "split_from": fr, "split_to": to})
+    return out
+
+
 def split_price_multiplier(splits: list[dict], dates: pd.Index, tickers: list[str]) -> pd.DataFrame:
     """(date x ticker) multiplier that turns split-ADJUSTED prices back into the
     RAW prices traded on each date: raw = adjusted x prod(split_to/split_from)
@@ -195,28 +218,9 @@ def split_price_multiplier(splits: list[dict], dates: pd.Index, tickers: list[st
     uses information from the future. Dollar volume is unaffected (the price
     and volume adjustments cancel)."""
     mult = pd.DataFrame(1.0, index=dates, columns=tickers)
-    cols = set(tickers)
-    # One factor per (ticker, execution date). Identical duplicate rows are
-    # applied once; CONFLICTING same-day rows (Polygon has some, e.g. both
-    # 1:10000 and 10000:1 for one OTC name) are skipped — applying both would
-    # compound them, and picking one would be a guess.
-    by_key: dict[tuple[str, str], set[tuple[float, float]]] = {}
-    for sp in splits:
-        t = str(sp.get("ticker") or "").replace(".", "-").upper()
-        if t in cols and sp.get("execution_date"):
-            by_key.setdefault((t, sp["execution_date"]), set()).add(
-                (float(sp.get("split_from") or 0), float(sp.get("split_to") or 0)))
-    clean = [{"ticker": t, "execution_date": d, "split_from": v[0], "split_to": v[1]}
-             for (t, d), vs in by_key.items() if len(vs) == 1 for v in vs]
-    for sp in clean:
-        t = sp["ticker"]
-        try:
-            f = float(sp.get("split_to") or 0) / float(sp.get("split_from") or 0)
-        except ZeroDivisionError:
-            continue
-        if f <= 0:
-            continue
-        mult.loc[mult.index < pd.Timestamp(sp["execution_date"]), t] *= f
+    for sp in clean_splits(splits, tickers):
+        f = sp["split_to"] / sp["split_from"]
+        mult.loc[mult.index < pd.Timestamp(sp["execution_date"]), sp["ticker"]] *= f
     return mult
 
 

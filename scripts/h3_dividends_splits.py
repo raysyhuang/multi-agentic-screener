@@ -209,17 +209,9 @@ def dividend_events(divs: list[dict], tickers: set[str], splits: list[dict] | No
         (their components summed), and ties sort on (date, ex-date, amount),
         so the classification no longer depends on the input row order."""
     splits_by_t: dict[str, list[tuple[str, float]]] = {}
-    for sp in splits or []:
-        t = str(sp.get("ticker") or "").replace(".", "-").upper()
-        try:
-            r = float(sp.get("split_to") or 0) / float(sp.get("split_from") or 0)
-        except ZeroDivisionError:
-            continue
-        if t in tickers and sp.get("execution_date") and r > 0:
-            splits_by_t.setdefault(t, []).append((sp["execution_date"], r))
-    # Every CD row counts as PRIOR history (keyed on its declaration date, or its
-    # ex-date when the declaration date is missing); only rows WITH a declaration
-    # date can be events, because the event date must be the announcement.
+    for sp in es.clean_splits(splits or [], tickers):   # duplicates once, conflicts dropped
+        splits_by_t.setdefault(sp["ticker"], []).append(
+            (sp["execution_date"], sp["split_to"] / sp["split_from"]))
     rows = [d for d in divs if d.get("dividend_type") == "CD" and (d.get("currency") or "USD") == "USD"
             and (d.get("declaration_date") or d.get("ex_dividend_date")) and d.get("cash_amount")
             and d.get("ticker")]
@@ -242,7 +234,8 @@ def dividend_events(divs: list[dict], tickers: set[str], splits: list[dict] | No
         by_t.setdefault(d["ticker"], []).append(d)
     events = []
     for t, ds in by_t.items():
-        ds.sort(key=lambda d: (d["_key"], d.get("ex_dividend_date") or "", d["cash_amount"]))
+        ds.sort(key=lambda d: (d["_key"], d.get("ex_dividend_date") or "", d["cash_amount"],
+                               -1 if d.get("frequency") is None else d["frequency"]))
         seen_decl: set[str] = set()
         for k, d in enumerate(ds):
             decl = d.get("declaration_date")

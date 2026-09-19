@@ -143,3 +143,24 @@ def test_conflicting_same_day_splits_are_skipped_not_compounded():
     m = es.split_price_multiplier(splits, cal, ["ZZZ", "YYY"])
     assert (m["ZZZ"] == 1.0).all()                 # conflicting: skipped
     assert m["YYY"].iloc[0] == 2.0                 # identical duplicate: applied once
+
+
+def test_duplicate_split_rows_do_not_compound_in_dividend_basis():
+    """Codex second pass: a split row listed twice must not turn an unchanged
+    dividend ($0.10 -> $0.01 across a 10:1 split) into an 'increase'."""
+    divs = [_div("DUP", "2024-02-01", 0.10) | {"ex_dividend_date": "2024-02-15"},
+            _div("DUP", "2024-06-01", 0.01) | {"ex_dividend_date": "2024-06-15"}]
+    sp = {"ticker": "DUP", "execution_date": "2024-04-01", "split_from": 1, "split_to": 10}
+    def kinds(splits):
+        return {(e["event_date"], e["kind"]) for e in h3.dividend_events(divs, {"DUP"}, splits)}
+    assert ("2024-06-01", "increase") not in kinds([sp])
+    assert kinds([sp, dict(sp)]) == kinds([sp])
+
+
+def test_frequency_breaks_ties_so_row_order_cannot_matter():
+    rows = [_div("FQ", "2024-01-10", 0.10, freq=4) | {"ex_dividend_date": "2024-01-20"},
+            _div("FQ", "2024-05-10", 0.10, freq=12) | {"ex_dividend_date": "2024-05-20"},
+            _div("FQ", "2024-05-10", 0.10, freq=4) | {"ex_dividend_date": "2024-05-20"}]
+    a = h3.dividend_events(rows, {"FQ"})
+    b = h3.dividend_events(list(reversed(rows)), {"FQ"})
+    assert a == b

@@ -17,7 +17,7 @@ The criteria are in the docstring of `scripts/h3_dividends_splits.py`. It was co
 2. **Key prior-dividend history on declaration date or ex-date.** Some rows have no declaration date. Missing an earlier dividend would turn a regular payer into a false "initiation".
 3. **Fetch dividends per universe ticker, full history, one page each.** Whole-market ex-date days are flooded by mutual-fund share classes; one day alone had more than 1,000 F-tickers.
 
-The data was fetched at 09:57:04Z (`data/cache/corp_actions/manifest.json`). It covers 4,721 tickers with no failures: 124,375 dividends and 6,524 splits. The study ran at 09:57:10Z.
+The data was fetched at 09:57:04Z (`data/cache/corp_actions/manifest.json`). It covers 4,721 tickers with no failures: 124,375 dividends and 6,524 splits. The first study run was at 09:57:10Z. After the review fixes it was re-run; the final JSONs were generated at 2026-09-19T11:25:35Z (adjusted screen) and 11:25:55Z (raw screen).
 
 - **H3a.** A cash dividend (`CD`, USD) counts as an event if it is either:
   - an initiation: no CD in the previous 400 days; or
@@ -59,7 +59,8 @@ These names collapse, and they sat inside the **base rates**. That pulled the sa
 The definitions are unchanged; the implementation was corrected. Every number above comes from the corrected code.
 
 - **Share basis.** Payments are now compared on a single share basis. Each cash amount is divided by the factor of any splits executed after its ex-date. Before this fix, NVDA's post-split $0.01 dividend (a 150% raise NVIDIA itself announced) read as a cut. In the other direction, CIM's $0.11 → $0.35 across a 1:3 reverse split read as a +218% increase, when it was really +6%.
-- **Row order.** Rows sharing a ticker, a declaration or ex-date and a frequency are now one payment, with their components summed. Ties sort deterministically. Previously, reversing the input list changed around 100 classifications.
+- **Row order.** Rows sharing a ticker, a declaration or ex-date and a frequency are now one payment, with their components summed. Ties sort deterministically on date, ex-date, amount and frequency. Previously, reversing the input list changed around 100 classifications.
+- **Split rows** for the share basis go through the same `event_study.clean_splits` as the price screen. Identical duplicates are applied once, and conflicting same-day rows are dropped. None of these occur in this universe, so the results are unchanged.
 
 ## Caveats
 
