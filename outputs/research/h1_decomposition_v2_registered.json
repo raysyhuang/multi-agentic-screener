@@ -1,12 +1,22 @@
 {
- "generated_at": "2026-09-19T07:05:35.097632+00:00",
+ "generated_at": "2026-09-19T08:07:10.009143+00:00",
  "timing": "registered",
  "prices_sha256": "2d04af2db42ab0519614522a7e8cbd0f38d9532c01b26c34f4e3933e07d25e0c",
  "posthoc": true,
+ "earnings": {
+  "files": 4721,
+  "sha256": "5262c738a5f430d8f53f89c59668a511e92d3ae85f21e86d99f5a59e809a7904",
+  "latest_actual_report_quantiles": {
+   "0.05": "2024-12-08",
+   "0.5": "2026-08-04",
+   "0.95": "2026-08-26"
+  }
+ },
  "q1_unconditional_excess20": {
   "sp500_members": {
    "mean": 0.19295657052988302,
    "n_obs": 379030,
+   "mean_of_daily_means": 0.19444872206700833,
    "block_ci_of_daily_means": [
     -0.14322764771063592,
     0.5340690109700171
@@ -31,7 +41,7 @@
   "raw_beat10": {
    "h20": {
     "n": 13629,
-    "n_censored": 156,
+    "n_no_forward_return": 156,
     "n_dates": 669,
     "mean_excess": 0.28769799027031057,
     "median_excess": -0.4007146152925727,
@@ -53,7 +63,7 @@
    },
    "h60": {
     "n": 12415,
-    "n_censored": 1370,
+    "n_no_forward_return": 1370,
     "n_dates": 631,
     "mean_excess": 0.8865302897411811,
     "median_excess": -0.8144897259180772,
@@ -76,7 +86,7 @@
    "by_bucket_h20": {
     "0": {
      "n": 4680,
-     "n_censored": 57,
+     "n_no_forward_return": 57,
      "n_dates": 565,
      "mean_excess": 0.8204251783303279,
      "median_excess": 0.2902218167464098,
@@ -94,7 +104,7 @@
     },
     "1": {
      "n": 4763,
-     "n_censored": 42,
+     "n_no_forward_return": 42,
      "n_dates": 519,
      "mean_excess": 0.016560457599141012,
      "median_excess": -0.6484539983560458,
@@ -112,7 +122,7 @@
     },
     "2": {
      "n": 4186,
-     "n_censored": 57,
+     "n_no_forward_return": 57,
      "n_dates": 543,
      "mean_excess": 0.00061362046426644,
      "median_excess": -0.7914343164465666,
@@ -133,7 +143,7 @@
   "e1": {
    "h20": {
     "n": 2145,
-    "n_censored": 25,
+    "n_no_forward_return": 25,
     "n_dates": 440,
     "mean_excess": 0.38636195891911534,
     "median_excess": -0.22240667613142318,
@@ -155,7 +165,7 @@
    },
    "h60": {
     "n": 1906,
-    "n_censored": 264,
+    "n_no_forward_return": 264,
     "n_dates": 413,
     "mean_excess": 1.2762789989056973,
     "median_excess": -0.15936762563824303,
@@ -178,7 +188,7 @@
    "by_bucket_h20": {
     "0": {
      "n": 658,
-     "n_censored": 10,
+     "n_no_forward_return": 10,
      "n_dates": 287,
      "mean_excess": 1.2184785092900143,
      "median_excess": 0.39427275704673015,
@@ -196,7 +206,7 @@
     },
     "1": {
      "n": 760,
-     "n_censored": 3,
+     "n_no_forward_return": 3,
      "n_dates": 274,
      "mean_excess": 0.3516589983467277,
      "median_excess": -0.3572244118795973,
@@ -214,7 +224,7 @@
     },
     "2": {
      "n": 727,
-     "n_censored": 12,
+     "n_no_forward_return": 12,
      "n_dates": 277,
      "mean_excess": -0.330499719360165,
      "median_excess": -0.7407245630536108,
@@ -235,7 +245,7 @@
   "e1_neglected": {
    "h20": {
     "n": 714,
-    "n_censored": 7,
+    "n_no_forward_return": 7,
     "n_dates": 286,
     "mean_excess": 0.010170675651621821,
     "median_excess": -1.0291524129196794,
@@ -257,7 +267,7 @@
    },
    "h60": {
     "n": 646,
-    "n_censored": 75,
+    "n_no_forward_return": 75,
     "n_dates": 265,
     "mean_excess": 0.7253376512374318,
     "median_excess": -0.3366578405460745,
@@ -280,7 +290,7 @@
    "by_bucket_h20": {
     "0": {
      "n": 218,
-     "n_censored": 2,
+     "n_no_forward_return": 2,
      "n_dates": 141,
      "mean_excess": 1.2575383588833127,
      "median_excess": -0.9568699180838613,
@@ -298,7 +308,7 @@
     },
     "1": {
      "n": 254,
-     "n_censored": 1,
+     "n_no_forward_return": 1,
      "n_dates": 152,
      "mean_excess": -0.09802729920611446,
      "median_excess": -0.2814717863618871,
@@ -316,7 +326,7 @@
     },
     "2": {
      "n": 242,
-     "n_censored": 4,
+     "n_no_forward_return": 4,
      "n_dates": 156,
      "mean_excess": -0.9999279579460784,
      "median_excess": -1.4264684500945517,

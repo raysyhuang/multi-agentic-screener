@@ -77,10 +77,13 @@ MIN_N = 30
 MIN_YEAR_N = 10
 
 
-def tag_trades(trades: pd.DataFrame, events: list[dict], panel: es.Panel) -> pd.DataFrame:
+def tag_trades(trades: pd.DataFrame, events: list[dict], panel: es.Panel,
+               min_since: int = 0) -> pd.DataFrame:
     """Attach `last_surprise` and `sessions_since_report`: the most recent report
-    whose SIGNAL bar is on/before the MR signal date, and how many sessions ago
-    it was. Only backward-looking information is used."""
+    KNOWN at the MR signal — its signal bar at least `min_since` sessions before
+    the MR signal bar — and how many sessions ago it was. Availability is applied
+    BEFORE picking the latest report, so a not-yet-known report can never
+    displace an earlier known one (Codex second pass: CERE 2024-05-08)."""
     idx = panel.dates
     by_t: dict[str, list[tuple[int, float]]] = {}
     for ev in events:
@@ -91,7 +94,7 @@ def tag_trades(trades: pd.DataFrame, events: list[dict], panel: es.Panel) -> pd.
     last, since = [], []
     for t, sd in zip(trades["ticker"], trades["signal_date"]):
         i = int(idx.searchsorted(pd.Timestamp(sd)))
-        prior = [(k, s) for k, s in by_t.get(t, []) if k <= i]
+        prior = [(k, s) for k, s in by_t.get(t, []) if k <= i - min_since]
         if prior:
             k, s = prior[-1]
             last.append(s)
@@ -137,7 +140,14 @@ def run_mr(prices: dict[str, pd.DataFrame], panel: es.Panel, min_score: float,
     the cache is keyed on the inputs, so it cannot serve stale trades."""
     cache = None
     if cache_key:
-        tag = hashlib.sha256(json.dumps([cache_key, min_score, LIVE_MR], sort_keys=True).encode()).hexdigest()[:16]
+        # The key covers the implementation too: a scanner or exit-engine fix must
+        # invalidate cached trades rather than silently reuse them.
+        impl = hashlib.sha256(b"".join(
+            (REPO / f).read_bytes() for f in ("src/research/signal_backtest.py",
+                                              "src/backtest/exit_engine.py",
+                                              "src/signals/mean_reversion.py"))).hexdigest()
+        tag = hashlib.sha256(json.dumps([cache_key, min_score, LIVE_MR, impl],
+                                        sort_keys=True).encode()).hexdigest()[:16]
         cache = REPO / "outputs" / "research" / f"h2_mr_trades_{tag}.parquet"
     if cache is not None and cache.exists():
         df = pd.read_parquet(cache)
@@ -178,7 +188,7 @@ def main() -> None:
                     "prices_sha256": prices_sha,
                     "params": {"live_min_score": LIVE_MIN_SCORE, "miss": MISS, "window": WINDOW,
                                "mr": LIVE_MR}, "cells": {}}
-    live = tag_trades(run_mr(prices, panel, LIVE_MIN_SCORE, prices_sha), events, panel)
+    live = tag_trades(run_mr(prices, panel, LIVE_MIN_SCORE, prices_sha), events, panel, MIN_SINCE)
     primary = cell(live)
     result["cells"]["primary_ms75_miss10_w10"] = primary
     by_year = {}
@@ -189,7 +199,7 @@ def main() -> None:
     for name, kw in (("w5", {"window": 5}), ("w20", {"window": 20}), ("miss5", {"miss": -5.0}),
                      ("post_beat10", {"beat": True})):
         result["cells"][f"desc_ms75_{name}"] = cell(live, **kw)
-    loose = tag_trades(run_mr(prices, panel, 50.0, prices_sha), events, panel)
+    loose = tag_trades(run_mr(prices, panel, 50.0, prices_sha), events, panel, MIN_SINCE)
     result["cells"]["desc_ms50_miss10_w10"] = cell(loose)
 
     d = primary.get("diff") or {}

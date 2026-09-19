@@ -54,3 +54,17 @@ def test_window_is_in_sessions_and_threshold_is_inclusive():
     assert len(flag) == 1 and len(rest) == 1                     # 10 sessions in, 11 out
     beat_flag, _ = split(tagged, miss=-10.0, window=10, beat=True)
     assert len(beat_flag) == 0                                   # a miss is never a beat
+
+
+def test_an_unavailable_report_never_displaces_an_earlier_known_one():
+    """Codex second pass (CERE 2024-05-08): a same-day report that is NOT yet
+    known under the next-day rule must not hide a known miss 5 sessions back."""
+    p = _panel()
+    events = [{"ticker": "AAA", "signal_date": p.dates[20], "surprise": -30.0},
+              {"ticker": "AAA", "signal_date": p.dates[25], "surprise": +5.0}]
+    trades = pd.DataFrame([_trade(p, "AAA", 25)])
+    registered = tag_trades(trades, events, p, min_since=0)
+    next_day = tag_trades(trades, events, p, min_since=1)
+    assert registered.loc[0, "last_surprise"] == 5.0          # same-day report counted
+    assert next_day.loc[0, "last_surprise"] == -30.0          # the known miss survives
+    assert next_day.loc[0, "sessions_since_report"] == 5

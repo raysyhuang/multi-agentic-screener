@@ -155,27 +155,30 @@ async def stage_candidates(years: float, min_price: float, min_dollar_vol: float
 
 
 def _needs_refresh(path: Path, refresh_before: date | None) -> bool:
-    """A cached file is refetched when it was written before `refresh_before`
-    (e.g. the S&P caches from July), or when it holds a report at least 3 days
-    in the past whose actual EPS is still null and which was never updated after
-    its report date — FMP fills actuals in after the fact, so that row is stale,
-    not a true "no actual"."""
+    """Refetch when (1) there is no cache, (2) the file was written before
+    `refresh_before`, or (3) it holds a report at least 3 days old whose actual
+    EPS is null and whose `lastUpdated` is on or before the report date — FMP
+    fills actuals in after the fact, so that row is stale, not a true "no
+    actual". A file written TODAY is never refetched for reason (3): if a fresh
+    fetch still carries the null, FMP has nothing newer, and retrying it on
+    every run would only burn the call budget."""
     if not path.exists():
         return True
-    if refresh_before is not None:
-        written = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date()
-        if written < refresh_before:
-            return True
+    written = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date()
+    if refresh_before is not None and written < refresh_before:
+        return True
+    if written >= date.today():
+        return False
     try:
         rows = json.loads(path.read_text())
     except ValueError:
         return True
-    today = date.today()
+    cutoff = str(date.today() - timedelta(days=3))
     for r in rows:
         d = str(r.get("date") or "")[:10]
-        if d and r.get("epsActual") is None and d <= str(today - timedelta(days=3)):
+        if d and d <= cutoff and r.get("epsActual") is None:
             upd = str(r.get("lastUpdated") or "")[:10]
-            if not upd or upd < d:        # never updated since the report: stale, not "no actual"
+            if not upd or upd <= d:
                 return True
     return False
 
@@ -227,7 +230,8 @@ async def stage_earnings(tickers: list[str], rate_per_sec: float, max_tickers: i
         n_pairs += sum(1 for r in rows
                        if r.get("epsActual") is not None and r.get("epsEstimated") is not None)
     doc = {"generated_at": datetime.now(timezone.utc).isoformat(),
-           "requested": len(tickers), "cached": sum((EARNINGS_CACHE_DIR / f"{t}.json").exists() for t in tickers),
+           "requested": len(tickers), "attempted_this_run": len(todo),
+           "refresh_before": str(refresh_before) if refresh_before else None, "cached": sum((EARNINGS_CACHE_DIR / f"{t}.json").exists() for t in tickers),
            "empty": n_empty, "rows": n_rows, "eps_pairs": n_pairs, "failures": failures}
     EARNINGS_MANIFEST.write_text(json.dumps(doc, indent=1))
     print(f"earnings: cached={doc['cached']} empty={n_empty} eps_pairs={n_pairs} "

@@ -31,7 +31,7 @@ sys.path.insert(0, str(REPO))
 
 import pandas as pd  # noqa: E402
 
-from scripts.h1_pead_wide import build_events, cohorts  # noqa: E402
+from scripts.h1_pead_wide import build_events, cohorts, earnings_fingerprint  # noqa: E402
 from src.research import event_study as es  # noqa: E402
 from src.research.sp500_tickers import SP500_TICKERS  # noqa: E402
 
@@ -65,7 +65,8 @@ def main() -> None:
     other_cols = [c for c in fwd.columns if c not in sp]
 
     out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "timing": args.timing,
-                 "prices_sha256": hashlib.sha256(raw).hexdigest(), "posthoc": True}
+                 "prices_sha256": hashlib.sha256(raw).hexdigest(), "posthoc": True,
+                 "earnings": earnings_fingerprint(list(prices))}
 
     u_sp = unconditional_excess(panel, fwd, base, sp_cols)
     u_ot = unconditional_excess(panel, fwd, base, other_cols)
@@ -81,6 +82,7 @@ def main() -> None:
     yrs = u_sp.index.get_level_values(0).year
     out["q1_unconditional_excess20"] = {
         "sp500_members": {"mean": float(u_sp.mean()), "n_obs": int(len(u_sp)),
+                          "mean_of_daily_means": float(sp_daily["sum"].div(sp_daily["count"]).mean()),
                           "block_ci_of_daily_means": list(q1_block),
                           "share_by_liquidity_bucket": {int(k): float(v) for k, v in sp_bucket_share.items()},
                           "by_year": {int(y): float(v) for y, v in u_sp.groupby(yrs).mean().items()}},

@@ -125,3 +125,41 @@ def test_block_ci_collapses_for_a_constant_series():
     cal = pd.to_datetime(pd.bdate_range("2026-01-05", periods=60))
     lo, hi = es.block_boot_ci([0.7] * 60, list(cal), cal, block=10, n_boot=500)
     assert lo == pytest.approx(0.7) and hi == pytest.approx(0.7)
+
+
+def test_block_ci_handles_a_calendar_shorter_than_the_block():
+    """block > n used to raise IndexError; the wrap is now modular."""
+    cal = pd.to_datetime(pd.bdate_range("2026-01-05", periods=7))
+    lo, hi = es.block_boot_ci([1.0, 2.0, 3.0], list(cal[:3]), cal, block=20, n_boot=200)
+    assert 1.0 <= lo <= hi <= 3.0
+
+
+def test_block_ci_wraparound_and_weighting_match_an_explicit_computation():
+    """Prefix-sum block sums must equal an explicit circular walk, with unequal
+    event counts per date (observation weighting)."""
+    import numpy as _np
+    cal = pd.to_datetime(pd.bdate_range("2026-01-05", periods=9))
+    x = [1.0, 1.0, 5.0, -2.0, 4.0, 0.5]
+    d = [cal[0], cal[0], cal[3], cal[7], cal[8], cal[8]]
+    lo, hi = es.block_boot_ci(x, d, cal, block=4, n_boot=3000, seed=7)
+    sums = _np.zeros(9)
+    cnts = _np.zeros(9)
+    for v, dd in zip(x, d):
+        i = list(cal).index(dd)
+        sums[i] += v
+        cnts[i] += 1
+    rng = _np.random.default_rng(7)
+    starts = rng.integers(0, 9, size=(3000, 3))
+    means = []
+    for row in starts:
+        tot = cnt = 0.0
+        for st in row:
+            for k in range(4):
+                j = (st + k) % 9
+                tot += sums[j]
+                cnt += cnts[j]
+        if cnt:
+            means.append(tot / cnt)
+    means.sort()
+    assert lo == pytest.approx(means[int(0.025 * len(means))])
+    assert hi == pytest.approx(means[int(0.975 * len(means))])

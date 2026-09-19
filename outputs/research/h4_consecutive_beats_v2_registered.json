@@ -1,5 +1,5 @@
 {
- "generated_at": "2026-09-19T07:04:40.455204+00:00",
+ "generated_at": "2026-09-19T08:06:15.558328+00:00",
  "timing": "registered",
  "predecessors": "full",
  "prices_sha256": "2d04af2db42ab0519614522a7e8cbd0f38d9532c01b26c34f4e3933e07d25e0c",
@@ -18,7 +18,7 @@
   "consecutive": {
    "all": {
     "n": 7240,
-    "n_censored": 91,
+    "n_no_forward_return": 91,
     "n_dates": 580,
     "mean_excess": 0.31622312602517366,
     "median_excess": -0.3733231857934629,
@@ -58,7 +58,7 @@
    },
    "sp500": {
     "n": 888,
-    "n_censored": 7,
+    "n_no_forward_return": 7,
     "n_dates": 287,
     "mean_excess": 1.4475146328597925,
     "median_excess": 0.3984658434482973,
@@ -76,7 +76,7 @@
    },
    "non_sp500": {
     "n": 6352,
-    "n_censored": 84,
+    "n_no_forward_return": 84,
     "n_dates": 559,
     "mean_excess": 0.15807028313015775,
     "median_excess": -0.5148953894806394,
@@ -96,7 +96,7 @@
   "first": {
    "all": {
     "n": 5852,
-    "n_censored": 54,
+    "n_no_forward_return": 54,
     "n_dates": 579,
     "mean_excess": 0.2868968459256788,
     "median_excess": -0.37931473501170154,
@@ -136,7 +136,7 @@
    },
    "sp500": {
     "n": 870,
-    "n_censored": 6,
+    "n_no_forward_return": 6,
     "n_dates": 293,
     "mean_excess": 0.02079840891351015,
     "median_excess": -0.19529750683259695,
@@ -154,7 +154,7 @@
    },
    "non_sp500": {
     "n": 4982,
-    "n_censored": 48,
+    "n_no_forward_return": 48,
     "n_dates": 552,
     "mean_excess": 0.33336526025739044,
     "median_excess": -0.42396422954706603,

@@ -30,7 +30,7 @@ The criteria are in the docstring of `scripts/h4_consecutive_beats.py`. It was c
 
 Anchoring does not show up. If a second surprise is priced differently from a first at all, it is priced *more* completely, which fits the "serial beaters are known" prior.
 
-The first-beat cohort's +0.62% under look-ahead-free timing is a post-hoc observation, not a result. Descriptively, it lines up with H1's finding that drift lives in neglected names.
+The first-beat cohort's +0.62% under look-ahead-free timing is a post-hoc observation, not a result, and nothing here establishes why it is higher.
 
 ## Caveats
 

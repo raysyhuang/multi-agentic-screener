@@ -46,6 +46,10 @@ session and the next one traded more volume, and entry is ALWAYS the session
 after that pair (known by then), so a pre-market report enters one day late.
 It is reported as a sensitivity. The registered verdict is the `registered`
 run; a verdict under `volume` would need confirmation on data not used here.
+Second amendment: report rows are now de-duplicated by date BEFORE the revenue
+history used for `rev_accel` is assembled (the registered code kept same-date
+duplicate rows in that history). On the refreshed inputs this changes five
+`rev_accel` values and no beat-cohort membership.
 
 Usage:
   python scripts/h1_pead_wide.py --json-out outputs/research/h1_pead_wide.json

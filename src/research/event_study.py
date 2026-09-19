@@ -94,8 +94,9 @@ def block_boot_ci(x: list[float], entry_dates: list, calendar: pd.Index, block: 
         cnts[i] += 1
     n_blocks = max(1, -(-n // block))
     # Block sums via prefix sums over the circularly extended series.
-    ext_s = np.concatenate([np.asarray(sums), np.asarray(sums[:block])])
-    ext_c = np.concatenate([np.asarray(cnts, dtype=float), np.asarray(cnts[:block], dtype=float)])
+    wrap = np.arange(n + block) % n            # circular for any block length, even block > n
+    ext_s = np.asarray(sums, dtype=float)[wrap]
+    ext_c = np.asarray(cnts, dtype=float)[wrap]
     ps = np.concatenate([[0.0], np.cumsum(ext_s)])
     pc = np.concatenate([[0.0], np.cumsum(ext_c)])
     rng = np.random.default_rng(seed)
@@ -232,19 +233,21 @@ def summarize_excess(df: pd.DataFrame, horizon: int, *, group: str = "entry_date
                      calendar: pd.Index | None = None) -> dict:
     """n, mean excess, hit rate, iid CI, the date-cluster CI (the registered G1
     interval) and — when a calendar is given — a moving-block CI with block =
-    horizon, which respects overlapping holding windows. Also reports how many
-    events had no exit bar (`n_censored`): those are dropped, not assumed flat,
-    and a delisting inside the window is one way to get there."""
+    horizon, which respects overlapping holding windows. Also reports
+    `n_no_forward_return`: rows whose forward return is unavailable for ANY
+    reason — the window runs past the end of the data (the usual case), a
+    missing entry or exit bar, or an ineligible row passed in. They are dropped,
+    never assumed flat; the count does not say which reason applied."""
     col = f"excess_{horizon}"
     n_censored = int((df[f"fwd_{horizon}"].isna()).sum()) if f"fwd_{horizon}" in df else 0
     sub = df[df[col].notna()]
     x = sub[col].tolist()
     if not x:
-        return {"n": 0, "n_censored": n_censored}
+        return {"n": 0, "n_no_forward_return": n_censored}
     lo, hi = boot_ci(x)
     clo, chi = cluster_boot_ci(x, [str(g)[:10] for g in sub[group]])
     out = {
-        "n": len(x), "n_censored": n_censored,
+        "n": len(x), "n_no_forward_return": n_censored,
         "n_dates": int(sub[group].astype(str).str[:10].nunique()),
         "mean_excess": float(np.mean(x)), "median_excess": float(np.median(x)),
         "hit": float(np.mean([v > 0 for v in x])),

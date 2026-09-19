@@ -6,7 +6,7 @@
 |---|---|---|
 | Registered run (v1) | −0.28pp (n=1,167) | [−0.64, +0.08] |
 | v2, refreshed earnings, registered "known" rule | −0.28pp (n=1,185) | [−0.65, +0.09] |
-| v2, look-ahead-free "known next day" rule | −0.29pp (n=1,084) | **[−0.61, +0.02]** |
+| v2, look-ahead-free "known next day" rule | −0.29pp (n=1,085) | **[−0.61, +0.02]** |
 
 **Codex's review found the registered rule leaks information.** The rule treats a report as known on its own date. FMP gives a date but no release time, so an after-close report is not yet known at that day's close, which is when the MR decision is made.
 
@@ -18,6 +18,7 @@ A verdict that flips on refreshing a data cache is not an established effect in 
 
 - The criteria are in the docstring of `scripts/h2_mr_post_miss.py`. It was committed in `d44fc9c` and pushed at 2026-09-19T05:14:02Z, before any H2 computation.
 - The "known next day" rule is a post-review amendment recorded in the same docstring. It is not a registered criterion.
+- A second review pass found that the first implementation of that rule picked the latest report *before* checking whether it was known yet, so an unavailable same-day report could hide an earlier known miss (CERE 2024-05-08). Availability is now applied first. This moved one trade (n 1,084 → 1,085) and left the CI upper bound at +0.02.
 
 ## Results, v2 (`h2_mr_post_miss_v2_{registered,next_day}.json`)
 
@@ -25,7 +26,7 @@ A verdict that flips on refreshing a data cache is not an established effect in 
 
 | Condition | Registered rule | Next-day rule |
 |---|---|---|
-| (a) n ≥ 30 | 1,185 ✓ | 1,084 ✓ |
+| (a) n ≥ 30 | 1,185 ✓ | 1,085 ✓ |
 | (b) diff CI upper bound < 0 | +0.09 ✗ | +0.02 ✗ |
 | (c) flagged mean < 0 | −0.29% ✓ | −0.31% ✓ |
 | (d) negative in ≥ 2 years (n ≥ 10) | 4/4 ✓ | 3/3 ✓ |
@@ -34,7 +35,7 @@ A verdict that flips on refreshing a data cache is not an established effect in 
 
 | Cell | Diff | CI |
 |---|---|---|
-| 5-session window | −0.33pp | [−0.74, +0.07] |
+| 5-session window | −0.33pp | [−0.74, +0.08] |
 | **20-session window** | −0.27pp | **[−0.49, −0.05]** |
 | miss ≤ −5% | −0.25pp | [−0.56, +0.06] |
 | mirror: post-beat | +0.15pp | [−0.11, +0.41] |
@@ -42,10 +43,10 @@ A verdict that flips on refreshing a data cache is not an established effect in 
 
 ## Reading
 
-- **The direction is consistent everywhere.** Every window, every threshold, both "known" rules and every year point the same way, and post-beat trades are mirror-positive. That is the PEAD short leg showing up inside MR's trades.
+- **The direction is consistent everywhere.** Every window, every threshold, both "known" rules and every year point the same way, and post-beat trades are mirror-positive. That pattern is what a slow reaction to bad news would produce, but an uncertain association does not establish the mechanism.
 - **It is still not established.** At about −0.28pp per trade the effect is small relative to its noise.
 - **The 20-session window is significant under both rules, but it is post-hoc.** It was chosen from five descriptive cuts after the results were visible. It is logged as a lead to test on MR trades from after 2026-09-18, which this study never saw. At roughly 400 flagged trades a year, a decisive forward read needs about a year.
-- **Live MR remains edgeless in raw form.** The unflagged trades average −0.01%.
+- **The backtested MR population shows no edge at this universe's breadth.** The unflagged backtest trades average −0.01% per trade. That is a statement about the broad backtest, not about the live book, whose n=49 cannot settle it either way.
 
 ## Caveats
 
