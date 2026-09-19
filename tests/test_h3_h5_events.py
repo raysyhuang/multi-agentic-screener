@@ -164,3 +164,12 @@ def test_frequency_breaks_ties_so_row_order_cannot_matter():
     a = h3.dividend_events(rows, {"FQ"})
     b = h3.dividend_events(list(reversed(rows)), {"FQ"})
     assert a == b
+
+
+def test_split_events_go_through_the_shared_cleaner():
+    rows = [{"ticker": "AAA", "execution_date": "2025-03-03", "split_from": 1, "split_to": 2},
+            {"ticker": "AAA", "execution_date": "2025-03-03", "split_from": 1, "split_to": 2},
+            {"ticker": "BBB", "execution_date": "2025-03-03", "split_from": 1, "split_to": 10},
+            {"ticker": "BBB", "execution_date": "2025-03-03", "split_from": 10, "split_to": 1}]
+    ev = h3.split_events(rows, {"AAA", "BBB"})
+    assert ev == [{"ticker": "AAA", "event_date": "2025-03-03", "kind": "forward"}]
