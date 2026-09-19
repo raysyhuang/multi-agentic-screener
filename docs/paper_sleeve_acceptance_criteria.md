@@ -12,7 +12,17 @@ The afternoon mark-to-market lane (Hermes job `94022cc9cad0`, `35 21 * * 1-5` UT
 
 ## When measurement starts — gated on a condition, not a date
 
-**The measurement window has not opened.** This section is written **before** the runs it governs exist, which is the only time it can be written honestly.
+> **Amendment 2026-09-19 — the window is now OPEN: start date = the first `entry_date` on or after 2026-09-19** (the next scheduled morning run is Monday 2026-09-21, the first opportunity for a qualifying entry).
+>
+> Evidence, gathered read-only from the mirror host and recorded in [`paper_sleeve_window_evidence_2026-09-19.md`](paper_sleeve_window_evidence_2026-09-19.md): condition 1 (versioned launcher, deployed hash `d802de597cce…` = `origin/main`) is met from **2026-08-31**; condition 2 (five consecutive valid days) was met on **2026-09-04** (08-31, 09-01, 09-02, 09-03, 09-04 — each with a non-null `dashboard_sha256`, `source_sha` on `origin/main`, scheduler status `completed`); condition 3 is met by **this commit**. The three are simultaneously true from 2026-09-19, so that is the date the rule yields — not 2026-09-04. Recording 09-04 instead would be a choice made with results in hand (it would make IOT, entered 09-08, eligible after part of its path was known); RBRK (entered 08-31) is out under either date. Every entry before 2026-09-19 is OUT.
+>
+> The seven 2026-08-20 → 08-28 runs produced bundles but their manifests carry no launcher provenance fields (`launcher_sha256` has been written since `f27f2e6`; the checkout fields since `cce04bf`), so which code ran cannot be attested from their output; the versioned launcher is first attested on 08-31. They are not counted.
+>
+> Amendment-rule check: this applies the unchanged pre-registered start rule and records the date it yields; it moves no threshold and adds no rule. The author attests no S1/S2 determination was pending on any stream (S1 needs `n ≥ 30` and in-window `n` is 0 everywhere; S2 remains a *proposed* threshold). No claim is made that a later start is inherently stricter — rules 5–6 reject that reading where stopping is concerned.
+
+The start-condition rules below are unchanged; only this opening sentence is moved to the past tense.
+
+**The measurement window had not opened when this section was written.** It is written **before** the runs it governs exist, which is the only time it can be written honestly.
 
 ### Why the original date was withdrawn
 
@@ -47,7 +57,7 @@ This document governs **thresholds and decision rules for paper-sleeve results**
 
 It does **not** authorize promotion to a live executor. Clearing Tier 2 makes a sleeve eligible for a promotion *discussion*, which still goes through the validation card and remains Ray's decision.
 
-`docs/paper_mirror_acceptance.md` (PR #89) covers **launcher operational acceptance** — did the afternoon lane run, did it stamp fills, did it avoid touching alpha-bearing code. That is a different question and a legitimate one. Any threshold or citation rule in that document is **superseded by this one**; two acceptance bars is how a result gets graded against whichever bar has no failure mode.
+`docs/paper_mirror_acceptance.md` (committed on the PR #89 branch, `d7e4b8c`/`3a33e08`; PR #89 was closed unmerged, so the file never reached `main` — noted 2026-09-19) covers **launcher operational acceptance** — did the afternoon lane run, did it stamp fills, did it avoid touching alpha-bearing code. That is a different question and a legitimate one. Any threshold or citation rule in that document is **superseded by this one**; two acceptance bars is how a result gets graded against whichever bar has no failure mode.
 
 ## Goal
 
@@ -237,7 +247,7 @@ A reader who takes condition 2 from the production bundle evaluates the live boo
 
 | Test | Question | Where it lives |
 |---|---|---|
-| **Reproduction** | Does the paper book behave like the live book? | **Mirror fidelity.** Belongs to `docs/paper_mirror_acceptance.md` (launcher acceptance), not here. |
+| **Reproduction** | Does the paper book behave like the live book? | **Mirror fidelity.** Belongs to `docs/paper_mirror_acceptance.md` on the unmerged PR #89 branch (launcher acceptance), not here. |
 | **Beating** | Is this sleeve worth trading? | **Sleeve value.** This document. |
 
 The rules for this document:
