@@ -51,6 +51,13 @@ computation preceded the criteria. Verify with
   Caveat stated in advance: the 252-session lookback means events start in
   mid-2024, so the window covers ~2 calendar years.
 
+AMENDMENT (after the first run; Codex review of PR #123): the registered text
+requires "5 reports with positive revenueActual" and a YoY / TTM over fiscal
+quarters, but the first implementation checked only the two endpoint revenues
+and treated report POSITION as a quarter. Both now match the registered text:
+all five revenues positive, and reports k-4..k must be consecutive quarters
+(gaps 45-140 days; k vs k-4 300-430 days). Criteria unchanged.
+
 Usage:
   python scripts/h5_quality_drawdown.py --json-out outputs/research/h5_quality_drawdown.json
 """
@@ -100,9 +107,22 @@ def fundamentals_by_session(ticker: str, idx: pd.DatetimeIndex) -> pd.DataFrame:
         dates.append(pd.Timestamp(str(r["date"])[:10]))
     out = pd.DataFrame(index=idx, data={"rev_yoy": np.nan, "ttm_eps": np.nan})
     recs = []
+    def _quarterly(a: int, b: int) -> bool:
+        """Reports a..b are consecutive quarters: every gap 45-140 days and,
+        when spanning four gaps, a year apart (300-430 days). Report POSITION
+        is not a fiscal quarter — a missing quarter would otherwise turn
+        "YoY" into two years and "TTM" into six quarters (Codex: STLA)."""
+        gaps = [(dates[j + 1] - dates[j]).days for j in range(a, b)]
+        if any(g < 45 or g > 140 for g in gaps):
+            return False
+        return b - a < 4 or 300 <= (dates[b] - dates[a]).days <= 430
+
     for k in range(len(rows)):
-        yoy = rev[k] / rev[k - 4] - 1 if k >= 4 and not (np.isnan(rev[k]) or np.isnan(rev[k - 4])) else np.nan
-        last4 = eps[k - 3:k + 1] if k >= 3 else []
+        yoy = (rev[k] / rev[k - 4] - 1
+               if k >= 4 and _quarterly(k - 4, k)
+               and not any(np.isnan(rev[j]) for j in range(k - 4, k + 1))   # all five positive, as registered
+               else np.nan)
+        last4 = eps[k - 3:k + 1] if k >= 3 and _quarterly(k - 3, k) else []
         ttm = float(sum(last4)) if len(last4) == 4 and not any(np.isnan(x) for x in last4) else np.nan
         i = int(idx.searchsorted(dates[k], side="left")) + 1     # second session on/after D
         if i < len(idx):

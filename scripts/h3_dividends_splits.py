@@ -186,25 +186,63 @@ def stage_fetch(prices_path: str) -> dict:
     return man
 
 
-def dividend_events(divs: list[dict], tickers: set[str]) -> list[dict]:
+def _split_factor_after(splits_by_t: dict[str, list[tuple[str, float]]], t: str, day: str) -> float:
+    """prod(split_to/split_from) over the ticker's splits executed AFTER `day`:
+    divides a per-share amount paid on `day`'s share basis into today's basis."""
+    f = 1.0
+    for d, r in splits_by_t.get(t, []):
+        if d > day:
+            f *= r
+    return f
+
+
+def dividend_events(divs: list[dict], tickers: set[str], splits: list[dict] | None = None) -> list[dict]:
     """INITIATION and INCREASE events per the registered definitions. Only
-    declarations on/before each event are consulted."""
+    declarations on/before each event are consulted.
+
+    Amended after the Codex review of PR #123 (definitions unchanged):
+      * payments are compared on ONE share basis — each cash amount is divided
+        by the split factor of splits executed after its ex-date, so NVDA's
+        post-split $0.01 (a 150% raise) is not read as a cut, and a reverse
+        split cannot manufacture a >=25% "increase";
+      * rows sharing ticker, declaration/ex-date and frequency are one payment
+        (their components summed), and ties sort on (date, ex-date, amount),
+        so the classification no longer depends on the input row order."""
+    splits_by_t: dict[str, list[tuple[str, float]]] = {}
+    for sp in splits or []:
+        t = str(sp.get("ticker") or "").replace(".", "-").upper()
+        try:
+            r = float(sp.get("split_to") or 0) / float(sp.get("split_from") or 0)
+        except ZeroDivisionError:
+            continue
+        if t in tickers and sp.get("execution_date") and r > 0:
+            splits_by_t.setdefault(t, []).append((sp["execution_date"], r))
     # Every CD row counts as PRIOR history (keyed on its declaration date, or its
     # ex-date when the declaration date is missing); only rows WITH a declaration
     # date can be events, because the event date must be the announcement.
     rows = [d for d in divs if d.get("dividend_type") == "CD" and (d.get("currency") or "USD") == "USD"
             and (d.get("declaration_date") or d.get("ex_dividend_date")) and d.get("cash_amount")
             and d.get("ticker")]
-    for d in rows:
-        d["_key"] = d.get("declaration_date") or d["ex_dividend_date"]
-    by_t: dict[str, list[dict]] = {}
+    agg: dict[tuple, dict] = {}
     for d in rows:
         t = str(d["ticker"]).replace(".", "-").upper()
-        if t in tickers:
-            by_t.setdefault(t, []).append(d)
+        if t not in tickers:
+            continue
+        key = d.get("declaration_date") or d["ex_dividend_date"]
+        ex = d.get("ex_dividend_date") or key
+        amt = float(d["cash_amount"]) / _split_factor_after(splits_by_t, t, ex)
+        g = (t, key, ex, d.get("frequency"))
+        if g in agg:
+            agg[g]["cash_amount"] += amt
+        else:
+            agg[g] = {"ticker": t, "_key": key, "ex_dividend_date": ex, "frequency": d.get("frequency"),
+                      "declaration_date": d.get("declaration_date"), "cash_amount": amt}
+    by_t: dict[str, list[dict]] = {}
+    for d in agg.values():
+        by_t.setdefault(d["ticker"], []).append(d)
     events = []
     for t, ds in by_t.items():
-        ds.sort(key=lambda d: (d["_key"], d.get("ex_dividend_date") or ""))
+        ds.sort(key=lambda d: (d["_key"], d.get("ex_dividend_date") or "", d["cash_amount"]))
         seen_decl: set[str] = set()
         for k, d in enumerate(ds):
             decl = d.get("declaration_date")
@@ -279,7 +317,7 @@ def stage_study(prices_path: str, json_out: str | None, raw_price_screen: bool =
     tickers = set(prices)
     man = json.loads((CACHE / "manifest.json").read_text())
 
-    dev = place(dividend_events(divs, tickers), panel, offset=1)   # 2nd session on/after declaration
+    dev = place(dividend_events(divs, tickers, splits), panel, offset=1)   # 2nd session on/after declaration
     sev = place(split_events(splits, tickers), panel, offset=0)    # 1st session on/after execution
     out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": raw_price_screen,
                  "prices_sha256": hashlib.sha256(raw).hexdigest(), "corp_actions": man, "cells": {}}

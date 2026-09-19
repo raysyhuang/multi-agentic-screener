@@ -95,7 +95,7 @@ python scripts/h1_decomposition.py --timing volume --json-out outputs/research/h
 
 The $5 floor was applied to **split-adjusted** prices. A penny stock that later reverse-splits (MULN, HUBC and the like) shows up far above $5 in its own adjusted history, so the screen admitted it using information about a split that had not happened yet. That affected 2.1% of eligible name-days across 436 tickers, and they are the collapsing names.
 
-Because they sat in the same-day base rates, they pushed every excess return **up**. `--raw-price-screen` rebuilds the traded price from the split history (`event_study.split_price_multiplier`); details are in `h3_dividends_splits_FINDINGS.md` § 3. The table compares the v2 JSONs with the v3 raw-screen JSONs (`h1_pead_wide_v3raw_{registered,volume}.json`, `h1_decomposition_v3raw_*.json`):
+Because they sat in the same-day base rates, they pushed most excess returns **up**. `--raw-price-screen` rebuilds the traded price from the split history (`event_study.split_price_multiplier`); details are in `h3_dividends_splits_FINDINGS.md` § 3. The table compares the v2 JSONs with the v3 raw-screen JSONs (`h1_pead_wide_v3raw_{registered,volume}.json`, `h1_decomposition_v3raw_*.json`):
 
 | Cell | v2, adjusted screen (registered / look-ahead-free timing) | **v3, raw screen** |
 |---|---|---|
@@ -105,6 +105,7 @@ Because they sat in the same-day base rates, they pushed every excess return **u
 | All names raw beat, 60 sessions | +0.89% / +0.87%, block CIs > 0 | +0.51% / +0.50%, block CIs span 0 |
 | Least-liquid tercile E1, 20 sessions | +1.22% / +1.32% | +0.86%, cluster [−0.33, +2.09] / +0.70%, cluster [−0.09, +1.47] |
 | S&P E1, 20 sessions | +1.36% / +1.35% | +1.30%, block [+0.23, +2.40] / +1.29%, block [+0.18, +2.57] |
+| All names E1, live-like liquidity (share volume also un-adjusted in v3) | −0.14% / +0.25% | −0.29%, block [−1.12, +0.50] / +0.11%, block [−0.59, +0.80] |
 | Current S&P members, no event | +0.19% | +0.15%, block CI of daily means [−0.19, +0.48] |
 
 **Reading.**

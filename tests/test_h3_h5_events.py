@@ -61,19 +61,19 @@ def test_dividend_entry_is_the_second_session_split_entry_the_first():
 
 
 def test_fundamentals_become_usable_at_the_second_session(tmp_path, monkeypatch):
-    p = _panel(n=60)
+    p = _panel(n=400)
     idx = p.dates
     reports = []
-    for k in range(6):                          # six quarterly reports, revenue growing 20%/yr
-        reports.append({"date": str((idx[5 + 8 * k]).date()), "epsActual": 1.0,
+    for k in range(6):                          # six quarterly reports (63 sessions apart), revenue +20%/yr
+        reports.append({"date": str((idx[5 + 63 * k]).date()), "epsActual": 1.0,
                         "epsEstimated": 0.9, "revenueActual": 100.0 * (1.2 ** (k / 4))})
     monkeypatch.setattr("scripts.h1_pead_wide.EARNINGS_CACHE_DIR", tmp_path)
     (tmp_path / "AAA.json").write_text(json.dumps(reports))
     f = h5.fundamentals_by_session("AAA", idx)
-    i3 = 5 + 8 * 3                              # 4th report: first with four EPS actuals
+    i3 = 5 + 63 * 3                             # 4th report: first with four EPS actuals
     assert pd.isna(f["ttm_eps"].iloc[i3]) and f["ttm_eps"].iloc[i3 + 1] == 4.0
     # the 5th report (k=4) is the first with a YoY figure; usable only at i+1
-    i4 = 5 + 8 * 4
+    i4 = 5 + 63 * 4
     assert pd.isna(f["rev_yoy"].iloc[i4]) and pd.notna(f["rev_yoy"].iloc[i4 + 1])
     assert abs(f["rev_yoy"].iloc[i4 + 1] - 0.2) < 1e-9
 
@@ -89,3 +89,57 @@ def test_a_prior_dividend_without_a_declaration_date_still_blocks_an_initiation(
             _div("AAA", "2024-05-01", 0.10)]
     ev = h3.dividend_events(divs, {"AAA"})
     assert ev == []                     # not an initiation: a dividend existed 76 days earlier
+
+
+def test_dividends_are_compared_on_one_share_basis():
+    """NVDA-style: $0.04 before a 10:1 split, $0.01 after it = +150%, an increase.
+    CIM-style: $0.11 before a 1:3 reverse split, $0.35 after = +6%, not one."""
+    divs = [_div("NVD", "2024-02-21", 0.04) | {"ex_dividend_date": "2024-03-05"},
+            _div("NVD", "2024-05-22", 0.01) | {"ex_dividend_date": "2024-06-11"},
+            _div("CIM", "2024-02-01", 0.11) | {"ex_dividend_date": "2024-03-01"},
+            _div("CIM", "2024-06-01", 0.35) | {"ex_dividend_date": "2024-06-20"}]
+    splits = [{"ticker": "NVD", "execution_date": "2024-06-10", "split_from": 1, "split_to": 10},
+              {"ticker": "CIM", "execution_date": "2024-05-24", "split_from": 3, "split_to": 1}]
+    ev = {(e["ticker"], e["event_date"]): e["kind"] for e in h3.dividend_events(divs, {"NVD", "CIM"}, splits)}
+    assert ev.get(("NVD", "2024-05-22")) == "increase"
+    assert ("CIM", "2024-06-01") not in ev
+
+
+def test_dividend_classification_does_not_depend_on_row_order():
+    base = [_div("CSW", "2024-01-10", 0.50) | {"ex_dividend_date": "2024-01-20"},
+            _div("CSW", "2024-01-10", 0.06) | {"ex_dividend_date": "2024-01-20"},   # supplemental component
+            _div("CSW", "2024-04-10", 0.57) | {"ex_dividend_date": "2024-04-20"},
+            _div("CSW", "2024-04-10", 0.06) | {"ex_dividend_date": "2024-04-20"}]
+    a = h3.dividend_events(base, {"CSW"})
+    b = h3.dividend_events(list(reversed(base)), {"CSW"})
+    assert sorted((e["event_date"], e["kind"]) for e in a) == sorted((e["event_date"], e["kind"]) for e in b)
+    assert ("2024-04-10", "increase") not in [(e["event_date"], e["kind"]) for e in a]   # 0.56 -> 0.63 = +12.5%
+
+
+def test_h5_requires_consecutive_quarters_and_five_positive_revenues(tmp_path, monkeypatch):
+    p = _panel(n=260)
+    idx = p.dates
+    # quarterly reports every 63 sessions except one skipped quarter
+    days = [5, 68, 131, 194, 257]
+    rows = [{"date": str(idx[i].date()), "epsActual": 1.0, "epsEstimated": 0.9,
+             "revenueActual": rv} for i, rv in zip(days, [100, 105, -30, 115, 120])]
+    monkeypatch.setattr("scripts.h1_pead_wide.EARNINGS_CACHE_DIR", tmp_path)
+    (tmp_path / "AAA.json").write_text(json.dumps(rows))
+    f = h5.fundamentals_by_session("AAA", idx)
+    assert f["rev_yoy"].isna().all()               # an intermediate revenue is negative: no YoY
+    rows[2]["revenueActual"] = 110
+    rows.pop(3)                                    # drop a quarter: k-4 would be ~1.25y back
+    (tmp_path / "AAA.json").write_text(json.dumps(rows))
+    f = h5.fundamentals_by_session("AAA", idx)
+    assert f["rev_yoy"].isna().all() and f["ttm_eps"].isna().all()
+
+
+def test_conflicting_same_day_splits_are_skipped_not_compounded():
+    cal = pd.to_datetime(pd.bdate_range("2025-01-06", periods=10))
+    splits = [{"ticker": "ZZZ", "execution_date": str(cal[5].date()), "split_from": 1, "split_to": 10000},
+              {"ticker": "ZZZ", "execution_date": str(cal[5].date()), "split_from": 10000, "split_to": 1},
+              {"ticker": "YYY", "execution_date": str(cal[5].date()), "split_from": 1, "split_to": 2},
+              {"ticker": "YYY", "execution_date": str(cal[5].date()), "split_from": 1, "split_to": 2}]
+    m = es.split_price_multiplier(splits, cal, ["ZZZ", "YYY"])
+    assert (m["ZZZ"] == 1.0).all()                 # conflicting: skipped
+    assert m["YYY"].iloc[0] == 2.0                 # identical duplicate: applied once

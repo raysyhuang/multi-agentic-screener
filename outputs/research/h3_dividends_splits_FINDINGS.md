@@ -4,10 +4,10 @@
 
 | Primary (20 sessions, moving-block CI decisional) | n | Adjusted-price screen | **Raw-price screen** |
 |---|---|---|---|
-| **H3a** dividend initiations + ≥25% increases, pooled | 706 / 707 | +0.51%, block [−0.73, +1.70] | **+0.15%**, block [−1.08, +1.34] |
+| **H3a** dividend initiations + ≥25% increases, pooled | 692 / 693 | +0.56%, block [−0.73, +1.81] | **+0.21%**, block [−1.08, +1.46] |
 | **H3b** forward stock splits | 132 / 131 | −0.46%, block [−2.75, +1.85] | −0.11%, block [−2.53, +2.34] |
 
-Under the registered screen, H3a clears condition (a) by one basis point: +0.51% against a +0.50% line. It fails condition (b). Once the price screen stops admitting future reverse-splitters (§ 3), H3a falls to +0.15%. H3b is negative, or close to zero, under both screens.
+Under the registered screen, H3a narrowly clears condition (a): +0.56% against a +0.50% line. It fails condition (b). Once the price screen stops admitting future reverse-splitters (§ 3), H3a falls to +0.21%. H3b is negative, or close to zero, under both screens.
 
 ## Pre-registration
 
@@ -37,8 +37,8 @@ These are variants. None of them can change the verdict.
 | Cell | Adjusted screen | Raw screen |
 |---|---|---|
 | Initiations, 20 sessions | +0.63% (n=197), block [−0.81, +2.14] | +0.21% (n=198), block [−1.24, +1.72] |
-| Increases, 20 sessions | +0.47% (n=509), block [−0.99, +1.88] | +0.13% (n=509), block [−1.32, +1.53] |
-| H3a, 60 sessions | +1.36%, block [−0.72, +3.40] | +0.58%, block [−1.46, +2.57] |
+| Increases, 20 sessions | +0.54% (n=495), block [−0.95, +1.99] | +0.21% (n=495), block [−1.27, +1.65] |
+| H3a, 60 sessions | +1.48%, block [−0.71, +3.68] | +0.73%, block [−1.42, +2.85] |
 | Forward splits, 60 sessions | +3.69%, block [−1.54, +11.24] | +4.27%, block [−1.62, +13.06] |
 | Reverse splits, 20 sessions | **−16.4%** (n=227), median −27% | −10.9% (n=16) |
 
@@ -52,7 +52,14 @@ The check also found a defect that affects every study in this series. The **$5 
 
 Scale of the problem: **2.1% of eligible name-days across 436 tickers** were sub-$5 penny stocks that later reverse-split. Only 16 of the 227 reverse-split events survive the raw screen. The rest were never tradable at $5 or more.
 
-These names collapse, and they sat inside the **base rates**. That pulled every same-day base down and pushed every event's excess up. This is why every positive number in H1, H3 and H5 shrinks under the raw screen. `h1_pead_wide_FINDINGS.md` § 7 shows the effect on PEAD.
+These names collapse, and they sat inside the **base rates**. That pulled the same-day base rates down, which pushed most events' excess returns up. This is why most positive numbers in H1, H3 and H5 shrink under the raw screen. The correction is not uniformly downward: forward splits at 60 sessions rise from +3.69% to +4.27%. `h1_pead_wide_FINDINGS.md` § 7 shows the effect on PEAD.
+
+## Amendment after the Codex review of PR #123
+
+The definitions are unchanged; the implementation was corrected. Every number above comes from the corrected code.
+
+- **Share basis.** Payments are now compared on a single share basis. Each cash amount is divided by the factor of any splits executed after its ex-date. Before this fix, NVDA's post-split $0.01 dividend (a 150% raise NVIDIA itself announced) read as a cut. In the other direction, CIM's $0.11 → $0.35 across a 1:3 reverse split read as a +218% increase, when it was really +6%.
+- **Row order.** Rows sharing a ticker, a declaration or ex-date and a frequency are now one payment, with their components summed. Ties sort deterministically. Previously, reversing the input list changed around 100 classifications.
 
 ## Caveats
 

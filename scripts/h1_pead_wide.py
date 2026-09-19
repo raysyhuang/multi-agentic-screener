@@ -273,7 +273,14 @@ def main() -> None:
     # 20-session mean share volume >= 500k and mean dollar volume >= $10M. The
     # live pipeline also caps and tiers its universe; this does not reproduce
     # that selection, it only asks whether the result depends on the thin tail.
-    mvol = panel.volume.rolling(es.LIQ_WINDOW, min_periods=es.LIQ_WINDOW).mean().shift(1)
+    # Share volume must be RAW too when the raw price screen is on (a later
+    # reverse split shrinks adjusted volume; Codex: ALIT). Dollar volume needs
+    # no correction — the two adjustments cancel.
+    vol_raw = panel.volume
+    if args.raw_price_screen:
+        vol_raw = panel.volume / es.split_price_multiplier(
+            _splits_or_none(True), panel.dates, list(panel.volume.columns))
+    mvol = vol_raw.rolling(es.LIQ_WINDOW, min_periods=es.LIQ_WINDOW).mean().shift(1)
     mdv = (panel.close * panel.volume).rolling(es.LIQ_WINDOW, min_periods=es.LIQ_WINDOW).mean().shift(1)
     ok = [bool(mvol.at[d, t] >= 500_000 and mdv.at[d, t] >= 10_000_000)
           if pd.notna(mvol.at[d, t]) and pd.notna(mdv.at[d, t]) else False
