@@ -164,7 +164,7 @@ def _needs_refresh(path: Path, refresh_before: date | None) -> bool:
     every run would only burn the call budget."""
     if not path.exists():
         return True
-    written = datetime.fromtimestamp(path.stat().st_mtime, tz=timezone.utc).date()
+    written = datetime.fromtimestamp(path.stat().st_mtime).date()   # local, same clock as date.today()
     if refresh_before is not None and written < refresh_before:
         return True
     if written >= date.today():

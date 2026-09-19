@@ -39,7 +39,7 @@ A verdict that flips on refreshing a data cache is not an established effect in 
 | **20-session window** | −0.27pp | **[−0.49, −0.05]** |
 | miss ≤ −5% | −0.25pp | [−0.56, +0.06] |
 | mirror: post-beat | +0.15pp | [−0.11, +0.41] |
-| min_score 50 | −0.01pp | [−0.25, +0.23] |
+| min_score 50 | −0.005pp | [−0.25, +0.23] |
 
 ## Reading
 
