@@ -63,11 +63,19 @@ def _table_text() -> str:
     return match.group(1)
 
 
-def _registry_rows() -> list[list[str]]:
+_HTML_COMMENT = re.compile(r"<!--.*?-->", re.S)
+_FINDINGS_NAME = re.compile(r"[A-Za-z0-9_.-]+_FINDINGS\.md")
+
+
+def _registry_rows(table_text: str | None = None) -> list[list[str]]:
+    """Parsed DATA rows only. HTML comments are stripped first and the header,
+    separator and any prose between rows are ignored, so nothing but a real
+    row's cells can register anything."""
+    text = _HTML_COMMENT.sub("", _table_text() if table_text is None else table_text)
     rows = []
-    for line in _table_text().splitlines():
+    for line in text.splitlines():
         line = line.strip()
-        if not line.startswith("|") or set(line) <= set("|- "):
+        if not line.startswith("|") or set(line) <= set("|- :"):
             continue
         cells = [c.strip() for c in line.strip("|").split("|")]
         if cells[0] == "ID":
@@ -76,11 +84,20 @@ def _registry_rows() -> list[list[str]]:
     return rows
 
 
-def _unregistered(findings: list[str]) -> list[str]:
-    """Findings count as registered only when named INSIDE the registry table —
-    a mention in prose elsewhere in the document records no verdict and no count."""
-    table = _table_text()
-    return [name for name in findings if name not in table]
+def _registered_findings(table_text: str | None = None) -> set[str]:
+    """Exact findings basenames cited in the Source CELL (last column) of a data
+    row. Searching the raw text between the markers would let a basename parked
+    in an HTML comment, or in prose, count as a registration with no verdict and
+    no variant count attached to it."""
+    names: set[str] = set()
+    for cells in _registry_rows(table_text):
+        names.update(_FINDINGS_NAME.findall(cells[-1]))
+    return names
+
+
+def _unregistered(findings: list[str], table_text: str | None = None) -> list[str]:
+    registered = _registered_findings(table_text)
+    return [name for name in findings if name not in registered]
 
 
 def test_every_tracked_findings_file_is_registered():
@@ -110,6 +127,40 @@ def test_a_prose_only_mention_does_not_count_as_registered():
     text = REGISTRY.read_text(encoding="utf-8")
     assert "COMPARATOR_PINNING_METHOD.md" in text
     assert _unregistered(["COMPARATOR_PINNING_METHOD.md"]) == ["COMPARATOR_PINNING_METHOD.md"]
+
+
+def test_basenames_hidden_in_a_comment_between_the_markers_do_not_register():
+    """The bypass Codex described: every Source cell replaced by a placeholder
+    and the basenames parked in an HTML comment inside the table markers. Raw
+    text search passes that; the parsed Source cell must not."""
+    real = _registry_rows()
+    cited = sorted(_registered_findings())
+    assert cited, "expected the real table to cite findings files"
+    header = "| ID | Family | Mechanism | Data | Gate | Verdict | Variants | Date | Source |"
+    separator = "|---|---|---|---|---|---|---|---|---|"
+    gutted = [" | ".join(["", *cells[:-1], "see elsewhere", ""]).strip() for cells in real]
+    smuggled = "\n".join([
+        header, separator, f"<!-- {' '.join(cited)} -->", *gutted,
+        "Prose between rows naming " + cited[0] + " registers nothing either.",
+    ])
+    assert all(name in smuggled for name in cited)          # raw text would pass
+    assert _unregistered(cited, smuggled) == cited           # parsed cells do not
+
+    # A basename in a non-Source cell of a real row does not count either.
+    wrong_cell = "\n".join([header, separator,
+                            f"| R-x | exit | cites {cited[0]} here | d | G1 | REJECTED | 1 | 2026 | nothing |"])
+    assert _unregistered([cited[0]], wrong_cell) == [cited[0]]
+    # ...and the same basename in the Source cell does.
+    right_cell = wrong_cell.replace("| nothing |", f"| `{cited[0]}` |")
+    assert _unregistered([cited[0]], right_cell) == []
+
+
+def test_a_substring_of_another_basename_is_not_a_match():
+    table = ("| ID | a | b | c | d | e | f | g | Source |\n|---|---|---|---|---|---|---|---|---|\n"
+             "| R-x | exit | m | d | G1 | REJECTED | 1 | 2026 | `pead_trail_FINDINGS.md` |")
+    assert _unregistered(["trail_FINDINGS.md", "pead_FINDINGS.md"], table) == [
+        "trail_FINDINGS.md", "pead_FINDINGS.md"]
+    assert _unregistered(["pead_trail_FINDINGS.md"], table) == []
 
 
 def test_git_failure_fails_in_ci_and_skips_locally(monkeypatch):
