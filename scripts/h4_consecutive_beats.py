@@ -119,10 +119,18 @@ def diff_cluster_ci(a: pd.DataFrame, b: pd.DataFrame, col: str, n_boot: int = 10
     return point, out[int(0.025 * len(out))], out[int(0.975 * len(out))]
 
 
+def _splits_or_none(on: bool):
+    import json as _json
+    from pathlib import Path as _P
+    return _json.loads((_P(__file__).resolve().parents[1] / "data/cache/corp_actions/splits.json").read_text()) if on else None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--raw-price-screen", action="store_true",
+                    help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
     ap.add_argument("--predecessors", choices=["window", "full"], default="full",
                     help="window = the registered run's lookup (events inside the price window); "
@@ -132,7 +140,7 @@ def main() -> None:
     raw_bytes = Path(args.prices).read_bytes()
     combined = pd.read_parquet(args.prices)
     prices = {t: g.drop(columns=["_ticker"]) for t, g in combined.groupby("_ticker") if t != "SPY"}
-    panel = es.build_panel(prices)
+    panel = es.build_panel(prices, splits=_splits_or_none(args.raw_price_screen))
     events = build_events(panel, list(prices), timing=args.timing)
     history = None
     if args.predecessors == "full":
@@ -150,7 +158,7 @@ def main() -> None:
     cons = beats[beats["prev_surprise"].notna() & (beats["prev_surprise"] >= MIN_SURPRISE)]
     first = beats[beats["prev_surprise"].notna() & (beats["prev_surprise"] < MIN_SURPRISE)]
 
-    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
+    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen),
                     "timing": args.timing, "predecessors": args.predecessors,
                     "prices_sha256": hashlib.sha256(raw_bytes).hexdigest(),
                     "earnings": earnings_fingerprint(list(prices)),

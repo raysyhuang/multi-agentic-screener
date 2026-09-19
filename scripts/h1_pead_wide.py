@@ -211,10 +211,18 @@ def g1_verdict(summary: dict, years: dict) -> dict:
             "PASS": bool(ok_a and ok_b and ok_c)}
 
 
+def _splits_or_none(on: bool):
+    import json as _json
+    from pathlib import Path as _P
+    return _json.loads((_P(__file__).resolve().parents[1] / "data/cache/corp_actions/splits.json").read_text()) if on else None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--raw-price-screen", action="store_true",
+                    help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
     args = ap.parse_args()
 
@@ -223,7 +231,8 @@ def main() -> None:
     prices = {t: g.drop(columns=["_ticker"]) for t, g in combined.groupby("_ticker")}
     print(f"prices: {len(prices)} tickers, {len(combined)} rows, "
           f"{str(combined['date'].min())[:10]} -> {str(combined['date'].max())[:10]}")
-    panel = es.build_panel({t: d for t, d in prices.items() if t != "SPY"})
+    panel = es.build_panel({t: d for t, d in prices.items() if t != "SPY"},
+                           splits=_splits_or_none(args.raw_price_screen))
 
     sp500 = {t.replace(".", "-").upper() for t in SP500_TICKERS}
     events = build_events(panel, [t for t in prices if t != "SPY"], timing=args.timing)
@@ -234,7 +243,7 @@ def main() -> None:
     print(f"events with an EPS surprise: {n_all}; liquid as of the prior close: {n_elig}")
     ex = ex[ex["eligible"]]
 
-    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
+    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen),
                     "timing": args.timing,
                     "prices_sha256": hashlib.sha256(raw_bytes).hexdigest(),
                     "earnings": earnings_fingerprint([t for t in prices if t != "SPY"]),
@@ -264,7 +273,14 @@ def main() -> None:
     # 20-session mean share volume >= 500k and mean dollar volume >= $10M. The
     # live pipeline also caps and tiers its universe; this does not reproduce
     # that selection, it only asks whether the result depends on the thin tail.
-    mvol = panel.volume.rolling(es.LIQ_WINDOW, min_periods=es.LIQ_WINDOW).mean().shift(1)
+    # Share volume must be RAW too when the raw price screen is on (a later
+    # reverse split shrinks adjusted volume; Codex: ALIT). Dollar volume needs
+    # no correction — the two adjustments cancel.
+    vol_raw = panel.volume
+    if args.raw_price_screen:
+        vol_raw = panel.volume / es.split_price_multiplier(
+            _splits_or_none(True), panel.dates, list(panel.volume.columns))
+    mvol = vol_raw.rolling(es.LIQ_WINDOW, min_periods=es.LIQ_WINDOW).mean().shift(1)
     mdv = (panel.close * panel.volume).rolling(es.LIQ_WINDOW, min_periods=es.LIQ_WINDOW).mean().shift(1)
     ok = [bool(mvol.at[d, t] >= 500_000 and mdv.at[d, t] >= 10_000_000)
           if pd.notna(mvol.at[d, t]) and pd.notna(mdv.at[d, t]) else False

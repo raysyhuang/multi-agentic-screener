@@ -165,10 +165,18 @@ def run_mr(prices: dict[str, pd.DataFrame], panel: es.Panel, min_score: float,
     return df[ok].reset_index(drop=True)
 
 
+def _splits_or_none(on: bool):
+    import json as _json
+    from pathlib import Path as _P
+    return _json.loads((_P(__file__).resolve().parents[1] / "data/cache/corp_actions/splits.json").read_text()) if on else None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--raw-price-screen", action="store_true",
+                    help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     ap.add_argument("--known", choices=["registered", "next_day"], default="registered")
     args = ap.parse_args()
     global MIN_SINCE
@@ -178,11 +186,11 @@ def main() -> None:
     combined = pd.read_parquet(args.prices)
     prices = {t: g.drop(columns=["_ticker"]).reset_index(drop=True)
               for t, g in combined.groupby("_ticker") if t != "SPY"}
-    panel = es.build_panel(prices)
+    panel = es.build_panel(prices, splits=_splits_or_none(args.raw_price_screen))
     events = build_events(panel, list(prices))
 
     prices_sha = hashlib.sha256(raw_bytes).hexdigest()
-    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
+    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen),
                     "known": args.known, "min_sessions_since_report": MIN_SINCE,
                     "earnings": earnings_fingerprint(list(prices)),
                     "prices_sha256": prices_sha,

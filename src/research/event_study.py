@@ -107,6 +107,43 @@ def block_boot_ci(x: list[float], entry_dates: list, calendar: pd.Index, block: 
     return float(means[int(0.025 * len(means))]), float(means[int(0.975 * len(means))])
 
 
+def block_diff_ci(xa: list[float], da: list, xb: list[float], db: list, calendar: pd.Index,
+                  block: int = 20, n_boot: int = 10_000, seed: int = SEED) -> tuple[float, float, float]:
+    """mean(a) - mean(b) with a circular moving-block CI: each draw picks the same
+    blocks of calendar sessions for both cohorts and recomputes both
+    observation-weighted means, so the difference keeps the dependence between
+    overlapping windows that a per-date resample would break."""
+    if not xa or not xb:
+        return (float("nan"), float("nan"), float("nan"))
+    n = len(calendar)
+    pos = {pd.Timestamp(d): i for i, d in enumerate(calendar)}
+
+    def _arrays(x, d):
+        s_, c_ = np.zeros(n), np.zeros(n)
+        for v, dd in zip(x, d):
+            i = pos.get(pd.Timestamp(dd))
+            if i is not None:
+                s_[i] += v
+                c_[i] += 1
+        wrap = np.arange(n + block) % n
+        return (np.concatenate([[0.0], np.cumsum(s_[wrap])]),
+                np.concatenate([[0.0], np.cumsum(c_[wrap])]))
+
+    psa, pca = _arrays(xa, da)
+    psb, pcb = _arrays(xb, db)
+    n_blocks = max(1, -(-n // block))
+    rng = np.random.default_rng(seed)
+    starts = rng.integers(0, n, size=(n_boot, n_blocks))
+    ta = (psa[starts + block] - psa[starts]).sum(axis=1)
+    na = (pca[starts + block] - pca[starts]).sum(axis=1)
+    tb = (psb[starts + block] - psb[starts]).sum(axis=1)
+    nb = (pcb[starts + block] - pcb[starts]).sum(axis=1)
+    ok = (na > 0) & (nb > 0)
+    diffs = np.sort(ta[ok] / na[ok] - tb[ok] / nb[ok])
+    point = float(np.mean(xa) - np.mean(xb))
+    return point, float(diffs[int(0.025 * len(diffs))]), float(diffs[int(0.975 * len(diffs))])
+
+
 def market_regime(spy: pd.DataFrame, lag_sessions: int = 0) -> dict[str, str]:
     """{YYYY-MM-DD: bull|bear|choppy|unknown} from SPY SMA20/50, per date.
 
@@ -149,9 +186,47 @@ class Panel:
         return self.close.index
 
 
+def clean_splits(splits: list[dict], tickers) -> list[dict]:
+    """One split per (ticker, execution date), dash-form tickers, restricted to
+    `tickers`. Identical duplicate rows collapse to one; CONFLICTING same-day
+    rows (Polygon has some, e.g. both 1:10000 and 10000:1 for one OTC name) are
+    dropped — applying both would compound them, and picking one would be a
+    guess. Every consumer of split factors goes through this."""
+    cols = set(tickers)
+    by_key: dict[tuple[str, str], set[tuple[float, float]]] = {}
+    for sp in splits or []:
+        t = str(sp.get("ticker") or "").replace(".", "-").upper()
+        if t in cols and sp.get("execution_date"):
+            by_key.setdefault((t, sp["execution_date"]), set()).add(
+                (float(sp.get("split_from") or 0), float(sp.get("split_to") or 0)))
+    out = []
+    for (t, d), vs in sorted(by_key.items()):
+        if len(vs) != 1:
+            continue
+        (fr, to), = vs
+        if fr > 0 and to > 0:
+            out.append({"ticker": t, "execution_date": d, "split_from": fr, "split_to": to})
+    return out
+
+
+def split_price_multiplier(splits: list[dict], dates: pd.Index, tickers: list[str]) -> pd.DataFrame:
+    """(date x ticker) multiplier that turns split-ADJUSTED prices back into the
+    RAW prices traded on each date: raw = adjusted x prod(split_to/split_from)
+    over every split executed AFTER that date. Needed because a $5 floor applied
+    to adjusted prices admits penny stocks that later reverse-split (a 1-for-100
+    split makes a $0.50 stock look like $50 in its own history) — a screen that
+    uses information from the future. Dollar volume is unaffected (the price
+    and volume adjustments cancel)."""
+    mult = pd.DataFrame(1.0, index=dates, columns=tickers)
+    for sp in clean_splits(splits, tickers):
+        f = sp["split_to"] / sp["split_from"]
+        mult.loc[mult.index < pd.Timestamp(sp["execution_date"]), sp["ticker"]] *= f
+    return mult
+
+
 def build_panel(prices: dict[str, pd.DataFrame], *, min_price: float = MIN_PRICE,
                 min_dollar_vol: float = MIN_DOLLAR_VOL, window: int = LIQ_WINDOW,
-                n_buckets: int = N_BUCKETS) -> Panel:
+                n_buckets: int = N_BUCKETS, splits: list[dict] | None = None) -> Panel:
     """Pivot per-ticker OHLCV into a panel and compute a NO-LOOKAHEAD liquidity
     screen: eligibility and bucket on date D use the prior close and the mean
     dollar volume of the `window` sessions ending at D-1 (`.shift(1)`), so
@@ -170,7 +245,11 @@ def build_panel(prices: dict[str, pd.DataFrame], *, min_price: float = MIN_PRICE
     v = long.pivot(index="date", columns="ticker", values="volume").sort_index()
 
     dollar_vol = (c * v).rolling(window, min_periods=window).mean().shift(1)
-    prior_close = c.shift(1)
+    # With `splits`, the price floor reads the RAW price traded that day (see
+    # split_price_multiplier); without, it reads the adjusted price (the
+    # original behaviour, which lets future reverse-splitters through).
+    raw_close = c * split_price_multiplier(splits, c.index, list(c.columns)) if splits else c
+    prior_close = raw_close.shift(1)
     eligible = (prior_close >= min_price) & (dollar_vol >= min_dollar_vol)
 
     ranked = dollar_vol.where(eligible).rank(axis=1, pct=True)

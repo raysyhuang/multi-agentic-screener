@@ -32,6 +32,10 @@ Anchoring does not show up. If a second surprise is priced differently from a fi
 
 The first-beat cohort's +0.62% under look-ahead-free timing is a post-hoc observation, not a result, and nothing here establishes why it is higher.
 
+## Raw-price screen (v3)
+
+With the price floor corrected for future reverse splits, consecutive − first is +0.14pp, CI [−0.33, +0.64], under registered timing, and −0.28pp, CI [−0.74, +0.19], under look-ahead-free timing (`h4_consecutive_beats_v3raw_*.json`). The verdict is unchanged.
+
 ## Caveats
 
 - These are the same universe and timing caveats as H1.
