@@ -242,6 +242,7 @@ class PolygonClient:
         max_pages: int = 20,
         ticker_gte: str | None = None,
         ticker_lt: str | None = None,
+        as_of: date | None = None,
     ) -> list[dict]:
         """Fetch ticker list for universe construction.
 
@@ -251,9 +252,15 @@ class PolygonClient:
             max_pages: Safety limit on pagination (default 20 = 20,000 tickers)
             ticker_gte: Only return tickers >= this value (alphabetical range start)
             ticker_lt: Only return tickers < this value (alphabetical range end)
+            as_of: Point-in-time listing — the tickers ACTIVE ON that date
+                (Polygon's `date` parameter), so a name delisted since then is
+                still returned. Default None = active today, which is
+                survivorship-biased for any historical study.
         """
         url = f"{BASE_URL}/v3/reference/tickers"
         params = self._params(market=market, active="true", limit=1000)
+        if as_of is not None:
+            params["date"] = str(as_of)
         if ticker_type:
             params["type"] = ticker_type
         if ticker_gte:

@@ -1,0 +1,14 @@
+{
+ "generated_at": "2026-09-19T07:00:02.095374+00:00",
+ "requested": 4723,
+ "cached": 4723,
+ "empty": 105,
+ "rows": 353803,
+ "eps_pairs": 257639,
+ "failures": {
+  "GLPG": "ConnectError: ",
+  "HRL": "ConnectError: ",
+  "KDNY": "ConnectError: ",
+  "USB": "ConnectError: "
+ }
+}

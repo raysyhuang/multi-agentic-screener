@@ -1,0 +1,24 @@
+{
+ "provenance": {
+  "provider": "polygon",
+  "fallback_reason": null,
+  "requested": 4724,
+  "returned": 4722,
+  "missing": [
+   "AXIAPC",
+   "GEVW"
+  ],
+  "failures": {
+   "AXIAPC": "empty_or_malformed_response",
+   "GEVW": "empty_or_malformed_response"
+  }
+ },
+ "rows": 3219830,
+ "tickers": 4722,
+ "span": [
+  "2023-07-10",
+  "2026-09-18"
+ ],
+ "sha256": "2d04af2db42ab0519614522a7e8cbd0f38d9532c01b26c34f4e3933e07d25e0c",
+ "generated_at": "2026-09-19T05:06:08.482416+00:00"
+}
