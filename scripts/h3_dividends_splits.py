@@ -40,12 +40,18 @@ in the output.
   Descriptive only (registry variants): initiations and increases separately;
   horizon 60; reverse splits; liquidity terciles.
 
-PRE-DATA AMENDMENT (committed before any fetch succeeded): Polygon's next_url
-drops the date filter on this endpoint, so the fetch queries one day at a time
-and never follows the cursor; and because some dividend rows have no
-declaration date, dividends are fetched by declaration date AND by ex-date, and
-prior-dividend history uses either date (an unseen prior dividend would fake an
-"initiation"). The event definitions and G1 criteria above are unchanged.
+PRE-DATA AMENDMENTS (committed before any fetch succeeded; the event
+definitions and G1 criteria above are unchanged):
+  1. Polygon's next_url drops the date filter on /v3/reference/dividends, so no
+     fetch follows a cursor.
+  2. Some dividend rows have no declaration date, and prior-dividend history
+     must still see them (an unseen prior dividend would fake an "initiation"),
+     so history is keyed on declaration date OR ex-date.
+  3. Whole-market date-window queries are unusable for dividends: ex-date days
+     are flooded by thousands of mutual-fund share classes (1,000+ F-tickers on
+     2022-03-09 alone). Dividends are therefore fetched PER UNIVERSE TICKER,
+     full history, one page each — complete for exactly the names studied.
+     Splits keep the date-window fetch (small volumes).
 
 Usage:
   python scripts/h3_dividends_splits.py --stage fetch
@@ -130,21 +136,49 @@ async def _fetch_all(path: str, date_field: str, start: date, end: date, step_da
     return out
 
 
-def stage_fetch() -> dict:
+async def _dividends_by_ticker(tickers: list[str], concurrency: int = 8) -> tuple[list[dict], dict]:
+    """Every dividend Polygon has for each universe ticker — ONE query per
+    ticker, full history, no date filter and no cursor. Complete for exactly
+    the names the study uses, and independent of both failure modes seen on
+    the whole-market query (a cursor that drops the date filter; ex-date days
+    flooded by thousands of mutual-fund share classes). A ticker whose history
+    does not fit one page is refused rather than truncated."""
+    client = PolygonClient()
+    sem = asyncio.Semaphore(concurrency)
+    out: list[dict] = []
+    failures: dict[str, str] = {}
+    async with httpx.AsyncClient(timeout=60) as cl:
+        async def _one(t: str) -> None:
+            async with sem:
+                try:
+                    resp = await _request_with_backoff(
+                        cl, BASE_URL + "/v3/reference/dividends",
+                        client._params(ticker=t.replace("-", "."), limit=PAGE))
+                    j = resp.json()
+                    rows = j.get("results") or []
+                    if j.get("next_url") or len(rows) >= PAGE:
+                        failures[t] = f"history exceeds one page ({len(rows)})"
+                        return
+                    out.extend(rows)
+                except Exception as e:  # noqa: BLE001 — recorded, not swallowed
+                    failures[t] = f"{type(e).__name__}: {e}"[:160]
+        await asyncio.gather(*(_one(t) for t in tickers))
+    return out, failures
+
+
+def stage_fetch(prices_path: str) -> dict:
     CACHE.mkdir(parents=True, exist_ok=True)
     end = date.today()
-    # Twice: some dividend rows carry no declaration_date, so a declaration-date
-    # filter alone would never see them — and an unseen earlier dividend would
-    # turn a regular payer into a false "initiation". Union by id.
-    by_decl = asyncio.run(_fetch_all("/v3/reference/dividends", "declaration_date", HISTORY_START, end, step_days=1))
-    by_ex = asyncio.run(_fetch_all("/v3/reference/dividends", "ex_dividend_date", HISTORY_START, end, step_days=1))
-    divs = list({r["id"]: r for r in by_decl + by_ex}.values())
+    comb = pd.read_parquet(prices_path, columns=["_ticker"])
+    tickers = sorted(set(comb["_ticker"]) - {"SPY"})
+    divs, div_failures = asyncio.run(_dividends_by_ticker(tickers))
     splits = asyncio.run(_fetch_all("/v3/reference/splits", "execution_date", HISTORY_START, end, step_days=7))
     (CACHE / "dividends.json").write_text(json.dumps(divs))
     (CACHE / "splits.json").write_text(json.dumps(splits))
     man = {"fetched_at": datetime.now(timezone.utc).isoformat(), "window": [str(HISTORY_START), str(end)],
-           "dividends": len(divs), "dividends_by_declaration_date": len(by_decl),
-           "dividends_by_ex_date": len(by_ex), "splits": len(splits),
+           "dividend_method": "per universe ticker, full history, one page each",
+           "dividend_tickers_requested": len(tickers), "dividend_failures": div_failures,
+           "dividends": len(divs), "splits": len(splits),
            "sha256": {f: hashlib.sha256((CACHE / f).read_bytes()).hexdigest()
                       for f in ("dividends.json", "splits.json")}}
     (CACHE / "manifest.json").write_text(json.dumps(man, indent=1))
@@ -289,7 +323,7 @@ def main() -> None:
     ap.add_argument("--json-out", default=None)
     args = ap.parse_args()
     if args.stage == "fetch":
-        stage_fetch()
+        stage_fetch(args.prices)
     else:
         stage_study(args.prices, args.json_out)
 
