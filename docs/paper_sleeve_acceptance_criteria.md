@@ -12,7 +12,17 @@ The afternoon mark-to-market lane (Hermes job `94022cc9cad0`, `35 21 * * 1-5` UT
 
 ## When measurement starts — gated on a condition, not a date
 
-**The measurement window has not opened.** This section is written **before** the runs it governs exist, which is the only time it can be written honestly.
+> **Amendment 2026-09-19 — the window is now OPEN: start date = the first `entry_date` on or after 2026-09-19** (in practice, entries filled from the Monday 2026-09-21 morning run onward).
+>
+> Evidence, gathered read-only from the mirror host and recorded in [`paper_sleeve_window_evidence_2026-09-19.md`](paper_sleeve_window_evidence_2026-09-19.md): condition 1 (versioned launcher, deployed hash `d802de597cce…` = `origin/main`) is met from **2026-08-31**; condition 2 (five consecutive valid days) was met on **2026-09-04** (08-31, 09-01, 09-02, 09-03, 09-04 — each with a non-null `dashboard_sha256`, `source_sha` on `origin/main`, scheduler status `completed`); condition 3 is met by **this commit**. The three are simultaneously true from 2026-09-19, so that is the date the rule yields — not 2026-09-04. Backdating to 09-04 would admit trades whose outcomes were already known (RBRK +16%, entered 08-31) into the sample, which is precisely what the condition forbids. Those trades are OUT.
+>
+> The 2026-08-20 → 08-28 runs produced bundles but their manifests carry no launcher provenance (the stamp landed in `cce04bf` on 08-21 and the host copy was not updated until 08-31), so they cannot attest condition 1 and are not counted.
+>
+> Amendment-rule check: this records a date the condition yields; it moves no threshold; no decision was pending on any stream (every stream's in-window `n` is 0). Rule 6 (direction by effect): later start = fewer counted trades = stricter.
+
+The paragraphs below are the original pre-registration text and are kept verbatim as the rule that produced the date above.
+
+**The measurement window had not opened when this section was written.** It is written **before** the runs it governs exist, which is the only time it can be written honestly.
 
 ### Why the original date was withdrawn
 
@@ -47,7 +57,7 @@ This document governs **thresholds and decision rules for paper-sleeve results**
 
 It does **not** authorize promotion to a live executor. Clearing Tier 2 makes a sleeve eligible for a promotion *discussion*, which still goes through the validation card and remains Ray's decision.
 
-`docs/paper_mirror_acceptance.md` (PR #89) covers **launcher operational acceptance** — did the afternoon lane run, did it stamp fills, did it avoid touching alpha-bearing code. That is a different question and a legitimate one. Any threshold or citation rule in that document is **superseded by this one**; two acceptance bars is how a result gets graded against whichever bar has no failure mode.
+Launcher operational acceptance (PR #89 — its body is the record; the file `docs/paper_mirror_acceptance.md` it was expected to add was never committed, noted 2026-09-19) covers **launcher operational acceptance** — did the afternoon lane run, did it stamp fills, did it avoid touching alpha-bearing code. That is a different question and a legitimate one. Any threshold or citation rule in that document is **superseded by this one**; two acceptance bars is how a result gets graded against whichever bar has no failure mode.
 
 ## Goal
 
@@ -237,7 +247,7 @@ A reader who takes condition 2 from the production bundle evaluates the live boo
 
 | Test | Question | Where it lives |
 |---|---|---|
-| **Reproduction** | Does the paper book behave like the live book? | **Mirror fidelity.** Belongs to `docs/paper_mirror_acceptance.md` (launcher acceptance), not here. |
+| **Reproduction** | Does the paper book behave like the live book? | **Mirror fidelity.** Belongs to launcher acceptance (PR #89; no standalone doc was ever committed), not here. |
 | **Beating** | Is this sleeve worth trading? | **Sleeve value.** This document. |
 
 The rules for this document:
