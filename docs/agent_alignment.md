@@ -149,6 +149,8 @@ The two DB diagnostics read the live database and cannot run from the canonical 
 
 ## 9. Measurement discipline
 
+**Before proposing any strategy idea, read [`docs/research_registry.md`](research_registry.md).** It lists every hypothesis already tested, its verdict, its variant count, and a DO-NOT-RETEST table with the condition under which a retest is legitimate. New ideas enter through its G0–G4 funnel, with pass/fail criteria written into the registry row *before* the run.
+
 Paper-sleeve results are governed by [`docs/paper_sleeve_acceptance_criteria.md`](paper_sleeve_acceptance_criteria.md), pre-registered before the measurement lane produced its first scheduled results.
 
 Read it before quoting any number. In particular: **a stream below n = 30 is not quotable** outside a descriptive sentence that states `n` and that the CI crosses zero. This project has already retired an 82% sniper win rate and a 69.5% MR win rate that were both artifacts. The cost of quoting early numbers is not embarrassment — it is that they get built on.
