@@ -186,9 +186,33 @@ class Panel:
         return self.close.index
 
 
+def split_price_multiplier(splits: list[dict], dates: pd.Index, tickers: list[str]) -> pd.DataFrame:
+    """(date x ticker) multiplier that turns split-ADJUSTED prices back into the
+    RAW prices traded on each date: raw = adjusted x prod(split_to/split_from)
+    over every split executed AFTER that date. Needed because a $5 floor applied
+    to adjusted prices admits penny stocks that later reverse-split (a 1-for-100
+    split makes a $0.50 stock look like $50 in its own history) — a screen that
+    uses information from the future. Dollar volume is unaffected (the price
+    and volume adjustments cancel)."""
+    mult = pd.DataFrame(1.0, index=dates, columns=tickers)
+    cols = set(tickers)
+    for sp in splits:
+        t = str(sp.get("ticker") or "").replace(".", "-").upper()
+        if t not in cols or not sp.get("execution_date"):
+            continue
+        try:
+            f = float(sp.get("split_to") or 0) / float(sp.get("split_from") or 0)
+        except ZeroDivisionError:
+            continue
+        if f <= 0:
+            continue
+        mult.loc[mult.index < pd.Timestamp(sp["execution_date"]), t] *= f
+    return mult
+
+
 def build_panel(prices: dict[str, pd.DataFrame], *, min_price: float = MIN_PRICE,
                 min_dollar_vol: float = MIN_DOLLAR_VOL, window: int = LIQ_WINDOW,
-                n_buckets: int = N_BUCKETS) -> Panel:
+                n_buckets: int = N_BUCKETS, splits: list[dict] | None = None) -> Panel:
     """Pivot per-ticker OHLCV into a panel and compute a NO-LOOKAHEAD liquidity
     screen: eligibility and bucket on date D use the prior close and the mean
     dollar volume of the `window` sessions ending at D-1 (`.shift(1)`), so
@@ -207,7 +231,11 @@ def build_panel(prices: dict[str, pd.DataFrame], *, min_price: float = MIN_PRICE
     v = long.pivot(index="date", columns="ticker", values="volume").sort_index()
 
     dollar_vol = (c * v).rolling(window, min_periods=window).mean().shift(1)
-    prior_close = c.shift(1)
+    # With `splits`, the price floor reads the RAW price traded that day (see
+    # split_price_multiplier); without, it reads the adjusted price (the
+    # original behaviour, which lets future reverse-splitters through).
+    raw_close = c * split_price_multiplier(splits, c.index, list(c.columns)) if splits else c
+    prior_close = raw_close.shift(1)
     eligible = (prior_close >= min_price) & (dollar_vol >= min_dollar_vol)
 
     ranked = dollar_vol.where(eligible).rank(axis=1, pct=True)

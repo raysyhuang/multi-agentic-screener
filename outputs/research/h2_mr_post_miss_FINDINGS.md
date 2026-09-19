@@ -48,6 +48,10 @@ A verdict that flips on refreshing a data cache is not an established effect in 
 - **The 20-session window is significant under both rules, but it is post-hoc.** It was chosen from five descriptive cuts after the results were visible. It is logged as a lead to test on MR trades from after 2026-09-18, which this study never saw. At roughly 400 flagged trades a year, a decisive forward read needs about a year.
 - **The backtested MR population shows no edge at this universe's breadth.** The unflagged backtest trades average −0.01% per trade. That is a statement about the broad backtest, not about the live book, whose n=49 cannot settle it either way.
 
+## Raw-price screen (v3)
+
+With the price floor corrected for future reverse splits (`h3_dividends_splits_FINDINGS.md` § 3), the next-day rule gives −0.26pp (n=1,075), cluster CI [−0.57, +0.05]. The sign is the same, the CI still crosses zero, and the verdict is unchanged (`h2_mr_post_miss_v3raw_next_day.json`).
+
 ## Caveats
 
 - These are backtested MR trades from the unified exit engine at live parameters, not the live book; the live book has only n=49.

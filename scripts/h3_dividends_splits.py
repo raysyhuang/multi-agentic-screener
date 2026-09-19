@@ -269,19 +269,19 @@ def by_year(sub: pd.DataFrame, h: int) -> dict:
             for y, g in s.groupby(s["entry_date"].dt.year)}
 
 
-def stage_study(prices_path: str, json_out: str | None) -> dict:
+def stage_study(prices_path: str, json_out: str | None, raw_price_screen: bool = False) -> dict:
     raw = Path(prices_path).read_bytes()
     comb = pd.read_parquet(prices_path)
     prices = {t: g.drop(columns=["_ticker"]) for t, g in comb.groupby("_ticker") if t != "SPY"}
-    panel = es.build_panel(prices)
-    tickers = set(prices)
     divs = json.loads((CACHE / "dividends.json").read_text())
     splits = json.loads((CACHE / "splits.json").read_text())
+    panel = es.build_panel(prices, splits=splits if raw_price_screen else None)
+    tickers = set(prices)
     man = json.loads((CACHE / "manifest.json").read_text())
 
     dev = place(dividend_events(divs, tickers), panel, offset=1)   # 2nd session on/after declaration
     sev = place(split_events(splits, tickers), panel, offset=0)    # 1st session on/after execution
-    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(),
+    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": raw_price_screen,
                  "prices_sha256": hashlib.sha256(raw).hexdigest(), "corp_actions": man, "cells": {}}
     for fam, evs in (("dividend", dev), ("split", sev)):
         ex = es.event_excess(panel, evs, HORIZONS)
@@ -321,11 +321,12 @@ def main() -> None:
     ap.add_argument("--stage", choices=["fetch", "study"], required=True)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--raw-price-screen", action="store_true")
     args = ap.parse_args()
     if args.stage == "fetch":
         stage_fetch(args.prices)
     else:
-        stage_study(args.prices, args.json_out)
+        stage_study(args.prices, args.json_out, args.raw_price_screen)
 
 
 if __name__ == "__main__":

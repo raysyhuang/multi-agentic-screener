@@ -10,7 +10,7 @@
 
 G1 required an excess of at least +0.50% and a cluster CI lower bound above 0. No row meets either.
 
-**What this does and does not say about the live PEAD sleeve.** At the 20-session hold the sleeve uses, PEAD on the broad research universe is small and not established. With a live-like liquidity floor it is essentially zero. At a 60-session horizon it is positive under both timing rules and both bootstrap methods, but that was found after the fact (§ 4).
+**What this does and does not say about the live PEAD sleeve.** At the 20-session hold the sleeve uses, PEAD on the broad research universe is small and not established. With a live-like liquidity floor it is essentially zero. A 60-session horizon looked robust in v2 (§ 4), but **v3 found a look-ahead in the price screen, and once it is corrected the 60-session lead no longer clears zero either (§ 7).**
 
 The v1 version of this document said the live-traded population earns +0.2–0.4% and that S&P-only evidence carries a measured +0.2% survivorship penalty. The Codex review showed neither is established, and both are withdrawn (§ 5).
 
@@ -61,7 +61,7 @@ These were found after the verdict. They are registered as leads, not results.
 | All names raw beat, 60-session | +0.89%, block [+0.15, +1.62] | +0.87%, block [+0.20, +1.56] |
 | All names E1, least-liquid tercile, 20-session | +1.22%, cluster [−0.08, +2.52] | +1.32%, cluster [+0.53, +2.12] |
 
-The 60-session result is the one that holds up. It is positive under both timing rules and both bootstraps, and both CIs exclude zero.
+In v2 the 60-session result looked like the one that held up: positive under both timing rules and both bootstraps, with both CIs excluding zero. **It does not survive the v3 raw-price screen (§ 7): +0.80% / +0.70%, with block CIs spanning zero.**
 
 It is still a lead. It was one of several horizons looked at after the verdict. It also comes from the same 3-year window as everything else here, so it has had no out-of-sample test. The paper sleeve holds 20 sessions. Changing the hold would be a live-config change that needs its own registration and forward data.
 
@@ -90,3 +90,26 @@ python scripts/h1_pead_wide.py --timing registered --json-out outputs/research/h
 python scripts/h1_pead_wide.py --timing volume     --json-out outputs/research/h1_pead_wide_v2_volume.json
 python scripts/h1_decomposition.py --timing volume --json-out outputs/research/h1_decomposition_v2_volume.json
 ```
+
+## 7. v3 — the price screen looked ahead (found while running H3)
+
+The $5 floor was applied to **split-adjusted** prices. A penny stock that later reverse-splits (MULN, HUBC and the like) shows up far above $5 in its own adjusted history, so the screen admitted it using information about a split that had not happened yet. That affected 2.1% of eligible name-days across 436 tickers, and they are the collapsing names.
+
+Because they sat in the same-day base rates, they pushed every excess return **up**. `--raw-price-screen` rebuilds the traded price from the split history (`event_study.split_price_multiplier`); details are in `h3_dividends_splits_FINDINGS.md` § 3. The table compares the v2 JSONs with the v3 raw-screen JSONs (`h1_pead_wide_v3raw_{registered,volume}.json`, `h1_decomposition_v3raw_*.json`):
+
+| Cell | v2, adjusted screen (registered / look-ahead-free timing) | **v3, raw screen** |
+|---|---|---|
+| non-S&P E1, 20 sessions (primary) | +0.21% / +0.38% | **−0.05% / +0.03%** |
+| All names E1, 20 sessions | +0.39% / +0.53% | **+0.16% / +0.22%** |
+| **All names E1, 60 sessions** | +1.28% / +1.32%, block CIs > 0 | **+0.80%, block [−0.08, +1.78] / +0.70%, block [−0.12, +1.54]** |
+| All names raw beat, 60 sessions | +0.89% / +0.87%, block CIs > 0 | +0.51% / +0.50%, block CIs span 0 |
+| Least-liquid tercile E1, 20 sessions | +1.22% / +1.32% | +0.86%, cluster [−0.33, +2.09] / +0.70%, cluster [−0.09, +1.47] |
+| S&P E1, 20 sessions | +1.36% / +1.35% | +1.30%, block [+0.23, +2.40] / +1.29%, block [+0.18, +2.57] |
+| Current S&P members, no event | +0.19% | +0.15%, block CI of daily means [−0.19, +0.48] |
+
+**Reading.**
+
+- On the survivorship-reduced universe, with a price screen that no longer looks ahead, PEAD at the sleeve's 20-session hold is about **+0.2%** of excess and not distinguishable from zero.
+- The 60-session horizon and the least-liquid tercile, the two leads from § 4, **no longer clear zero** either. They are downgraded from leads to observations.
+- The only cell still clearly positive is S&P E1. Its sample is today's index members replayed backwards, and that membership is look-ahead of unknown size (§ 5).
+- The H1 verdict is unchanged: REJECTED.

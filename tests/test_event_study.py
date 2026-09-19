@@ -175,3 +175,21 @@ def test_block_diff_ci_collapses_for_constant_cohorts_and_detects_a_gap():
     b = list(rng.normal(0, 1, 80))
     point, lo, hi = es.block_diff_ci(a, d, b, d, cal, block=10, n_boot=2000)
     assert lo > 0 and hi > lo
+
+
+def test_raw_price_screen_undoes_a_later_reverse_split():
+    """A $0.50 stock that does a 1-for-100 reverse split on day 30 shows as $50
+    in its adjusted history; the raw screen must keep it ineligible before the
+    split and let the $50 post-split price through afterwards."""
+    adj = [50.0] * 40                                     # adjusted: flat $50 throughout
+    df = _bars(adj, volume=1_000_000)
+    exec_day = str(df["date"].iloc[30])
+    splits = [{"ticker": "AAA", "execution_date": exec_day, "split_from": 100, "split_to": 1}]
+    adj_panel = es.build_panel({"AAA": df})
+    raw_panel = es.build_panel({"AAA": df}, splits=splits)
+    d = adj_panel.dates
+    assert adj_panel.eligible.at[d[25], "AAA"]            # adjusted screen: passes (look-ahead)
+    assert not raw_panel.eligible.at[d[25], "AAA"]        # raw $0.50 before the split: fails
+    assert raw_panel.eligible.at[d[31], "AAA"]            # after the split the raw price is $50
+    m = es.split_price_multiplier(splits, d, ["AAA"])
+    assert m.at[d[29], "AAA"] == 0.01 and m.at[d[30], "AAA"] == 1.0

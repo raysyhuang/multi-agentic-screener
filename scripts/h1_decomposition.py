@@ -47,24 +47,32 @@ def unconditional_excess(panel: es.Panel, fwd: pd.DataFrame, base: pd.DataFrame,
     return pd.concat(parts).dropna()   # pandas 3 stack() keeps NaNs; they are not observations
 
 
+def _splits_or_none(on: bool):
+    import json as _json
+    from pathlib import Path as _P
+    return _json.loads((_P(__file__).resolve().parents[1] / "data/cache/corp_actions/splits.json").read_text()) if on else None
+
+
 def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--raw-price-screen", action="store_true",
+                    help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
     args = ap.parse_args()
 
     raw = Path(args.prices).read_bytes()
     comb = pd.read_parquet(args.prices)
     prices = {t: g.drop(columns=["_ticker"]) for t, g in comb.groupby("_ticker") if t != "SPY"}
-    panel = es.build_panel(prices)
+    panel = es.build_panel(prices, splits=_splits_or_none(args.raw_price_screen))
     sp = {t.replace(".", "-").upper() for t in SP500_TICKERS}
     fwd = es.forward_returns(panel, H)
     base = es.base_rate(panel, fwd)
     sp_cols = [c for c in fwd.columns if c in sp]
     other_cols = [c for c in fwd.columns if c not in sp]
 
-    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "timing": args.timing,
+    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen), "timing": args.timing,
                  "prices_sha256": hashlib.sha256(raw).hexdigest(), "posthoc": True,
                  "earnings": earnings_fingerprint(list(prices))}
 
