@@ -167,17 +167,27 @@ async def stage_earnings(tickers: list[str], rate_per_sec: float, max_tickers: i
           f"at <= {rate_per_sec:g}/s", flush=True)
     failures: dict[str, str] = {}
     gap = 1.0 / rate_per_sec
-    for i, t in enumerate(todo, 1):
-        t0 = asyncio.get_event_loop().time()
-        try:
-            rows = await FMPClient().get_earnings_surprise(t)   # fresh client: a 402 on one
-            (EARNINGS_CACHE_DIR / f"{t}.json").write_text(      # symbol must not disable the rest
-                json.dumps(rows if isinstance(rows, list) else []))
-        except Exception as e:  # noqa: BLE001 — recorded, not swallowed
-            failures[t] = f"{type(e).__name__}: {e}"[:160]
-        if i % 200 == 0:
-            print(f"  {i}/{len(todo)} fetched, {len(failures)} failures", flush=True)
-        await asyncio.sleep(max(0.0, gap - (asyncio.get_event_loop().time() - t0)))
+    sem = asyncio.Semaphore(8)      # a call is ~2s of TLS+latency; serial = 0.4/s
+    done = 0
+
+    async def _one(t: str) -> None:
+        nonlocal done
+        async with sem:
+            try:
+                rows = await FMPClient().get_earnings_surprise(t)   # fresh client: a 402 on one
+                (EARNINGS_CACHE_DIR / f"{t}.json").write_text(      # symbol must not disable the rest
+                    json.dumps(rows if isinstance(rows, list) else []))
+            except Exception as e:  # noqa: BLE001 — recorded, not swallowed
+                failures[t] = f"{type(e).__name__}: {e}"[:160]
+        done += 1
+        if done % 200 == 0:
+            print(f"  {done}/{len(todo)} fetched, {len(failures)} failures", flush=True)
+
+    tasks = []
+    for t in todo:                  # launches are paced, so the START rate never exceeds the cap
+        tasks.append(asyncio.create_task(_one(t)))
+        await asyncio.sleep(gap)
+    await asyncio.gather(*tasks)
 
     n_rows = n_pairs = n_empty = 0
     for t in tickers:
