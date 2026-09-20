@@ -173,10 +173,10 @@ def by_year(sub: pd.DataFrame, h: int) -> dict:
             for y, g in s.groupby(s["entry_date"].dt.year)}
 
 
-def study(panel: es.Panel, **kw) -> dict:
+def study(panel: es.Panel, delist_return: float | None = None, **kw) -> dict:
     q, c = build_events(panel, **kw)
-    exq = es.event_excess(panel, q, HORIZONS)
-    exc = es.event_excess(panel, c, HORIZONS)
+    exq = es.event_excess(panel, q, HORIZONS, delist_return=delist_return)
+    exc = es.event_excess(panel, c, HORIZONS, delist_return=delist_return)
     for ex in (exq, exc):
         ex["entry_date"] = pd.to_datetime(ex["entry_date"])
     exq, exc = exq[exq["eligible"]], exc[exc["eligible"]]
@@ -206,6 +206,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--delist-return", type=float, default=None,
+                    help="impute this %% return for names that DISAPPEAR inside the window "
+                         "(events and base rate); leaves end-of-dataset truncation as NaN")
     ap.add_argument("--raw-price-screen", action="store_true",
                     help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     args = ap.parse_args()
@@ -214,12 +217,12 @@ def main() -> None:
     comb = pd.read_parquet(args.prices)
     prices = {t: g.drop(columns=["_ticker"]) for t, g in comb.groupby("_ticker") if t != "SPY"}
     panel = es.build_panel(prices, splits=_splits_or_none(args.raw_price_screen))
-    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen),
+    out: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen), "delist_return": args.delist_return,
                  "prices_sha256": hashlib.sha256(raw).hexdigest(),
                  "earnings": earnings_fingerprint(list(prices)), "cells": {}}
-    out["cells"]["primary"] = study(panel)
-    out["cells"]["desc_dd35"] = study(panel, dd=0.65)
-    out["cells"]["desc_pe15"] = study(panel, max_pe=15.0)
+    out["cells"]["primary"] = study(panel, args.delist_return)
+    out["cells"]["desc_dd35"] = study(panel, args.delist_return, dd=0.65)
+    out["cells"]["desc_pe15"] = study(panel, args.delist_return, max_pe=15.0)
 
     p = out["cells"]["primary"]
     for h in HORIZONS:

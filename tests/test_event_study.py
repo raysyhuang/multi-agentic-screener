@@ -193,3 +193,36 @@ def test_raw_price_screen_undoes_a_later_reverse_split():
     assert raw_panel.eligible.at[d[31], "AAA"]            # after the split the raw price is $50
     m = es.split_price_multiplier(splits, d, ["AAA"])
     assert m.at[d[29], "AAA"] == 0.01 and m.at[d[30], "AAA"] == 1.0
+
+
+def _delist_panel():
+    """LIVE trades throughout; DEAD stops after row 27; both liquid."""
+    full = _bars([100.0] * 40, volume=1_000_000)
+    dead = full.iloc[:28].copy()
+    return es.build_panel({"DEAD": dead, "LIVE": full, "L2": full.copy()}, n_buckets=1)
+
+
+def test_delist_return_imputes_disappearance_but_not_end_of_data():
+    panel = _delist_panel()
+    d = panel.dates
+    plain = es.forward_returns(panel, 5)
+    imputed = es.forward_returns(panel, 5, delist_return=-50.0)
+    # row 25: DEAD has an entry bar, no exit bar, and never trades again -> imputed
+    assert np.isnan(plain.at[d[25], "DEAD"]) and imputed.at[d[25], "DEAD"] == -50.0
+    # a live name whose window runs past the end of the dataset stays NaN
+    assert np.isnan(plain.at[d[36], "LIVE"]) and np.isnan(imputed.at[d[36], "LIVE"])
+    # rows with a real return are untouched
+    assert imputed.at[d[10], "LIVE"] == pytest.approx(plain.at[d[10], "LIVE"])
+
+
+def test_delist_return_moves_the_base_rate_too():
+    panel = _delist_panel()
+    d = panel.dates
+    ev = [{"ticker": "LIVE", "entry_date": d[25]}]
+    plain = es.event_excess(panel, ev, [5])
+    imputed = es.event_excess(panel, ev, [5], delist_return=-50.0)
+    # LIVE's own return is 0 either way; the base rate drops because DEAD now
+    # contributes -50 instead of being dropped -> LIVE's excess RISES.
+    assert plain.loc[0, "fwd_5"] == pytest.approx(imputed.loc[0, "fwd_5"])
+    assert imputed.loc[0, "base_5"] < plain.loc[0, "base_5"]
+    assert imputed.loc[0, "excess_5"] > plain.loc[0, "excess_5"]
