@@ -139,19 +139,21 @@ This is a sensitivity, not an estimate. The true delisting return is not in this
 
 Raw-price screen, look-ahead-free timing (`h1_pead_wide_delist{0,-50,-100}.json`):
 
-| Cohort | Horizon | dropped | −50% | −100% |
-|---|---|---|---|---|
-| **All names, E1** | 20 | +0.22%, block [−0.35, +0.80] | +0.35%, [−0.19, +0.90] | +0.49%, [−0.05, +1.02] |
-| **All names, E1** | **60** | +0.72%, [−0.08, +1.54] | **+1.11%, [+0.34, +1.91]** | **+1.50%, [+0.74, +2.29]** |
-| non-S&P E1 (primary) | 20 | +0.02%, [−0.66, +0.70] | +0.15%, [−0.50, +0.81] | +0.28%, [−0.38, +0.93] |
-| non-S&P E1 | 60 | +0.36%, [−0.51, +1.27] | +0.76%, [−0.06, +1.60] | +1.15%, [+0.36, +1.97] |
-| All names, raw beat ≥10% | 20 | +0.19%, [−0.19, +0.55] | +0.27%, [−0.10, +0.61] | +0.34%, [−0.02, +0.68] |
+Four columns. **dropped** is the no-flag run (`h1_pead_wide_v3raw_volume.json`), where a disappearing name contributes nothing. **0%** imputes a zero return for it, which is not the same thing: it keeps the row in the base rate, so it shifts both n and the mean slightly.
 
-Only 24 of 2,587 all-names E1 events lack a 20-session forward return, so the shift comes mostly from the **base rate**, where disappearing names are far more common than they are among big earnings beats.
+| Cohort | Horizon | dropped (no flag) | 0% | −50% | −100% |
+|---|---|---|---|---|---|
+| **All names, E1** | 20 | +0.22% (n=2,582), block [−0.35, +0.80] | +0.22% (n=2,587), [−0.35, +0.80] | +0.35%, [−0.19, +0.90] | +0.49%, [−0.05, +1.02] |
+| **All names, E1** | **60** | +0.70% (n=2,314), [−0.12, +1.54] | +0.72% (n=2,327), [−0.08, +1.54] | **+1.11%, [+0.34, +1.91]** | **+1.50%, [+0.74, +2.29]** |
+| non-S&P E1 (primary) | 20 | +0.03% (n=2,179), [−0.66, +0.71] | +0.02% (n=2,184), [−0.66, +0.70] | +0.15%, [−0.50, +0.81] | +0.28%, [−0.38, +0.93] |
+| non-S&P E1 | 60 | +0.34% (n=1,950), [−0.54, +1.26] | +0.36%, [−0.51, +1.27] | +0.76%, [−0.06, +1.60] | +1.15%, [+0.36, +1.97] |
+| All names, raw beat ≥10% | 20 | +0.19% (n=13,724), [−0.19, +0.54] | +0.19% (n=13,767), [−0.19, +0.55] | +0.27%, [−0.10, +0.61] | +0.34%, [−0.02, +0.68] |
+
+Only 24 of 2,587 all-names E1 events lack a 20-session forward return, so the shift comes mostly from the **base rate**, where disappearing names are far more common than they are among big earnings beats. That is also why dropped and 0% are nearly identical: both leave the event side untouched and differ only in whether a disappeared name sits in the base at 0% or not at all.
 
 **What this settles, and what it does not.**
 
 - **The H1 verdict is unchanged at every assumption.** The primary cohort never reaches +0.50% and its CI never clears zero. The same holds for the registered-timing and adjusted-screen runs.
 - **At the sleeve's 20-session hold, PEAD stays small and unestablished** across the full range: +0.22% to +0.49% on all names, +0.02% to +0.28% outside the S&P 500. No CI clears zero. The paper sleeve therefore still has no numeric expectation attached to it.
-- **At 60 sessions the answer depends on the assumption.** With delistings dropped, the block CI spans zero (that is why § 7 downgraded the 60-session lead). Charge them −50% or worse and it clears zero: +1.11% [+0.34, +1.91]. So "PEAD at 60 sessions" is **not resolved by this data** in either direction. It is decided by a delisting return this data does not contain. A real test needs delisting values, or a forward sample.
+- **At 60 sessions the evidence leans positive and is assumption-sensitive.** Every column is positive. Dropped and 0% have CIs that span zero, which is why § 7 downgraded the lead; charge disappearing names −50% or worse and the CI clears zero (+1.11% [+0.34, +1.91]). Nothing here supports a *negative* 60-session effect — the honest statement is that the effect is **not robustly established without delisting values**, and that imputing plausible losses strengthens rather than weakens it. A real test needs recovery values or a forward sample.
 - This is narrower than the § 8 stress bound (+0.49% / +0.74% at 20 sessions for all names), because that one imputed every interior missing return, including gaps in names that later resumed trading. This rule imputes only permanent disappearances.
