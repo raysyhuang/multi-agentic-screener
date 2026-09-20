@@ -130,3 +130,28 @@ Every headline number was reproduced exactly from the scripts. Three caveats bou
 
   These are bounds, not estimates. None of them establishes condition (b), and the verdict stands. What they do mean is that "+0.2%" is not a number to recalibrate the paper sleeve to. **The supported conclusion is directional:** the broad-universe evidence is far weaker than the +1.8–2.4% the S&P-only backtest showed.
 - **Fundamentals are not point-in-time vintages.** The session lag keeps each report out until it is public. The report *contents*, however, come from today's FMP cache, so any later restatement of actuals, estimates or report dates would leak in. This is unquantified.
+
+## 9. Delisting-return sensitivity, computed (2026-09-20)
+
+§ 8 could only bound the delisting problem. `--delist-return` now measures it. For a name that **disappears inside the window** — it has an entry bar, no exit bar, and no later bar anywhere in the panel — the given percentage is imputed instead of dropping the row, in the events **and** in the same-day base rate they are compared with. A window that simply runs past the end of the dataset stays NaN: that is truncation, and nothing is known about it.
+
+This is a sensitivity, not an estimate. The true delisting return is not in this data: Polygon's bars stop, and no recovery value is recorded.
+
+Raw-price screen, look-ahead-free timing (`h1_pead_wide_delist{0,-50,-100}.json`):
+
+| Cohort | Horizon | dropped | −50% | −100% |
+|---|---|---|---|---|
+| **All names, E1** | 20 | +0.22%, block [−0.35, +0.80] | +0.35%, [−0.19, +0.90] | +0.49%, [−0.05, +1.02] |
+| **All names, E1** | **60** | +0.72%, [−0.08, +1.54] | **+1.11%, [+0.34, +1.91]** | **+1.50%, [+0.74, +2.29]** |
+| non-S&P E1 (primary) | 20 | +0.02%, [−0.66, +0.70] | +0.15%, [−0.50, +0.81] | +0.28%, [−0.38, +0.93] |
+| non-S&P E1 | 60 | +0.36%, [−0.51, +1.27] | +0.76%, [−0.06, +1.60] | +1.15%, [+0.36, +1.97] |
+| All names, raw beat ≥10% | 20 | +0.19%, [−0.19, +0.55] | +0.27%, [−0.10, +0.61] | +0.34%, [−0.02, +0.68] |
+
+Only 24 of 2,587 all-names E1 events lack a 20-session forward return, so the shift comes mostly from the **base rate**, where disappearing names are far more common than they are among big earnings beats.
+
+**What this settles, and what it does not.**
+
+- **The H1 verdict is unchanged at every assumption.** The primary cohort never reaches +0.50% and its CI never clears zero. The same holds for the registered-timing and adjusted-screen runs.
+- **At the sleeve's 20-session hold, PEAD stays small and unestablished** across the full range: +0.22% to +0.49% on all names, +0.02% to +0.28% outside the S&P 500. No CI clears zero. The paper sleeve therefore still has no numeric expectation attached to it.
+- **At 60 sessions the answer depends on the assumption.** With delistings dropped, the block CI spans zero (that is why § 7 downgraded the 60-session lead). Charge them −50% or worse and it clears zero: +1.11% [+0.34, +1.91]. So "PEAD at 60 sessions" is **not resolved by this data** in either direction. It is decided by a delisting return this data does not contain. A real test needs delisting values, or a forward sample.
+- This is narrower than the § 8 stress bound (+0.49% / +0.74% at 20 sessions for all names), because that one imputed every interior missing return, including gaps in names that later resumed trading. This rule imputes only permanent disappearances.

@@ -258,14 +258,43 @@ def build_panel(prices: dict[str, pd.DataFrame], *, min_price: float = MIN_PRICE
     return Panel(open=o, close=c, volume=v, eligible=eligible.fillna(False), bucket=bucket)
 
 
-def forward_returns(panel: Panel, horizon: int) -> pd.DataFrame:
+def last_bar_position(panel: Panel) -> pd.Series:
+    """Row index of each ticker's LAST traded bar in the panel calendar."""
+    pos = pd.Series(np.arange(len(panel.dates)), index=panel.dates)
+    return panel.close.notna().mul(pos, axis=0).where(panel.close.notna()).max()
+
+
+def forward_returns(panel: Panel, horizon: int, delist_return: float | None = None) -> pd.DataFrame:
     """% return from the OPEN on each date to the CLOSE `horizon` rows later, for
-    every ticker. NaN where either bar is missing (no forward-filling: a name
-    that stopped trading has no return, it is not assumed flat)."""
-    return (panel.close.shift(-horizon) / panel.open - 1.0) * 100.0
+    every ticker. NaN where either bar is missing: nothing is forward-filled,
+    because a name that stopped trading has no return and is certainly not flat.
+
+    `delist_return` (a percentage, e.g. -50.0) imputes that return instead of
+    NaN for the case where the name DISAPPEARS inside the window — it has an
+    entry bar, no exit bar, and its last bar in the whole panel precedes the
+    exit date. Those are delistings, suspensions and data gaps, and dropping
+    them removes the worst outcomes from BOTH the events and the base rate.
+    Rows whose exit date simply runs past the end of the dataset are left NaN:
+    that is truncation, not disappearance, and nothing is known about it.
+    Imputation is a SENSITIVITY, not an estimate — the true delisting return is
+    not in this data."""
+    out = (panel.close.shift(-horizon) / panel.open - 1.0) * 100.0
+    if delist_return is None:
+        return out
+    n = len(panel.dates)
+    pos = np.arange(n)
+    last = last_bar_position(panel).reindex(out.columns)
+    exit_pos = pos + horizon
+    in_data = pd.DataFrame(np.repeat((exit_pos < n)[:, None], len(out.columns), axis=1),
+                           index=out.index, columns=out.columns)
+    disappears = pd.DataFrame(exit_pos[:, None] > last.to_numpy()[None, :],
+                              index=out.index, columns=out.columns)
+    entered = panel.open.notna()
+    impute = out.isna() & in_data & disappears & entered
+    return out.mask(impute, delist_return)
 
 
-def base_rate(panel: Panel, fwd: pd.DataFrame) -> pd.DataFrame:
+def base_rate(panel: Panel, fwd: pd.DataFrame) -> pd.DataFrame:  # noqa: D401
     """Mean forward return of ALL eligible names, per (date, liquidity bucket).
     Returned as a (date x bucket) frame. This is the comparison an event must
     beat: same entry day, same exit day, same kind of stock."""
@@ -276,7 +305,8 @@ def base_rate(panel: Panel, fwd: pd.DataFrame) -> pd.DataFrame:
     return pd.DataFrame(out)
 
 
-def event_excess(panel: Panel, events: list[dict], horizons: list[int]) -> pd.DataFrame:
+def event_excess(panel: Panel, events: list[dict], horizons: list[int],
+                 delist_return: float | None = None) -> pd.DataFrame:
     """One row per event with its forward return, the matched base rate and the
     excess, per horizon. An event is `{"ticker", "entry_date", ...}`; extra keys
     are carried through. Events on a date where the name is not eligible (as of
@@ -286,8 +316,12 @@ def event_excess(panel: Panel, events: list[dict], horizons: list[int]) -> pd.Da
     `entry_date` must be a session in the panel; the caller decides what it
     means (e.g. the first session after a report) — this function never snaps
     a date forward, because that is exactly where look-ahead hides.
+
+    `delist_return` is passed through to `forward_returns`: it imputes that
+    percentage for names that disappear inside the window, in the events AND
+    in the base rate they are compared with.
     """
-    fwd = {h: forward_returns(panel, h) for h in horizons}
+    fwd = {h: forward_returns(panel, h, delist_return) for h in horizons}
     base = {h: base_rate(panel, fwd[h]) for h in horizons}
     idx = panel.dates
     rows = []

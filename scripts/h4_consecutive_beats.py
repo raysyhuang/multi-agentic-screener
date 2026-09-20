@@ -129,6 +129,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--delist-return", type=float, default=None,
+                    help="impute this %% return for names that DISAPPEAR inside the window "
+                         "(events and base rate); leaves end-of-dataset truncation as NaN")
     ap.add_argument("--raw-price-screen", action="store_true",
                     help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
@@ -147,7 +150,7 @@ def main() -> None:
         history = {t: [(str(r["date"])[:10], eps_surprise_pct(r.get("epsActual"), r.get("epsEstimated")))
                        for r in report_rows(t)] for t in prices}
     events = tag_previous(events, history)
-    ex = es.event_excess(panel, events, [PRIMARY_H])
+    ex = es.event_excess(panel, events, [PRIMARY_H], delist_return=args.delist_return)
     ex["entry_date"] = pd.to_datetime(ex["entry_date"])
     sp500 = {t.replace(".", "-").upper() for t in SP500_TICKERS}
     ex["in_sp500"] = ex["ticker"].isin(sp500)
@@ -158,7 +161,7 @@ def main() -> None:
     cons = beats[beats["prev_surprise"].notna() & (beats["prev_surprise"] >= MIN_SURPRISE)]
     first = beats[beats["prev_surprise"].notna() & (beats["prev_surprise"] < MIN_SURPRISE)]
 
-    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen),
+    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen), "delist_return": args.delist_return,
                     "timing": args.timing, "predecessors": args.predecessors,
                     "prices_sha256": hashlib.sha256(raw_bytes).hexdigest(),
                     "earnings": earnings_fingerprint(list(prices)),

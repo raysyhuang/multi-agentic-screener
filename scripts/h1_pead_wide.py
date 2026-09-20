@@ -221,6 +221,9 @@ def main() -> None:
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
     ap.add_argument("--prices", default="outputs/research/ohlcv_polygon_wide_3y.parquet")
     ap.add_argument("--json-out", default=None)
+    ap.add_argument("--delist-return", type=float, default=None,
+                    help="impute this %% return for names that DISAPPEAR inside the window "
+                         "(events and base rate); leaves end-of-dataset truncation as NaN")
     ap.add_argument("--raw-price-screen", action="store_true",
                     help="apply the $5 floor to RAW (split-unadjusted) prices using data/cache/corp_actions/splits.json")
     ap.add_argument("--timing", choices=["registered", "volume"], default="registered")
@@ -236,14 +239,14 @@ def main() -> None:
 
     sp500 = {t.replace(".", "-").upper() for t in SP500_TICKERS}
     events = build_events(panel, [t for t in prices if t != "SPY"], timing=args.timing)
-    ex = es.event_excess(panel, events, HORIZONS)
+    ex = es.event_excess(panel, events, HORIZONS, delist_return=args.delist_return)
     ex["in_sp500"] = ex["ticker"].isin(sp500)
     ex["entry_date"] = pd.to_datetime(ex["entry_date"])
     n_all, n_elig = len(ex), int(ex["eligible"].sum())
     print(f"events with an EPS surprise: {n_all}; liquid as of the prior close: {n_elig}")
     ex = ex[ex["eligible"]]
 
-    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen),
+    result: dict = {"generated_at": datetime.now(timezone.utc).isoformat(), "raw_price_screen": bool(args.raw_price_screen), "delist_return": args.delist_return,
                     "timing": args.timing,
                     "prices_sha256": hashlib.sha256(raw_bytes).hexdigest(),
                     "earnings": earnings_fingerprint([t for t in prices if t != "SPY"]),
