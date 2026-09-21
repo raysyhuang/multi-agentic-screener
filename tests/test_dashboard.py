@@ -80,6 +80,30 @@ def test_paired_60d_observations_are_not_counted_as_extra_positions():
     assert "data.open_positions.map(" in script
 
 
+def test_pick_counts_come_from_an_export_that_already_excludes_paired_rows():
+    """The page must not need its own filter for "Picks today".
+
+    today_picks feeds the hero line, the tile and the funnel's final stage.
+    Filtering in the page would mean three call sites that can drift apart, so
+    the exporter drops the paired row and the page just counts.
+    """
+    import scripts.export_dashboard_data as exp
+
+    assert "pead_60d_shadow" in exp.PAIRED_OBSERVATION_SOURCES
+    source = (Path(__file__).parents[1] / "scripts" / "export_dashboard_data.py").read_text()
+    assert "if s.signal_source in PAIRED_OBSERVATION_SOURCES:" in source
+
+
+def test_alpha_tile_renders_a_missing_interval_instead_of_nulls():
+    """Below the cluster floor there is no CI, and the tile has to say so."""
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert "Number.isFinite(s.ci_lo)" in script
+    assert "s.ci_unavailable" in script
+    # Entry dates shown beside n: 30 trades on 3 dates is 3 observations.
+    assert "s.entry_date_clusters" in script
+
+
 @pytest.mark.asyncio
 async def test_dashboard_returns_200(app_client):
     """/dashboard should return 200 with HTML content."""

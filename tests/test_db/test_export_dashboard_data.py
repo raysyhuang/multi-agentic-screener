@@ -198,26 +198,97 @@ def test_alpha_summary_resamples_whole_entry_date_clusters():
     assert clustered["ci_lo"] < iid["ci_lo"]
 
 
-def test_alpha_summary_withheld_below_three_entry_date_clusters():
+@pytest.mark.asyncio
+async def test_a_paired_observation_is_never_counted_as_a_pick(monkeypatch):
+    """One idea, two rows: the clone must not inflate any COUNT of ideas.
+
+    `today_picks` feeds the hero line, the "Picks today" tile and the funnel's
+    final stage, so excluding the paired row here keeps all three consistent
+    with the open-position count — which already excludes it.
+    """
+    from contextlib import asynccontextmanager
+    import scripts.export_dashboard_data as exp
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    d = date(2026, 9, 21)
+    async with factory() as s:
+        s.add(DailyRun(run_date=d, regime="choppy", universe_size=1800,
+                       candidates_scored=70, execution_mode="quant_only",
+                       pipeline_health={"status": "OK", "warnings": []}))
+        s.add(_signal(d, "RBRK", "pead", "pead_paper", sid=1))
+        s.add(_signal(d, "RBRK", "pead", "pead_60d_shadow", sid=2))
+        s.add(Outcome(signal_id=1, ticker="RBRK", entry_date=d, entry_price=100.0,
+                      pnl_pct=0.0, still_open=True))
+        s.add(Outcome(signal_id=2, ticker="RBRK", entry_date=d, entry_price=100.0,
+                      pnl_pct=0.0, still_open=True))
+        await s.commit()
+
+    @asynccontextmanager
+    async def _fake_session():
+        async with factory() as session:
+            yield session
+
+    monkeypatch.setattr(exp, "get_session", _fake_session)
+    snap = await exp.build_snapshot(days=90, bench_closes={"spy": {}, "qqq": {}})
+
+    assert [p["source"] for p in snap["today_picks"]] == ["pead_paper"]
+    # Still persisted and still visible as a position row — only the count changes.
+    assert {o["stream"] for o in snap["open_positions"]} == {
+        "pead|pead_paper", "pead|pead_60d_shadow",
+    }
+
+
+def test_no_interval_below_three_entry_date_clusters():
     """One entry date has one thing to resample, so the CI collapses to a point.
 
-    Three losses booked on the same day would otherwise export
-    ci_hi < 0 with zero width — S1's "statistically established negative" read
-    off a number containing no variation at all.
+    Three losses booked on the same day would otherwise export ci_hi < 0 with
+    zero width — S1's "statistically established negative" read off a number
+    containing no variation. The descriptive fields still export, because a
+    stream with trades must not look like a stream with none.
     """
     import scripts.export_dashboard_data as exp
 
-    same_day = ["2026-09-01"] * 3
-    assert exp._alpha_summary([-2.0, -3.0, -4.0], same_day) is None
-    assert exp._alpha_summary([-2.0, -3.0, -4.0, -1.0], ["a", "a", "b", "b"]) is None
+    same_day = exp._alpha_summary([-2.0, -3.0, -4.0], ["2026-09-01"] * 3)
+    assert same_day["ci_lo"] is None and same_day["ci_hi"] is None
+    assert same_day["significant"] is False
+    assert "1 entry-date cluster" in same_day["ci_unavailable"]
+    assert same_day["n"] == 3 and same_day["mean"] == -3.0
 
-    # Three distinct dates is the floor, and it is exported.
+    two = exp._alpha_summary([-2.0, -3.0, -4.0, -1.0], ["a", "a", "b", "b"])
+    assert two["ci_lo"] is None and two["max_cluster_share"] == 0.5
+
+    # Three distinct dates: an interval exists, but cannot decide anything.
     ok = exp._alpha_summary([-2.0, -3.0, -4.0], ["a", "b", "c"])
-    assert ok is not None and ok["entry_date_clusters"] == 3
+    assert ok["entry_date_clusters"] == 3 and ok["ci_hi"] < 0
+    assert ok["decision_eligible"] is False
 
-    # Without the floor this degenerate case reads as established:
-    degenerate = exp._alpha_summary([-2.0, -3.0, -4.0])   # iid fallback, 3 clusters
-    assert degenerate is not None and degenerate["ci_hi"] < 0
+
+def test_thirty_trades_on_three_dates_cannot_decide_anything():
+    """The effective sample is entry dates, not trades.
+
+    Ten winners on each of three days resample to a CI strictly above zero on
+    three market observations. n >= 30 alone would call that a promotion.
+    """
+    import scripts.export_dashboard_data as exp
+
+    alphas, dates = [], []
+    for day, base in enumerate([1.5, 2.0, 2.5]):
+        for i in range(10):
+            alphas.append(base + i * 0.01)
+            dates.append(f"2026-09-0{day + 1}")
+
+    crowded = exp._alpha_summary(alphas, dates)
+    assert crowded["n"] == 30 and crowded["entry_date_clusters"] == 3
+    assert crowded["ci_lo"] > 0                   # would clear Tier 2 condition 2
+    assert crowded["decision_eligible"] is False  # ... and is refused by 1b
+    assert crowded["max_cluster_share"] == pytest.approx(1 / 3, abs=1e-3)
+
+    spread = exp._alpha_summary(alphas, [f"d{i}" for i in range(30)])
+    assert spread["entry_date_clusters"] == 30 and spread["decision_eligible"] is True
 
 
 def test_alpha_summary_rejects_misaligned_clusters():

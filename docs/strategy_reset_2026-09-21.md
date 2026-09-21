@@ -132,3 +132,43 @@ subtitle, while remaining visible in the position list.
 Everything else in the change set was verified as correct: PEAD pairing,
 fixed-horizon expiry, slot and cooldown isolation, variant floors, null
 baselines and empty-book composition.
+
+## Review round 2 (Codex, 2026-09-21) — two further defects fixed
+
+**5. Three clusters was enough to compute an interval and not enough to decide
+on one.** The round-1 fix removed the zero-width case but left the underlying
+problem: `n >= 30` with no cluster requirement means 30 trades booked on 3
+entry dates clear Tier 2 on 3 market observations. With k clusters all of one
+sign every resample reproduces that sign, so under a null where each cluster is
+positive with probability ½ an "entirely above zero" interval arrives by sign
+alone with probability 2⁻ᵏ — **12.5% at k=3**, five times the nominal 2.5%, and
+below the claimed tail only from k=6.
+
+Tier 2 gains condition 1b and S1 gains its symmetric form: **≥ 10 distinct
+entry dates**, exported as `decision_eligible`. Ten is the sign bound with
+margin. It binds on concentration, not on supply — 30 trades over 10+ dates is
+the ordinary shape of every stream here, so this does not make promotion
+harder to reach, only harder to fake.
+
+Also taken from the same finding: withholding the summary entirely below 3
+clusters hid the descriptive mean and the reason. The descriptive fields now
+export with `ci_lo`/`ci_hi` as `null` and `ci_unavailable` giving the reason;
+`max_cluster_share` is exported so concentration is visible rather than
+inferred. `null` is fail-closed in both consumers — JavaScript compares false,
+Python raises.
+
+**6. The paired 60-session row still inflated "Picks today" and the funnel.**
+Round 1 excluded it from the open-position count but not from `today_picks`,
+which feeds the hero line, the tile and the funnel's final stage — the same
+double count the open-position fix had just rejected, in three other places.
+Fixed in the exporter rather than the page, so one rule covers all three call
+sites and they cannot drift apart. The row stays visible in the position list
+and keeps its own stream.
+
+Confirmed correct in round 2 and unchanged: the integration DB guard (covers
+both integration modules including the ledger fixture's Alembic subprocesses,
+runs before any connection, no opt-out, does not touch the unit run); the
+MR-shadow wiring end to end; and the removal of `MEAN_REVERSION_IN_BOOK`.
+`PEAD_ENABLED` and `PEAD_60D_SHADOW_ENABLED` were checked for the same
+split-brain shape and do not have it — the dashboard export is driven by
+persisted stream rows and consults neither.

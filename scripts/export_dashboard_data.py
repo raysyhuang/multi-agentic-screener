@@ -69,8 +69,22 @@ _MR_IN_BOOK = get_settings().mean_reversion_in_book
 BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK, _MR_IN_BOOK)
 PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK, _MR_IN_BOOK)
 # Fewer distinct entry dates than this and the cluster bootstrap has nothing to
-# resample; see `_alpha_summary`.
+# resample, so no interval is computed at all; see `_alpha_summary`.
 MIN_ENTRY_DATE_CLUSTERS = 3
+# Floor for a DECISION (promotion or stop), not for display. The resample draws
+# whole clusters, so with k clusters all of one sign every resample reproduces
+# that sign: under a null where each cluster is positive with probability 1/2,
+# an "entirely above zero" interval arrives by sign alone with probability
+# 2**-k. That is 12.5% at k=3 — five times the nominal 2.5% — and needs k >= 6
+# before it falls below the tail the test claims to use. 10 is that bound with
+# margin, and it binds only on CONCENTRATION: 30 trades spread over 10+ entry
+# dates is the normal shape, while 30 trades on 3 dates is 3 observations
+# wearing a sample size of 30.
+MIN_DECISION_CLUSTERS = 10
+# Streams that re-measure an entry counted under another stream. They are real
+# rows with real outcomes, but they are not additional ideas, positions or
+# capital, so they never contribute to a COUNT of any of those.
+PAIRED_OBSERVATION_SOURCES = frozenset({"pead_60d_shadow"})
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -111,13 +125,20 @@ def _alpha_summary(
     that dependence. ``clusters=None`` retains a one-trade-per-cluster fallback
     for callers without dates; the dashboard always supplies entry dates.
 
-    **At least three distinct clusters are required**, not merely three trades.
-    The resample draws whole clusters, so a stream whose trades all entered on
-    one day has exactly one thing to draw: every resample reproduces the same
-    set, the interval collapses to zero width, and a three-trade losing streak
-    is reported as an established negative. Below the floor the whole summary
-    is withheld (the same contract as ``n < 3``) rather than exported with a
-    degenerate interval that reads as significant.
+    **At least three distinct clusters are required for an interval at all**,
+    not merely three trades. The resample draws whole clusters, so a stream
+    whose trades all entered on one day has exactly one thing to draw: every
+    resample reproduces the same set, the interval collapses to zero width, and
+    a three-trade losing streak is reported as an established negative. Below
+    that floor the descriptive fields are still exported — hiding them would
+    make a stream indistinguishable from one with no trades — but ``ci_lo`` and
+    ``ci_hi`` are None and ``ci_unavailable`` says why. None is fail-closed in
+    both consumers: JavaScript compares false, Python raises.
+
+    Three clusters is enough to compute an interval and **not** enough to
+    decide on one; see ``MIN_DECISION_CLUSTERS``. ``entry_date_clusters`` and
+    ``max_cluster_share`` are exported so concentration is visible rather than
+    inferred from ``n``.
     """
     import random
     if clusters is not None and len(clusters) != len(alphas):
@@ -134,12 +155,28 @@ def _alpha_summary(
         grouped.setdefault(cluster, []).append(value)
     cluster_values = list(grouped.values())
     cluster_n = len(cluster_values)
-    if cluster_n < MIN_ENTRY_DATE_CLUSTERS:
-        return None
+    n = len(a)
     mean = sum(a) / len(a)
     beat = sum(1 for x in a if x > 0) / len(a)
+    base = {
+        "n": n,
+        "entry_date_clusters": cluster_n,
+        "max_cluster_share": round(max(len(g) for g in cluster_values) / n, 4),
+        "mean": round(mean, 4),
+        "beat_pct": round(beat, 4),
+    }
+    if cluster_n < MIN_ENTRY_DATE_CLUSTERS:
+        return {
+            **base,
+            "ci_lo": None,
+            "ci_hi": None,
+            "significant": False,
+            "ci_unavailable": (
+                f"{cluster_n} entry-date cluster{'' if cluster_n == 1 else 's'}: "
+                f"a cluster bootstrap needs at least {MIN_ENTRY_DATE_CLUSTERS}"
+            ),
+        }
     rng = random.Random(20260723)
-    n = len(a)
     means = []
     for _ in range(10_000):
         sampled = rng.choices(cluster_values, k=cluster_n)
@@ -148,13 +185,13 @@ def _alpha_summary(
     means.sort()
     lo, hi = means[249], means[9749]
     return {
-        "n": n,
-        "entry_date_clusters": cluster_n,
-        "mean": round(mean, 4),
+        **base,
         "ci_lo": round(lo, 4),
         "ci_hi": round(hi, 4),
-        "beat_pct": round(beat, 4),
         "significant": bool(lo > 0 or hi < 0),  # CI excludes zero
+        # Read by the acceptance criteria before `ci_lo`: an interval can be
+        # computed well before it can carry a promotion or a stop.
+        "decision_eligible": cluster_n >= MIN_DECISION_CLUSTERS,
     }
 
 
@@ -409,6 +446,12 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
     if latest_run:
         for s in signals:
             if s.run_date != latest_run.run_date:
+                continue
+            # A paired observation re-measures a pick that is already in this
+            # list; it is not a second idea. Excluded here rather than in the
+            # page, so the hero count, the "Picks today" tile and the funnel's
+            # final stage all stay consistent with the open-position count.
+            if s.signal_source in PAIRED_OBSERVATION_SOURCES:
                 continue
             feats = s.features or {}
             today_picks.append({

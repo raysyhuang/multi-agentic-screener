@@ -97,6 +97,8 @@ This is not a strategy-tuning protocol. It sets acceptance thresholds only.
 
 > Condition 5 compares point estimates, so today the method does not affect any test. It is documented now precisely because that could change: the moment anyone argues for "beat the CI" instead of "beat the point estimate," an undocumented interval method becomes load-bearing on a number whose interval spans −0.59 to +1.89. **Naming it while no result exists costs nothing; naming it afterwards is a choice about a result.**
 
+**`ci_lo` and `ci_hi` are `null` when a stream has fewer than 3 entry-date clusters** — no interval is computed at all, and `ci_unavailable` says so. The descriptive fields (`n`, `mean`, `beat_pct`, `entry_date_clusters`, `max_cluster_share`) are still exported, because a stream with trades must not look like a stream with none. `null` is fail-closed in both consumers: JavaScript compares false, Python raises.
+
 **Do not use the `significant` field for any test here.** It is two-sided — `bool(lo > 0 or hi < 0)` (`:89`) — while Tier 2 and S1 are both one-sided. Read `ci_lo` and `ci_hi` directly.
 
 ## Definitions
@@ -165,6 +167,7 @@ Below n = 30 the only permitted statements are descriptive: "n closed trades so 
 **All** of the following, on the same stream, simultaneously:
 
 1. **n ≥ 30** closed trades — `alpha_summary[<stream>]["spy"]["n"] >= 30`.
+1b. **≥ 10 distinct entry dates** — `alpha_summary[<stream>]["spy"]["entry_date_clusters"] >= 10`, exported as `decision_eligible`. The interval resamples whole entry-date clusters, so the effective sample is the number of dates, not the number of trades: 30 trades booked on 3 dates is 3 market observations wearing a sample size of 30. **Why 10** — with k clusters all of one sign, every resample reproduces that sign, so under a null where each cluster is positive with probability ½ an "entirely above zero" interval arrives by sign alone with probability 2⁻ᵏ: **12.5% at k=3**, five times the nominal 2.5%, and below the claimed tail only from k=6. Ten is that bound with margin. It binds on CONCENTRATION, not on supply — 30 trades spread over 10+ dates is the ordinary shape of every stream here.
 2. **Bootstrap 95% CI of mean alpha vs SPY strictly above zero** — `alpha_summary[<stream>]["spy"]["ci_lo"] > 0`. A positive mean whose CI crosses zero is a lean, not an edge; that sentence is already the docstring of the function that computes it.
 3. **≥ 2 distinct market regimes represented, each with ≥ 10 closed trades**, where a trade's regime is obtained by joining `trades[<stream>][i]["signal_date"]` to `run_history[date == signal_date]["regime"]`, using the repo's `bull` / `bear` / `choppy` keys. Trades whose `signal_date` has no matching `run_history` row are **excluded from the regime count** (they still count toward `n`). A sleeve that has only ever traded one regime has not been tested.
 4. **No execution-config drift** during the measurement window (see [Invalidating conditions](#invalidating-conditions)).
@@ -284,7 +287,7 @@ Until that exists, streams may reach n = 30 and be *described*, but **no Tier 2 
 
 A stream **stops** (paper trading halted, sleeve retired or rebuilt) when **either** fires:
 
-**S1 — Statistically established negative.** At a fixed evaluation point with **n ≥ 30**, the bootstrap 95% CI of mean alpha vs SPY is **entirely below zero** — `alpha_summary[<stream>]["spy"]["ci_hi"] < 0`. This is the symmetric mirror of Tier 2's promotion test. It cannot be argued away by "small sample" — 30 is the same floor promotion must clear.
+**S1 — Statistically established negative.** At a fixed evaluation point with **n ≥ 30 and ≥ 10 distinct entry dates** (Tier 2 condition 1b, which applies symmetrically — a stop decided on three crowded days is the same error as a promotion decided on three), the bootstrap 95% CI of mean alpha vs SPY is **entirely below zero** — `alpha_summary[<stream>]["spy"]["ci_hi"] < 0`. This is the symmetric mirror of Tier 2's promotion test. It cannot be argued away by "small sample" — 30 is the same floor promotion must clear.
 
 **S2 — Drawdown breach.** Paper-sleeve equity drawdown (concurrency-capped, as computed by the unified exit engine, not a sum of per-trade returns) reaches the number in the table below. This one fires regardless of `n`, because a large enough loss is decision-relevant before it is statistically significant.
 
