@@ -3,8 +3,12 @@ name: CI
 on:
   push:
     branches: [main]
+  # No branch filter: a PR whose base is another branch (a stack) otherwise
+  # runs NO checks at all and displays "no checks reported", which reads the
+  # same as "nothing to run". PR #128 sat in that state while passing locally.
+  # `main` requires these checks, so a stacked PR still cannot merge until it
+  # is retargeted -- the hole is that its author sees nothing until then.
   pull_request:
-    branches: [main]
 
 jobs:
   lint:
