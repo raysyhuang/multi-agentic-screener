@@ -172,3 +172,54 @@ MR-shadow wiring end to end; and the removal of `MEAN_REVERSION_IN_BOOK`.
 `PEAD_ENABLED` and `PEAD_60D_SHADOW_ENABLED` were checked for the same
 split-brain shape and do not have it — the dashboard export is driven by
 persisted stream rows and consults neither.
+
+## Review round 3 (Codex, 2026-09-21) — three defects fixed, one item left open
+
+**7. The round-2 cluster rule contradicted a rule this document already had.**
+The time-dispersion section already required `max(15, n/2)` distinct entry days
+at *every tier threshold* — 15 at the first n=30 read. The 10-date condition
+added in round 2 was weaker and redundant for Tier 2, and worse, it gave **S1 a
+laxer standard than promotion**, on the side that retires a sleeve. The new
+number is removed. Tier 2 condition 1b now points at the existing rule, and S1
+is brought under it explicitly: the rule said "every tier threshold" and a stop
+is not a tier, so S1 was never covered — that was the real gap, and closing it
+needs no new number.
+
+`decision_eligible` is recomputed from that same rule via
+`min_decision_clusters(n)`, so the export and the document can no longer
+disagree. It is descriptive: nothing enforces it, the document decides, and the
+field says so. The dashboard now also withholds the green "excludes zero" badge
+and the significance colour until the dispersion rule is met — an interval can
+exclude zero long before enough distinct days carry it.
+
+**Left open deliberately: there is still no concentration rule.** Sixteen
+trades on one day plus fourteen singletons is fifteen dates, so it passes the
+count while one day carries half the estimate. `effective_clusters` (Kish's
+`1/Σw²`, worth ~3 even days in that example) and `max_cluster_share` are now
+exported as diagnostics, but **no threshold on either is registered**, because
+inventing one after seeing a reviewer's counterexample is how a bar gets fitted
+to an argument rather than to a decision. Codex's suggestion for a first
+operational read was ~20 distinct dates and ≥15 effective clusters. This has to
+be settled before the first Tier-2 read, while no stream has results.
+
+**8. Paired rows still inflated two counts outside the page.** `compute_drift`
+counted them in `total_resolved`, which gates whether *any* drift alert is sent
+(≥10 closed trades): the paired stream has a null baseline so it can never
+raise its own alert, but it could push the total over the line and release
+another stream's. The exporter's console summary likewise logged one PEAD
+position plus its pair as two. Both fixed.
+
+The underlying cause was that the same rule lived in two files. Stream
+classification now has one home, `src/streams.py`, imported by the pipeline,
+the drift monitor and the exporter. Three counts, three call sites, one rule
+remembered in two of them was the shape of finding 6 as well.
+
+**9. The document carried both the old and the new contract** for a summary
+below three clusters ("returns `None`" four lines above the correct null-CI
+description). Corrected.
+
+Confirmed intact in round 3: the integration DB guard, the MR-shadow wiring,
+the repository-variable removal, the `today_picks` filter (hero, tile, funnel,
+pick list and mirror summary all covered), and the paired row's exclusion from
+portfolio capital, the selection ledger, the scorecard, PEAD slots, cooldowns
+and every Telegram count.

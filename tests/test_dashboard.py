@@ -104,6 +104,19 @@ def test_alpha_tile_renders_a_missing_interval_instead_of_nulls():
     assert "s.entry_date_clusters" in script
 
 
+def test_established_badge_requires_the_dispersion_rule_too():
+    """A green tick on an interval too few entry dates carry is the misread.
+
+    An interval can exclude zero long before enough distinct days carry it, so
+    both the badge and the headline colour gate on decision_eligible.
+    """
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert "s.significant && s.decision_eligible !== false" in script
+    assert script.count("s.decision_eligible !== false") >= 2   # badge + colour
+    assert "s.min_decision_clusters" in script
+
+
 @pytest.mark.asyncio
 async def test_dashboard_returns_200(app_client):
     """/dashboard should return 200 with HTML content."""

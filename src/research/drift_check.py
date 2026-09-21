@@ -32,6 +32,7 @@ from datetime import date, timedelta
 
 from src.db.models import Outcome, Signal
 from src.db.session import get_session
+from src.streams import PAIRED_OBSERVATION_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +97,17 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
             )
         )
         rows = (await session.execute(stmt)).all()
+
+    # A paired observation re-measures a trade already counted under its primary
+    # stream. It has no baseline so it can never raise a drift alert of its own,
+    # but `total_resolved` gates whether ANY drift alert is sent (main.py, at
+    # >= 10 closed trades) — so leaving it in would let a measurement row
+    # release another stream's alert. It is not an additional trade, here or
+    # anywhere else that counts trades.
+    rows = [
+        (outcome, signal) for outcome, signal in rows
+        if signal.signal_source not in PAIRED_OBSERVATION_SOURCES
+    ]
 
     by_stream: dict[str, list[float]] = {}
     for outcome, signal in rows:

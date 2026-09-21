@@ -4,6 +4,8 @@ from __future__ import annotations
 
 from datetime import date
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -286,9 +288,41 @@ def test_thirty_trades_on_three_dates_cannot_decide_anything():
     assert crowded["ci_lo"] > 0                   # would clear Tier 2 condition 2
     assert crowded["decision_eligible"] is False  # ... and is refused by 1b
     assert crowded["max_cluster_share"] == pytest.approx(1 / 3, abs=1e-3)
+    assert crowded["effective_clusters"] == pytest.approx(3.0, abs=0.01)
 
     spread = exp._alpha_summary(alphas, [f"d{i}" for i in range(30)])
     assert spread["entry_date_clusters"] == 30 and spread["decision_eligible"] is True
+
+
+def test_decision_threshold_is_the_documented_dispersion_rule():
+    """`max(15, n/2)` entry days — the rule the acceptance document already had.
+
+    A second, weaker number here would contradict the document and silently
+    lower the bar for S1, which retires a sleeve.
+    """
+    import scripts.export_dashboard_data as exp
+
+    assert exp.min_decision_clusters(30) == 15    # Tier 1 / first read
+    assert exp.min_decision_clusters(50) == 25
+    assert exp.min_decision_clusters(100) == 50
+    assert exp.min_decision_clusters(4) == 15     # floor holds at small n
+
+    doc = (Path(__file__).parents[2] / "docs" / "paper_sleeve_acceptance_criteria.md").read_text()
+    assert "max(15, n/2)" in doc
+
+
+def test_effective_clusters_exposes_concentration_the_date_count_misses():
+    """15 dates can still be one day carrying half the estimate."""
+    import scripts.export_dashboard_data as exp
+
+    # 16 trades on one day + 14 singletons: 15 dates, so the date count passes.
+    alphas = [1.0] * 16 + [0.5] * 14
+    dates = ["crowded"] * 16 + [f"d{i}" for i in range(14)]
+    s = exp._alpha_summary(alphas, dates)
+
+    assert s["entry_date_clusters"] == 15 and s["decision_eligible"] is True
+    assert s["max_cluster_share"] == pytest.approx(16 / 30, abs=1e-3)
+    assert s["effective_clusters"] < 4     # ... but it is worth ~3 even days
 
 
 def test_alpha_summary_rejects_misaligned_clusters():

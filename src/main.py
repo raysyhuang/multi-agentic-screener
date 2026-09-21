@@ -33,6 +33,10 @@ from src.data.aggregator import DataAggregator
 from src.data.universe_selection import select_ohlcv_tickers
 from sqlalchemy import delete, select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
+from src.streams import (
+    PEAD_POSITION_SOURCES as _PEAD_POSITION_SOURCES,
+    SHADOW_SOURCES as _SHADOW_SOURCES,
+)
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import (
@@ -2511,16 +2515,11 @@ async def _run_pipeline_core(
     _log_memory("pipeline_complete")
 
 
-# Streams that are recorded but never in the book. Their history must not feed
-# the OFFICIAL cooldown (see the call site) — that would let a quarantined pick
-# suppress a book pick.
-SHADOW_SOURCES: frozenset[str] = frozenset({
-    "sniper_shadow", "mr_shadow", "pead_60d_shadow",
-})
-
-# Only capital-like PEAD paper positions consume the primary sleeve's slots.
-# The 60-session stream is a paired observation, not an additional position.
-PEAD_POSITION_SOURCES: tuple[str, ...] = ("pead_paper", "pead_neglected")
+# Stream classification lives in src/streams.py so the pipeline, the drift
+# monitor and the dashboard exporter cannot each remember a different rule.
+# Re-exported here because existing call sites and tests read them off `main`.
+SHADOW_SOURCES = _SHADOW_SOURCES
+PEAD_POSITION_SOURCES = _PEAD_POSITION_SOURCES
 
 
 async def _get_recent_signals(days: int = 7) -> list[dict]:

@@ -28,6 +28,7 @@ from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.config import get_settings
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
+from src.streams import PAIRED_OBSERVATION_SOURCES
 
 # The "book" = the systematic official streams run together. The manual sleeve
 # is deliberately excluded: it reproduces the official MR picks verbatim and
@@ -71,20 +72,24 @@ PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK, _MR_IN_BOOK)
 # Fewer distinct entry dates than this and the cluster bootstrap has nothing to
 # resample, so no interval is computed at all; see `_alpha_summary`.
 MIN_ENTRY_DATE_CLUSTERS = 3
-# Floor for a DECISION (promotion or stop), not for display. The resample draws
-# whole clusters, so with k clusters all of one sign every resample reproduces
-# that sign: under a null where each cluster is positive with probability 1/2,
-# an "entirely above zero" interval arrives by sign alone with probability
-# 2**-k. That is 12.5% at k=3 — five times the nominal 2.5% — and needs k >= 6
-# before it falls below the tail the test claims to use. 10 is that bound with
-# margin, and it binds only on CONCENTRATION: 30 trades spread over 10+ entry
-# dates is the normal shape, while 30 trades on 3 dates is 3 observations
-# wearing a sample size of 30.
-MIN_DECISION_CLUSTERS = 10
-# Streams that re-measure an entry counted under another stream. They are real
-# rows with real outcomes, but they are not additional ideas, positions or
-# capital, so they never contribute to a COUNT of any of those.
-PAIRED_OBSERVATION_SOURCES = frozenset({"pead_60d_shadow"})
+
+
+def min_decision_clusters(n: int) -> int:
+    """Distinct entry days a stream needs before its interval can decide anything.
+
+    This is the acceptance criteria's existing time-dispersion rule, not a new
+    one: `max(15, n/2)` distinct entry days, 15 at the first n=30 read. It lives
+    here so `decision_eligible` computes the same comparison a human makes from
+    the document — the DOCUMENT is authoritative, this is a convenience.
+
+    Why the rule matters to this particular statistic: the bootstrap resamples
+    whole entry-date clusters, so the effective sample is the number of dates.
+    Thirty trades booked on three dates is three market observations wearing a
+    sample size of thirty.
+    """
+    return max(15, n // 2)
+
+
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -136,9 +141,9 @@ def _alpha_summary(
     both consumers: JavaScript compares false, Python raises.
 
     Three clusters is enough to compute an interval and **not** enough to
-    decide on one; see ``MIN_DECISION_CLUSTERS``. ``entry_date_clusters`` and
-    ``max_cluster_share`` are exported so concentration is visible rather than
-    inferred from ``n``.
+    decide on one; see ``min_decision_clusters``. ``entry_date_clusters``,
+    ``max_cluster_share`` and ``effective_clusters`` are exported so
+    concentration is visible rather than inferred from ``n``.
     """
     import random
     if clusters is not None and len(clusters) != len(alphas):
@@ -161,7 +166,17 @@ def _alpha_summary(
     base = {
         "n": n,
         "entry_date_clusters": cluster_n,
+        # Concentration, two ways. `max_cluster_share` is the largest single
+        # day's share; `effective_clusters` is Kish's 1/sum(w^2), the number of
+        # equally sized days that would carry the same information — 15 even
+        # days score 15, while 16 trades on one day plus 14 singletons scores
+        # 3.3. Both describe the trades entering THIS benchmark's statistic
+        # (rows with no benchmark return are dropped above), not the stream.
+        # Diagnostics, not gates: no concentration threshold is registered yet.
         "max_cluster_share": round(max(len(g) for g in cluster_values) / n, 4),
+        "effective_clusters": round(
+            1.0 / sum((len(g) / n) ** 2 for g in cluster_values), 2,
+        ),
         "mean": round(mean, 4),
         "beat_pct": round(beat, 4),
     }
@@ -189,9 +204,12 @@ def _alpha_summary(
         "ci_lo": round(lo, 4),
         "ci_hi": round(hi, 4),
         "significant": bool(lo > 0 or hi < 0),  # CI excludes zero
-        # Read by the acceptance criteria before `ci_lo`: an interval can be
-        # computed well before it can carry a promotion or a stop.
-        "decision_eligible": cluster_n >= MIN_DECISION_CLUSTERS,
+        # The acceptance criteria's time-dispersion rule, computed for
+        # convenience. Descriptive: nothing enforces it, and the document — not
+        # this field — decides. An interval can be computed long before it can
+        # carry a promotion or a stop.
+        "decision_eligible": cluster_n >= min_decision_clusters(n),
+        "min_decision_clusters": min_decision_clusters(n),
     }
 
 
@@ -585,8 +603,13 @@ async def main() -> None:
     with open(args.out, "w") as f:
         json.dump(snap, f, default=str)
     n_trades = sum(len(v) for v in snap["trades"].values())
+    # Same rule as the page: a paired observation is not an extra position.
+    n_open = sum(
+        1 for o in snap["open_positions"]
+        if o["stream"].split("|", 1)[-1] not in PAIRED_OBSERVATION_SOURCES
+    )
     print(f"Wrote {args.out}: {len(snap['today_picks'])} picks today, "
-          f"{n_trades} closed trades ({args.days}d), {len(snap['open_positions'])} open, "
+          f"{n_trades} closed trades ({args.days}d), {n_open} open, "
           f"{len(snap['run_history'])} runs")
 
 
