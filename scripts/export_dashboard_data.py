@@ -28,7 +28,11 @@ from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.config import get_settings
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
-from src.streams import PAIRED_OBSERVATION_SOURCES
+from src.streams import (
+    MEASURED_SOURCES,
+    MEASUREMENT_WINDOW_START,
+    PAIRED_OBSERVATION_SOURCES,
+)
 
 # The "book" = the systematic official streams run together. The manual sleeve
 # is deliberately excluded: it reproduces the official MR picks verbatim and
@@ -69,6 +73,44 @@ _SNIPER_IN_BOOK = get_settings().sniper_in_book
 _MR_IN_BOOK = get_settings().mean_reversion_in_book
 BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK, _MR_IN_BOOK)
 PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK, _MR_IN_BOOK)
+# Fewer distinct entry dates than this and the cluster bootstrap has nothing to
+# resample, so no interval is computed at all; see `_alpha_summary`.
+MIN_ENTRY_DATE_CLUSTERS = 3
+
+# Concentration floor, registered by Ray 2026-09-21 while no stream had an
+# in-window trade. Entry-DAY COUNT alone does not control concentration: 16
+# trades on one day plus 14 singletons is 15 days, which passes `max(15, n/2)`,
+# while that one day carries 53% of the estimate and the sample is worth about
+# 3.3 balanced days. Kish's `effective_clusters` sees that; the day count
+# cannot.
+#
+# Ten, not the reviewer's stricter 15-with-20-days: an unreachable bar is its
+# own failure. The 2026-07 regime gate demanded a cohort MR could only earn by
+# trading, while blocking it from trading — a sleeve that dies of its bar
+# rather than of its alpha teaches nothing. Ten rejects the pathological sample
+# (3.3) while ordinary PEAD shapes score 12-15.
+MIN_EFFECTIVE_CLUSTERS: float = 10.0
+
+
+def min_decision_clusters(n: int) -> int:
+    """Distinct entry days a stream needs before its interval can decide anything.
+
+    This is the acceptance criteria's existing time-dispersion rule, not a new
+    one: `max(15, n/2)` distinct entry days, 15 at the first n=30 read. It lives
+    here so `decision_eligible` computes the same comparison a human makes from
+    the document — the DOCUMENT is authoritative, this is a convenience.
+
+    Why the rule matters to this particular statistic: the bootstrap resamples
+    whole entry-date clusters, so the effective sample is the number of dates.
+    Thirty trades booked on three dates is three market observations wearing a
+    sample size of thirty.
+    """
+    # ceil, not floor: entry days are integers, so "at least n/2 days" at n=31
+    # is 16 days, not 15. Floor division quietly made the code laxer than the
+    # document at every odd n, on the rule the interval depends on.
+    return max(15, -(-n // 2))
+
+
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -99,31 +141,106 @@ async def _benchmark_closes(days: int) -> dict[str, dict]:
     return out
 
 
-def _alpha_summary(alphas: list[float]) -> dict | None:
-    """Per-stream alpha stats with a seeded bootstrap 95% CI of the mean.
+def _alpha_summary(
+    alphas: list[float | None], clusters: list[object] | None = None,
+) -> dict | None:
+    """Per-stream alpha stats with a seeded cluster-bootstrap CI of the mean.
 
-    The CI is the anti-over-excitement guard: a positive mean whose CI still
-    crosses zero is a lean, not an established edge (a 64%-beat on n=25 is a
-    coin-flip run away from chance). Seeded so the dashboard number is stable
-    across runs given the same trades.
+    Trades entered on the same date share market conditions and are not
+    independent observations. Resampling whole entry-date clusters preserves
+    that dependence. ``clusters=None`` retains a one-trade-per-cluster fallback
+    for callers without dates; the dashboard always supplies entry dates.
+
+    **At least three distinct clusters are required for an interval at all**,
+    not merely three trades. The resample draws whole clusters, so a stream
+    whose trades all entered on one day has exactly one thing to draw: every
+    resample reproduces the same set, the interval collapses to zero width, and
+    a three-trade losing streak is reported as an established negative. Below
+    that floor the descriptive fields are still exported — hiding them would
+    make a stream indistinguishable from one with no trades — but ``ci_lo`` and
+    ``ci_hi`` are None and ``ci_unavailable`` says why. None is fail-closed in
+    both consumers: JavaScript compares false, Python raises.
+
+    Three clusters is enough to compute an interval and **not** enough to
+    decide on one; see ``min_decision_clusters``. ``entry_date_clusters``,
+    ``max_cluster_share`` and ``effective_clusters`` are exported so
+    concentration is visible rather than inferred from ``n``.
     """
     import random
-    a = [x for x in alphas if x is not None]
+    if clusters is not None and len(clusters) != len(alphas):
+        raise ValueError("clusters must align one-for-one with alphas")
+    valid = [
+        (float(x), clusters[i] if clusters is not None else i)
+        for i, x in enumerate(alphas) if x is not None
+    ]
+    a = [value for value, _ in valid]
     if len(a) < 3:
         return None
+    grouped: dict[object, list[float]] = {}
+    for value, cluster in valid:
+        grouped.setdefault(cluster, []).append(value)
+    cluster_values = list(grouped.values())
+    cluster_n = len(cluster_values)
+    n = len(a)
     mean = sum(a) / len(a)
     beat = sum(1 for x in a if x > 0) / len(a)
+    effective = round(1.0 / sum((len(g) / n) ** 2 for g in cluster_values), 2)
+    base = {
+        "n": n,
+        "entry_date_clusters": cluster_n,
+        # Concentration, two ways. `max_cluster_share` is the largest single
+        # day's share; `effective_clusters` is Kish's 1/sum(w^2), the number of
+        # equally sized days that would carry the same information — 15 even
+        # days score 15, while 16 trades on one day plus 14 singletons scores
+        # 3.3. Both describe the trades entering THIS benchmark's statistic
+        # (rows with no benchmark return are dropped above), not the stream.
+        # Diagnostics, not gates: no concentration threshold is registered yet.
+        "max_cluster_share": round(max(len(g) for g in cluster_values) / n, 4),
+        "effective_clusters": effective,
+        "mean": round(mean, 4),
+        "beat_pct": round(beat, 4),
+    }
+    if cluster_n < MIN_ENTRY_DATE_CLUSTERS:
+        return {
+            **base,
+            "ci_lo": None,
+            "ci_hi": None,
+            "significant": False,
+            "ci_unavailable": (
+                f"{cluster_n} entry-date cluster{'' if cluster_n == 1 else 's'}: "
+                f"a cluster bootstrap needs at least {MIN_ENTRY_DATE_CLUSTERS}"
+            ),
+        }
     rng = random.Random(20260723)
-    n = len(a)
-    means = sorted(sum(rng.choices(a, k=n)) / n for _ in range(10_000))
+    means = []
+    for _ in range(10_000):
+        sampled = rng.choices(cluster_values, k=cluster_n)
+        draw = [value for group in sampled for value in group]
+        means.append(sum(draw) / len(draw))
+    means.sort()
     lo, hi = means[249], means[9749]
     return {
-        "n": n,
-        "mean": round(mean, 4),
+        **base,
         "ci_lo": round(lo, 4),
         "ci_hi": round(hi, 4),
-        "beat_pct": round(beat, 4),
         "significant": bool(lo > 0 or hi < 0),  # CI excludes zero
+        # Descriptive: the document decides, not this field. False whenever any
+        # registered requirement is unmet, with the failing one named — both
+        # requirements exist because either can be met while the other is not.
+        "decision_eligible": (
+            cluster_n >= min_decision_clusters(n)
+            and effective >= MIN_EFFECTIVE_CLUSTERS
+        ),
+        "min_decision_clusters": min_decision_clusters(n),
+        "min_effective_clusters": MIN_EFFECTIVE_CLUSTERS,
+        "decision_blocked_reason": (
+            f"{cluster_n} entry dates, needs {min_decision_clusters(n)}"
+            if cluster_n < min_decision_clusters(n)
+            else f"concentration: {effective} effective clusters, "
+                 f"needs {MIN_EFFECTIVE_CLUSTERS}"
+            if effective < MIN_EFFECTIVE_CLUSTERS
+            else None
+        ),
     }
 
 
@@ -404,6 +521,10 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
     trades: dict[str, list[dict]] = {}
     open_positions = []
     skip_counts: dict[str, int] = {}
+    # Closed trades a measured stream entered before the window opened. Counted
+    # and reported, never silently dropped: "excluded 4" and "had none" are
+    # different facts.
+    pre_window_counts: dict[str, int] = {}
     for o in outcomes:
         s = sig_by_id.get(o.signal_id)
         if s is None:
@@ -435,6 +556,16 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
             continue
         if o.pnl_pct is None:
             continue
+        # The measurement window is a registered eligibility rule, and the
+        # document names this export as the source for n, the CI and every
+        # Tier-2/S1 decision. A rolling 90-day window silently included
+        # pre-window entries in all of them, so a measured stream's decisional
+        # cohort is filtered here rather than trusted to a reader.
+        if s.signal_source in MEASURED_SOURCES and (
+            o.entry_date is None or o.entry_date < MEASUREMENT_WINDOW_START
+        ):
+            pre_window_counts[key] = pre_window_counts.get(key, 0) + 1
+            continue
         row = {
             "ticker": o.ticker,
             "signal_date": _iso(s.run_date),
@@ -461,7 +592,10 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
     for key, rows in trades.items():
         per_bench = {}
         for bk in BENCHMARKS:
-            s = _alpha_summary([r.get(f"alpha_{bk}") for r in rows])
+            s = _alpha_summary(
+                [r.get(f"alpha_{bk}") for r in rows],
+                [r.get("entry_date") for r in rows],
+            )
             if s:
                 per_bench[bk] = s
         if per_bench:
@@ -494,6 +628,8 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         "trades": trades,
         "open_positions": open_positions,
         "skip_counts": skip_counts,
+        "measurement_window_start": MEASUREMENT_WINDOW_START.isoformat(),
+        "pre_window_excluded": pre_window_counts,
         "run_history": run_history,
         "baselines": BASELINES,
         "benchmarks": {"spy": "S&P 500 (SPY)", "qqq": "Nasdaq-100 (QQQ)"},

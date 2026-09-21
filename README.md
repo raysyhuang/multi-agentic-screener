@@ -180,7 +180,7 @@ src/
 
 scripts/                        # Backtesters, probes, evaluators, backfills
 api/app.py                      # FastAPI dashboard — reports, signals, outcomes
-tests/                          # 1,285 tests collected (1,275 default + 10 integration)
+tests/                          # 1,299 tests collected (1,289 default + 10 integration)
 ```
 
 ## Daily Orchestration

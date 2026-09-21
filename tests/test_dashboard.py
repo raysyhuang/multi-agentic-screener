@@ -94,6 +94,29 @@ def test_pick_counts_come_from_an_export_that_already_excludes_paired_rows():
     assert "if s.signal_source in PAIRED_OBSERVATION_SOURCES:" in source
 
 
+def test_alpha_tile_renders_a_missing_interval_instead_of_nulls():
+    """Below the cluster floor there is no CI, and the tile has to say so."""
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert "Number.isFinite(s.ci_lo)" in script
+    assert "s.ci_unavailable" in script
+    # Entry dates shown beside n: 30 trades on 3 dates is 3 observations.
+    assert "s.entry_date_clusters" in script
+
+
+def test_established_badge_requires_the_dispersion_rule_too():
+    """A green tick on an interval too few entry dates carry is the misread.
+
+    An interval can exclude zero long before enough distinct days carry it, so
+    both the badge and the headline colour gate on decision_eligible.
+    """
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert "s.significant && s.decision_eligible !== false" in script
+    assert script.count("s.decision_eligible !== false") >= 2   # badge + colour
+    assert "s.min_decision_clusters" in script
+
+
 @pytest.mark.asyncio
 async def test_dashboard_returns_200(app_client):
     """/dashboard should return 200 with HTML content."""

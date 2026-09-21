@@ -2,7 +2,9 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
+
+from pathlib import Path
 
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
@@ -184,6 +186,20 @@ def test_alpha_summary_ci_and_significance():
         exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1])
 
 
+def test_alpha_summary_resamples_whole_entry_date_clusters():
+    """A crowded good day is one market observation, not four independent bets."""
+    import scripts.export_dashboard_data as exp
+
+    alphas = [4.0, 4.0, 4.0, 4.0, -3.0, -2.0]
+    entry_dates = ["2026-09-01"] * 4 + ["2026-09-02", "2026-09-03"]
+    clustered = exp._alpha_summary(alphas, entry_dates)
+    iid = exp._alpha_summary(alphas)
+
+    assert clustered["n"] == 6
+    assert clustered["entry_date_clusters"] == 3
+    assert clustered["ci_lo"] < iid["ci_lo"]
+
+
 @pytest.mark.asyncio
 async def test_a_paired_observation_is_never_counted_as_a_pick(monkeypatch):
     """One idea, two rows: the clone must not inflate any COUNT of ideas.
@@ -226,6 +242,192 @@ async def test_a_paired_observation_is_never_counted_as_a_pick(monkeypatch):
     assert {o["stream"] for o in snap["open_positions"]} == {
         "pead|pead_paper", "pead|pead_60d_shadow",
     }
+
+
+@pytest.mark.asyncio
+async def test_measured_streams_exclude_entries_before_the_window_opened(monkeypatch):
+    """The document names this export as the source for n, the CI and S1.
+
+    The window start is a registered eligibility rule, so it has to be applied
+    here rather than trusted to whoever reads the number. Comparator streams
+    (the official book's history) are not under measurement and keep theirs.
+    """
+    from contextlib import asynccontextmanager
+    import scripts.export_dashboard_data as exp
+    from src.streams import MEASUREMENT_WINDOW_START
+
+    before = MEASUREMENT_WINDOW_START - timedelta(days=3)
+    after = MEASUREMENT_WINDOW_START + timedelta(days=1)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as s:
+        s.add(DailyRun(run_date=after, regime="choppy", universe_size=1800,
+                       candidates_scored=70, execution_mode="quant_only",
+                       pipeline_health={"status": "OK", "warnings": []}))
+        rows = [
+            (1, "OLD", "pead", "pead_paper", before),      # measured, pre-window
+            (2, "NEW", "pead", "pead_paper", after),       # measured, in window
+            (3, "HIST", "sniper", "mas_official", before),  # comparator, kept
+        ]
+        for sid, ticker, model, source, entry in rows:
+            s.add(_signal(entry, ticker, model, source, sid=sid))
+            s.add(Outcome(
+                signal_id=sid, ticker=ticker, entry_date=entry, entry_price=100.0,
+                exit_date=entry, exit_price=101.0, exit_reason="target",
+                pnl_pct=1.0, still_open=False,
+            ))
+        await s.commit()
+
+    @asynccontextmanager
+    async def _fake_session():
+        async with factory() as session:
+            yield session
+
+    monkeypatch.setattr(exp, "get_session", _fake_session)
+    snap = await exp.build_snapshot(days=400, bench_closes={"spy": {}, "qqq": {}})
+
+    assert [t["ticker"] for t in snap["trades"]["pead|pead_paper"]] == ["NEW"]
+    assert [t["ticker"] for t in snap["trades"]["sniper|mas_official"]] == ["HIST"]
+    # Excluded, not silently dropped: "excluded 1" and "had none" differ.
+    assert snap["pre_window_excluded"]["pead|pead_paper"] == 1
+    assert snap["measurement_window_start"] == MEASUREMENT_WINDOW_START.isoformat()
+
+
+def test_no_interval_below_three_entry_date_clusters():
+    """One entry date has one thing to resample, so the CI collapses to a point.
+
+    Three losses booked on the same day would otherwise export ci_hi < 0 with
+    zero width — S1's "statistically established negative" read off a number
+    containing no variation. The descriptive fields still export, because a
+    stream with trades must not look like a stream with none.
+    """
+    import scripts.export_dashboard_data as exp
+
+    same_day = exp._alpha_summary([-2.0, -3.0, -4.0], ["2026-09-01"] * 3)
+    assert same_day["ci_lo"] is None and same_day["ci_hi"] is None
+    assert same_day["significant"] is False
+    assert "1 entry-date cluster" in same_day["ci_unavailable"]
+    assert same_day["n"] == 3 and same_day["mean"] == -3.0
+
+    two = exp._alpha_summary([-2.0, -3.0, -4.0, -1.0], ["a", "a", "b", "b"])
+    assert two["ci_lo"] is None and two["max_cluster_share"] == 0.5
+
+    # Three distinct dates: an interval exists, but cannot decide anything.
+    ok = exp._alpha_summary([-2.0, -3.0, -4.0], ["a", "b", "c"])
+    assert ok["entry_date_clusters"] == 3 and ok["ci_hi"] < 0
+    assert ok["decision_eligible"] is False
+
+
+def test_thirty_trades_on_three_dates_cannot_decide_anything():
+    """The effective sample is entry dates, not trades.
+
+    Ten winners on each of three days resample to a CI strictly above zero on
+    three market observations. n >= 30 alone would call that a promotion.
+    """
+    import scripts.export_dashboard_data as exp
+
+    alphas, dates = [], []
+    for day, base in enumerate([1.5, 2.0, 2.5]):
+        for i in range(10):
+            alphas.append(base + i * 0.01)
+            dates.append(f"2026-09-0{day + 1}")
+
+    crowded = exp._alpha_summary(alphas, dates)
+    assert crowded["n"] == 30 and crowded["entry_date_clusters"] == 3
+    assert crowded["ci_lo"] > 0                   # would clear Tier 2 condition 2
+    assert crowded["decision_eligible"] is False  # ... and is refused by 1b
+    assert crowded["max_cluster_share"] == pytest.approx(1 / 3, abs=1e-3)
+    assert crowded["effective_clusters"] == pytest.approx(3.0, abs=0.01)
+
+    assert "entry dates" in crowded["decision_blocked_reason"]
+
+    spread = exp._alpha_summary(alphas, [f"d{i}" for i in range(30)])
+    assert spread["entry_date_clusters"] == 30
+    assert spread["decision_eligible"] is True
+    assert spread["decision_blocked_reason"] is None
+
+
+def test_decision_threshold_is_the_documented_dispersion_rule():
+    """`max(15, n/2)` entry days — the rule the acceptance document already had.
+
+    A second, weaker number here would contradict the document and silently
+    lower the bar for S1, which retires a sleeve.
+    """
+    import scripts.export_dashboard_data as exp
+
+    assert exp.min_decision_clusters(30) == 15    # Tier 1 / first read
+    assert exp.min_decision_clusters(50) == 25
+    assert exp.min_decision_clusters(100) == 50
+    assert exp.min_decision_clusters(4) == 15     # floor holds at small n
+
+    doc = (Path(__file__).parents[2] / "docs" / "paper_sleeve_acceptance_criteria.md").read_text()
+    assert "max(15, n/2)" in doc
+
+
+def test_effective_clusters_exposes_concentration_the_date_count_misses():
+    """15 dates can still be one day carrying half the estimate."""
+    import scripts.export_dashboard_data as exp
+
+    # 16 trades on one day + 14 singletons: 15 dates, so the date count passes.
+    alphas = [1.0] * 16 + [0.5] * 14
+    dates = ["crowded"] * 16 + [f"d{i}" for i in range(14)]
+    s = exp._alpha_summary(alphas, dates)
+
+    assert s["entry_date_clusters"] == 15            # passes the day count
+    assert s["max_cluster_share"] == pytest.approx(16 / 30, abs=1e-3)
+    assert s["effective_clusters"] < 4               # worth ~3 balanced days
+    # This is exactly the sample that must not read as eligible.
+    assert s["decision_eligible"] is False
+    assert s["min_effective_clusters"] == 10.0
+
+
+def test_concentration_floor_rejects_a_crowded_sample_the_day_count_admits():
+    """Registered 2026-09-21: effective clusters >= 10, alongside the day count.
+
+    Both conditions exist because either can be met while the other is not, so
+    the blocked reason has to name which one failed.
+    """
+    import scripts.export_dashboard_data as exp
+
+    assert exp.MIN_EFFECTIVE_CLUSTERS == 10.0
+
+    # 16 on one day + 14 singletons: 15 dates passes the count, ~3.3 effective.
+    crowded = exp._alpha_summary(
+        [1.0] * 16 + [0.5] * 14,
+        ["crowded"] * 16 + [f"d{i}" for i in range(14)],
+    )
+    assert crowded["entry_date_clusters"] == 15
+    assert crowded["decision_eligible"] is False
+    assert "concentration" in crowded["decision_blocked_reason"]
+
+    # An ordinary shape — 30 trades over 15 days, mostly pairs — clears it.
+    dates = [f"d{i // 2}" for i in range(30)]
+    ordinary = exp._alpha_summary([1.0] * 30, dates)
+    assert ordinary["entry_date_clusters"] == 15
+    assert ordinary["effective_clusters"] == pytest.approx(15.0, abs=0.01)
+    assert ordinary["decision_eligible"] is True
+    assert ordinary["decision_blocked_reason"] is None
+
+
+def test_dispersion_floor_rounds_up_not_down():
+    """Entry days are integers: "at least n/2" at n=31 is 16 days, not 15."""
+    import scripts.export_dashboard_data as exp
+
+    assert exp.min_decision_clusters(31) == 16
+    assert exp.min_decision_clusters(51) == 26
+    assert exp.min_decision_clusters(101) == 51
+    assert exp.min_decision_clusters(30) == 15    # even n unchanged
+
+
+def test_alpha_summary_rejects_misaligned_clusters():
+    import scripts.export_dashboard_data as exp
+
+    with pytest.raises(ValueError, match="align"):
+        exp._alpha_summary([1.0, 2.0, 3.0], ["one-date"])
 
 
 @pytest.mark.asyncio
