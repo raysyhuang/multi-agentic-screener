@@ -11,6 +11,8 @@ of them. Anything that counts rows imports from here.
 
 from __future__ import annotations
 
+from datetime import date
+
 # Recorded, never in the book. Their history must not feed the OFFICIAL
 # cooldown — a quarantined pick must not suppress a book pick.
 SHADOW_SOURCES: frozenset[str] = frozenset({
@@ -38,3 +40,19 @@ BOOK_SOURCES: frozenset[str] = frozenset({"mas_official"})
 
 # Sources whose open positions consume the sniper concurrency cap.
 SNIPER_CAP_SOURCES: tuple[str, ...] = ("mas_official", "sniper_shadow")
+
+# Streams whose record only starts when the measurement window opened. Their
+# numbers are read for decisions, so they must contain only eligible trades;
+# see MEASUREMENT_WINDOW_START.
+MEASURED_SOURCES: frozenset[str] = SHADOW_SOURCES | frozenset({
+    "pead_paper", "pead_neglected",
+})
+
+# The registered start of the paper-sleeve measurement window
+# (docs/paper_sleeve_acceptance_criteria.md, amendment 2026-09-19): the first
+# `entry_date` on or after this date. Every earlier entry is OUT, and that was
+# settled before any result existed — RBRK (entered 08-31) and IOT (09-08) are
+# both excluded by it. It lives in code because the document names the exported
+# `alpha_summary` as the source for n, the CI and every Tier-2/S1 decision, and
+# a rolling 90-day export silently included pre-window trades in all of them.
+MEASUREMENT_WINDOW_START: date = date(2026, 9, 19)
