@@ -6,8 +6,8 @@ points at the production Postgres) and writes a single self-contained
 page — this bakes a read-only snapshot.
 
 Streams are ALWAYS kept separate (official vs manual sleeve — never blended;
-see CLAUDE.md). Baseline expectation bands are the honest, truth-matrix /
-reconciliation numbers, not the retired optimistic labels.
+see CLAUDE.md). Retired expectation bands are represented as null, never
+silently replaced with another optimistic label.
 
 Usage:
   python scripts/export_dashboard_data.py [--out dashboard/data.json] [--days 90]
@@ -28,6 +28,7 @@ from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.config import get_settings
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
+from src.streams import PAIRED_OBSERVATION_SOURCES
 
 # The "book" = the systematic official streams run together. The manual sleeve
 # is deliberately excluded: it reproduces the official MR picks verbatim and
@@ -41,26 +42,33 @@ from src.db.session import get_session
 SNIPER_KEY, MR_KEY = "sniper|mas_official", "mean_reversion|mas_official"
 
 
-def book_streams(sniper_in_book: bool) -> list[str]:
-    return [SNIPER_KEY, MR_KEY] if sniper_in_book else [MR_KEY]
+def book_streams(sniper_in_book: bool, mean_reversion_in_book: bool = True) -> list[str]:
+    streams = [SNIPER_KEY] if sniper_in_book else []
+    if mean_reversion_in_book:
+        streams.append(MR_KEY)
+    return streams
 
 
-def portfolio_specs(sniper_in_book: bool) -> list[tuple[str, str, list[str]]]:
+def portfolio_specs(
+    sniper_in_book: bool, mean_reversion_in_book: bool = True,
+) -> list[tuple[str, str, list[str]]]:
     """Per-stream portfolio rows: each official stream alone, then the book. A
     row is emitted only while the stream has closed trades in the window, so a
     retired stream's row disappears on its own once its last trade ages out."""
     sniper_label = "Sniper only" if sniper_in_book else "Sniper only (official, retired 2026-09-18)"
-    book_label = "Book (sniper + MR)" if sniper_in_book else "Book (MR official)"
+    active = book_streams(sniper_in_book, mean_reversion_in_book)
+    book_label = "Book (" + " + ".join(active) + ")" if active else "Book (no official sleeves)"
     return [
         ("sniper", sniper_label, [SNIPER_KEY]),
         ("mr", "MR official only", [MR_KEY]),
-        ("book", book_label, book_streams(sniper_in_book)),
+        ("book", book_label, active),
     ]
 
 
 _SNIPER_IN_BOOK = get_settings().sniper_in_book
-BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK)
-PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK)
+_MR_IN_BOOK = get_settings().mean_reversion_in_book
+BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK, _MR_IN_BOOK)
+PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK, _MR_IN_BOOK)
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -134,10 +142,9 @@ def _bench_return(closes: dict, entry: _date | None, exit_: _date | None) -> flo
     c0 = closes[de]
     return (closes[dx] - c0) / c0 * 100 if c0 else None
 
-# Honest expectation bands (per-trade), from the 2026-07 truth work:
+# Reference expectation bands (per-trade), from the 2026-07 truth work:
 #  - sniper: truth-matrix Run E (live-faithful fills): ~54.3% WR / +0.54%/trade
-#  - MR official: reconciled 90d live +0.46%/trade (n=23, provisional)
-#  - MR sleeve: reconciled ~breakeven (-0.01%)
+# MR and PEAD references are retained only as explicit null/retired records.
 BASELINES = {
     "sniper|mas_official": {"label": "Sniper (official)" if _SNIPER_IN_BOOK
                             else "Sniper (official, retired 2026-09-18)",
@@ -149,20 +156,23 @@ BASELINES = {
     # n=32, 41% WR, -0.34%/trade.
     "sniper|sniper_shadow": {"label": "Sniper (shadow)", "wr": 0.543, "avg": 0.54,
                              "source": "truth-matrix Run E — shadow, not in the book"},
-    "mean_reversion|mas_official": {"label": "MR (official)", "wr": 0.522, "avg": 0.46,
-                                    "source": "90d reconciliation (provisional, n=23)"},
-    "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": 0.493, "avg": -0.01,
-                                        "source": "90d reconciliation"},
-    # PEAD paper trial — the band is the BACKTEST target we're forward-testing
-    # against (pead_FINDINGS.md), NOT a validated live number. Paper until it
-    # clears ~30 trades / 4-6 weeks live.
-    "pead|pead_paper": {"label": "PEAD (paper)", "wr": 0.57, "avg": 1.80,
-                        "source": "backtest target — paper, unproven live"},
-    # Neglected-beat variant (>10% beat + DECELERATING YoY revenue growth): the
-    # stronger PEAD cohort that cleared the validation card (N=669, deflated
-    # Sharpe 1.0). Band is the backtest target — paper, forward-testing now.
-    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": 0.58, "avg": 2.42,
-                            "source": "validation card — paper, unproven live"},
+    # The previous MR (+0.46) and PEAD (+1.80/+2.42) bands were retired on
+    # 2026-09-21. They came from evidence the September wide-universe work no
+    # longer supports. Null is deliberate: the UI still explains why there is
+    # no band, while never drawing an obsolete target as if it were expected.
+    "mean_reversion|mas_official": {"label": "MR (official)", "wr": None, "avg": None,
+                                    "source": "reference retired 2026-09-21"},
+    "mean_reversion|mr_shadow": {"label": "MR (shadow)", "wr": None, "avg": None,
+                                  "source": "shadow; no active reference"},
+    "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": None, "avg": None,
+                                        "source": "stream retired; no active reference"},
+    "pead|pead_paper": {"label": "PEAD (paper)", "wr": None, "avg": None,
+                        "source": "old backtest target retired 2026-09-21"},
+    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": None, "avg": None,
+                            "source": "old backtest target retired 2026-09-21"},
+    "pead|pead_60d_shadow": {"label": "PEAD (60-session counterfactual)",
+                              "wr": None, "avg": None,
+                              "source": "forward measurement; no prior expectation"},
 }
 
 
@@ -369,6 +379,12 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         for s in signals:
             if s.run_date != latest_run.run_date:
                 continue
+            # A paired observation re-measures a pick that is already in this
+            # list; it is not a second idea. Excluded here rather than in the
+            # page, so the hero count, the "Picks today" tile and the funnel's
+            # final stage all stay consistent with the open-position count.
+            if s.signal_source in PAIRED_OBSERVATION_SOURCES:
+                continue
             feats = s.features or {}
             today_picks.append({
                 "ticker": s.ticker,
@@ -498,8 +514,13 @@ async def main() -> None:
     with open(args.out, "w") as f:
         json.dump(snap, f, default=str)
     n_trades = sum(len(v) for v in snap["trades"].values())
+    # Same rule as the page: a paired observation is not an extra position.
+    n_open = sum(
+        1 for o in snap["open_positions"]
+        if o["stream"].split("|", 1)[-1] not in PAIRED_OBSERVATION_SOURCES
+    )
     print(f"Wrote {args.out}: {len(snap['today_picks'])} picks today, "
-          f"{n_trades} closed trades ({args.days}d), {len(snap['open_positions'])} open, "
+          f"{n_trades} closed trades ({args.days}d), {n_open} open, "
           f"{len(snap['run_history'])} runs")
 
 

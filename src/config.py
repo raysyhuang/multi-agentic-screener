@@ -145,6 +145,11 @@ class Settings(BaseSettings):
     # left in place so the stream can be revived deliberately; default OFF = no
     # sleeve signals scored, persisted, or shown in the alert.
     mr_manual_sleeve_enabled: bool = False
+    # The raw MR population is edgeless and its rank score has approximately
+    # zero information content. Retired from the official PAPER book on
+    # 2026-09-21; False keeps it scored, ranked and exit-tracked as mr_shadow.
+    # The official path is protected separately by a synthetic integration test.
+    mean_reversion_in_book: bool = False
 
     fmp_daily_call_budget: int = 750
     fmp_budget_warn_threshold_pct: float = 0.80
@@ -250,6 +255,11 @@ class Settings(BaseSettings):
     pead_target_atr_mult: float = 6.0
     pead_holding_period: int = 20
     pead_max_positions: int = 5       # picks admitted per RUN
+    # Same selected entries as the primary PEAD paper stream, measured as a
+    # fixed 60-session hold with no stop, target or trail. It is a counterfactual
+    # observation only: no alert, no capital and no consumption of PEAD slots.
+    pead_60d_shadow_enabled: bool = False
+    pead_60d_shadow_sessions: int = 60
     # Concurrent open PEAD positions, book-wide. Distinct from the per-run cap
     # above: with a 20-day hold (untrailed since PR #43) and ~2.4 qualifying
     # beats/day in earnings season, admitting 5/run compounds into tens of open

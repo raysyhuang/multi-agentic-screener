@@ -92,10 +92,16 @@ jobs:
       # --- Misc ---
       API_SECRET_KEY: ${{ secrets.API_SECRET_KEY }}
       EXECUTION_MODE: ${{ vars.EXECUTION_MODE || 'quant_only' }}
+      # NOTE: book composition is deliberately NOT a repository variable.
+      # `MEAN_REVERSION_IN_BOOK` would reach this job only, not the
+      # publish-dashboard job below, so setting it would trade MR officially
+      # while the published dashboard still reported an empty book. Which
+      # sleeves are in the book is a reviewed code change in src/config.py.
       # PEAD paper trial: enabled in production only (code default is off so
       # local/test runs stay deterministic). Quarantined paper stream — tracked,
       # never executed or counted in the book. Set repo var PEAD_ENABLED=false to halt.
       PEAD_ENABLED: ${{ vars.PEAD_ENABLED || 'true' }}
+      PEAD_60D_SHADOW_ENABLED: ${{ vars.PEAD_60D_SHADOW_ENABLED || 'true' }}
       PYTHONUNBUFFERED: "1"
 
     steps:

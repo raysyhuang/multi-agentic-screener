@@ -5,7 +5,7 @@ from __future__ import annotations
 
 from types import SimpleNamespace
 
-from src.main import _pead_variant_source
+from src.main import _build_pead_60d_counterfactual, _pead_variant_source
 
 
 def _sig(neglected):
@@ -24,6 +24,28 @@ def test_missing_tag_defaults_to_base_paper():
     # No components / no tag → base paper (fail-safe; never routes to the variant).
     assert _pead_variant_source(SimpleNamespace(components={})) == "pead_paper"
     assert _pead_variant_source(SimpleNamespace()) == "pead_paper"
+
+
+def test_60d_counterfactual_is_a_paired_clone_not_a_mutation():
+    primary_pick = SimpleNamespace(
+        ticker="PAIR", signal_source="pead_neglected", holding_period=20,
+        features={"model_components": {"neglected_beat": True}},
+    )
+    primary = SimpleNamespace(approved=[primary_pick])
+
+    shadow = _build_pead_60d_counterfactual(primary, sessions=60)
+    paired = shadow.approved[0]
+
+    assert primary_pick.signal_source == "pead_neglected"
+    assert primary_pick.holding_period == 20
+    assert paired is not primary_pick
+    assert paired.signal_source == "pead_60d_shadow"
+    assert paired.holding_period == 60
+    assert paired.features["counterfactual_exit"] == {
+        "kind": "fixed_horizon",
+        "sessions": 60,
+        "paired_primary_source": "pead_neglected",
+    }
 
 
 # --- Open-position dedup (2026-07-30) ---------------------------------------
@@ -96,3 +118,10 @@ def test_slot_cap_admits_nothing_when_full():
 def test_slot_cap_never_goes_negative_when_over_capacity():
     """The live starting state: 13 open against a 10 cap must admit 0, not -3."""
     assert _admit(open_n=13, max_concurrent=10, per_run=5) == 0
+
+
+def test_60d_observation_is_not_a_primary_pead_position():
+    from src import main as m
+
+    assert set(m.PEAD_POSITION_SOURCES) == {"pead_paper", "pead_neglected"}
+    assert "pead_60d_shadow" not in m.PEAD_POSITION_SOURCES

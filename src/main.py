@@ -33,6 +33,13 @@ from src.data.aggregator import DataAggregator
 from src.data.universe_selection import select_ohlcv_tickers
 from sqlalchemy import delete, select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
+from src.streams import (
+    BOOK_SOURCES,
+    PAIRED_OBSERVATION_SOURCES,
+    PEAD_POSITION_SOURCES as _PEAD_POSITION_SOURCES,
+    SHADOW_SOURCES as _SHADOW_SOURCES,
+    SNIPER_CAP_SOURCES as _SNIPER_CAP_SOURCES,
+)
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
 from src.features.fundamental import (
@@ -209,6 +216,26 @@ def _pead_variant_source(signal) -> str:
     """
     neglected = bool(getattr(signal, "components", {}).get("neglected_beat"))
     return "pead_neglected" if neglected else "pead_paper"
+
+
+def _build_pead_60d_counterfactual(pead_result, sessions: int):
+    """Clone approved PEAD entries into a paired fixed-horizon observation."""
+    from copy import deepcopy
+
+    counterfactual = deepcopy(pead_result)
+    for pick in counterfactual.approved:
+        primary_source = pick.signal_source
+        pick.signal_source = "pead_60d_shadow"
+        pick.holding_period = sessions
+        pick.features = {
+            **(pick.features or {}),
+            "counterfactual_exit": {
+                "kind": "fixed_horizon",
+                "sessions": sessions,
+                "paired_primary_source": primary_source,
+            },
+        }
+    return counterfactual
 
 
 class RunIDFilter(logging.Filter):
@@ -1221,6 +1248,7 @@ async def _run_pipeline_core(
     # official book, the executed picks, or the sniper/MR slot budget. Collected
     # apart from all_signals so an unproven event edge can't displace live picks.
     pead_signals: list = []
+    mr_shadow_signals: list = []
     # Sniper SHADOW stream (settings.sniper_in_book=False, default since
     # 2026-09-18): same quarantine shape as PEAD — collected apart from
     # all_signals so it never competes for official slots, ranked with its own
@@ -1268,7 +1296,10 @@ async def _run_pipeline_core(
                 regime=regime_assessment.regime.value,
             )
             if mean_rev:
-                all_signals.append(mean_rev)
+                if settings.mean_reversion_in_book:
+                    all_signals.append(mean_rev)
+                else:
+                    mr_shadow_signals.append(mean_rev)
 
         # Sniper track (BB squeeze + vol compression + relative strength)
         if settings.sniper_enabled:
@@ -1440,7 +1471,14 @@ async def _run_pipeline_core(
     # reverse of the quarantine). The shadow stream's own cooldown sees
     # everything, so it stays at least as strict as the book flow it left.
     recent_signals = await _get_recent_signals(days=7)
-    official_recent = [r for r in recent_signals if r.get("signal_source") not in SHADOW_SOURCES]
+    # Defined from what the book IS, not from "not shadow": pead_paper and
+    # pead_neglected are quarantined too, so the complement let a paper PEAD
+    # row suppress an eligible official pick. Legacy rows predate
+    # signal_source and are official.
+    official_recent = [
+        r for r in recent_signals
+        if (r.get("signal_source") or "mas_official") in BOOK_SOURCES
+    ]
     all_signals = apply_cooldown(all_signals, official_recent)
     post_cooldown_signals = list(all_signals)
 
@@ -1548,6 +1586,23 @@ async def _run_pipeline_core(
             "MR manual sleeve selected %d candidates after correlation filter",
             len(mr_manual_ranked),
         )
+
+    # MR shadow stream: same score/rank/correlation flow as the official model,
+    # but never merged into the book. Its retirement is based on the edgeless
+    # raw population and zero rank IC, not on the latest small losing streak.
+    mr_shadow_ranked = []
+    if mr_shadow_signals:
+        mr_shadow_signals = apply_cooldown(mr_shadow_signals, recent_signals)
+        _annotate_signal_stream(mr_shadow_signals, signal_source="mr_shadow")
+        mr_shadow_ranked = rank_candidates(
+            mr_shadow_signals,
+            regime=regime_assessment.regime,
+            features_by_ticker=features_by_ticker,
+            top_n=settings.top_n_for_interpretation,
+        )
+        mr_shadow_ranked = filter_correlated_picks(mr_shadow_ranked, price_data)
+        mr_shadow_ranked = mr_shadow_ranked[:settings.max_final_picks]
+        logger.info("MR shadow stream selected %d candidates", len(mr_shadow_ranked))
 
     # PEAD paper stream — ranked here (while price_data is still alive) with its
     # OWN position cap, kept entirely separate from the official `ranked`. Split
@@ -1661,7 +1716,9 @@ async def _run_pipeline_core(
     execution_mode = ExecutionMode(settings.execution_mode)
     logger.info("Step 7: Running pipeline in %s mode...", execution_mode.value)
     mr_manual_result = None
+    mr_shadow_result = None
     pead_result = None
+    pead_60d_result = None
     sniper_shadow_result = None
 
     if execution_mode != ExecutionMode.QUANT_ONLY:
@@ -1723,6 +1780,13 @@ async def _run_pipeline_core(
         for pick in mr_manual_result.approved:
             pick.also_in_mas = pick.ticker in official_tickers
 
+    if mr_shadow_ranked:
+        mr_shadow_result = _build_quant_only_result(
+            mr_shadow_ranked,
+            regime_context,
+            max_picks=settings.max_final_picks,
+        )
+
     if pead_ranked:
         # PEAD paper stream: build its result independently (its own cap, no
         # sniper slots). Tagged also_in_mas for context in the alert only.
@@ -1734,6 +1798,14 @@ async def _run_pipeline_core(
         official_tickers = {pick.ticker for pick in pipeline_result.approved}
         for pick in pead_result.approved:
             pick.also_in_mas = pick.ticker in official_tickers
+
+        if settings.pead_60d_shadow_enabled:
+            # Clone the selected primary entries after ranking, so the 20- and
+            # 60-session observations are paired. This copy never enters an
+            # alert, a position cap, cooldown, validation gate or trade plan.
+            pead_60d_result = _build_pead_60d_counterfactual(
+                pead_result, settings.pead_60d_shadow_sessions,
+            )
 
     if sniper_shadow_ranked:
         # Sniper shadow stream: own result, never merged into the official
@@ -2094,11 +2166,15 @@ async def _run_pipeline_core(
         picks_to_persist = list(pipeline_result.approved)
         if mr_manual_result:
             picks_to_persist.extend(mr_manual_result.approved)
+        if mr_shadow_result:
+            picks_to_persist.extend(mr_shadow_result.approved)
         if pead_result:
             # Paper stream — persisted under each pick's signal_source ("pead_paper"
             # or the "pead_neglected" variant) so both variants' outcomes are tracked
             # separately; never counted in the official book.
             picks_to_persist.extend(pead_result.approved)
+        if pead_60d_result:
+            picks_to_persist.extend(pead_60d_result.approved)
         if sniper_shadow_result:
             # Shadow stream — persisted as "sniper_shadow" so the afternoon exit
             # walker manages it like any sniper position (exit logic keys on
@@ -2393,6 +2469,25 @@ async def _run_pipeline_core(
             for pick in sniper_shadow_result.approved
         ]
 
+    # MR shadow entries. Its closures are already labeled "MR shadow" by
+    # `format_outcome_alert`, so without this the reader would see positions
+    # close that they never saw open.
+    mr_shadow_picks: list[dict] | None = None
+    if mr_shadow_result is not None:
+        mr_shadow_picks = [
+            {
+                "ticker": pick.ticker,
+                "direction": pick.direction,
+                "entry_price": pick.entry_price,
+                "stop_loss": pick.stop_loss,
+                "target_1": pick.target_1,
+                "confidence": pick.confidence,
+                "holding_period": pick.holding_period,
+                "also_in_mas": pick.also_in_mas,
+            }
+            for pick in mr_shadow_result.approved
+        ]
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -2405,6 +2500,7 @@ async def _run_pipeline_core(
         manual_sleeve_picks=sleeve_picks_for_alert,
         pead_paper_picks=pead_paper_picks,
         sniper_shadow_picks=sniper_shadow_picks,
+        mr_shadow_picks=mr_shadow_picks,
         # HY-OAS credit-spread state as daily context on the regime line (the
         # bear-tilt itself stays config-gated/off — see config.regime_hy_oas_enabled).
         credit_context={
@@ -2429,10 +2525,11 @@ async def _run_pipeline_core(
     _log_memory("pipeline_complete")
 
 
-# Streams that are recorded but never in the book. Their history must not feed
-# the OFFICIAL cooldown (see the call site) — that would let a quarantined pick
-# suppress a book pick.
-SHADOW_SOURCES: frozenset[str] = frozenset({"sniper_shadow"})
+# Stream classification lives in src/streams.py so the pipeline, the drift
+# monitor and the dashboard exporter cannot each remember a different rule.
+# Re-exported here because existing call sites and tests read them off `main`.
+SHADOW_SOURCES = _SHADOW_SOURCES
+PEAD_POSITION_SOURCES = _PEAD_POSITION_SOURCES
 
 
 async def _get_recent_signals(days: int = 7) -> list[dict]:
@@ -2455,7 +2552,7 @@ async def _get_recent_signals(days: int = 7) -> list[dict]:
         return []
 
 
-SNIPER_CAP_SOURCES: tuple[str, ...] = ("mas_official", "sniper_shadow")
+SNIPER_CAP_SOURCES = _SNIPER_CAP_SOURCES
 
 
 async def _count_open_sniper_positions() -> int:
@@ -2505,6 +2602,7 @@ async def _open_pead_tickers() -> set[str]:
                 .where(
                     Outcome.still_open == True,  # noqa: E712
                     Signal.signal_model == "pead",
+                    Signal.signal_source.in_(PEAD_POSITION_SOURCES),
                 )
                 .distinct()
             )
@@ -2535,6 +2633,7 @@ async def _count_open_pead_positions() -> int:
                 .where(
                     Outcome.still_open == True,  # noqa: E712
                     Signal.signal_model == "pead",
+                    Signal.signal_source.in_(PEAD_POSITION_SOURCES),
                 )
             )
             return int(result.scalar() or 0)
@@ -2614,7 +2713,13 @@ async def run_afternoon_check() -> None:
 
     if updates:
         from src.output.telegram import format_outcome_alert, send_alert
-        msg = format_outcome_alert(updates)
+        # The PEAD-60 stream is a measurement row paired to an already-alerted
+        # primary pick. Suppress it here so one idea never creates two alerts.
+        alert_updates = [
+            u for u in updates
+            if u.get("signal_source") not in PAIRED_OBSERVATION_SOURCES
+        ]
+        msg = format_outcome_alert(alert_updates)
         if msg:
             await send_alert(msg)
 

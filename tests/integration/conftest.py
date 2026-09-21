@@ -15,6 +15,25 @@ from __future__ import annotations
 
 import pytest
 
+from tests.integration.db_guard import dsn_rejection_reason
+
+
+@pytest.fixture(scope="session", autouse=True)
+def _refuse_a_database_that_is_not_local():
+    """Stop the session before the first integration test if the DB is remote.
+
+    These tests write: they run the real morning pipeline and persist today's
+    run. Session-scoped and declared in THIS directory's conftest, so it is set
+    up before any connection is opened and applies to the integration tests
+    only — the default unit run (`-m 'not integration'`) never reaches it.
+    """
+    from src.config import get_settings
+
+    reason = dsn_rejection_reason(get_settings().database_url)
+    if reason:
+        pytest.exit(f"Refusing to run integration tests: {reason}", returncode=3)
+    yield
+
 
 @pytest.fixture(autouse=True)
 async def _engine_per_test():
