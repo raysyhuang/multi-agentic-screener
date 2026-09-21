@@ -140,13 +140,13 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     assert snap["benchmark_available"] is True
     assert snap["benchmarks"]["spy"].startswith("S&P")
 
-    # Portfolio block: the book (MR official since 2026-09-18) plus each official
+    # Portfolio block: the now-empty book plus each historical official
     # stream alone as a real account. Here only the retired official sniper
     # trade qualifies (sleeve is excluded by design), so the sniper row still
     # exists while its trades are in the window, its equity curve is seeded +
-    # one exit, and the book row — MR only, no MR trades — is absent.
+    # one exit, and the empty book row is absent.
     pf = snap["portfolio"]
-    assert pf is not None and pf["book_streams"] == ["mean_reversion|mas_official"]
+    assert pf is not None and pf["book_streams"] == []
     cfg = {c["key"]: c for c in pf["configs"]}
     assert "sniper" in cfg and cfg["sniper"]["trades"] == 1
     assert "book" not in cfg
@@ -182,6 +182,49 @@ def test_alpha_summary_ci_and_significance():
     # Seeded → identical result on repeat (dashboard number stable across runs).
     assert exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1]) == \
         exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1])
+
+
+def test_alpha_summary_resamples_whole_entry_date_clusters():
+    """A crowded good day is one market observation, not four independent bets."""
+    import scripts.export_dashboard_data as exp
+
+    alphas = [4.0, 4.0, 4.0, 4.0, -3.0, -2.0]
+    entry_dates = ["2026-09-01"] * 4 + ["2026-09-02", "2026-09-03"]
+    clustered = exp._alpha_summary(alphas, entry_dates)
+    iid = exp._alpha_summary(alphas)
+
+    assert clustered["n"] == 6
+    assert clustered["entry_date_clusters"] == 3
+    assert clustered["ci_lo"] < iid["ci_lo"]
+
+
+def test_alpha_summary_withheld_below_three_entry_date_clusters():
+    """One entry date has one thing to resample, so the CI collapses to a point.
+
+    Three losses booked on the same day would otherwise export
+    ci_hi < 0 with zero width — S1's "statistically established negative" read
+    off a number containing no variation at all.
+    """
+    import scripts.export_dashboard_data as exp
+
+    same_day = ["2026-09-01"] * 3
+    assert exp._alpha_summary([-2.0, -3.0, -4.0], same_day) is None
+    assert exp._alpha_summary([-2.0, -3.0, -4.0, -1.0], ["a", "a", "b", "b"]) is None
+
+    # Three distinct dates is the floor, and it is exported.
+    ok = exp._alpha_summary([-2.0, -3.0, -4.0], ["a", "b", "c"])
+    assert ok is not None and ok["entry_date_clusters"] == 3
+
+    # Without the floor this degenerate case reads as established:
+    degenerate = exp._alpha_summary([-2.0, -3.0, -4.0])   # iid fallback, 3 clusters
+    assert degenerate is not None and degenerate["ci_hi"] < 0
+
+
+def test_alpha_summary_rejects_misaligned_clusters():
+    import scripts.export_dashboard_data as exp
+
+    with pytest.raises(ValueError, match="align"):
+        exp._alpha_summary([1.0, 2.0, 3.0], ["one-date"])
 
 
 @pytest.mark.asyncio

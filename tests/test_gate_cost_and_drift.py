@@ -49,20 +49,24 @@ def test_shadow_rows_are_excluded_from_stats_by_the_existing_convention():
 
 # ── Drift monitor ──────────────────────────────────────────────────────────
 
-def test_drift_baselines_are_the_honest_numbers_not_the_retired_fantasy():
-    """The retired baseline was 71.6% WR / +1.05%/trade / 2.47 Sharpe. Every
-    live-stream baseline must be far below that — if one creeps up, someone has
-    reintroduced an optimistic number."""
-    for key, b in BASELINES.items():
-        assert b["wr"] < 0.60, f"{key} win-rate baseline looks like the retired fantasy"
-        assert b["avg"] <= 2.5, f"{key} avg baseline looks like the retired fantasy"
+def test_retired_mr_and_pead_baselines_cannot_drive_drift_alerts():
+    """September research retired these point estimates. Null keeps each stream
+    visible without drawing or alerting against numbers we no longer believe."""
+    for key in (
+        "mean_reversion|mas_official", "mean_reversion|mr_shadow",
+        "mean_reversion|mr_manual_sleeve",
+        "pead|pead_paper", "pead|pead_neglected", "pead|pead_60d_shadow",
+    ):
+        assert BASELINES[key]["wr"] is None
+        assert BASELINES[key]["avg"] is None
 
 
 def test_drift_covers_every_live_stream():
     """A stream with no baseline is reported but never alerts, so a missing key
     silently disables monitoring for it."""
     for key in ("sniper|mas_official", "sniper|sniper_shadow", "mean_reversion|mas_official",
-                "pead|pead_paper", "pead|pead_neglected"):
+                "mean_reversion|mr_shadow",
+                "pead|pead_paper", "pead|pead_neglected", "pead|pead_60d_shadow"):
         assert key in BASELINES
 
 

@@ -66,6 +66,20 @@ def test_dashboard_separates_observed_positions_from_pending_entries():
     assert 'age unavailable' in script
 
 
+def test_paired_60d_observations_are_not_counted_as_extra_positions():
+    """The 60-session PEAD row re-observes an entry already counted elsewhere.
+
+    It represents no capital, so counting it would report one idea as two open
+    positions. It stays visible in the position list; only the count excludes it.
+    """
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert 'o.stream !== "pead|pead_60d_shadow"' in script
+    assert "paired 60d observation" in script
+    # Still listed: the table renders the raw export, not the filtered count.
+    assert "data.open_positions.map(" in script
+
+
 @pytest.mark.asyncio
 async def test_dashboard_returns_200(app_client):
     """/dashboard should return 200 with HTML content."""

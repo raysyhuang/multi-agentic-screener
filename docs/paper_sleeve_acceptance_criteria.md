@@ -91,7 +91,9 @@ This is not a strategy-tuning protocol. It sets acceptance thresholds only.
 
 **The benchmark is SPY, fixed in advance.** `BENCHMARKS = {"spy": "SPY", "qqq": "QQQ"}` (`export_dashboard_data.py:43`), so two benchmarks exist and both are exported. Every test in this document reads `["spy"]`. Choosing the benchmark after seeing which one passes is not permitted.
 
-**The interval is a percentile bootstrap, named here before it can matter.** `_alpha_summary` draws 10,000 resampled means and takes the 2.5th and 97.5th order statistics — `means = sorted(...); lo, hi = means[249], means[9749]` (`export_dashboard_data.py:66-89`). It is **not** a normal or t interval, and it is **not** symmetric about the point estimate: the pinned comparator's published interval `[−0.5856, +1.8895]` has midpoint 0.6520 against a mean of 0.6408.
+**The interval is a percentile entry-date cluster bootstrap, named here before it can matter.** `_alpha_summary` groups trades by `entry_date`, draws 10,000 resamples of whole date clusters, and takes the 2.5th and 97.5th order statistics. Trades opened into the same market conditions therefore move together in a resample. It is **not** a normal or t interval, and it is **not** symmetric about the point estimate. `entry_date_clusters` is exported beside `n` so the effective date count is visible.
+
+> **At least three distinct entry dates are required for any summary to be exported at all.** The resample draws whole clusters: a stream whose trades all entered on one day has a single cluster to draw, so every resample reproduces the same set and the interval collapses to zero width. Three same-day losses would then satisfy S1's `ci_hi < 0` on a "statistically established" reading of a number that contains no variation. Below three clusters `_alpha_summary` returns `None` — the same contract as `n < 3` — so no decision can read a degenerate interval. This is a **tightening** (amendment rule 4), recorded 2026-09-21, before any stream reached Tier 1.
 
 > Condition 5 compares point estimates, so today the method does not affect any test. It is documented now precisely because that could change: the moment anyone argues for "beat the CI" instead of "beat the point estimate," an undocumented interval method becomes load-bearing on a number whose interval spans −0.59 to +1.89. **Naming it while no result exists costs nothing; naming it afterwards is a choice about a result.**
 
@@ -119,7 +121,7 @@ These exist so that `n` and "a valid week" are fixed before anyone wants them to
 
 ### Tier 0 — Display only (already in effect)
 
-`_alpha_summary` (`scripts/export_dashboard_data.py:66`) emits per-stream stats at **n ≥ 3**. This threshold exists so the dashboard has something to render. **It is not a read.** No decision of any kind may cite a stream below Tier 1.
+`_alpha_summary` (`scripts/export_dashboard_data.py:66`) emits per-stream stats at **n ≥ 3 and at least 3 distinct entry dates**. This threshold exists so the dashboard has something to render. **It is not a read.** No decision of any kind may cite a stream below Tier 1.
 
 ### Evaluation points — fixed in advance
 
@@ -288,15 +290,11 @@ A stream **stops** (paper trading halted, sleeve retired or rebuilt) when **eith
 
 > **Neither stop condition is discretionary.** If S1 or S2 fires, the sleeve stops and the restart requires a written reason. "It's about to turn around" is not a reason.
 
-## Known limitation of the CI — it is optimistic
+## CI amendment — 2026-09-21
 
-`_alpha_summary` bootstraps by resampling **trades** iid (`rng.choices(a, k=n)`, `export_dashboard_data.py:81`). Concurrent positions share the same day's market move. Alpha-vs-SPY strips the index factor but **not** sector co-movement or same-day clustering, so the effective sample is smaller than `n` and **the interval is narrower than it should be**.
+The former iid trade bootstrap was replaced with an **entry-date cluster bootstrap** before any stream reached a decision point. This is a tightening: same-day positions are no longer treated as independent bets, so concentrated samples generally receive wider intervals. The measurement window opened 2026-09-19 and no affected stream had a pending n=30 decision when this amendment landed.
 
-Consequence: the CI is biased toward *firing* — both Tier 2 promotion and S1 stop trigger more readily than a correct interval would justify. This is stated here rather than silently inherited.
-
-Two mitigations, in order of preference:
-1. **Proper fix** — resample entry-*days* rather than trades. Requires a code change to `_alpha_summary` and is the right answer if anyone has the time.
-2. **Zero-code mitigation, in force until then** — Tier 2 must clear at a **pre-named evaluation point** (n = 30 / 50 / 100), never "at some point when it happened to look good." The fixed evaluation points above are what keep an optimistic interval from being harvested.
+The fixed evaluation points remain binding. Clustering fixes within-day dependence; it does not make repeated daily peeking valid, and it does not remove residual sector or multi-day dependence.
 
 ## Thresholds Ray must set
 

@@ -87,6 +87,25 @@ def test_start_scheduler_uses_one_hour_misfire_grace(monkeypatch):
 # fell through into the blocking scheduler loop (a hung 6h CI job, only
 # avoided by a lucky DST-guard skip). Lock both sides.
 
+def test_book_composition_is_not_a_repository_variable():
+    """A repo var would reach the pipeline job only, not the dashboard job.
+
+    `publish-dashboard` runs `export_dashboard_data.py`, which reads
+    `mean_reversion_in_book` at import to build BOOK_STREAMS. Its env block
+    carries DATABASE_URL and POLYGON_API_KEY and nothing else, so setting
+    MEAN_REVERSION_IN_BOOK=true would trade MR officially while the published
+    dashboard still described an empty book. Book composition is a reviewed
+    code change in src/config.py.
+    """
+    from pathlib import Path
+
+    wf = Path(__file__).parents[1] / ".github" / "workflows" / "scheduled-pipelines.yml"
+    text = wf.read_text()
+
+    assert "vars.MEAN_REVERSION_IN_BOOK" not in text
+    assert "vars.SNIPER_IN_BOOK" not in text
+
+
 def test_workflow_flags_exist_in_worker():
     """Every --*-now flag referenced by scheduled-pipelines.yml must be a
     valid worker one-off flag."""

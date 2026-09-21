@@ -6,8 +6,8 @@ points at the production Postgres) and writes a single self-contained
 page — this bakes a read-only snapshot.
 
 Streams are ALWAYS kept separate (official vs manual sleeve — never blended;
-see CLAUDE.md). Baseline expectation bands are the honest, truth-matrix /
-reconciliation numbers, not the retired optimistic labels.
+see CLAUDE.md). Retired expectation bands are represented as null, never
+silently replaced with another optimistic label.
 
 Usage:
   python scripts/export_dashboard_data.py [--out dashboard/data.json] [--days 90]
@@ -41,26 +41,36 @@ from src.db.session import get_session
 SNIPER_KEY, MR_KEY = "sniper|mas_official", "mean_reversion|mas_official"
 
 
-def book_streams(sniper_in_book: bool) -> list[str]:
-    return [SNIPER_KEY, MR_KEY] if sniper_in_book else [MR_KEY]
+def book_streams(sniper_in_book: bool, mean_reversion_in_book: bool = True) -> list[str]:
+    streams = [SNIPER_KEY] if sniper_in_book else []
+    if mean_reversion_in_book:
+        streams.append(MR_KEY)
+    return streams
 
 
-def portfolio_specs(sniper_in_book: bool) -> list[tuple[str, str, list[str]]]:
+def portfolio_specs(
+    sniper_in_book: bool, mean_reversion_in_book: bool = True,
+) -> list[tuple[str, str, list[str]]]:
     """Per-stream portfolio rows: each official stream alone, then the book. A
     row is emitted only while the stream has closed trades in the window, so a
     retired stream's row disappears on its own once its last trade ages out."""
     sniper_label = "Sniper only" if sniper_in_book else "Sniper only (official, retired 2026-09-18)"
-    book_label = "Book (sniper + MR)" if sniper_in_book else "Book (MR official)"
+    active = book_streams(sniper_in_book, mean_reversion_in_book)
+    book_label = "Book (" + " + ".join(active) + ")" if active else "Book (no official sleeves)"
     return [
         ("sniper", sniper_label, [SNIPER_KEY]),
         ("mr", "MR official only", [MR_KEY]),
-        ("book", book_label, book_streams(sniper_in_book)),
+        ("book", book_label, active),
     ]
 
 
 _SNIPER_IN_BOOK = get_settings().sniper_in_book
-BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK)
-PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK)
+_MR_IN_BOOK = get_settings().mean_reversion_in_book
+BOOK_STREAMS = book_streams(_SNIPER_IN_BOOK, _MR_IN_BOOK)
+PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK, _MR_IN_BOOK)
+# Fewer distinct entry dates than this and the cluster bootstrap has nothing to
+# resample; see `_alpha_summary`.
+MIN_ENTRY_DATE_CLUSTERS = 3
 PORTFOLIO_MAX_CONCURRENT = 10
 PORTFOLIO_START_CAPITAL = 100_000.0
 
@@ -91,26 +101,55 @@ async def _benchmark_closes(days: int) -> dict[str, dict]:
     return out
 
 
-def _alpha_summary(alphas: list[float]) -> dict | None:
-    """Per-stream alpha stats with a seeded bootstrap 95% CI of the mean.
+def _alpha_summary(
+    alphas: list[float | None], clusters: list[object] | None = None,
+) -> dict | None:
+    """Per-stream alpha stats with a seeded cluster-bootstrap CI of the mean.
 
-    The CI is the anti-over-excitement guard: a positive mean whose CI still
-    crosses zero is a lean, not an established edge (a 64%-beat on n=25 is a
-    coin-flip run away from chance). Seeded so the dashboard number is stable
-    across runs given the same trades.
+    Trades entered on the same date share market conditions and are not
+    independent observations. Resampling whole entry-date clusters preserves
+    that dependence. ``clusters=None`` retains a one-trade-per-cluster fallback
+    for callers without dates; the dashboard always supplies entry dates.
+
+    **At least three distinct clusters are required**, not merely three trades.
+    The resample draws whole clusters, so a stream whose trades all entered on
+    one day has exactly one thing to draw: every resample reproduces the same
+    set, the interval collapses to zero width, and a three-trade losing streak
+    is reported as an established negative. Below the floor the whole summary
+    is withheld (the same contract as ``n < 3``) rather than exported with a
+    degenerate interval that reads as significant.
     """
     import random
-    a = [x for x in alphas if x is not None]
+    if clusters is not None and len(clusters) != len(alphas):
+        raise ValueError("clusters must align one-for-one with alphas")
+    valid = [
+        (float(x), clusters[i] if clusters is not None else i)
+        for i, x in enumerate(alphas) if x is not None
+    ]
+    a = [value for value, _ in valid]
     if len(a) < 3:
+        return None
+    grouped: dict[object, list[float]] = {}
+    for value, cluster in valid:
+        grouped.setdefault(cluster, []).append(value)
+    cluster_values = list(grouped.values())
+    cluster_n = len(cluster_values)
+    if cluster_n < MIN_ENTRY_DATE_CLUSTERS:
         return None
     mean = sum(a) / len(a)
     beat = sum(1 for x in a if x > 0) / len(a)
     rng = random.Random(20260723)
     n = len(a)
-    means = sorted(sum(rng.choices(a, k=n)) / n for _ in range(10_000))
+    means = []
+    for _ in range(10_000):
+        sampled = rng.choices(cluster_values, k=cluster_n)
+        draw = [value for group in sampled for value in group]
+        means.append(sum(draw) / len(draw))
+    means.sort()
     lo, hi = means[249], means[9749]
     return {
         "n": n,
+        "entry_date_clusters": cluster_n,
         "mean": round(mean, 4),
         "ci_lo": round(lo, 4),
         "ci_hi": round(hi, 4),
@@ -134,10 +173,9 @@ def _bench_return(closes: dict, entry: _date | None, exit_: _date | None) -> flo
     c0 = closes[de]
     return (closes[dx] - c0) / c0 * 100 if c0 else None
 
-# Honest expectation bands (per-trade), from the 2026-07 truth work:
+# Reference expectation bands (per-trade), from the 2026-07 truth work:
 #  - sniper: truth-matrix Run E (live-faithful fills): ~54.3% WR / +0.54%/trade
-#  - MR official: reconciled 90d live +0.46%/trade (n=23, provisional)
-#  - MR sleeve: reconciled ~breakeven (-0.01%)
+# MR and PEAD references are retained only as explicit null/retired records.
 BASELINES = {
     "sniper|mas_official": {"label": "Sniper (official)" if _SNIPER_IN_BOOK
                             else "Sniper (official, retired 2026-09-18)",
@@ -149,20 +187,23 @@ BASELINES = {
     # n=32, 41% WR, -0.34%/trade.
     "sniper|sniper_shadow": {"label": "Sniper (shadow)", "wr": 0.543, "avg": 0.54,
                              "source": "truth-matrix Run E — shadow, not in the book"},
-    "mean_reversion|mas_official": {"label": "MR (official)", "wr": 0.522, "avg": 0.46,
-                                    "source": "90d reconciliation (provisional, n=23)"},
-    "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": 0.493, "avg": -0.01,
-                                        "source": "90d reconciliation"},
-    # PEAD paper trial — the band is the BACKTEST target we're forward-testing
-    # against (pead_FINDINGS.md), NOT a validated live number. Paper until it
-    # clears ~30 trades / 4-6 weeks live.
-    "pead|pead_paper": {"label": "PEAD (paper)", "wr": 0.57, "avg": 1.80,
-                        "source": "backtest target — paper, unproven live"},
-    # Neglected-beat variant (>10% beat + DECELERATING YoY revenue growth): the
-    # stronger PEAD cohort that cleared the validation card (N=669, deflated
-    # Sharpe 1.0). Band is the backtest target — paper, forward-testing now.
-    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": 0.58, "avg": 2.42,
-                            "source": "validation card — paper, unproven live"},
+    # The previous MR (+0.46) and PEAD (+1.80/+2.42) bands were retired on
+    # 2026-09-21. They came from evidence the September wide-universe work no
+    # longer supports. Null is deliberate: the UI still explains why there is
+    # no band, while never drawing an obsolete target as if it were expected.
+    "mean_reversion|mas_official": {"label": "MR (official)", "wr": None, "avg": None,
+                                    "source": "reference retired 2026-09-21"},
+    "mean_reversion|mr_shadow": {"label": "MR (shadow)", "wr": None, "avg": None,
+                                  "source": "shadow; no active reference"},
+    "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": None, "avg": None,
+                                        "source": "stream retired; no active reference"},
+    "pead|pead_paper": {"label": "PEAD (paper)", "wr": None, "avg": None,
+                        "source": "old backtest target retired 2026-09-21"},
+    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": None, "avg": None,
+                            "source": "old backtest target retired 2026-09-21"},
+    "pead|pead_60d_shadow": {"label": "PEAD (60-session counterfactual)",
+                              "wr": None, "avg": None,
+                              "source": "forward measurement; no prior expectation"},
 }
 
 
@@ -445,7 +486,10 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
     for key, rows in trades.items():
         per_bench = {}
         for bk in BENCHMARKS:
-            s = _alpha_summary([r.get(f"alpha_{bk}") for r in rows])
+            s = _alpha_summary(
+                [r.get(f"alpha_{bk}") for r in rows],
+                [r.get("entry_date") for r in rows],
+            )
             if s:
                 per_bench[bk] = s
         if per_bench:

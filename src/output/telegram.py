@@ -357,28 +357,34 @@ def _render_pead_paper_section(pead_picks: list[dict]) -> list[str]:
     return lines
 
 
-def _render_sniper_shadow_section(shadow_picks: list[dict]) -> list[str]:
-    """Render the sniper SHADOW section appended to the daily alert.
+def _render_shadow_section(
+    shadow_picks: list[dict],
+    *,
+    heading: str,
+    note: str,
+    model_label: str,
+    empty_line: str,
+    default_holding: int,
+) -> list[str]:
+    """Render one retired-to-shadow stream's section of the daily alert.
 
-    Sniper was retired from the official book on 2026-09-18 and runs as a
-    shadow stream: tracked so a paper re-entry can be judged on data, never
-    executed and never counted in the book. Labeled so its picks are never
-    mistaken for live capital.
+    A shadow stream's ENTRIES and its OUTCOMES must both be visible or both be
+    hidden. `format_outcome_alert` labels every non-book source, so a stream
+    with no entry section here shows closures for positions the reader never
+    saw opened. Shared by sniper and MR so a future retirement cannot reinstate
+    that asymmetry by forgetting one half.
     """
     lines: list[str] = []
     lines.append(_section_line())
     lines.append(
-        f"\U0001f47b <b>Sniper — Shadow</b> ({len(shadow_picks)} pick"
+        f"\U0001f47b <b>{heading}</b> ({len(shadow_picks)} pick"
         f"{'' if len(shadow_picks) == 1 else 's'})"
     )
-    lines.append(
-        "<i>Retired from the book 2026-09-18, SHADOW ONLY — tracked, "
-        "not traded and not in the book.</i>"
-    )
+    lines.append(f"<i>{note}</i>")
     lines.append("")
 
     if not shadow_picks:
-        lines.append("   No sniper setups today.")
+        lines.append(f"   {empty_line}")
         lines.append("")
         return lines
 
@@ -389,7 +395,7 @@ def _render_sniper_shadow_section(shadow_picks: list[dict]) -> list[str]:
         stop = pick.get("stop_loss", 0)
         target = pick.get("target_1", 0)
         confidence = pick.get("confidence", 0)
-        holding = pick.get("holding_period", 7)
+        holding = pick.get("holding_period", default_holding)
         also_in_mas = pick.get("also_in_mas", False)
 
         risk_pct = abs(entry - stop) / entry * 100 if entry > 0 else 0
@@ -398,7 +404,7 @@ def _render_sniper_shadow_section(shadow_picks: list[dict]) -> list[str]:
         dir_arrow = "▲" if direction == "LONG" else "▼"
         conf_bar = _bar(confidence, 100, 10)
 
-        lines.append(f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>sniper</code>")
+        lines.append(f"<b>{dir_arrow} {_esc(ticker)}</b>  <code>{model_label}</code>")
         if also_in_mas:
             lines.append("   \U0001f501 also an official pick today")
         lines.extend([
@@ -409,6 +415,36 @@ def _render_sniper_shadow_section(shadow_picks: list[dict]) -> list[str]:
         lines.append("")
 
     return lines
+
+
+def _render_sniper_shadow_section(shadow_picks: list[dict]) -> list[str]:
+    """Sniper SHADOW section: retired from the book 2026-09-18."""
+    return _render_shadow_section(
+        shadow_picks,
+        heading="Sniper — Shadow",
+        note=(
+            "Retired from the book 2026-09-18, SHADOW ONLY — tracked, "
+            "not traded and not in the book."
+        ),
+        model_label="sniper",
+        empty_line="No sniper setups today.",
+        default_holding=7,
+    )
+
+
+def _render_mr_shadow_section(shadow_picks: list[dict]) -> list[str]:
+    """Mean-reversion SHADOW section: retired from the book 2026-09-21."""
+    return _render_shadow_section(
+        shadow_picks,
+        heading="Mean Reversion — Shadow",
+        note=(
+            "Retired from the book 2026-09-21, SHADOW ONLY — tracked, "
+            "not traded and not in the book."
+        ),
+        model_label="mean_reversion",
+        empty_line="No mean-reversion setups today.",
+        default_holding=3,
+    )
 
 
 def format_daily_alert(
@@ -424,6 +460,7 @@ def format_daily_alert(
     pead_paper_picks: list[dict] | None = None,
     credit_context: dict | None = None,
     sniper_shadow_picks: list[dict] | None = None,
+    mr_shadow_picks: list[dict] | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message.
 
@@ -478,6 +515,10 @@ def format_daily_alert(
             lines.append("")
             lines.extend(_render_sniper_shadow_section(sniper_shadow_picks))
 
+        if mr_shadow_picks is not None:
+            lines.append("")
+            lines.extend(_render_mr_shadow_section(mr_shadow_picks))
+
         if model_scorecard:
             lines.append("")
             lines.extend(_render_scorecard(model_scorecard))
@@ -514,6 +555,10 @@ def format_daily_alert(
         if sniper_shadow_picks is not None:
             lines.append("")
             lines.extend(_render_sniper_shadow_section(sniper_shadow_picks))
+
+        if mr_shadow_picks is not None:
+            lines.append("")
+            lines.extend(_render_mr_shadow_section(mr_shadow_picks))
 
         if model_scorecard:
             lines.append("")
@@ -576,6 +621,9 @@ def format_daily_alert(
 
     if sniper_shadow_picks is not None:
         lines.extend(_render_sniper_shadow_section(sniper_shadow_picks))
+
+    if mr_shadow_picks is not None:
+        lines.extend(_render_mr_shadow_section(mr_shadow_picks))
 
     # Model scorecard (appended if provided)
     if model_scorecard:
@@ -815,6 +863,7 @@ _NON_BOOK_SOURCE_LABELS = {
     "pead_paper": "PEAD paper",
     "pead_neglected": "PEAD neglected-beat (paper)",
     "sniper_shadow": "Sniper shadow",
+    "mr_shadow": "MR shadow",
     "mr_manual_sleeve": "MR manual sleeve",
 }
 
@@ -868,4 +917,3 @@ def format_outcome_alert(outcomes: list[dict]) -> str:
             lines.append(f"{_outcome_line(o)}  <code>{_esc(label)}</code>")
 
     return "\n".join(lines)
-
