@@ -14,6 +14,7 @@ from src.contracts import HealthState, PositionHealthCard
 from src.db.models import Signal, Outcome, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session
 from src.data.aggregator import DataAggregator
+from src.streams import PAIRED_OBSERVATION_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -170,7 +171,7 @@ async def check_open_positions() -> tuple[
     for outcome in open_outcomes:
         if not outcome.still_open:
             continue
-        if source_by_signal_id.get(outcome.signal_id) == "pead_60d_shadow":
+        if source_by_signal_id.get(outcome.signal_id) in PAIRED_OBSERVATION_SOURCES:
             # Pure return observation: health-state alerts or discretionary
             # invalidation events would contaminate the fixed-horizon measure.
             continue
@@ -481,7 +482,7 @@ async def _evaluate_position(
         entry_price = round(bar_open * (1 + slippage), 4)
         update = {"entry_price": entry_price}
 
-    fixed_horizon = getattr(signal, "signal_source", None) == "pead_60d_shadow"
+    fixed_horizon = getattr(signal, "signal_source", None) in PAIRED_OBSERVATION_SOURCES
 
     # --- Compute score-tiered base stop ---
     # NB the `/ 0.75` below recovers ATR from the stop distance by assuming

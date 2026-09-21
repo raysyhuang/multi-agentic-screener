@@ -148,7 +148,11 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
     if not rows:
         alerts.append(f"No closed live trades in the last {lookback_days}d")
 
-    return DriftReport(lookback_days=lookback_days, total_resolved=len(rows),
+    # Count what was actually measured: a closed row with no pnl_pct is
+    # excluded from every stream's statistics above, so counting it here would
+    # let unmeasurable rows push the alert threshold.
+    total_resolved = sum(len(v) for v in by_stream.values())
+    return DriftReport(lookback_days=lookback_days, total_resolved=total_resolved,
                        streams=streams, alerts=alerts)
 
 

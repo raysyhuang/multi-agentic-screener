@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from datetime import date
+from datetime import date, timedelta
 
 from pathlib import Path
 
@@ -244,6 +244,59 @@ async def test_a_paired_observation_is_never_counted_as_a_pick(monkeypatch):
     }
 
 
+@pytest.mark.asyncio
+async def test_measured_streams_exclude_entries_before_the_window_opened(monkeypatch):
+    """The document names this export as the source for n, the CI and S1.
+
+    The window start is a registered eligibility rule, so it has to be applied
+    here rather than trusted to whoever reads the number. Comparator streams
+    (the official book's history) are not under measurement and keep theirs.
+    """
+    from contextlib import asynccontextmanager
+    import scripts.export_dashboard_data as exp
+    from src.streams import MEASUREMENT_WINDOW_START
+
+    before = MEASUREMENT_WINDOW_START - timedelta(days=3)
+    after = MEASUREMENT_WINDOW_START + timedelta(days=1)
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    async with factory() as s:
+        s.add(DailyRun(run_date=after, regime="choppy", universe_size=1800,
+                       candidates_scored=70, execution_mode="quant_only",
+                       pipeline_health={"status": "OK", "warnings": []}))
+        rows = [
+            (1, "OLD", "pead", "pead_paper", before),      # measured, pre-window
+            (2, "NEW", "pead", "pead_paper", after),       # measured, in window
+            (3, "HIST", "sniper", "mas_official", before),  # comparator, kept
+        ]
+        for sid, ticker, model, source, entry in rows:
+            s.add(_signal(entry, ticker, model, source, sid=sid))
+            s.add(Outcome(
+                signal_id=sid, ticker=ticker, entry_date=entry, entry_price=100.0,
+                exit_date=entry, exit_price=101.0, exit_reason="target",
+                pnl_pct=1.0, still_open=False,
+            ))
+        await s.commit()
+
+    @asynccontextmanager
+    async def _fake_session():
+        async with factory() as session:
+            yield session
+
+    monkeypatch.setattr(exp, "get_session", _fake_session)
+    snap = await exp.build_snapshot(days=400, bench_closes={"spy": {}, "qqq": {}})
+
+    assert [t["ticker"] for t in snap["trades"]["pead|pead_paper"]] == ["NEW"]
+    assert [t["ticker"] for t in snap["trades"]["sniper|mas_official"]] == ["HIST"]
+    # Excluded, not silently dropped: "excluded 1" and "had none" differ.
+    assert snap["pre_window_excluded"]["pead|pead_paper"] == 1
+    assert snap["measurement_window_start"] == MEASUREMENT_WINDOW_START.isoformat()
+
+
 def test_no_interval_below_three_entry_date_clusters():
     """One entry date has one thing to resample, so the CI collapses to a point.
 
@@ -291,7 +344,11 @@ def test_thirty_trades_on_three_dates_cannot_decide_anything():
     assert crowded["effective_clusters"] == pytest.approx(3.0, abs=0.01)
 
     spread = exp._alpha_summary(alphas, [f"d{i}" for i in range(30)])
-    assert spread["entry_date_clusters"] == 30 and spread["decision_eligible"] is True
+    assert spread["entry_date_clusters"] == 30
+    # Dispersion is met here, so the only thing still blocking is the
+    # unregistered concentration threshold — named, not silent.
+    assert spread["decision_eligible"] is False
+    assert "concentration threshold" in spread["decision_blocked_reason"]
 
 
 def test_decision_threshold_is_the_documented_dispersion_rule():
@@ -320,9 +377,37 @@ def test_effective_clusters_exposes_concentration_the_date_count_misses():
     dates = ["crowded"] * 16 + [f"d{i}" for i in range(14)]
     s = exp._alpha_summary(alphas, dates)
 
-    assert s["entry_date_clusters"] == 15 and s["decision_eligible"] is True
+    assert s["entry_date_clusters"] == 15            # passes the day count
     assert s["max_cluster_share"] == pytest.approx(16 / 30, abs=1e-3)
-    assert s["effective_clusters"] < 4     # ... but it is worth ~3 even days
+    assert s["effective_clusters"] < 4               # worth ~3 balanced days
+    # This is exactly the sample that must not read as eligible.
+    assert s["decision_eligible"] is False
+
+
+def test_no_stream_is_decision_eligible_while_concentration_is_unregistered():
+    """Deferring a threshold is only honest if the deferral fails closed.
+
+    Until a concentration rule is registered, every stream reports
+    decision_eligible=false with the reason named — not true-by-omission.
+    """
+    import scripts.export_dashboard_data as exp
+
+    assert exp.CONCENTRATION_THRESHOLD is None
+    perfect = exp._alpha_summary([1.0] * 40, [f"d{i}" for i in range(40)])
+    assert perfect["entry_date_clusters"] == 40
+    assert perfect["effective_clusters"] == pytest.approx(40.0, abs=0.01)
+    assert perfect["decision_eligible"] is False
+    assert "no concentration threshold registered" in perfect["decision_blocked_reason"]
+
+
+def test_dispersion_floor_rounds_up_not_down():
+    """Entry days are integers: "at least n/2" at n=31 is 16 days, not 15."""
+    import scripts.export_dashboard_data as exp
+
+    assert exp.min_decision_clusters(31) == 16
+    assert exp.min_decision_clusters(51) == 26
+    assert exp.min_decision_clusters(101) == 51
+    assert exp.min_decision_clusters(30) == 15    # even n unchanged
 
 
 def test_alpha_summary_rejects_misaligned_clusters():

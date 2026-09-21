@@ -175,6 +175,8 @@ persisted stream rows and consults neither.
 
 ## Review round 3 (Codex, 2026-09-21) — three defects fixed, one item left open
 
+> **Superseded in part by round 4**: the "≥ 10 distinct entry dates" figure quoted in the round-2 record above is **obsolete** — it was removed in round 3. The live rule is `max(15, n/2)`, rounded UP (round 4). Do not quote the 10 from the historical record.
+
 **7. The round-2 cluster rule contradicted a rule this document already had.**
 The time-dispersion section already required `max(15, n/2)` distinct entry days
 at *every tier threshold* — 15 at the first n=30 read. The 10-date condition
@@ -223,3 +225,55 @@ the repository-variable removal, the `today_picks` filter (hero, tile, funnel,
 pick list and mirror summary all covered), and the paired row's exclusion from
 portfolio capital, the selection ledger, the scorecard, PEAD slots, cooldowns
 and every Telegram count.
+
+## Review round 4 (Codex, 2026-09-21) — full-branch pass, four more defects
+
+**10. The field the document calls decisional did not hold the decisional
+cohort.** The window opened 2026-09-19 and every earlier entry is OUT — but
+that rule existed only in prose. The exporter selected a rolling 90 days with
+no window filter, so pre-window trades were inflating `n`, the entry-date
+dispersion, the Kish diagnostics and the CI in the exact field Tier 2 and S1
+read. `MEASUREMENT_WINDOW_START` is now in `src/streams.py`, the exporter drops
+pre-window trades for measured streams, and `pre_window_excluded` plus
+`measurement_window_start` are stamped in the bundle — "excluded 4" and "had
+none" are different facts. Comparator streams keep their full history.
+
+**11. Deferring the concentration threshold did not fail closed.** Round 3
+exported the diagnostics and left the threshold to Ray, which would have been
+fine if nothing could be decided meanwhile. It could: the documented
+counterexample (16 trades on one day + 14 singletons) produced
+`entry_date_clusters=15`, `effective_clusters=3.33`, `max_cluster_share=53%`
+and **`decision_eligible=true`**, with a green badge if the returns were
+positive. Shipping that is the defect, not the missing number.
+
+`decision_eligible` is now false for **every** stream while
+`CONCENTRATION_THRESHOLD is None`, with `decision_blocked_reason` naming why.
+The threshold is still Ray's to register — the round-4 candidate is ≥20
+distinct dates and ≥15 effective clusters — but nothing can read as eligible
+until it exists. The tile also shows the effective cluster count whenever it
+falls meaningfully below the raw date count.
+
+**12. `n // 2` was laxer than the documented `n / 2`.** Entry days are
+integers, so "at least n/2 days" at n=31 is 16, not 15. Floor division was
+quietly below the document at every odd n, on the rule the interval depends on.
+Now rounds up, with odd-n tests — the previous tests only covered even n.
+
+**13. A quarantined PEAD row could suppress an official pick.** Official
+cooldown history was "every source not in `SHADOW_SOURCES`", and `pead_paper`
+/ `pead_neglected` are not in that set — so a paper PEAD pick could knock out
+an eligible official one, the reverse of the quarantine. Defined from what the
+book **is** (`BOOK_SOURCES`) instead of from a complement. Dormant while the
+book is empty; it would have mattered the moment the official route was
+re-enabled, which is exactly the route the synthetic smoke test exists to keep
+alive.
+
+Also: `SNIPER_CAP_SOURCES` and the remaining `pead_60d_shadow` literals in
+`src/output/performance.py` and `src/main.py` now come from `src/streams.py`
+(round 3's "single definition" claim was not yet true), `total_resolved` counts
+only rows that were actually measured, and the obsolete 10-date figure in the
+round-2 record above is marked superseded so a search cannot resurrect it.
+
+Confirmed intact: S1's wording, the `src.main` re-exports (same objects, no
+circular import), the console-summary filter, the fixed-horizon PEAD walker,
+and the paired row's exclusion from capital, slots, scorecards, validation
+cards, portfolio simulation, health alerts and outcome alerts.

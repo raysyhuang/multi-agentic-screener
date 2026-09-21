@@ -15,6 +15,8 @@ import asyncio
 from contextlib import asynccontextmanager
 from datetime import date, timedelta
 
+from pathlib import Path
+
 import pytest
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 
@@ -256,6 +258,69 @@ def test_every_labeled_non_book_source_can_be_seen_entering():
     assert alerted <= set(entry_params), f"unmapped labeled sources: {alerted - set(entry_params)}"
     for source in alerted:
         assert entry_params[source] in sig, f"{source} has no entry section parameter"
+
+
+def test_quarantined_pead_cannot_suppress_an_official_pick():
+    """Official cooldown is defined from what the book IS, not "not shadow".
+
+    pead_paper and pead_neglected are quarantined but were never in
+    SHADOW_SOURCES, so the complement let a paper PEAD row knock out an
+    eligible official pick — the reverse of the quarantine.
+    """
+    from src import main as m
+    from src.streams import BOOK_SOURCES
+
+    recent = [
+        {"ticker": "AAA", "signal_source": "mas_official"},
+        {"ticker": "BBB", "signal_source": "pead_paper"},
+        {"ticker": "CCC", "signal_source": "pead_neglected"},
+        {"ticker": "DDD", "signal_source": "sniper_shadow"},
+        {"ticker": "EEE", "signal_source": "mr_shadow"},
+        {"ticker": "LEG", "signal_source": None},        # legacy row = official
+    ]
+    official = [
+        r for r in recent
+        if (r.get("signal_source") or "mas_official") in BOOK_SOURCES
+    ]
+
+    assert [r["ticker"] for r in official] == ["AAA", "LEG"]
+    assert m.BOOK_SOURCES is BOOK_SOURCES
+    source = (Path(__file__).parents[1] / "src" / "main.py").read_text()
+    assert 'in BOOK_SOURCES' in source
+    assert 'not in SHADOW_SOURCES]' not in source
+
+
+def test_stream_classification_has_one_definition():
+    """Re-exports must be the same objects, or the sets can drift apart."""
+    from src import main as m
+    from src import streams
+
+    assert m.SHADOW_SOURCES is streams.SHADOW_SOURCES
+    assert m.PEAD_POSITION_SOURCES is streams.PEAD_POSITION_SOURCES
+    assert m.SNIPER_CAP_SOURCES is streams.SNIPER_CAP_SOURCES
+    assert m.PAIRED_OBSERVATION_SOURCES is streams.PAIRED_OBSERVATION_SOURCES
+
+    # Production code CLASSIFIES by the shared sets. Writing the label once
+    # where the stream is created, and using it as a display-table key, are
+    # fine; a comparison against the literal is the drift that finding 8 was.
+    allowed_prefixes = (
+        'pick.signal_source = ',        # the one site that creates the stream
+        '"pead|pead_60d_shadow": ',     # baseline/label table keys
+    )
+    for path in ("src/main.py", "src/output/performance.py",
+                 "src/research/drift_check.py", "scripts/export_dashboard_data.py"):
+        text = (Path(__file__).parents[1] / path).read_text()
+        for ln in text.splitlines():
+            stripped = ln.strip()
+            # Only the quoted SOURCE literal; `settings.pead_60d_shadow_*` is
+            # a config attribute name, not a classification.
+            if '"pead_60d_shadow"' not in stripped and '"pead|pead_60d_shadow"' not in stripped:
+                continue
+            if stripped.startswith("#"):
+                continue
+            assert stripped.startswith(allowed_prefixes), (
+                f"{path} classifies by literal: {stripped}"
+            )
 
 
 def test_book_streams_follow_the_admission_flag():

@@ -34,8 +34,11 @@ from src.data.universe_selection import select_ohlcv_tickers
 from sqlalchemy import delete, select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
 from src.streams import (
+    BOOK_SOURCES,
+    PAIRED_OBSERVATION_SOURCES,
     PEAD_POSITION_SOURCES as _PEAD_POSITION_SOURCES,
     SHADOW_SOURCES as _SHADOW_SOURCES,
+    SNIPER_CAP_SOURCES as _SNIPER_CAP_SOURCES,
 )
 from src.db.session import get_session, init_db
 from src.features.technical import compute_all_technical_features, compute_rsi2_features, latest_features
@@ -1468,7 +1471,14 @@ async def _run_pipeline_core(
     # reverse of the quarantine). The shadow stream's own cooldown sees
     # everything, so it stays at least as strict as the book flow it left.
     recent_signals = await _get_recent_signals(days=7)
-    official_recent = [r for r in recent_signals if r.get("signal_source") not in SHADOW_SOURCES]
+    # Defined from what the book IS, not from "not shadow": pead_paper and
+    # pead_neglected are quarantined too, so the complement let a paper PEAD
+    # row suppress an eligible official pick. Legacy rows predate
+    # signal_source and are official.
+    official_recent = [
+        r for r in recent_signals
+        if (r.get("signal_source") or "mas_official") in BOOK_SOURCES
+    ]
     all_signals = apply_cooldown(all_signals, official_recent)
     post_cooldown_signals = list(all_signals)
 
@@ -2542,7 +2552,7 @@ async def _get_recent_signals(days: int = 7) -> list[dict]:
         return []
 
 
-SNIPER_CAP_SOURCES: tuple[str, ...] = ("mas_official", "sniper_shadow")
+SNIPER_CAP_SOURCES = _SNIPER_CAP_SOURCES
 
 
 async def _count_open_sniper_positions() -> int:
@@ -2705,7 +2715,10 @@ async def run_afternoon_check() -> None:
         from src.output.telegram import format_outcome_alert, send_alert
         # The PEAD-60 stream is a measurement row paired to an already-alerted
         # primary pick. Suppress it here so one idea never creates two alerts.
-        alert_updates = [u for u in updates if u.get("signal_source") != "pead_60d_shadow"]
+        alert_updates = [
+            u for u in updates
+            if u.get("signal_source") not in PAIRED_OBSERVATION_SOURCES
+        ]
         msg = format_outcome_alert(alert_updates)
         if msg:
             await send_alert(msg)

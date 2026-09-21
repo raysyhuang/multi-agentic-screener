@@ -28,7 +28,11 @@ from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.config import get_settings
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
-from src.streams import PAIRED_OBSERVATION_SOURCES
+from src.streams import (
+    MEASURED_SOURCES,
+    MEASUREMENT_WINDOW_START,
+    PAIRED_OBSERVATION_SOURCES,
+)
 
 # The "book" = the systematic official streams run together. The manual sleeve
 # is deliberately excluded: it reproduces the official MR picks verbatim and
@@ -73,6 +77,17 @@ PORTFOLIO_SPECS = portfolio_specs(_SNIPER_IN_BOOK, _MR_IN_BOOK)
 # resample, so no interval is computed at all; see `_alpha_summary`.
 MIN_ENTRY_DATE_CLUSTERS = 3
 
+# Maximum share of the estimate one entry day may carry, or None while no
+# threshold is registered. Entry-DAY COUNT does not control concentration: 16
+# trades on one day plus 14 singletons is 15 days, passing `max(15, n/2)`,
+# while that one day carries 53% of the estimate and the sample is worth about
+# 3.3 balanced days (`effective_clusters`). Choosing a number after being shown
+# that counterexample would fit the bar to the argument, so none is registered
+# and `decision_eligible` stays false for every stream until Ray registers one
+# in the acceptance criteria. Nothing can be promoted or stopped meanwhile;
+# no stream has an in-window trade yet, so the deferral costs nothing.
+CONCENTRATION_THRESHOLD: float | None = None
+
 
 def min_decision_clusters(n: int) -> int:
     """Distinct entry days a stream needs before its interval can decide anything.
@@ -87,7 +102,10 @@ def min_decision_clusters(n: int) -> int:
     Thirty trades booked on three dates is three market observations wearing a
     sample size of thirty.
     """
-    return max(15, n // 2)
+    # ceil, not floor: entry days are integers, so "at least n/2 days" at n=31
+    # is 16 days, not 15. Floor division quietly made the code laxer than the
+    # document at every odd n, on the rule the interval depends on.
+    return max(15, -(-n // 2))
 
 
 PORTFOLIO_MAX_CONCURRENT = 10
@@ -204,12 +222,24 @@ def _alpha_summary(
         "ci_lo": round(lo, 4),
         "ci_hi": round(hi, 4),
         "significant": bool(lo > 0 or hi < 0),  # CI excludes zero
-        # The acceptance criteria's time-dispersion rule, computed for
-        # convenience. Descriptive: nothing enforces it, and the document — not
-        # this field — decides. An interval can be computed long before it can
-        # carry a promotion or a stop.
-        "decision_eligible": cluster_n >= min_decision_clusters(n),
+        # Descriptive: the document decides, not this field. It is false
+        # whenever ANY registered requirement is unmet — and while no
+        # concentration threshold is registered, "unregistered" counts as
+        # unmet, so it is false for every stream. That is deliberate. Fifteen
+        # entry dates can still be one day carrying half the estimate
+        # (effective_clusters 3.3), and a field that called that sample
+        # eligible would be wrong in the one direction that matters. Deferring
+        # a threshold is only honest if the deferral fails closed.
+        "decision_eligible": (
+            cluster_n >= min_decision_clusters(n)
+            and CONCENTRATION_THRESHOLD is not None
+        ),
         "min_decision_clusters": min_decision_clusters(n),
+        "decision_blocked_reason": (
+            None if CONCENTRATION_THRESHOLD is not None
+            else "no concentration threshold registered "
+                 "(docs/paper_sleeve_acceptance_criteria.md)"
+        ),
     }
 
 
@@ -490,6 +520,10 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
     trades: dict[str, list[dict]] = {}
     open_positions = []
     skip_counts: dict[str, int] = {}
+    # Closed trades a measured stream entered before the window opened. Counted
+    # and reported, never silently dropped: "excluded 4" and "had none" are
+    # different facts.
+    pre_window_counts: dict[str, int] = {}
     for o in outcomes:
         s = sig_by_id.get(o.signal_id)
         if s is None:
@@ -520,6 +554,16 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
             })
             continue
         if o.pnl_pct is None:
+            continue
+        # The measurement window is a registered eligibility rule, and the
+        # document names this export as the source for n, the CI and every
+        # Tier-2/S1 decision. A rolling 90-day window silently included
+        # pre-window entries in all of them, so a measured stream's decisional
+        # cohort is filtered here rather than trusted to a reader.
+        if s.signal_source in MEASURED_SOURCES and (
+            o.entry_date is None or o.entry_date < MEASUREMENT_WINDOW_START
+        ):
+            pre_window_counts[key] = pre_window_counts.get(key, 0) + 1
             continue
         row = {
             "ticker": o.ticker,
@@ -583,6 +627,8 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
         "trades": trades,
         "open_positions": open_positions,
         "skip_counts": skip_counts,
+        "measurement_window_start": MEASUREMENT_WINDOW_START.isoformat(),
+        "pre_window_excluded": pre_window_counts,
         "run_history": run_history,
         "baselines": BASELINES,
         "benchmarks": {"spy": "S&P 500 (SPY)", "qqq": "Nasdaq-100 (QQQ)"},
