@@ -32,6 +32,7 @@ from datetime import date, timedelta
 
 from src.db.models import Outcome, Signal
 from src.db.session import get_session
+from src.streams import PAIRED_OBSERVATION_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -41,10 +42,13 @@ BASELINES: dict[str, dict] = {
     "sniper|mas_official": {"label": "Sniper (official, retired 2026-09-18)", "wr": 0.543, "avg": 0.54},
     # Retired from the book 2026-09-18; same strategy/config, so the same band.
     "sniper|sniper_shadow": {"label": "Sniper (shadow)", "wr": 0.543, "avg": 0.54},
-    "mean_reversion|mas_official": {"label": "MR (official)", "wr": 0.522, "avg": 0.46},
-    "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": 0.493, "avg": -0.01},
-    "pead|pead_paper": {"label": "PEAD (paper)", "wr": 0.57, "avg": 1.80},
-    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": 0.58, "avg": 2.42},
+    "mean_reversion|mas_official": {"label": "MR (official)", "wr": None, "avg": None},
+    "mean_reversion|mr_shadow": {"label": "MR (shadow)", "wr": None, "avg": None},
+    "mean_reversion|mr_manual_sleeve": {"label": "MR (manual sleeve)", "wr": None, "avg": None},
+    "pead|pead_paper": {"label": "PEAD (paper)", "wr": None, "avg": None},
+    "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": None, "avg": None},
+    "pead|pead_60d_shadow": {"label": "PEAD (60-session counterfactual)",
+                              "wr": None, "avg": None},
 }
 
 # A stream alerts when its realized per-trade average falls this far below its
@@ -62,8 +66,8 @@ class StreamDrift:
     n: int
     live_win_rate: float
     live_avg: float
-    baseline_avg: float
-    baseline_wr: float
+    baseline_avg: float | None
+    baseline_wr: float | None
     alerts: list[str] = field(default_factory=list)
 
 
@@ -94,6 +98,17 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
         )
         rows = (await session.execute(stmt)).all()
 
+    # A paired observation re-measures a trade already counted under its primary
+    # stream. It has no baseline so it can never raise a drift alert of its own,
+    # but `total_resolved` gates whether ANY drift alert is sent (main.py, at
+    # >= 10 closed trades) — so leaving it in would let a measurement row
+    # release another stream's alert. It is not an additional trade, here or
+    # anywhere else that counts trades.
+    rows = [
+        (outcome, signal) for outcome, signal in rows
+        if signal.signal_source not in PAIRED_OBSERVATION_SOURCES
+    ]
+
     by_stream: dict[str, list[float]] = {}
     for outcome, signal in rows:
         if outcome.pnl_pct is None:
@@ -108,7 +123,7 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
         if base is None:
             logger.info("drift: no baseline for stream %s (n=%d) — reporting only",
                         key, len(returns))
-            base = {"label": key, "wr": 0.0, "avg": 0.0}
+            base = {"label": key, "wr": None, "avg": None}
         n = len(returns)
         wr = sum(1 for r in returns if r > 0) / n
         avg = st.mean(returns)
@@ -116,7 +131,7 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
                          live_win_rate=round(wr, 4), live_avg=round(avg, 4),
                          baseline_avg=base["avg"], baseline_wr=base["wr"])
 
-        if n >= MIN_TRADES_TO_JUDGE and base["avg"] > 0:
+        if n >= MIN_TRADES_TO_JUDGE and base["avg"] is not None and base["avg"] > 0:
             floor = base["avg"] * DRIFT_SHORTFALL_PCT
             if avg < floor:
                 sd.alerts.append(
@@ -133,7 +148,11 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
     if not rows:
         alerts.append(f"No closed live trades in the last {lookback_days}d")
 
-    return DriftReport(lookback_days=lookback_days, total_resolved=len(rows),
+    # Count what was actually measured: a closed row with no pnl_pct is
+    # excluded from every stream's statistics above, so counting it here would
+    # let unmeasurable rows push the alert threshold.
+    total_resolved = sum(len(v) for v in by_stream.values())
+    return DriftReport(lookback_days=lookback_days, total_resolved=total_resolved,
                        streams=streams, alerts=alerts)
 
 
@@ -150,8 +169,9 @@ def format_drift_report(report: DriftReport) -> str:
     ]
     for s in report.streams:
         flag = " !" if s.alerts else ""
+        baseline = f"{s.baseline_avg:+.3f}%" if s.baseline_avg is not None else "—"
         lines.append(
-            f"  {s.label:<24}{s.n:>5}{s.live_avg:>+10.3f}%{s.baseline_avg:>+10.3f}%"
+            f"  {s.label:<24}{s.n:>5}{s.live_avg:>+10.3f}%{baseline:>11}"
             f"{s.live_win_rate:>8.1%}{flag}"
         )
 

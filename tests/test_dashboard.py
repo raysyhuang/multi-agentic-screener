@@ -66,6 +66,34 @@ def test_dashboard_separates_observed_positions_from_pending_entries():
     assert 'age unavailable' in script
 
 
+def test_paired_60d_observations_are_not_counted_as_extra_positions():
+    """The 60-session PEAD row re-observes an entry already counted elsewhere.
+
+    It represents no capital, so counting it would report one idea as two open
+    positions. It stays visible in the position list; only the count excludes it.
+    """
+    script = (Path(__file__).parents[1] / "dashboard" / "app.js").read_text()
+
+    assert 'o.stream !== "pead|pead_60d_shadow"' in script
+    assert "paired 60d observation" in script
+    # Still listed: the table renders the raw export, not the filtered count.
+    assert "data.open_positions.map(" in script
+
+
+def test_pick_counts_come_from_an_export_that_already_excludes_paired_rows():
+    """The page must not need its own filter for "Picks today".
+
+    today_picks feeds the hero line, the tile and the funnel's final stage.
+    Filtering in the page would mean three call sites that can drift apart, so
+    the exporter drops the paired row and the page just counts.
+    """
+    import scripts.export_dashboard_data as exp
+
+    assert "pead_60d_shadow" in exp.PAIRED_OBSERVATION_SOURCES
+    source = (Path(__file__).parents[1] / "scripts" / "export_dashboard_data.py").read_text()
+    assert "if s.signal_source in PAIRED_OBSERVATION_SOURCES:" in source
+
+
 @pytest.mark.asyncio
 async def test_dashboard_returns_200(app_client):
     """/dashboard should return 200 with HTML content."""

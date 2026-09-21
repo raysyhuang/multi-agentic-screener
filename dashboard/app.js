@@ -11,12 +11,14 @@ const STREAM_META = {
   // leave the page describing a composition the data no longer has.
   "sniper|sniper_shadow":         { label: "Sniper (shadow)",      color: "#d94fc6" },
   "mean_reversion|mas_official":  { label: "MR (official)",        color: "#2874ad" },
+  "mean_reversion|mr_shadow":      { label: "MR (shadow)",          color: "#55a3d9" },
   "mean_reversion|mr_manual_sleeve": { label: "MR (manual sleeve)", color: "#ea2261" },
   "pead|pead_paper":              { label: "PEAD (paper)",         color: "#0f8a6d" },
   // The neglected-beat variant is a SEPARATE stream (its own baseline lives in
   // export_dashboard_data.py). Without an entry here it fell through to the
   // raw-key fallback and rendered as "pead|pead_neglected" in tiles and legends.
   "pead|pead_neglected":          { label: "PEAD (neglected-beat)", color: "#9b6829" },
+  "pead|pead_60d_shadow":         { label: "PEAD (60-session paired)", color: "#6f55b5" },
 };
 const EXIT_COLORS = { trail_stop: "#533afd", stop: "#ea2261", target: "#0f8a6d",
                       time_stop: "#9b6829", expiry: "#2874ad", other: "#d94fc6" };
@@ -436,8 +438,13 @@ function renderStatic(data) {
   const streams = data.trades || {};
   const keys = Object.keys(streams).filter((k) => streams[k].length);
   const positions = data.open_positions || [];
-  const pendingEntries = positions.filter((o) => o.days_held_status === "pre_entry");
-  const openPositions = positions.filter((o) => o.days_held_status !== "pre_entry");
+  // The 60-session PEAD stream re-observes an entry that is already counted
+  // under its primary stream, so counting both would report one idea as two
+  // positions. It is a measurement row explicitly representing no capital.
+  const pairedObservations = positions.filter((o) => o.stream === "pead|pead_60d_shadow");
+  const distinct = positions.filter((o) => o.stream !== "pead|pead_60d_shadow");
+  const pendingEntries = distinct.filter((o) => o.days_held_status === "pre_entry");
+  const openPositions = distinct.filter((o) => o.days_held_status !== "pre_entry");
   const ageUnknownPositions = openPositions.filter((o) => o.days_held_status !== "observed");
 
   renderFreshness(data);
@@ -458,12 +465,16 @@ function renderStatic(data) {
     const t = streams[k], wr = t.filter((u) => u.pnl_pct > 0).length / t.length;
     const avg = t.reduce((a, u) => a + u.pnl_pct, 0) / t.length;
     const b = data.baselines?.[k];
+    const hasBaseline = Number.isFinite(b?.wr) && Number.isFinite(b?.avg);
     tiles.push({ k: streamMeta(k).label, v: `${pct(wr, 0)} · ${avg >= 0 ? "+" : ""}${fmt(avg)}%`,
-      s: b ? `expect ~${pct(b.wr, 0)} · ${b.avg >= 0 ? "+" : ""}${fmt(b.avg)}%` : "", color: streamMeta(k).color });
+      s: hasBaseline ? `expect ~${pct(b.wr, 0)} · ${b.avg >= 0 ? "+" : ""}${fmt(b.avg)}%`
+        : (b?.source || ""), color: streamMeta(k).color });
   }
   tiles.push({ k: "Open positions", v: String(openPositions.length),
     s: `${pendingEntries.length} pending entry` +
-      (ageUnknownPositions.length ? ` · ${ageUnknownPositions.length} age unavailable` : "") });
+      (ageUnknownPositions.length ? ` · ${ageUnknownPositions.length} age unavailable` : "") +
+      (pairedObservations.length ? ` · ${pairedObservations.length} paired 60d observation`
+        + (pairedObservations.length === 1 ? "" : "s") : "") });
   $("today-tiles").append(...tiles.map((t) => {
     const d = el("div"); d.className = "tile";
     d.append(Object.assign(el("div"), { className: "k", textContent: t.k }));
@@ -644,9 +655,10 @@ function renderCharts(data, streams, keys) {
     cardDiv.append(Object.assign(el("h3"), { textContent: streamMeta(k).label, style: "font-size:15px;margin-bottom:4px" }));
     $("wr-multiples").append(cardDiv);
     const b = data.baselines?.[k];
+    const hasBaseline = Number.isFinite(b?.wr);
     lineChart(cardDiv, [{ label: "live", color: streamMeta(k).color, points: rollWR(streams[k]) }], {
       height: 180, unit: "", yFmt: (v) => pct(v, 0), directLabels: false, rightPad: 12,
-      band: b ? { lo: b.wr - 0.05, hi: b.wr + 0.05, mid: b.wr, color: streamMeta(k).color, label: "expected" } : null,
+      band: hasBaseline ? { lo: b.wr - 0.05, hi: b.wr + 0.05, mid: b.wr, color: streamMeta(k).color, label: "expected" } : null,
     });
   }
 

@@ -140,13 +140,13 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     assert snap["benchmark_available"] is True
     assert snap["benchmarks"]["spy"].startswith("S&P")
 
-    # Portfolio block: the book (MR official since 2026-09-18) plus each official
+    # Portfolio block: the now-empty book plus each historical official
     # stream alone as a real account. Here only the retired official sniper
     # trade qualifies (sleeve is excluded by design), so the sniper row still
     # exists while its trades are in the window, its equity curve is seeded +
-    # one exit, and the book row — MR only, no MR trades — is absent.
+    # one exit, and the empty book row is absent.
     pf = snap["portfolio"]
-    assert pf is not None and pf["book_streams"] == ["mean_reversion|mas_official"]
+    assert pf is not None and pf["book_streams"] == []
     cfg = {c["key"]: c for c in pf["configs"]}
     assert "sniper" in cfg and cfg["sniper"]["trades"] == 1
     assert "book" not in cfg
@@ -182,6 +182,50 @@ def test_alpha_summary_ci_and_significance():
     # Seeded → identical result on repeat (dashboard number stable across runs).
     assert exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1]) == \
         exp._alpha_summary([1.0, -0.5, 0.8, 1.2, -0.3, 0.9, 1.1])
+
+
+@pytest.mark.asyncio
+async def test_a_paired_observation_is_never_counted_as_a_pick(monkeypatch):
+    """One idea, two rows: the clone must not inflate any COUNT of ideas.
+
+    `today_picks` feeds the hero line, the "Picks today" tile and the funnel's
+    final stage, so excluding the paired row here keeps all three consistent
+    with the open-position count — which already excludes it.
+    """
+    from contextlib import asynccontextmanager
+    import scripts.export_dashboard_data as exp
+
+    engine = create_async_engine("sqlite+aiosqlite:///:memory:")
+    async with engine.begin() as conn:
+        await conn.run_sync(Base.metadata.create_all)
+    factory = async_sessionmaker(engine, expire_on_commit=False)
+
+    d = date(2026, 9, 21)
+    async with factory() as s:
+        s.add(DailyRun(run_date=d, regime="choppy", universe_size=1800,
+                       candidates_scored=70, execution_mode="quant_only",
+                       pipeline_health={"status": "OK", "warnings": []}))
+        s.add(_signal(d, "RBRK", "pead", "pead_paper", sid=1))
+        s.add(_signal(d, "RBRK", "pead", "pead_60d_shadow", sid=2))
+        s.add(Outcome(signal_id=1, ticker="RBRK", entry_date=d, entry_price=100.0,
+                      pnl_pct=0.0, still_open=True))
+        s.add(Outcome(signal_id=2, ticker="RBRK", entry_date=d, entry_price=100.0,
+                      pnl_pct=0.0, still_open=True))
+        await s.commit()
+
+    @asynccontextmanager
+    async def _fake_session():
+        async with factory() as session:
+            yield session
+
+    monkeypatch.setattr(exp, "get_session", _fake_session)
+    snap = await exp.build_snapshot(days=90, bench_closes={"spy": {}, "qqq": {}})
+
+    assert [p["source"] for p in snap["today_picks"]] == ["pead_paper"]
+    # Still persisted and still visible as a position row — only the count changes.
+    assert {o["stream"] for o in snap["open_positions"]} == {
+        "pead|pead_paper", "pead|pead_60d_shadow",
+    }
 
 
 @pytest.mark.asyncio

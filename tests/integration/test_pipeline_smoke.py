@@ -30,7 +30,7 @@ import pandas as pd
 import pytest
 from sqlalchemy import select
 
-from src.db.models import DailyRun, PipelineArtifact
+from src.db.models import DailyRun, Outcome, PipelineArtifact, Signal
 from src.main import _trading_date_et
 from src.db.session import get_session
 
@@ -259,6 +259,64 @@ async def test_injected_provenance_reaches_the_governance_artifact(
     # The funnels travel the same path and are the other half of #64's purpose.
     assert payload.get("universe_funnel"), "universe funnel must be persisted"
     assert payload.get("ohlcv_funnel"), "ohlcv funnel must be persisted"
+
+
+async def test_synthetic_pick_exercises_the_official_path(
+    monkeypatch, stubbed_pipeline, pinned_run_id
+) -> None:
+    """Keep the official path alive even when organic strategy supply is zero.
+
+    This pins scoring -> ranking -> validation -> official Signal/Outcome. A
+    shadow-only book must not let that path rot unnoticed between real picks.
+    """
+    from src import main as main_mod
+    from src.signals.mean_reversion import MeanReversionSignal
+
+    def synthetic_mr(ticker, df, features, **kwargs):
+        if ticker != "AAAA":
+            return None
+        close = float(df.iloc[-1]["close"])
+        return MeanReversionSignal(
+            ticker=ticker, score=95.0, direction="LONG",
+            entry_price=close, stop_loss=close * 0.98,
+            target_1=close * 1.04, target_2=close * 1.06,
+            holding_period=3,
+            components={"synthetic_official_smoke": 100.0},
+        )
+
+    monkeypatch.setattr(main_mod, "score_mean_reversion", synthetic_mr)
+    # Production deliberately runs MR in shadow. This test turns the official
+    # switch on only inside the harness to prove that dormant route still works.
+    monkeypatch.setattr(main_mod.get_settings(), "mean_reversion_in_book", True)
+    monkeypatch.setattr(
+        main_mod, "_load_validation_history_cards", AsyncMock(return_value={}),
+    )
+
+    await main_mod.run_morning_pipeline()
+
+    async with get_session() as session:
+        row = (await session.execute(
+            select(Signal, Outcome)
+            .join(Outcome, Outcome.signal_id == Signal.id)
+            .where(
+                Signal.run_date == _trading_date_et(),
+                Signal.ticker == "AAAA",
+                Signal.signal_model == "mean_reversion",
+                Signal.signal_source == "mas_official",
+            )
+        )).first()
+        final = (await session.execute(
+            select(PipelineArtifact).where(
+                PipelineArtifact.run_id == pinned_run_id,
+                PipelineArtifact.stage == "final_output",
+            )
+        )).scalars().first()
+
+    assert row is not None, "synthetic official pick did not reach persistence"
+    signal, outcome = row
+    assert signal.risk_gate_decision == "APPROVE"
+    assert outcome.still_open is True and outcome.skip_reason is None
+    assert final is not None and final.status == "success"
 
 
 async def test_a_failed_run_records_its_own_failure(

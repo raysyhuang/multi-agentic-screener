@@ -804,6 +804,30 @@ async def test_pead_survives_pullback_that_would_trail_stop_mean_reversion(monke
     assert "exit_reason" not in pead_update or pead_update.get("exit_reason") is None
 
 
+@pytest.mark.asyncio
+async def test_pead_60d_counterfactual_ignores_primary_stop_and_target(monkeypatch):
+    """The paired observation measures a fixed horizon, not a longer PEAD trade."""
+    bars = [
+        {"open": 100.0, "high": 111.0, "low": 96.0, "close": 102.0},
+        {"open": 102.0, "high": 103.0, "low": 95.0, "close": 101.0},
+        {"open": 101.0, "high": 104.0, "low": 94.0, "close": 103.0},
+    ]
+    signal = _make_signal(
+        signal_model="pead", stop_loss=97.0, target_1=110.0,
+        holding_period_days=3,
+    )
+    signal.signal_source = "pead_60d_shadow"
+    aggregator = _patch_deps(
+        monkeypatch, signal,
+        _make_ohlcv_bars(bars, start_date=date(2026, 3, 10)),
+    )
+
+    update, _ = await perf._evaluate_position(_make_outcome(), aggregator)
+
+    assert update["exit_reason"] == "expiry"
+    assert update["exit_date"] == date(2026, 3, 12)
+
+
 def test_score_tiers_skip_pead():
     """Score tiers are an MR construct — they must not touch PEAD's stop."""
     s = _default_settings(score_tiered_stops_enabled=True)

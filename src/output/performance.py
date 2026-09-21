@@ -14,6 +14,7 @@ from src.contracts import HealthState, PositionHealthCard
 from src.db.models import Signal, Outcome, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session
 from src.data.aggregator import DataAggregator
+from src.streams import PAIRED_OBSERVATION_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -169,6 +170,10 @@ async def check_open_positions() -> tuple[
     # one failure from cascading and poisoning the transaction for others.
     for outcome in open_outcomes:
         if not outcome.still_open:
+            continue
+        if source_by_signal_id.get(outcome.signal_id) in PAIRED_OBSERVATION_SOURCES:
+            # Pure return observation: health-state alerts or discretionary
+            # invalidation events would contaminate the fixed-horizon measure.
             continue
         try:
             async with get_session() as session:
@@ -477,6 +482,8 @@ async def _evaluate_position(
         entry_price = round(bar_open * (1 + slippage), 4)
         update = {"entry_price": entry_price}
 
+    fixed_horizon = getattr(signal, "signal_source", None) in PAIRED_OBSERVATION_SOURCES
+
     # --- Compute score-tiered base stop ---
     # NB the `/ 0.75` below recovers ATR from the stop distance by assuming
     # mean-reversion's stop convention. It is only correct for models that
@@ -498,8 +505,15 @@ async def _evaluate_position(
     # Keep the same dollar distance from the original signal
     target = signal.target_1
 
+    # Paired PEAD-60 measurement: the research claim is a fixed-horizon return,
+    # not the primary strategy with a longer maximum hold. Disable every early
+    # exit lever while retaining the canonical fill/slippage/expiry engine.
+    if fixed_horizon:
+        base_stop = 0.0
+        target = float("inf")
+
     # --- Two-leg setup ---
-    use_two_leg = settings.partial_tp_enabled
+    use_two_leg = settings.partial_tp_enabled and not fixed_horizon
     atr = 0.0
     partial_target = 0.0
     leg1_filled = outcome.partial_exit_price is not None
@@ -541,6 +555,8 @@ async def _evaluate_position(
     # trade — the whole edge. See outputs/research/pead_trail_FINDINGS.md.
     # MR and sniper keep the global value: sniper without a trail is -1.43%/trade.
     trail_activate, trail_distance = settings.trail_for_model(signal_model)
+    if fixed_horizon:
+        trail_activate, trail_distance = 0.0, 0.0
 
     exit_params = ExitParams(
         stop=base_stop,
@@ -552,7 +568,7 @@ async def _evaluate_position(
         partial_tp_target=partial_target if use_two_leg else 0.0,
         partial_tp_fraction=settings.partial_tp_fraction,
         time_stop_days=settings.sniper_time_stop_days,
-        time_stop_eligible=(signal_model == "sniper"),
+        time_stop_eligible=(signal_model == "sniper" and not fixed_horizon),
         early_exit_mfe_pct=0.0,
         gap_through=True,
         check_entry_bar=True,
@@ -690,12 +706,14 @@ async def build_validation_card_from_history(
             by_regime.setdefault(regime_key, []).append(pnl)
 
         slippage_returns = [r - 0.10 for r in trade_returns]
+        from src.research.variant_counts import variants_tested_for
+
         cards[model] = generate_validation_card(
             signal_model=model,
             trade_returns=trade_returns,
             trade_returns_by_regime=by_regime,
             slippage_returns=slippage_returns,
-            variants_tested=1,
+            variants_tested=variants_tested_for(model),
         )
 
         # Surface the regime split that drives regime_survival_check. That check
