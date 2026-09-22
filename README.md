@@ -83,6 +83,10 @@ Systematic probe → backtest → refute-or-promote workflow. Scripts live in `s
 
 Supporting infrastructure: Polygon minute-bar fetch with a windowed intraday cache, an intraday same-bar tie resolver in the exit engine, and hardened Polygon retries.
 
+For a separate, nonbinding secondary check on an already completed offline variant
+experiment, see [Native research-only overfit diagnostic](docs/research_overfit_diagnostic.md).
+It never replaces the existing DSR or validation card and never promotes a strategy.
+
 ## Regime Detection
 
 All signals are gated by market regime. Sniper is hard-blocked in bear markets.
