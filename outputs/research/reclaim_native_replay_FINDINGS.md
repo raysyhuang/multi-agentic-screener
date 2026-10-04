@@ -19,7 +19,13 @@ Neo + Hawk ruled WAIT on building the live collector because Reclaim had no usab
 The engine reproduces all four §9 worked examples exactly (LFUS, ACMR, DUOL, KSS) and matches Range's QNT ATR14/ADX14 values; both are pinned in `tests/test_reclaim_engine.py`.
 
 - Window: 2022-01-03 → 2026-10-02 on Polygon adjusted daily bars. Drift triggers start in 2023 (252-session warm-up).
-- Universe: 1,000 names taken from **today's** FMP screener (mcap ≥ $1B, ranked by dollar volume). Names flagged `isActivelyTrading=False` were dropped.
+- Universe: 1,000 names taken from **today's** FMP screener, ranked by dollar volume, after:
+  - the FMP request's own present-day thresholds;
+  - the generic `filter_universe` gates (price ≥ $5, volume ≥ 500K, NYSE/NASDAQ, security-type and ticker-form filters);
+  - mcap ≥ $1B;
+  - dropping names flagged `isActivelyTrading=False`.
+
+  Every one of these is a present-day screen and adds liquidity/listing survivorship on top of the survivor-universe bias. It matters most for DRIFT, whose native definition has no $5 price gate.
 - "Clean-equivalent" cohort = replay-equivalent prehistory (the 20 prior sessions lie in-window and the symbol is absent from all of them) ∧ mechanical PASS ∧ no FMP earnings date in [e−5, e+5].
 
 ## Biases (all favour the strategy except the last)
@@ -50,7 +56,11 @@ Clean-equivalent cohort; NN excess = trigger net minus mean of 3 NN controls (§
   - The +0.30% h10 mean comes from five trades. Without the top five it is −0.13%; with five trimmed from each tail it is +0.04%.
   - The median is −2.1%.
   - Every CI spans 0.
-- **The §7 spec flags:** PROMOTION is false in both lanes. KILL is also false in both, but only because h10 stop-touch sits just under the 50% bar (RANGE 48%, DRIFT 43%). Neo/Hawk's later gate drops that stop-touch condition from KILL_NO_EDGE.
+- **The §7 spec flags:** PROMOTION is false in both lanes. KILL is evaluated **once**, at the first of 30 clean complete-h10 triggers or 26 weeks, and later observations cannot reverse it:
+  - **RANGE: KILL = true** at its checkpoint (entries through 2022-08-09: 30 triggers, 14 dates). NN excess was −0.74pp at h5 and −0.82pp at h10, with 57% h10 stop-touch.
+  - **DRIFT: KILL = false** at its checkpoint (entries through 2023-04-06: 31 triggers, 13 dates). NN excess was −0.81pp at h5 and −0.55pp at h10, but h10 stop-touch was 45%, just under the 50% bar.
+  - Neo/Hawk's later gate drops stop-touch from KILL_NO_EDGE. Under it, DRIFT is killed on the full sample.
+  - The first draft of this note computed KILL on the whole history and reported it false for both lanes. That violated the evaluate-once rule; Codex caught it (see Review).
 - **Mechanism read:** both lanes behave like a positively skewed lottery. The typical trade loses (win rates 37–48%) and a few large winners carry the mean. The confirmation step does not separate winners from the episodes that never triggered.
 
 ## Implication
@@ -62,6 +72,20 @@ This supports Neo + Hawk's WAIT, and points further toward not building:
   - *Drift canonical, with its G1 growth / G2 valuation legs.* This is the "preserve G1/G2 through transport" point. The replay could not test it because MAS has no point-in-time fundamentals history. If anyone pursues Reclaim, this is the only version left open, and it belongs in the canonical lane.
   - *Range's pre-registered box-breakout sibling* (BOX V0.1, PARKED). It is a different mechanism. Testing it would need its own registry row and variant count, not a tweak to this one.
 - **No parameter sweep was run, and none should be.** Tuning windows or bands on this replay is exactly the mined-filter outcome Neo warned about.
+
+## Review
+
+Codex ran an adversarial pass on `de07ff2`. It found no blockers and confirmed as correct:
+- state-machine fidelity to §5, open-decision precedence and boundaries, and the fail-closed earnings gate;
+- costs with no double count, the NN-control rules, and no look-ahead in the replay's pools, percentiles, regime label or floors;
+- that this note's arithmetic matches the CSV;
+- the added NYSE closures.
+
+It found two engine defects, both fixed with regression tests:
+- **KILL** was recomputed on all history instead of being frozen at the first checkpoint. Fixing it flips RANGE to KILL = true (above).
+- **A missing terminal bar** was marked complete and booked at an earlier close. It is now censored. Rerunning the replay changed no reported number, so no such case was in these aggregates.
+
+The prefilter disclosure under Method was also added after that review.
 
 ## Artifacts
 

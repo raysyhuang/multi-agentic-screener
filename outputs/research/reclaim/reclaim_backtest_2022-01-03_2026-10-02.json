@@ -12,7 +12,7 @@
       "polygon": 1010,
       "fmp": 2
     },
-    "ohlcv_cache_hits": 0,
+    "ohlcv_cache_hits": 1012,
     "ohlcv_failed_tickers": [],
     "ohlcv_failed_count": 0,
     "ohlcv_failures_truncated": false,
@@ -339,9 +339,10 @@
       ],
       "clean_complete_h10": 330,
       "kill_clock_due": true,
+      "kill_checkpoint_entry_date": "2022-08-09",
       "flags": {
         "PROMOTION": false,
-        "KILL": false,
+        "KILL": true,
         "note": "What the \u00a77 rule WOULD say on reconstructed, survivor-biased data. Not a gate result; nothing here is evidence."
       },
       "by_year_clean_equivalent": {
@@ -1208,6 +1209,7 @@
       ],
       "clean_complete_h10": 755,
       "kill_clock_due": true,
+      "kill_checkpoint_entry_date": "2023-04-06",
       "flags": {
         "PROMOTION": false,
         "KILL": false,

@@ -26,7 +26,7 @@ from __future__ import annotations
 
 import math
 from dataclasses import dataclass, field
-from datetime import date, datetime, time, timezone
+from datetime import date, datetime, time, timedelta, timezone
 from zoneinfo import ZoneInfo
 
 import numpy as np
@@ -735,7 +735,6 @@ def open_decision(open_e: float | None, stop: float, sma50_k: float) -> OpenDeci
 
 def session_offset(d: date, n: int, is_trading_day) -> date:
     """The XNYS session n sessions away from d (n may be negative)."""
-    from datetime import timedelta
     step = 1 if n >= 0 else -1
     cur = d
     remaining = abs(n)
@@ -825,7 +824,14 @@ def clone_exit(
     from src.backtest.exit_engine import ExitBar, ExitParams, walk_exit
 
     end_idx = e_idx + horizon - 1
-    complete = end_idx <= last_idx
+    # Complete only when the terminal bar e+h-1 itself exists (§6). A session
+    # that has passed but left no bar for this symbol is censored, never
+    # replaced by an earlier close.
+    complete = (
+        end_idx <= last_idx
+        and end_idx < len(bars)
+        and bool(np.isfinite(bars["close"].iloc[end_idx]))
+    )
     exit_bars: list[ExitBar] = []
     bar_idx: list[int] = []
     for i in range(e_idx, min(end_idx, last_idx) + 1):
@@ -854,9 +860,11 @@ def clone_exit(
             out.exit_price / entry - 1.0, out.exit_reason == "stop", gap, out.mfe_pct, out.mae_pct,
         )
     if complete:
-        # A missing terminal bar: the walk ran out of bars without reaching
-        # max_hold, so book the last available close as the horizon exit.
+        # The terminal bar exists but a bar inside the window was missing, so
+        # walk_exit (which counts bars, not sessions) never reached max_hold.
+        # The last walked bar IS the terminal bar here: book its close.
         last = exit_bars[-1]
+        assert last.date == sessions[end_idx]
         px = last.close * (1.0 - COST)
         return CloneResult(horizon, True, True, last.date, px, "expiry", px / entry - 1.0,
                            False, False, out.mfe_pct, out.mae_pct)
@@ -1044,9 +1052,34 @@ def kill_clock_due(n_clean_complete10: int, forward_start: date | None, as_of: d
     return (as_of - forward_start).days >= KILL_WEEKS * 7
 
 
+def kill_checkpoint(rows: list[GateInput], forward_start: date | None,
+                    as_of: date) -> date | None:
+    """The entry-date cutoff at which KILL is evaluated, or None if not yet due.
+
+    §7 evaluates KILL ONCE, at the first of (30 clean complete-h10 triggers) or
+    (26 weeks after the forward start). Later observations must not reverse
+    that verdict, so the flag is computed on the cohort as it stood then.
+    Triggers are ordered by entry date; completion lags entry by a fixed nine
+    sessions, so entry order is completion order.
+    """
+    c10 = sorted((r for r in rows if r.complete_h10), key=lambda r: r.entry_date)
+    cutoff: date | None = None
+    if len(c10) >= GATE_MIN_CLEAN:
+        cutoff = c10[GATE_MIN_CLEAN - 1].entry_date
+    if forward_start is not None:
+        clock = forward_start + timedelta(weeks=KILL_WEEKS)
+        if as_of >= clock and (cutoff is None or clock < cutoff):
+            cutoff = clock
+    return cutoff
+
+
 def kill_flag(rows: list[GateInput], forward_start: date | None, as_of: date) -> bool:
+    cutoff = kill_checkpoint(rows, forward_start, as_of)
+    if cutoff is None:
+        return False
+    rows = [r for r in rows if r.entry_date <= cutoff]
     c10 = [r for r in rows if r.complete_h10]
-    if not kill_clock_due(len(c10), forward_start, as_of):
+    if not c10:
         return False
     e5 = [r.excess_h5 for r in rows if r.complete_h5 and r.excess_h5 is not None]
     e10 = [r.excess_h10 for r in c10 if r.excess_h10 is not None]

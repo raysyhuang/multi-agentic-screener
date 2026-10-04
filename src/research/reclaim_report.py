@@ -216,6 +216,7 @@ def lane_report(rows: list[HorizonRow], lane: str, forward_start: date | None, a
         "descriptive": [summarize(rows, lane, h, clean_only=False) for h in rc.HORIZONS],
         "clean_complete_h10": sum(1 for g in gi if g.complete_h10),
         "kill_clock_due": rc.kill_clock_due(sum(1 for g in gi if g.complete_h10), forward_start, as_of),
+        "kill_checkpoint_entry_date": rc.kill_checkpoint(gi, forward_start, as_of),
         "flags": {
             "PROMOTION": rc.promotion_flag(gi),
             "KILL": rc.kill_flag(gi, forward_start, as_of),

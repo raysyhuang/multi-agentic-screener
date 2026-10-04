@@ -580,3 +580,51 @@ def test_xnys_session_counts_match_the_published_calendar(year, sessions):
 
 def test_unscheduled_2025_01_09_closure_is_not_a_session():
     assert not is_trading_day(date(2025, 1, 9))
+
+
+# ── Codex review regressions ─────────────────────────────────────────────────
+
+def test_missing_terminal_bar_is_censored_not_replaced_by_an_earlier_close():
+    rows = [(100, 101, 99.5, 100.5)] * 4 + [(np.nan, np.nan, np.nan, np.nan)] + [(101, 102, 100, 101)]
+    sessions, df = _exit_bars(rows)
+    r = rc.clone_exit(df, sessions, 0, 100.0, 95.0, 5, len(rows) - 1)
+    assert r.complete is False and r.net_return is None
+
+
+def test_missing_interior_bar_still_exits_at_the_terminal_close():
+    rows = [(100, 101, 99.5, 100.5), (np.nan,) * 4, (100, 101, 99.5, 100.5),
+            (100, 101, 99.5, 100.5), (102, 103, 101.5, 102.0)]
+    sessions, df = _exit_bars(rows)
+    r = rc.clone_exit(df, sessions, 0, 100.0, 95.0, 5, len(rows) - 1)
+    assert r.complete and r.exit_date == sessions[4]
+    assert r.exit_price == pytest.approx(102.0 * (1 - rc.COST))
+
+
+def test_kill_is_frozen_at_the_first_checkpoint_and_later_rows_cannot_reverse_it():
+    start = date(2026, 1, 1)
+    bad = [rc.GateInput(start + timedelta(days=i), "UP_LOVOL", -0.01, -0.01, True, True, True)
+           for i in range(30)]
+    good = [rc.GateInput(start + timedelta(days=100 + i), "UP_LOVOL", 0.05, 0.05, False, True, True)
+            for i in range(300)]
+    assert rc.kill_checkpoint(bad + good, None, date(2027, 1, 1)) == bad[-1].entry_date
+    assert rc.kill_flag(bad + good, None, date(2027, 1, 1)) is True
+
+
+def test_kill_checkpoint_at_26_weeks_when_that_comes_first():
+    fwd = date(2026, 1, 5)
+    rows = [rc.GateInput(fwd + timedelta(days=i), "UP_LOVOL", -0.01, -0.01, True, True, True)
+            for i in range(5)]
+    assert rc.kill_checkpoint(rows, fwd, fwd + timedelta(weeks=25)) is None
+    assert rc.kill_checkpoint(rows, fwd, fwd + timedelta(weeks=26)) == fwd + timedelta(weeks=26)
+
+
+@pytest.mark.parametrize("offset", [1, 5])
+def test_confirm_can_trigger_on_q_plus_1_and_on_q_plus_5(offset):
+    close, high, low, _ = _with_retest(72)
+    close[73:78] = close[72] - 0.1
+    high[73:78] = close[73:78] + 0.05
+    k = 72 + offset
+    close[k] = high[72] + 0.5
+    high[k] = close[k] + 0.1
+    res, _ = _run(close, 56, 90.0, high=high, low=low, last=80)
+    assert res.status == "TRIGGERED" and res.trigger.k == k
