@@ -112,6 +112,10 @@ class FilterFunnel:
     failed_suffix: int = 0
     failed_type: int = 0
     failed_ticker_format: int = 0
+    # Rows the provider explicitly marks as no longer trading (delisted,
+    # acquired). Absent or unrecognised flags are NOT counted here: they are
+    # admitted, because the Polygon-shaped rows never carry the field.
+    failed_inactive: int = 0
     # Rows whose isEtf/isFund arrived in an encoding we do not recognise. These
     # are NOT excluded (see _as_bool); a non-zero count means the provider
     # changed shape and the ETF gate is running blind on those rows.
@@ -122,7 +126,8 @@ class FilterFunnel:
         """Log filter funnel as a readable summary."""
         logger.info(
             "Filter funnel: %d input → %d passed | "
-            "price=%d, volume=%d, exchange=%d, suffix=%d, type=%d, format=%d dropped",
+            "price=%d, volume=%d, exchange=%d, suffix=%d, type=%d, format=%d, "
+            "inactive=%d dropped",
             self.total_input,
             self.passed,
             self.failed_price,
@@ -131,6 +136,7 @@ class FilterFunnel:
             self.failed_suffix,
             self.failed_type,
             self.failed_ticker_format,
+            self.failed_inactive,
         )
         if self.unrecognized_type_flags:
             logger.warning(
@@ -148,6 +154,7 @@ class FilterFunnel:
             "failed_suffix": self.failed_suffix,
             "failed_type": self.failed_type,
             "failed_ticker_format": self.failed_ticker_format,
+            "failed_inactive": self.failed_inactive,
             "unrecognized_type_flags": self.unrecognized_type_flags,
             "passed": self.passed,
         }
@@ -196,6 +203,7 @@ def filter_universe(
       - exclude warrants, units, rights
       - exclude ETFs/ETNs (we trade individual stocks)
       - must be on NYSE or NASDAQ
+      - exclude rows the provider marks as no longer actively trading
 
     Returns filtered list. Optionally populates a FilterFunnel for diagnostics.
     """
@@ -266,6 +274,16 @@ def filter_universe(
         # Ticker sanity
         if not _is_valid_ticker(ticker):
             funnel.failed_ticker_format += 1
+            continue
+
+        # Delisted / acquired names. The FMP screener kept returning them
+        # (519 of 2,570 rows), and with a stale last price and volume they clear
+        # every gate above, then burn an OHLCV slot on a ticker with no bars.
+        # Only an explicit false excludes — coerced like isEtf, so the STRING
+        # "false" counts and a missing field (every Polygon-shaped row) does not.
+        active, active_known = _as_bool(stock.get("isActivelyTrading"))
+        if active_known and not active:
+            funnel.failed_inactive += 1
             continue
 
         passed.append(stock)
