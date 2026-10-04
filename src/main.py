@@ -31,12 +31,13 @@ from src.contracts import (
 )
 from src.data.aggregator import DataAggregator
 from src.data.universe_selection import select_ohlcv_tickers
-from sqlalchemy import delete, select, func
+from sqlalchemy import delete, or_, select, func
 from src.db.models import DailyRun, Signal, Candidate, AgentLog, Outcome, PipelineArtifact, DivergenceEvent, NearMiss, PositionDailyMetric, SignalExitEvent
 from src.streams import (
     BOOK_SOURCES,
     PAIRED_OBSERVATION_SOURCES,
     PEAD_POSITION_SOURCES as _PEAD_POSITION_SOURCES,
+    RECLAIM_SHADOW_SOURCES,
     SHADOW_SOURCES as _SHADOW_SOURCES,
     SNIPER_CAP_SOURCES as _SNIPER_CAP_SOURCES,
 )
@@ -2053,6 +2054,17 @@ async def _run_pipeline_core(
     for w in pipeline_health.all_warnings:
         logger.warning("Pipeline: %s", w)
 
+    # --- Step 7c: RECLAIM shadow lanes (separate loop; RECLAIM_MAS_SPEC_v1.1 §8.1) ---
+    # Runs after every official object is final and reads only the filtered
+    # universe rows and the regime label. It never reaches ranking, cooldown,
+    # slots, validation or the alert. Off by default.
+    if settings.reclaim_shadow_enabled:
+        await _run_reclaim_shadow_step(
+            today, settings, filtered, regime_assessment.regime.value, pipeline_health,
+        )
+    else:
+        logger.info("Reclaim shadow: disabled (reclaim_shadow_enabled=False) — skipped")
+
     # --- Step 8: Save to database ---
     logger.info("Step 8: Saving results to database...")
     elapsed = time.monotonic() - start_time
@@ -2068,8 +2080,10 @@ async def _run_pipeline_core(
 
             # Delete in dependency order (outcomes depend on signals)
             # 1. Find signals from this run_date
+            # Reclaim clone rows are excluded: their durable key lives in
+            # reclaim_clones, so a clone deleted here could never be recreated.
             stale_signals = await session.execute(
-                select(Signal.id).where(Signal.run_date == today)
+                select(Signal.id).where(Signal.run_date == today, _NOT_RECLAIM)
             )
             stale_signal_ids = [row[0] for row in stale_signals.fetchall()]
             if stale_signal_ids:
@@ -2105,8 +2119,9 @@ async def _run_pipeline_core(
                     )
 
             # 2. Delete flat child tables keyed on run_date
-            for model in (Candidate, Signal, AgentLog, PipelineArtifact):
+            for model in (Candidate, AgentLog, PipelineArtifact):
                 await session.execute(delete(model).where(model.run_date == today))
+            await session.execute(delete(Signal).where(Signal.run_date == today, _NOT_RECLAIM))
 
             # 3. Delete divergence/near-miss keyed on run_date
             await session.execute(delete(DivergenceEvent).where(DivergenceEvent.run_date == today))
@@ -2532,6 +2547,38 @@ SHADOW_SOURCES = _SHADOW_SOURCES
 PEAD_POSITION_SOURCES = _PEAD_POSITION_SOURCES
 
 
+# Rows that are not reclaim shadow clones. Legacy rows have a NULL source, and
+# `NOT IN` drops NULLs, so the null case is kept explicitly.
+_NOT_RECLAIM = or_(
+    Signal.signal_source.is_(None),
+    Signal.signal_source.notin_(RECLAIM_SHADOW_SOURCES),
+)
+
+
+async def _run_reclaim_shadow_step(
+    today: date, settings, universe_rows: list[dict], regime: str,
+    pipeline_health: PipelineHealthReport,
+) -> None:
+    """Run the reclaim loop; any failure is a WARN that leaves official output alone."""
+    from src.reclaim_shadow import run_reclaim_shadow
+
+    try:
+        await run_reclaim_shadow(
+            today, settings, universe_rows=list(universe_rows), mas_regime=regime,
+            code_sha=os.environ.get("GITHUB_SHA"),
+        )
+    except Exception as exc:
+        logger.exception("RECLAIM_SHADOW_FAILED: %s", exc)
+        pipeline_health.add_stage(StageValidation(
+            stage_name="reclaim_shadow",
+            executed=True,
+            checks=[StageCheck(
+                name="RECLAIM_SHADOW_FAILED", passed=False, severity=Severity.WARN,
+                message=f"RECLAIM_SHADOW_FAILED: {type(exc).__name__}: {exc}",
+            )],
+        ))
+
+
 async def _get_recent_signals(days: int = 7) -> list[dict]:
     """Fetch recent signals from DB for cooldown filtering.
 
@@ -2541,9 +2588,10 @@ async def _get_recent_signals(days: int = 7) -> list[dict]:
     try:
         async with get_session() as session:
             cutoff = date.today() - timedelta(days=days)
+            # Reclaim shadow clones never shape any other stream's cooldown.
             result = await session.execute(
                 select(Signal.ticker, Signal.run_date, Signal.signal_source)
-                .where(Signal.run_date >= cutoff)
+                .where(Signal.run_date >= cutoff, _NOT_RECLAIM)
             )
             return [{"ticker": r[0], "run_date": r[1], "signal_source": r[2]}
                     for r in result.all()]
@@ -2710,6 +2758,14 @@ async def run_afternoon_check() -> None:
     """Afternoon position check — runs at 4:30 PM ET."""
     logger.info("Running afternoon position check...")
     updates, health_cards, state_changes, resolved_near_misses = await check_open_positions()
+
+    # Reclaim clones are evaluated only by their own tracker, and never alerted.
+    if get_settings().reclaim_shadow_enabled:
+        try:
+            from src.output.reclaim_tracker import run_reclaim_tracker
+            await run_reclaim_tracker()
+        except Exception as exc:
+            logger.exception("RECLAIM_SHADOW_FAILED (tracker): %s", exc)
 
     if updates:
         from src.output.telegram import format_outcome_alert, send_alert

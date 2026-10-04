@@ -249,9 +249,11 @@ def get_regime_allowed_models(regime: Regime) -> list[str]:
     """
     # PEAD is event-driven (earnings underreaction), not trend-following, so it is
     # allowed in every regime — the backtest edge held across sub-periods.
+    # Reclaim is listed everywhere because regime is a reporting cluster for it,
+    # not a gate; its shadow loop never passes through the ranker anyway.
     if regime == Regime.BULL:
-        return ["breakout", "mean_reversion", "catalyst", "sniper", "pead"]
+        return ["breakout", "mean_reversion", "catalyst", "sniper", "pead", "reclaim"]
     elif regime == Regime.BEAR:
-        return ["mean_reversion", "pead"]  # counter-trend + event-driven
+        return ["mean_reversion", "pead", "reclaim"]  # counter-trend + event-driven
     else:  # CHOPPY
-        return ["mean_reversion", "catalyst", "sniper", "pead"]  # Sniper has own bear block
+        return ["mean_reversion", "catalyst", "sniper", "pead", "reclaim"]  # Sniper has own bear block

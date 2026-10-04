@@ -659,3 +659,220 @@ class TelegramLog(Base):
     )
     chat_id: Mapped[str | None] = mapped_column(String(30), nullable=True)
     message_id: Mapped[int | None] = mapped_column(Integer, nullable=True)
+
+
+# ── RECLAIM shadow lanes (RECLAIM_MAS_SPEC_v1.1 §8.6) ─────────────────────────
+# Append-only. Every insert is ON CONFLICT DO NOTHING on the unique key, so the
+# earliest row wins and a same-day rerun writes nothing new. None of these
+# tables is read by the official pipeline.
+
+
+class ReclaimLaneRegistry(Base):
+    """One row per lane: the immutable native forward start (KILL clock origin)."""
+
+    __tablename__ = "reclaim_lane_registry"
+    __table_args__ = (UniqueConstraint("lane", name="uq_reclaim_lane_registry_lane"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lane: Mapped[str] = mapped_column(String(30), nullable=False)
+    forward_start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    spec_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    code_sha: Mapped[str | None] = mapped_column(String(64), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReclaimPoolRun(Base):
+    """One production snapshot per (lane, signal date). status=OK means covered."""
+
+    __tablename__ = "reclaim_pool_runs"
+    __table_args__ = (
+        UniqueConstraint("lane", "snapshot_date", name="uq_reclaim_pool_run_lane_date"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lane: Mapped[str] = mapped_column(String(30), nullable=False)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    status: Mapped[str] = mapped_column(String(10), nullable=False)  # OK / FAILED / PARTIAL
+    universe_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    members_count: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    ohlcv_cap_hits: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    dollar_volume_basis: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    identity_method: Mapped[str | None] = mapped_column(String(30), nullable=True)
+    provenance: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReclaimPoolMember(Base):
+    __tablename__ = "reclaim_pool_members"
+    __table_args__ = (
+        UniqueConstraint("lane", "snapshot_date", "symbol",
+                         name="uq_reclaim_pool_member_lane_date_symbol"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    lane: Mapped[str] = mapped_column(String(30), nullable=False)
+    snapshot_date: Mapped[date] = mapped_column(Date, nullable=False)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False)
+    score: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    box_low: Mapped[float | None] = mapped_column(Float, nullable=True)
+    box_high: Mapped[float | None] = mapped_column(Float, nullable=True)
+    atr14: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mcap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    gate_inputs: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class ReclaimEpisode(Base):
+    __tablename__ = "reclaim_episodes"
+    __table_args__ = (UniqueConstraint("episode_id", name="uq_reclaim_episode_id"),)
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    lane: Mapped[str] = mapped_column(String(30), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False)
+    start_date: Mapped[date] = mapped_column(Date, nullable=False)
+    floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    floor_type: Mapped[str] = mapped_column(String(40), nullable=False)
+    prehistory: Mapped[str] = mapped_column(String(30), nullable=False)
+    prehistory_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReclaimEvent(Base):
+    __tablename__ = "reclaim_events"
+    __table_args__ = (
+        UniqueConstraint("episode_id", "event_date", "event", name="uq_reclaim_event"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    event_date: Mapped[date] = mapped_column(Date, nullable=False)
+    event: Mapped[str] = mapped_column(String(30), nullable=False)
+    payload: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class ReclaimTrigger(Base):
+    __tablename__ = "reclaim_triggers"
+    __table_args__ = (
+        UniqueConstraint("episode_id", "trigger_date", name="uq_reclaim_trigger"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    trigger_date: Mapped[date] = mapped_column(Date, nullable=False)
+    lane: Mapped[str] = mapped_column(String(30), nullable=False)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False)
+    entry_session: Mapped[date] = mapped_column(Date, nullable=False)
+    reclaim_date: Mapped[date] = mapped_column(Date, nullable=False)
+    retest_date: Mapped[date] = mapped_column(Date, nullable=False)
+    setup_low: Mapped[float] = mapped_column(Float, nullable=False)
+    high_retest: Mapped[float] = mapped_column(Float, nullable=False)
+    close_k: Mapped[float] = mapped_column(Float, nullable=False)
+    sma50_k: Mapped[float] = mapped_column(Float, nullable=False)
+    slope5: Mapped[float | None] = mapped_column(Float, nullable=True)
+    floor: Mapped[float | None] = mapped_column(Float, nullable=True)
+    prehistory: Mapped[str] = mapped_column(String(30), nullable=False)
+    prehistory_reason: Mapped[str | None] = mapped_column(String(40), nullable=True)
+    overlap_desc: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    score_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sector: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    mcap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    mas_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    spy_regime: Mapped[str | None] = mapped_column(String(20), nullable=True)
+    detected_on: Mapped[date] = mapped_column(Date, nullable=False)
+    forward_recorded: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )
+
+
+class ReclaimRiskSnapshot(Base):
+    """Same-bloodline at-risk episodes on a trigger date: the NN control pool.
+
+    Persisted at k and never reconstructed from revised or current data (R20).
+    """
+
+    __tablename__ = "reclaim_risk_snapshots"
+    __table_args__ = (
+        UniqueConstraint("trigger_episode_id", "trigger_date", "control_episode_id",
+                         name="uq_reclaim_risk_snapshot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    trigger_episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    trigger_date: Mapped[date] = mapped_column(Date, nullable=False)
+    control_episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    control_symbol: Mapped[str] = mapped_column(String(10), nullable=False)
+    sector: Mapped[str | None] = mapped_column(String(60), nullable=True)
+    mcap: Mapped[float | None] = mapped_column(Float, nullable=True)
+    score_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    sma_dist: Mapped[float | None] = mapped_column(Float, nullable=True)
+    age: Mapped[int | None] = mapped_column(Integer, nullable=True)
+    prehistory: Mapped[str] = mapped_column(String(30), nullable=False)
+    retest_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    confirm_pending: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    triggered_on_k: Mapped[bool] = mapped_column(Boolean, nullable=False, default=False)
+    has_entry_bar: Mapped[bool | None] = mapped_column(Boolean, nullable=True)
+    control_open_e: Mapped[float | None] = mapped_column(Float, nullable=True)
+
+
+class ReclaimEarningsSnapshot(Base):
+    __tablename__ = "reclaim_earnings_snapshots"
+    __table_args__ = (
+        UniqueConstraint("symbol", "trigger_date", name="uq_reclaim_earnings_snapshot"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    symbol: Mapped[str] = mapped_column(String(10), nullable=False)
+    trigger_date: Mapped[date] = mapped_column(Date, nullable=False)
+    captured_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+    ok: Mapped[bool] = mapped_column(Boolean, nullable=False)
+    payload: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    coverage: Mapped[dict | None] = mapped_column(JSONB, nullable=True)
+
+
+class ReclaimOpenDecision(Base):
+    __tablename__ = "reclaim_open_decisions"
+    __table_args__ = (
+        UniqueConstraint("episode_id", "trigger_date", name="uq_reclaim_open_decision"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    trigger_date: Mapped[date] = mapped_column(Date, nullable=False)
+    open_e: Mapped[float | None] = mapped_column(Float, nullable=True)
+    stop: Mapped[float] = mapped_column(Float, nullable=False)
+    sma50_k: Mapped[float] = mapped_column(Float, nullable=False)
+    ext_ratio: Mapped[float | None] = mapped_column(Float, nullable=True)
+    risk_pct: Mapped[float | None] = mapped_column(Float, nullable=True)
+    reasons: Mapped[list | None] = mapped_column(JSONB, nullable=True)
+    mech_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    earnings_status: Mapped[str] = mapped_column(String(30), nullable=False)
+    decided_at_utc: Mapped[datetime] = mapped_column(DateTime(timezone=True), nullable=False)
+
+
+class ReclaimClone(Base):
+    """Durable key for a horizon clone. Inserted in the same transaction as its
+    Signal; if the key already exists no Signal or Outcome is created (R21)."""
+
+    __tablename__ = "reclaim_clones"
+    __table_args__ = (
+        UniqueConstraint("episode_id", "trigger_date", "horizon", name="uq_reclaim_clone"),
+    )
+
+    id: Mapped[int] = mapped_column(Integer, primary_key=True, autoincrement=True)
+    episode_id: Mapped[str] = mapped_column(String(80), nullable=False)
+    trigger_date: Mapped[date] = mapped_column(Date, nullable=False)
+    horizon: Mapped[int] = mapped_column(Integer, nullable=False)
+    signal_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("signals.id"), nullable=True)
+    outcome_id: Mapped[int | None] = mapped_column(Integer, ForeignKey("outcomes.id"), nullable=True)
+    created_at: Mapped[datetime] = mapped_column(
+        DateTime(timezone=True), server_default=func.now()
+    )

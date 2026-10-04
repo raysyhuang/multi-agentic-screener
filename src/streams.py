@@ -15,6 +15,7 @@ from __future__ import annotations
 # cooldown — a quarantined pick must not suppress a book pick.
 SHADOW_SOURCES: frozenset[str] = frozenset({
     "sniper_shadow", "mr_shadow", "pead_60d_shadow",
+    "reclaim_shadow_h5", "reclaim_shadow_h10", "reclaim_shadow_h20",
 })
 
 # Streams that re-measure an entry already counted under another stream. The
@@ -38,3 +39,32 @@ BOOK_SOURCES: frozenset[str] = frozenset({"mas_official"})
 
 # Sources whose open positions consume the sniper concurrency cap.
 SNIPER_CAP_SOURCES: tuple[str, ...] = ("mas_official", "sniper_shadow")
+
+# RECLAIM shadow lanes (RECLAIM_MAS_SPEC_v1.1 §8.3). Three fixed-horizon clones
+# of one trigger, evaluated ONLY by src/output/reclaim_tracker.py under a
+# structural stop. Deliberately NOT in PAIRED_OBSERVATION_SOURCES: that set
+# means "zero stop, infinite target" in the generic tracker, which is the wrong
+# exit policy here. Never in BOOK_SOURCES, PEAD_POSITION_SOURCES or
+# SNIPER_CAP_SOURCES. Excluded from every count of picks, positions, trades and
+# from cooldown history — the Reclaim reporter is the only consumer.
+RECLAIM_SHADOW_SOURCES: frozenset[str] = frozenset({
+    "reclaim_shadow_h5", "reclaim_shadow_h10", "reclaim_shadow_h20",
+})
+
+# h5/h20 are paired observations of the h10 anchor. Reporter de-duplication only.
+RECLAIM_PAIRED_SOURCES: frozenset[str] = frozenset({
+    "reclaim_shadow_h5", "reclaim_shadow_h20",
+})
+
+RECLAIM_EXIT_POLICY = "STRUCTURAL_STOP_FIXED_HORIZON"
+
+# Every reclaim Outcome row carries one of these. Stats consumers across the
+# repo filter `skip_reason IS NULL`, so tagging the rows keeps them out of the
+# paper gate, decay check, Telegram summaries and drift monitor by construction
+# rather than by a filter remembered at each call site.
+RECLAIM_SKIP_REASON = "reclaim_shadow"
+RECLAIM_NONTRADE_SKIP_REASON = "reclaim_nontrade"
+
+
+def reclaim_source(horizon: int) -> str:
+    return f"reclaim_shadow_h{horizon}"

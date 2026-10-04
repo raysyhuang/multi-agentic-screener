@@ -28,7 +28,7 @@ from src.backtest.portfolio import BookTrade, exit_day_overlap, simulate_book
 from src.config import get_settings
 from src.db.models import Candidate, DailyRun, Outcome, Signal
 from src.db.session import get_session
-from src.streams import PAIRED_OBSERVATION_SOURCES
+from src.streams import PAIRED_OBSERVATION_SOURCES, RECLAIM_SHADOW_SOURCES
 
 # The "book" = the systematic official streams run together. The manual sleeve
 # is deliberately excluded: it reproduces the official MR picks verbatim and
@@ -347,9 +347,13 @@ async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> di
             select(DailyRun).where(DailyRun.run_date >= cutoff).order_by(DailyRun.run_date)
         )).scalars().all()
 
-        signals = (await session.execute(
+        # Reclaim shadow clones are not picks, positions or trades on any
+        # tile: hero counts, "Picks today", open positions, the funnel and the
+        # per-stream trade tables all derive from this list, so they are
+        # dropped once here. The Reclaim reporter is their only consumer.
+        signals = [s for s in (await session.execute(
             select(Signal).where(Signal.run_date >= cutoff)
-        )).scalars().all()
+        )).scalars().all() if s.signal_source not in RECLAIM_SHADOW_SOURCES]
 
         sig_ids = [s.id for s in signals]
         outcomes = (await session.execute(

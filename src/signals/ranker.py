@@ -20,11 +20,14 @@ from src.signals.mean_reversion import MeanReversionSignal
 from src.signals.catalyst import CatalystSignal
 from src.signals.sniper import SniperSignal
 from src.signals.post_earnings_drift import PEADSignal
+from src.signals.reclaim import ReclaimSignal
 
 logger = logging.getLogger(__name__)
 
 # Type alias for any signal
-AnySignal = BreakoutSignal | MeanReversionSignal | CatalystSignal | SniperSignal | PEADSignal
+AnySignal = (
+    BreakoutSignal | MeanReversionSignal | CatalystSignal | SniperSignal | PEADSignal | ReclaimSignal
+)
 
 MODEL_MAP = {
     BreakoutSignal: "breakout",
@@ -32,15 +35,19 @@ MODEL_MAP = {
     CatalystSignal: "catalyst",
     SniperSignal: "sniper",
     PEADSignal: "pead",
+    ReclaimSignal: "reclaim",
 }
 
 # Regime multipliers: boost signals that work well in current regime. PEAD is
 # event-driven (earnings underreaction), not trend-driven, so keep it ~neutral
 # across regimes rather than boosting/penalizing by trend.
 REGIME_MULTIPLIERS = {
-    Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0, "sniper": 1.3, "pead": 1.0},
-    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7, "sniper": 0.4, "pead": 0.9},
-    Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1, "sniper": 0.6, "pead": 1.0},
+    Regime.BULL: {"breakout": 1.2, "mean_reversion": 0.9, "catalyst": 1.0, "sniper": 1.3, "pead": 1.0,
+                  "reclaim": 1.0},
+    Regime.BEAR: {"breakout": 0.5, "mean_reversion": 1.0, "catalyst": 0.7, "sniper": 0.4, "pead": 0.9,
+                  "reclaim": 1.0},
+    Regime.CHOPPY: {"breakout": 0.6, "mean_reversion": 1.1, "catalyst": 1.1, "sniper": 0.6, "pead": 1.0,
+                    "reclaim": 1.0},
 }
 
 # Regime target multipliers: scale stop/target distances in adverse regimes
@@ -56,6 +63,11 @@ REGIME_TARGET_MULTIPLIERS = {
 _BEAR_MODEL_STOP_OVERRIDES = {
     "mean_reversion": 0.5,
 }
+
+# Models whose stop is structural and that have no price target: the regime
+# stop/target scaling and the bear override would change the estimand, so they
+# pass through untouched. Defensive — the reclaim loop never calls the ranker.
+_STRUCTURAL_STOP_MODELS = {"reclaim"}
 
 
 @dataclass
@@ -91,6 +103,7 @@ class RankedCandidate:
             "breakout": "score_breakout",
             "catalyst": "score_catalyst",
             "pead": "score_post_earnings_drift",
+            "reclaim": "score_reclaim",
         }
         enriched = dict(self.features) if self.features else {}
         enriched["model_raw_score"] = self.raw_score
@@ -165,9 +178,12 @@ def rank_candidates(
         if regime == Regime.BEAR and model_name in _BEAR_MODEL_STOP_OVERRIDES:
             stop_mult = _BEAR_MODEL_STOP_OVERRIDES[model_name]
 
-        adj_stop = round(entry - (entry - stop) * stop_mult, 2)
-        adj_t1 = round(entry + (t1 - entry) * target_mults["target"], 2)
-        adj_t2 = round(entry + (t2 - entry) * target_mults["target"], 2) if t2 is not None else None
+        if model_name in _STRUCTURAL_STOP_MODELS:
+            adj_stop, adj_t1, adj_t2 = stop, t1, t2
+        else:
+            adj_stop = round(entry - (entry - stop) * stop_mult, 2)
+            adj_t1 = round(entry + (t1 - entry) * target_mults["target"], 2)
+            adj_t2 = round(entry + (t2 - entry) * target_mults["target"], 2) if t2 is not None else None
 
         candidates.append(RankedCandidate(
             ticker=signal.ticker,

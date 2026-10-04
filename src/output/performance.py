@@ -14,7 +14,7 @@ from src.contracts import HealthState, PositionHealthCard
 from src.db.models import Signal, Outcome, PositionDailyMetric, SignalExitEvent
 from src.db.session import get_session
 from src.data.aggregator import DataAggregator
-from src.streams import PAIRED_OBSERVATION_SOURCES
+from src.streams import PAIRED_OBSERVATION_SOURCES, RECLAIM_SHADOW_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -90,6 +90,15 @@ async def check_open_positions() -> tuple[
             .where(Signal.id.in_([o.signal_id for o in open_outcomes]))
         )
         source_by_signal_id = {sid: src for sid, src in _src_rows.all()}
+        # Reclaim clones belong to src/output/reclaim_tracker.py alone: a
+        # structural stop and fixed horizon, with none of this loop's score
+        # tiers, trail, partial TP, time stop or health exits. Their
+        # skip_reason already keeps them out of the query above; this is the
+        # explicit guarantee.
+        open_outcomes = [
+            o for o in open_outcomes
+            if source_by_signal_id.get(o.signal_id) not in RECLAIM_SHADOW_SOURCES
+        ]
 
         # Evaluate P&L and collect OHLCV DataFrames for reuse
         position_dfs: dict[int, pd.DataFrame] = {}

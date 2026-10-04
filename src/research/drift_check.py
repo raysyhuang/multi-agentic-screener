@@ -32,7 +32,7 @@ from datetime import date, timedelta
 
 from src.db.models import Outcome, Signal
 from src.db.session import get_session
-from src.streams import PAIRED_OBSERVATION_SOURCES
+from src.streams import PAIRED_OBSERVATION_SOURCES, RECLAIM_SHADOW_SOURCES
 
 logger = logging.getLogger(__name__)
 
@@ -49,6 +49,11 @@ BASELINES: dict[str, dict] = {
     "pead|pead_neglected": {"label": "PEAD (neglected-beat)", "wr": None, "avg": None},
     "pead|pead_60d_shadow": {"label": "PEAD (60-session counterfactual)",
                               "wr": None, "avg": None},
+    # Null bands, and filtered out of `total_resolved` below: the Reclaim
+    # reporter is the authority on these clones (RECLAIM_MAS_SPEC_v1.1 §8.3).
+    "reclaim|reclaim_shadow_h5": {"label": "Reclaim h5 (shadow)", "wr": None, "avg": None},
+    "reclaim|reclaim_shadow_h10": {"label": "Reclaim h10 (shadow)", "wr": None, "avg": None},
+    "reclaim|reclaim_shadow_h20": {"label": "Reclaim h20 (shadow)", "wr": None, "avg": None},
 }
 
 # A stream alerts when its realized per-trade average falls this far below its
@@ -107,6 +112,9 @@ async def compute_drift(lookback_days: int = 30) -> DriftReport:
     rows = [
         (outcome, signal) for outcome, signal in rows
         if signal.signal_source not in PAIRED_OBSERVATION_SOURCES
+        # Reclaim clones are measured by their own reporter, never by drift
+        # bands, and must not count toward the alert-releasing total.
+        and signal.signal_source not in RECLAIM_SHADOW_SOURCES
     ]
 
     by_stream: dict[str, list[float]] = {}
