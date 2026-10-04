@@ -11,6 +11,8 @@ def test_counts_match_checked_in_search_records():
         "mean_reversion": 162,
         "sniper": 19,
         "pead": 12,
+        # V0.1, V0.1r, V0.2, BOX V0.1 + two native bloodlines (RECLAIM spec R13).
+        "reclaim": 6,
     }
 
 

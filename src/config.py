@@ -260,6 +260,12 @@ class Settings(BaseSettings):
     # observation only: no alert, no capital and no consumption of PEAD slots.
     pead_60d_shadow_enabled: bool = False
     pead_60d_shadow_sessions: int = 60
+    # RECLAIM native shadow lanes (RECLAIM_MAS_SPEC_v1.1). Off by default and
+    # never enabled in a deployed config without Ray's manifest approval
+    # (PROPOSED -> ACTIVE). There is deliberately no reclaim_in_book flag:
+    # leaving shadow needs the §7 gate and an explicit decision, not a toggle.
+    reclaim_shadow_enabled: bool = False
+    reclaim_history_days: int = 600
     # Concurrent open PEAD positions, book-wide. Distinct from the per-run cap
     # above: with a 20-day hold (untrailed since PR #43) and ~2.4 qualifying
     # beats/day in earnings season, admitting 5/run compounds into tens of open
@@ -298,7 +304,10 @@ class Settings(BaseSettings):
         """
         if not self.score_tiered_stops_enabled:
             return False
-        return signal_model != "pead"
+        # Reclaim's stop is structural (the setup low); resizing it by score
+        # would change the estimand. Its own tracker never asks, this is
+        # defence in depth.
+        return signal_model not in ("pead", "reclaim")
 
     def trail_for_model(self, signal_model: str | None) -> tuple[float, float]:
         """Return (trail_activate_pct, trail_distance_pct) for a signal model.
@@ -310,6 +319,8 @@ class Settings(BaseSettings):
         """
         if signal_model == "pead":
             return self.pead_trail_activate_pct, self.pead_trail_distance_pct
+        if signal_model == "reclaim":
+            return 0.0, 0.0  # structural stop, fixed horizon — never trailed
         return self.trail_activate_pct, self.trail_distance_pct
 
     def validate_keys_for_mode(self) -> None:
