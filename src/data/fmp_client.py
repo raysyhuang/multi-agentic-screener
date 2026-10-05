@@ -269,6 +269,11 @@ class FMPClient:
         defence in depth only — `filter_universe` also drops these rows using
         the same flags on the response, so the universe stays clean even if the
         endpoint ignores the parameters.
+
+        `isActivelyTrading="true"` likewise: without it the endpoint returned
+        2,570 rows of which 519 were delisted (VMW, PXD, DFS, TWTR, ...). They
+        took 65 of the 1,000 OHLCV slots on 2026-10-02 and each one walked the
+        whole Polygon -> FMP -> yfinance fallback before failing.
         """
         url = f"{BASE_URL}/company-screener"
         params = self._params(
@@ -278,6 +283,7 @@ class FMPClient:
             exchange=exchange,
             isEtf="false",
             isFund="false",
+            isActivelyTrading="true",
             limit=limit,
         )
         resp = await self._request(url, params)
