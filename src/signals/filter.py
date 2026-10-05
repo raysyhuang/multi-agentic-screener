@@ -221,6 +221,18 @@ def filter_universe(
         exchange = (stock.get("exchangeShortName") or stock.get("exchange") or "").upper()
         stock_type = (stock.get("type") or "").upper()
 
+        # Delisted / acquired names. The FMP screener kept returning them
+        # (519 of 2,570 rows), and with a stale last price and volume they clear
+        # every other gate, then burn an OHLCV slot on a ticker with no bars.
+        # Checked FIRST so `failed_inactive` counts every explicitly inactive
+        # row, not only those that would have survived the other gates.
+        # Only an explicit false excludes — coerced like isEtf, so the STRING
+        # "false" counts and a missing field (every Polygon-shaped row) does not.
+        active, active_known = _as_bool(stock.get("isActivelyTrading"))
+        if active_known and not active:
+            funnel.failed_inactive += 1
+            continue
+
         # Price gate
         if price < settings.min_price:
             funnel.failed_price += 1
@@ -274,16 +286,6 @@ def filter_universe(
         # Ticker sanity
         if not _is_valid_ticker(ticker):
             funnel.failed_ticker_format += 1
-            continue
-
-        # Delisted / acquired names. The FMP screener kept returning them
-        # (519 of 2,570 rows), and with a stale last price and volume they clear
-        # every gate above, then burn an OHLCV slot on a ticker with no bars.
-        # Only an explicit false excludes — coerced like isEtf, so the STRING
-        # "false" counts and a missing field (every Polygon-shaped row) does not.
-        active, active_known = _as_bool(stock.get("isActivelyTrading"))
-        if active_known and not active:
-            funnel.failed_inactive += 1
             continue
 
         passed.append(stock)

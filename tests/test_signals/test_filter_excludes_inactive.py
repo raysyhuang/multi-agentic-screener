@@ -76,3 +76,11 @@ def test_daily_alert_shows_the_universe_line_in_every_branch():
         assert "Universe: 2,051 screened (519 delisted dropped)" in msg
     msg = format_daily_alert(picks=[], regime="bear", run_date="2026-10-05")
     assert "Universe:" not in msg
+
+
+def test_inactive_is_counted_even_when_another_gate_would_also_reject():
+    funnel = FilterFunnel()
+    rows = [_row("PENY", price=1.0, isActivelyTrading=False), _row("OK", isActivelyTrading=True)]
+    filter_universe(rows, funnel=funnel)
+    assert funnel.failed_inactive == 1 and funnel.failed_price == 0
+    assert funnel.passed + funnel.failed_inactive + funnel.failed_price == funnel.total_input
