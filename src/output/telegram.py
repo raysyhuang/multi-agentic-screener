@@ -460,7 +460,10 @@ def _render_reclaim_watch_section(watch: dict) -> list[str]:
     if not items:
         alive = watch.get("alive") or {}
         alive_txt = " \u00b7 ".join(f"{k} {v}" for k, v in alive.items())
-        lines.append(f"   No triggers today.{f'  Episodes alive: {alive_txt}' if alive_txt else ''}")
+        cov = ""
+        if watch.get("symbols") and watch.get("current", 0) < watch["symbols"]:
+            cov = f" ({watch['current']:,}/{watch['symbols']:,} symbols current)"
+        lines.append(f"   No triggers today{cov}.{f'  Episodes alive: {alive_txt}' if alive_txt else ''}")
         lines.append("")
         return lines
     for it in items:
@@ -474,8 +477,8 @@ def _render_reclaim_watch_section(watch: dict) -> list[str]:
         lines.extend([
             f"<b>\u25b2 {_esc(it['ticker'])}</b>  <code>{_esc(it['lane'])}</code>",
             f"   Confirmed close <b>${it['close']:.2f}</b> \u00b7 SMA50 ${it['sma50']:.2f}",
-            f"   Valid only if open \u2264 <b>${it['max_entry']:.2f}</b> \u00b7 "
-            f"Stop <b>${it['stop']:.2f}</b> (setup low)",
+            f"   Valid only if <b>${it['stop']:.2f}</b> &lt; open \u2264 <b>${it['max_entry']:.2f}</b>",
+            f"   Stop <b>${it['stop']:.2f}</b> (setup low; open at or below it = gap-through skip)",
             "   Fixed exits 5/10/20d, no target",
         ])
         if flags:

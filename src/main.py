@@ -2494,11 +2494,23 @@ async def _run_pipeline_core(
     if settings.reclaim_watch_enabled:
         try:
             from src.reclaim_watch import run_reclaim_watch
-            reclaim_watch = (await run_reclaim_watch(
-                today, settings, filtered, earnings_calendar=earnings_calendar,
+
+            # The module-level DataAggregator, so the watch uses the run's
+            # provider class (and the smoke test's stub replaces it too).
+            async def _watch_fetch(tickers, start, end):
+                agg = DataAggregator()
+                try:
+                    return await agg.get_bulk_ohlcv(tickers, start, end)
+                finally:
+                    agg.close()
+
+            reclaim_watch = (await asyncio.wait_for(
+                run_reclaim_watch(today, settings, filtered,
+                                  earnings_calendar=earnings_calendar, fetch=_watch_fetch),
+                timeout=settings.reclaim_watch_timeout_s,
             )).to_alert()
-        except Exception as exc:
-            logger.warning("Reclaim watch skipped (non-fatal): %s", exc)
+        except Exception as exc:  # includes TimeoutError: the alert goes out regardless
+            logger.warning("Reclaim watch skipped (non-fatal): %s: %s", type(exc).__name__, exc)
 
     alert_msg = format_daily_alert(
         picks_for_alert,

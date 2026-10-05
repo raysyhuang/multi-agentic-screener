@@ -59,12 +59,16 @@ class WatchResult:
     signal_date: date
     items: list[WatchItem] = field(default_factory=list)
     alive: dict[str, int] = field(default_factory=dict)   # lane -> episodes alive at C
+    symbols: int = 0            # universe scanned
+    current: int = 0            # of which have a bar on C (the rest cannot trigger)
 
     def to_alert(self) -> dict:
         return {
             "signal_date": self.signal_date.isoformat(),
             "items": [i.to_dict() for i in self.items],
             "alive": {LANE_LABEL[k]: v for k, v in self.alive.items()},
+            "symbols": self.symbols,
+            "current": self.current,
         }
 
 
@@ -103,7 +107,8 @@ def scan(
     while not _is_session(entry):
         entry += timedelta(days=1)
     bars = {s: rc.align_to_sessions(bars_raw.get(s), sessions) for s in meta}
-    result = WatchResult(signal_date=C)
+    result = WatchResult(signal_date=C, symbols=len(bars), current=sum(
+        1 for b in bars.values() if pd.notna(b["close"].iloc[c_idx])))
     lanes: dict[str, rr.LaneEpisodes] = {}
     for lane in rc.LANES:
         pool = rr.compute_lane_pool(lane, bars, meta)
@@ -139,7 +144,12 @@ async def run_reclaim_watch(
     earnings_calendar: list[dict] | None = None,
     fetch=None,
 ) -> WatchResult:
-    """Fetch history for the native universe and scan. Own aggregator, own data."""
+    """Fetch history for the native universe and scan.
+
+    ``fetch(tickers, start, end)`` is injected by the pipeline so the watch uses
+    the same provider class the run (and its smoke test) uses; the default
+    builds its own aggregator for offline callers.
+    """
     C = previous_trading_day(today)
     sessions = trading_sessions(C - timedelta(days=settings.reclaim_history_days), C)
     symbols, meta, _ = rr.select_reclaim_universe(universe_rows, settings.max_ohlcv_tickers)
@@ -158,12 +168,12 @@ async def run_reclaim_watch(
             finally:
                 agg.close()
     raw = await fetch(symbols, sessions[0], C)
-    with_c = sum(1 for s in symbols
-                 if raw.get(s) is not None and len(raw[s])
-                 and pd.to_datetime(raw[s]["date"]).dt.date.max() == C)
-    if symbols and with_c / len(symbols) < 0.9:
-        raise RuntimeError(f"reclaim watch: only {with_c}/{len(symbols)} symbols have a bar on {C}")
+    # Coverage is measured on the session-aligned frames, so a date column and a
+    # date index are read the same way scan() reads them.
     result = scan(raw, meta, sessions, earnings_calendar)
+    if result.current / result.symbols < 0.9:
+        raise RuntimeError(
+            f"reclaim watch: only {result.current}/{result.symbols} symbols have a bar on {C}")
     logger.info("Reclaim watch %s: %d trigger(s), alive=%s", C, len(result.items),
                 {LANE_LABEL[k]: v for k, v in result.alive.items()})
     return result
