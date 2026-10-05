@@ -447,6 +447,17 @@ def _render_mr_shadow_section(shadow_picks: list[dict]) -> list[str]:
     )
 
 
+def _universe_line(stats: dict | None) -> str | None:
+    """'   Universe: 2,051 screened (519 delisted dropped)' from the filter funnel."""
+    if not stats or stats.get("passed") is None:
+        return None
+    line = f"   Universe: {int(stats['passed']):,} screened"
+    dropped = int(stats.get("failed_inactive") or 0)
+    if dropped:
+        line += f" ({dropped:,} delisted dropped)"
+    return line
+
+
 def format_daily_alert(
     picks: list[dict],
     regime: str,
@@ -461,6 +472,7 @@ def format_daily_alert(
     credit_context: dict | None = None,
     sniper_shadow_picks: list[dict] | None = None,
     mr_shadow_picks: list[dict] | None = None,
+    universe_stats: dict | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message.
 
@@ -475,9 +487,13 @@ def format_daily_alert(
     ``credit_context`` optionally carries the HY-OAS credit-spread state
     (hy_oas / hy_oas_stress / hy_oas_chg20) appended to the regime line as
     context; omitted or empty leaves the regime line unchanged.
+
+    ``universe_stats`` (the universe FilterFunnel's ``to_dict()``) adds one
+    header line with the screened universe size; omitted leaves no line.
     """
     regime_dot = _regime_emoji(regime)
     credit = _credit_suffix(credit_context)
+    universe_line = _universe_line(universe_stats)
 
     if validation_failed:
         mode_line = ""
@@ -490,6 +506,8 @@ def format_daily_alert(
         ]
         if mode_line:
             lines.append(mode_line.rstrip())
+        if universe_line:
+            lines.append(universe_line)
         lines.extend([
             "",
             "\u274c <b>Validation FAILED</b>",
@@ -536,6 +554,8 @@ def format_daily_alert(
         ]
         if mode_line:
             lines.append(mode_line.rstrip())
+        if universe_line:
+            lines.append(universe_line)
         lines.extend(["", "No high-conviction picks today."])
 
         if key_risks:
@@ -577,6 +597,8 @@ def format_daily_alert(
     ]
     if mode_tag:
         lines.append(mode_tag.rstrip())
+    if universe_line:
+        lines.append(universe_line)
     lines.append("")
 
     for i, pick in enumerate(picks, 1):

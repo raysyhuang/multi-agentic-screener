@@ -2501,6 +2501,7 @@ async def _run_pipeline_core(
         pead_paper_picks=pead_paper_picks,
         sniper_shadow_picks=sniper_shadow_picks,
         mr_shadow_picks=mr_shadow_picks,
+        universe_stats=universe_funnel.to_dict(),
         # HY-OAS credit-spread state as daily context on the regime line (the
         # bear-tilt itself stays config-gated/off — see config.regime_hy_oas_enabled).
         credit_context={

@@ -62,3 +62,17 @@ async def test_screener_requests_actively_trading_names_only(monkeypatch):
     monkeypatch.setattr(client, "_request", fake_request)
     await client.get_stock_screener()
     assert captured["isActivelyTrading"] == "true"
+
+
+def test_daily_alert_shows_the_universe_line_in_every_branch():
+    from src.output.telegram import format_daily_alert
+
+    stats = {"total_input": 2570, "passed": 2051, "failed_inactive": 519}
+    pick = {"ticker": "AAA", "direction": "LONG", "entry_price": 10.0, "stop_loss": 9.5,
+            "target_1": 11.0, "confidence": 80, "signal_model": "mean_reversion", "holding_period": 3}
+    for kwargs in ({"picks": []}, {"picks": [pick]}, {"picks": [], "validation_failed": True}):
+        msg = format_daily_alert(regime="bear", run_date="2026-10-05", execution_mode="quant_only",
+                                 universe_stats=stats, **kwargs)
+        assert "Universe: 2,051 screened (519 delisted dropped)" in msg
+    msg = format_daily_alert(picks=[], regime="bear", run_date="2026-10-05")
+    assert "Universe:" not in msg
