@@ -266,6 +266,10 @@ class Settings(BaseSettings):
     # leaving shadow needs the §7 gate and an explicit decision, not a toggle.
     reclaim_shadow_enabled: bool = False
     reclaim_history_days: int = 600
+    # Research watch list in the daily Telegram alert (Ray, 2026-10-05): today's
+    # Reclaim triggers from the verified engine, labelled no-edge / not a pick.
+    # Read-only: no DB rows, no outcome tracking, no effect on official picks.
+    reclaim_watch_enabled: bool = True
     # Concurrent open PEAD positions, book-wide. Distinct from the per-run cap
     # above: with a 20-day hold (untrailed since PR #43) and ~2.4 qualifying
     # beats/day in earnings season, admitting 5/run compounds into tens of open

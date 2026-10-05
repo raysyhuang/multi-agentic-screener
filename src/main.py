@@ -2488,6 +2488,18 @@ async def _run_pipeline_core(
             for pick in mr_shadow_result.approved
         ]
 
+    # RECLAIM research watch (read-only; Ray 2026-10-05). Any failure drops the
+    # section and nothing else — the official alert must always go out.
+    reclaim_watch = None
+    if settings.reclaim_watch_enabled:
+        try:
+            from src.reclaim_watch import run_reclaim_watch
+            reclaim_watch = (await run_reclaim_watch(
+                today, settings, filtered, earnings_calendar=earnings_calendar,
+            )).to_alert()
+        except Exception as exc:
+            logger.warning("Reclaim watch skipped (non-fatal): %s", exc)
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -2501,6 +2513,7 @@ async def _run_pipeline_core(
         pead_paper_picks=pead_paper_picks,
         sniper_shadow_picks=sniper_shadow_picks,
         mr_shadow_picks=mr_shadow_picks,
+        reclaim_watch=reclaim_watch,
         # HY-OAS credit-spread state as daily context on the regime line (the
         # bear-tilt itself stays config-gated/off — see config.regime_hy_oas_enabled).
         credit_context={
