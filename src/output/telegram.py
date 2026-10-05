@@ -447,6 +447,47 @@ def _render_mr_shadow_section(shadow_picks: list[dict]) -> list[str]:
     )
 
 
+def _render_reclaim_watch_section(watch: dict) -> list[str]:
+    """RECLAIM research watch: today's triggers, never a pick, never tracked."""
+    items = watch.get("items") or []
+    lines = [
+        _section_line(),
+        f"\U0001f52c <b>Reclaim \u2014 Research Watch</b> ({len(items)} trigger"
+        f"{'' if len(items) == 1 else 's'})",
+        "<i>Backtest 2022\u201326: no edge vs controls. NOT a pick, not tracked.</i>",
+        "",
+    ]
+    if not items:
+        alive = watch.get("alive") or {}
+        alive_txt = " \u00b7 ".join(f"{k} {v}" for k, v in alive.items())
+        cov = ""
+        if watch.get("symbols") and watch.get("current", 0) < watch["symbols"]:
+            cov = f" ({watch['current']:,}/{watch['symbols']:,} symbols current)"
+        lines.append(f"   No triggers today{cov}.{f'  Episodes alive: {alive_txt}' if alive_txt else ''}")
+        lines.append("")
+        return lines
+    for it in items:
+        flags = []
+        if it.get("earnings_soon"):
+            flags.append("\u26a0\ufe0f earnings \u22645 sessions")
+        if it.get("overlap"):
+            flags.append("in both pools")
+        if it.get("risk_at_close", 0) > 0.08:
+            flags.append("risk >8% at close \u2192 likely SKIP")
+        lines.extend([
+            f"<b>\u25b2 {_esc(it['ticker'])}</b>  <code>{_esc(it['lane'])}</code>",
+            f"   Confirmed close <b>${it['close']:.2f}</b> \u00b7 SMA50 ${it['sma50']:.2f}",
+            f"   Valid only if <b>${it['stop']:.2f}</b> &lt; open \u2264 <b>${it['max_entry']:.2f}</b>",
+            f"   Stop <b>${it['stop']:.2f}</b> (setup low; open at or below it = gap-through skip)",
+            "   Fixed exits 5/10/20d, no target",
+        ])
+        if flags:
+            flag_txt = _esc(" \u00b7 ".join(flags))
+            lines.append(f"   <i>{flag_txt}</i>")
+        lines.append("")
+    return lines
+
+
 def _universe_line(stats: dict | None) -> str | None:
     """'   Universe: 2,051 screened (519 delisted dropped)' from the filter funnel."""
     if not stats or stats.get("passed") is None:
@@ -472,6 +513,7 @@ def format_daily_alert(
     credit_context: dict | None = None,
     sniper_shadow_picks: list[dict] | None = None,
     mr_shadow_picks: list[dict] | None = None,
+    reclaim_watch: dict | None = None,
     universe_stats: dict | None = None,
 ) -> str:
     """Format the daily picks into a clean, scannable Telegram message.
@@ -487,6 +529,9 @@ def format_daily_alert(
     ``credit_context`` optionally carries the HY-OAS credit-spread state
     (hy_oas / hy_oas_stress / hy_oas_chg20) appended to the regime line as
     context; omitted or empty leaves the regime line unchanged.
+
+    ``reclaim_watch`` (``WatchResult.to_alert()``) renders the RECLAIM research
+    watch section; None omits it.
 
     ``universe_stats`` (the universe FilterFunnel's ``to_dict()``) adds one
     header line with the screened universe size; omitted leaves no line.
@@ -537,6 +582,10 @@ def format_daily_alert(
             lines.append("")
             lines.extend(_render_mr_shadow_section(mr_shadow_picks))
 
+        if reclaim_watch is not None:
+            lines.append("")
+            lines.extend(_render_reclaim_watch_section(reclaim_watch))
+
         if model_scorecard:
             lines.append("")
             lines.extend(_render_scorecard(model_scorecard))
@@ -579,6 +628,10 @@ def format_daily_alert(
         if mr_shadow_picks is not None:
             lines.append("")
             lines.extend(_render_mr_shadow_section(mr_shadow_picks))
+
+        if reclaim_watch is not None:
+            lines.append("")
+            lines.extend(_render_reclaim_watch_section(reclaim_watch))
 
         if model_scorecard:
             lines.append("")
@@ -646,6 +699,9 @@ def format_daily_alert(
 
     if mr_shadow_picks is not None:
         lines.extend(_render_mr_shadow_section(mr_shadow_picks))
+
+    if reclaim_watch is not None:
+        lines.extend(_render_reclaim_watch_section(reclaim_watch))
 
     # Model scorecard (appended if provided)
     if model_scorecard:

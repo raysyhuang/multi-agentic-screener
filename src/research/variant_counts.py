@@ -17,6 +17,9 @@ VARIANTS_TESTED_FLOOR: dict[str, int] = {
     "mean_reversion": 162,
     "sniper": 19,
     "pead": 12,
+    # RECLAIM: four prior variants (V0.1, V0.1r, V0.2, BOX V0.1) plus the two
+    # native bloodlines gated in MAS (RECLAIM_MAS_SPEC_v1.1 §7, R13).
+    "reclaim": 6,
 }
 
 

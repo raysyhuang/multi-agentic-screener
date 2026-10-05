@@ -2488,6 +2488,30 @@ async def _run_pipeline_core(
             for pick in mr_shadow_result.approved
         ]
 
+    # RECLAIM research watch (read-only; Ray 2026-10-05). Any failure drops the
+    # section and nothing else — the official alert must always go out.
+    reclaim_watch = None
+    if settings.reclaim_watch_enabled:
+        try:
+            from src.reclaim_watch import run_reclaim_watch
+
+            # The module-level DataAggregator, so the watch uses the run's
+            # provider class (and the smoke test's stub replaces it too).
+            async def _watch_fetch(tickers, start, end):
+                agg = DataAggregator()
+                try:
+                    return await agg.get_bulk_ohlcv(tickers, start, end)
+                finally:
+                    agg.close()
+
+            reclaim_watch = (await asyncio.wait_for(
+                run_reclaim_watch(today, settings, filtered,
+                                  earnings_calendar=earnings_calendar, fetch=_watch_fetch),
+                timeout=settings.reclaim_watch_timeout_s,
+            )).to_alert()
+        except Exception as exc:  # includes TimeoutError: the alert goes out regardless
+            logger.warning("Reclaim watch skipped (non-fatal): %s: %s", type(exc).__name__, exc)
+
     alert_msg = format_daily_alert(
         picks_for_alert,
         regime_assessment.regime.value,
@@ -2501,6 +2525,7 @@ async def _run_pipeline_core(
         pead_paper_picks=pead_paper_picks,
         sniper_shadow_picks=sniper_shadow_picks,
         mr_shadow_picks=mr_shadow_picks,
+        reclaim_watch=reclaim_watch,
         universe_stats=universe_funnel.to_dict(),
         # HY-OAS credit-spread state as daily context on the regime line (the
         # bear-tilt itself stays config-gated/off — see config.regime_hy_oas_enabled).
