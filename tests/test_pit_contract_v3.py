@@ -446,7 +446,8 @@ def test_unplanned_audit_file_or_old_sampler_is_not_reported_as_run(vintage):
 
 def test_verify_rejects_v2_local_against_v3_manifest_and_wrong_vintage(vintage):
     (vintage / "contract.json").unlink()
-    (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}, "contract_version": "v3"}))
+    (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}, "contract_version": "v3",
+                                                        "vintage": VINTAGE}))
     with pytest.raises(SystemExit, match="local contract v2 != manifest contract v3"):
         pr.verify(VINTAGE)
     (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}, "vintage": "1999-01-01"}))
@@ -463,3 +464,84 @@ def test_v2_zero_median_keeps_its_original_relative_halt():
     _, halts_v2 = pr.unknown_rate_gates(membership, v3=False)
     _, halts_v3 = pr.unknown_rate_gates(membership, v3=True)
     assert any("relative" in h for h in halts_v2) and halts_v3 == []
+
+
+def test_marker_over_a_page_that_still_has_next_url_is_refused(vintage):
+    d = vintage / "raw" / "reference" / "2024-02"
+    _w(d / "page-1.json.gz", {"results": [{"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"}],
+                              "next_url": "x?cursor=more"})
+    _mark(d, "2024-02-01")
+    with pytest.raises(RuntimeError, match="pagination chain broken"):
+        pa._classification_by_month(VINTAGE)
+
+
+def test_marker_for_another_as_of_date_is_refused(vintage):
+    _mark(vintage / "raw" / "reference" / "2024-02", "2024-02-02")
+    with pytest.raises(RuntimeError, match="as_of"):
+        pa._classification_by_month(VINTAGE)
+
+
+@pytest.mark.asyncio
+async def test_existing_valid_marker_is_validated_on_the_fast_path(vintage):
+    _mark(vintage / "raw" / "reference" / "2024-02", "2024-02-02")      # wrong date
+    with pytest.raises(RuntimeError, match="as_of"):
+        await pa._fetch_snapshot(None, VINTAGE, ("reference", "2024-02"), date(2024, 2, 1))
+
+
+@pytest.mark.asyncio
+async def test_corrupt_existing_page_writes_no_marker(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    d = tmp_path / "v" / "raw" / "reference" / "2024-02"
+    d.mkdir(parents=True)
+    (d / "page-1.json.gz").write_bytes(b"not gzip")
+    with pytest.raises(Exception):
+        await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1))
+    assert not (d / pa.SNAPSHOT_MARKER).exists()
+
+
+def test_early_close_session_completes_15_minutes_after_its_scheduled_close(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+    import datetime as dtmod
+
+    class _DT(datetime):
+        now_val = datetime(2026, 11, 27, 13, 20, tzinfo=ZoneInfo("America/New_York"))  # day after Thanksgiving
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.now_val
+    monkeypatch.setattr(dtmod, "datetime", _DT)
+    assert pa._session_complete(date(2026, 11, 27)) is True          # 13:00 close + 15 min
+    _DT.now_val = datetime(2026, 11, 27, 13, 10, tzinfo=ZoneInfo("America/New_York"))
+    assert pa._session_complete(date(2026, 11, 27)) is False
+
+
+def test_v2_vintage_reads_snapshots_without_markers(vintage):
+    (vintage / "contract.json").unlink()
+    for marker in (vintage / "raw").rglob(pa.SNAPSHOT_MARKER):
+        marker.unlink()
+    labels = pa._classification_by_month(VINTAGE)
+    assert labels[(2024, 2)]["LNG"]["exchange"] == "AMEX"
+
+
+def test_v3_manifest_must_name_its_vintage(vintage):
+    (vintage / "manifest.json").write_text(json.dumps({
+        "raw_hashes": {"x": "y"}, "contract_version": "v3",
+        "contract_stamp_sha256": pr._sha256(vintage / "contract.json")}))
+    with pytest.raises(SystemExit, match="manifest is for vintage None"):
+        pr.verify(VINTAGE)
+
+
+def test_verify_covers_completion_markers_for_v3(vintage):
+    stamp = vintage / "contract.json"
+    raw = vintage / "raw"
+    files = sorted(list(raw.rglob("*.json.gz")) + list(raw.rglob("_complete.json")))
+    manifest = {"vintage": VINTAGE, "contract_version": "v3",
+                "contract_stamp_sha256": pr._sha256(stamp),
+                "config_sha256": __import__("hashlib").sha256(stamp.read_bytes()).hexdigest(),
+                "raw_hashes": {str(p.relative_to(vintage)): pr._sha256(p) for p in files}}
+    (vintage / "manifest.json").write_text(json.dumps(manifest))
+    assert pr.verify(VINTAGE)["verified"]
+    (raw / "reference" / "2024-02" / pa.SNAPSHOT_MARKER).unlink()
+    with pytest.raises(SystemExit, match="VERIFY FAILED"):
+        pr.verify(VINTAGE)

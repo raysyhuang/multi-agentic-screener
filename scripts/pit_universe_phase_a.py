@@ -195,10 +195,11 @@ def _trailing_labels(vintage: str) -> dict[str, dict] | None:
     Used ONLY to detect transitions inside the final membership month (there is
     no later monthly snapshot to compare with). It never labels a session.
     """
-    snap_dir = ROOT / vintage / "raw" / "reference_trailing" / str(trailing_snapshot_date(vintage))
+    trail = trailing_snapshot_date(vintage)
+    snap_dir = ROOT / vintage / "raw" / "reference_trailing" / str(trail)
     if not (snap_dir / SNAPSHOT_MARKER).exists():
         return None                       # absent or incomplete: candidate generation refuses
-    return _read_snapshot(snap_dir, require_complete=True)
+    return _read_snapshot(snap_dir, require_complete=True, expected_as_of=trail)
 _EXCHANGE_MAP = {
     "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
     "ARCX": "NYSE", "BATS": "NASDAQ",
@@ -556,12 +557,22 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
 
 
 def _session_complete(d: date) -> bool:
-    """True once session d has closed (16:15 ET margin), judged in ET, never local time."""
-    from datetime import datetime, time
+    """True once session d's SCHEDULED close + 15 min has passed (early closes honoured)."""
+    from datetime import datetime
     from zoneinfo import ZoneInfo
 
+    import pandas_market_calendars as mcal
+
     now = datetime.now(ZoneInfo("America/New_York"))
-    return d < now.date() or (d == now.date() and now.time() >= time(16, 15))
+    if d < now.date():
+        return True
+    if d > now.date():
+        return False
+    sched = mcal.get_calendar("NYSE").schedule(start_date=d, end_date=d)
+    if sched.empty:
+        return False
+    close = sched["market_close"].iloc[0].to_pydatetime() + timedelta(minutes=15)
+    return now >= close
 
 
 SNAPSHOT_MARKER = "_complete.json"
@@ -576,6 +587,7 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
     """
     marker = _raw_path(vintage, *sub, SNAPSHOT_MARKER)
     if marker.exists():
+        _read_snapshot(marker.parent, require_complete=True, expected_as_of=as_of)  # raises if invalid
         return True
     page, cursor, hashes = 1, None, []
     while True:
@@ -607,23 +619,43 @@ def _sha256_file(path: Path) -> str:
     return hashlib.sha256(path.read_bytes()).hexdigest()
 
 
-def _read_snapshot(snap_dir: Path, require_complete: bool) -> dict[str, dict]:
-    """Labels from one snapshot directory; v3 refuses an unmarked or altered one."""
+def _read_snapshot(snap_dir: Path, require_complete: bool,
+                   expected_as_of: date | None = None) -> dict[str, dict]:
+    """Labels from one snapshot directory; v3 refuses anything not provably complete.
+
+    Complete means: a marker for the expected as-of date, pages 1..N contiguous
+    with N >= 1, one recorded hash per page matching the stored bytes, every page
+    valid JSON, every non-final page carrying a next_url and the final page none.
+    """
     marker = snap_dir / SNAPSHOT_MARKER
     pages = sorted(snap_dir.glob("page-*.json.gz"), key=lambda p: int(p.name.split("-")[1].split(".")[0]))
+    payloads: list[dict] = []
     if require_complete:
+        name = f"{snap_dir.parent.name}/{snap_dir.name}"
         if not marker.exists():
-            raise RuntimeError(f"snapshot {snap_dir.name} has no completion marker — pagination "
+            raise RuntimeError(f"snapshot {name} has no completion marker — pagination "
                                "incomplete; re-run `spine`")
         m = json.loads(marker.read_text())
+        n = int(m.get("pages", 0))
+        if n < 1 or len(m.get("page_sha256", [])) != n:
+            raise RuntimeError(f"snapshot {name}: malformed marker")
+        if expected_as_of is not None and m.get("as_of") != str(expected_as_of):
+            raise RuntimeError(f"snapshot {name}: marker as_of {m.get('as_of')} != expected {expected_as_of}")
         names = [p.name for p in pages]
-        if names != [f"page-{i}.json.gz" for i in range(1, m["pages"] + 1)]:
-            raise RuntimeError(f"snapshot {snap_dir.name}: pages {names[:3]}... do not match marker")
+        if names != [f"page-{i}.json.gz" for i in range(1, n + 1)]:
+            raise RuntimeError(f"snapshot {name}: pages {names[:3]}... do not match marker")
         if [_sha256_file(p) for p in pages] != m["page_sha256"]:
-            raise RuntimeError(f"snapshot {snap_dir.name}: page bytes changed since completion")
+            raise RuntimeError(f"snapshot {name}: page bytes changed since completion")
+        payloads = [_read_raw(p) for p in pages]
+        for i, payload in enumerate(payloads, 1):
+            has_next = bool(payload.get("next_url"))
+            if (i < n and not has_next) or (i == n and has_next):
+                raise RuntimeError(f"snapshot {name}: pagination chain broken at page {i} of {n}")
+    else:
+        payloads = [_read_raw(p) for p in pages]
     labels: dict[str, dict] = {}
-    for page in pages:
-        for row in _read_raw(page).get("results", []):
+    for payload in payloads:
+        for row in payload.get("results", []):
             t = row.get("ticker")
             if t:
                 labels[t] = {"type": row.get("type"),
@@ -638,12 +670,19 @@ def _classification_by_month(vintage: str) -> dict[tuple[int, int], dict[str, di
     out: dict[tuple[int, int], dict[str, dict]] = {}
     ref_root = ROOT / vintage / "raw" / "reference"
     v3 = contract_version(vintage) == "v3"
+    first_session: dict[tuple[int, int], date] = {}
+    if v3:
+        for d in frozen_sessions(vintage)[1]:
+            first_session.setdefault((d.year, d.month), d)
     for month_dir in sorted(ref_root.glob("*")):
         if not month_dir.is_dir():
             continue
         year, month = (int(x) for x in month_dir.name.split("-"))
         if v3:
-            out[(year, month)] = _read_snapshot(month_dir, require_complete=True)
+            if (year, month) not in first_session:
+                raise RuntimeError(f"reference snapshot {month_dir.name} is outside the frozen range")
+            out[(year, month)] = _read_snapshot(month_dir, require_complete=True,
+                                                expected_as_of=first_session[(year, month)])
             continue
         # v2: original semantics (pages in lexical order, no completion marker).
         labels: dict[str, dict] = {}

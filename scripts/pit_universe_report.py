@@ -584,6 +584,10 @@ def write_report(vintage: str) -> dict:
                     halts.append(f"{month}: exchange drift {exch_pct:.2f}% > {HALT_DRIFT_EXCHANGE_PCT_V2}%")
 
     raw_files = sorted((base / "raw").rglob("*.json.gz"))
+    if v3:
+        # Completion markers are evidence too: hash them so an archive cannot
+        # verify with its pagination proof missing or altered.
+        raw_files = sorted(raw_files + list((base / "raw").rglob("_complete.json")))
     n_quarters = len({(d.year, (d.month - 1) // 3) for d in dates}) if v3 else 12
     manifest = {
         "vintage": vintage,
@@ -663,7 +667,8 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
         raise SystemExit(f"no manifest at {src} — nothing to verify against")
 
     manifest_doc = json.loads(src.read_text())
-    if manifest_doc.get("vintage") not in (None, vintage):
+    if manifest_doc.get("vintage") not in (None, vintage) or (
+            manifest_doc.get("contract_version") == "v3" and manifest_doc.get("vintage") != vintage):
         raise SystemExit(f"VERIFY FAILED: manifest is for vintage {manifest_doc.get('vintage')!r}, "
                          f"not {vintage!r}")
     expected = manifest_doc.get("raw_hashes", {})
@@ -688,6 +693,9 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
         str(p.relative_to(base)): p
         for p in sorted((base / "raw").rglob("*.json.gz"))
     }
+    if manifest_v == "v3":
+        present.update({str(p.relative_to(base)): p
+                        for p in sorted((base / "raw").rglob("_complete.json"))})
 
     missing = sorted(set(expected) - set(present))
     extra = sorted(set(present) - set(expected))
