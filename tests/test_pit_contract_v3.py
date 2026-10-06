@@ -56,11 +56,15 @@ def vintage(tmp_path, monkeypatch):
         {"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"},
         {"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"},
     ]})
-    _w(base / "raw" / "reference" / "2024-03" / "page-1.json.gz", {"results": [
+    mar = {"results": [
         {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
         {"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"},
         {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"},
-    ]})
+    ]}
+    _w(base / "raw" / "reference" / "2024-03" / "page-1.json.gz", mar)
+    # Trailing comparison snapshot: the session after the frozen end (2024-03-01).
+    _w(base / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", mar)
+    pa._EXPECTED_CACHE.clear()
     return base
 
 
@@ -215,9 +219,19 @@ def test_package_never_emits_an_upload_to_the_public_repo(vintage, monkeypatch, 
     import tarfile
     with tarfile.open(archive) as tar:
         assert f"{VINTAGE}/contract.json" in tar.getnames()
-    monkeypatch.setenv("PIT_RELEASE_REPO", "raysyhuang/mas-data")
+    # A repo GitHub does not confirm as private gets no command, whatever its name.
+    monkeypatch.setenv("PIT_RELEASE_REPO", "someone/public-data")
+    monkeypatch.setattr(pr, "_repo_is_private", lambda r: False)
     pr.package(VINTAGE)
-    assert "--repo raysyhuang/mas-data" in json.loads(capsys.readouterr().out)["upload"]
+    assert json.loads(capsys.readouterr().out)["upload"] is None
+    monkeypatch.setenv("PIT_RELEASE_REPO", "raysyhuang/multi-agentic-screener; rm -rf /")
+    pr.package(VINTAGE)
+    assert json.loads(capsys.readouterr().out)["upload"] is None
+    monkeypatch.setenv("PIT_RELEASE_REPO", "raysyhuang/mas-data")
+    monkeypatch.setattr(pr, "_repo_is_private", lambda r: True)
+    pr.package(VINTAGE)
+    cmd = json.loads(capsys.readouterr().out)["upload"]
+    assert isinstance(cmd, list) and cmd[cmd.index("--repo") + 1] == "raysyhuang/mas-data"
 
 
 def test_audit_results_refuse_a_sample_drawn_under_other_transition_results(vintage):
@@ -225,3 +239,95 @@ def test_audit_results_refuse_a_sample_drawn_under_other_transition_results(vint
     (vintage / "audit_plan.json").write_text(json.dumps({"overrides_sha256": "stale", "pairs": []}))
     res = pr._audit_results(VINTAGE)
     assert res["ran"] is False and res.get("stale") is True
+
+
+def test_final_month_transition_is_discovered_against_the_trailing_snapshot(vintage):
+    trailing = {"results": [
+        {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+        {"ticker": "PBR", "type": "ETF", "primary_exchange": "XNYS"},       # changes in March
+        {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"},
+    ]}
+    _w(vintage / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", trailing)
+    pa._EXPECTED_CACHE.clear()
+    cands = {(c["ticker"], c["month"]) for c in pa.transition_candidates(VINTAGE)}
+    assert ("PBR", (2024, 3)) in cands
+
+
+def test_missing_trailing_snapshot_refuses_candidate_generation(vintage):
+    import shutil
+    shutil.rmtree(vintage / "raw" / "reference_trailing")
+    pa._EXPECTED_CACHE.clear()
+    with pytest.raises(RuntimeError, match="trailing comparison snapshot"):
+        pa.transition_candidates(VINTAGE)
+
+
+def test_stray_grouped_file_outside_the_frozen_range_is_refused(vintage):
+    _w(vintage / "raw" / "grouped" / "2024-03-04.json.gz", {"results": []})
+    with pytest.raises(RuntimeError, match="extra"):
+        pa.build_membership(VINTAGE)
+
+
+def test_warmup_bars_count_toward_history_but_emit_no_membership(vintage, monkeypatch):
+    stamp = json.loads((vintage / "contract.json").read_text())
+    stamp["warmup_sessions"] = 3
+    (vintage / "contract.json").write_text(json.dumps(stamp))
+    for d in ("2024-01-29", "2024-01-30", "2024-01-31"):
+        _w(vintage / "raw" / "grouped" / f"{d}.json.gz", {"results": [{"T": "PBR", "c": 15.0, "v": 9e6}]})
+    monkeypatch.setattr(pa, "MIN_PRIOR_BARS", 3)
+    m = pa.build_membership(VINTAGE)
+    assert date(2024, 1, 31) not in m                     # warm-up emits nothing
+    assert "PBR" in m[FEB[0]]["eligible_pre_mcap"]          # 3 warm-up bars suffice
+    assert "LNG" not in m[FEB[0]]["eligible_pre_mcap"]      # no warm-up history
+
+
+@pytest.mark.asyncio
+async def test_orphan_transition_result_makes_the_set_incomplete_and_is_never_applied(vintage, monkeypatch):
+    fake_get, _ = _fake_get_factory(_truth)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+    assert pa.transition_status(VINTAGE)["complete"]
+    pa._write_raw_unchecked(vintage / "raw" / "transitions" / "2024-02" / "PBR.result.json.gz",
+                            {"ticker": "PBR", "month": "2024-02", "old": None, "new": None,
+                             "effective": None, "ambiguous_from": "2024-02-02", "probes": []})
+    st = pa.transition_status(VINTAGE)
+    assert not st["complete"] and st["extra"] == [("2024-02", "PBR")]
+    assert "PBR" in pa.build_membership(VINTAGE)[date(2024, 2, 20)]["eligible_pre_mcap"]
+
+
+def test_incomplete_audit_plan_is_not_reported_as_run(vintage):
+    _w(vintage / "raw" / "audit" / "2024-02" / "LNG_2024-02-22.json.gz", {
+        "results": {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+        "_audit": {"bucket": "common_stock", "date": "2024-02-22", "ticker": "LNG"}})
+    (vintage / "audit_plan.json").write_text(json.dumps({
+        "overrides_sha256": pa.overrides_fingerprint(VINTAGE),
+        "pairs": ["2024-02/LNG_2024-02-22", "2024-02/PBR_2024-02-22"]}))
+    res = pr._audit_results(VINTAGE)
+    assert res["ran"] is False and res["incomplete"] and res["missing_count"] == 1
+
+
+def test_live_count_gate_evaluates_with_60_clean_paired_runs_and_defers_on_unknown_history(vintage, monkeypatch):
+    m = pa.build_membership(VINTAGE)
+    with_mcap = {d: {**rec, "eligible": rec["eligible_pre_mcap"]} for d, rec in m.items()}
+    rows = [{"date": "2024-02-%02d" % (d.day), "universe": len(with_mcap[d]["eligible"])}
+            for d in FEB]
+    monkeypatch.setattr(pr, "LIVE_GATE_MIN_CLEAN_OBS", 5)
+    monkeypatch.setattr(pr, "_read_raw", lambda p: {"run_history": rows})
+    (vintage / "raw" / "live").mkdir(parents=True, exist_ok=True)
+    (vintage / "raw" / "live" / "dashboard.json.gz").write_bytes(b"x")
+    res, halts = pr.live_count_gate_v3(VINTAGE, with_mcap, boundaries=[date(2024, 1, 15)])
+    assert res["status"] == "EVALUATED" and res["paired"] >= 5 and halts == []
+    partial = dict(with_mcap)
+    partial[FEB[0]] = m[FEB[0]]                                   # one session lacks Phase B
+    res, _ = pr.live_count_gate_v3(VINTAGE, partial, boundaries=[date(2024, 1, 15)])
+    assert res["status"] == "DEFERRED"
+    def boom():
+        raise RuntimeError("no origin/main")
+    monkeypatch.setattr(pr, "universe_definition_boundaries", boom)
+    res, _ = pr.live_count_gate_v3(VINTAGE, with_mcap)
+    assert res["status"] == "DEFERRED" and "history unavailable" in res["reason"]
+
+
+def test_verify_rejects_a_manifest_that_drops_the_v3_identity(vintage):
+    (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}}))
+    with pytest.raises(SystemExit, match="local contract v3 != manifest contract v2"):
+        pr.verify(VINTAGE)

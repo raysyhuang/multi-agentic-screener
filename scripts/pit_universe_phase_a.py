@@ -155,7 +155,58 @@ def frozen_sessions(vintage: str) -> tuple[list[date], list[date]]:
     main = [d.date() for d in cal.schedule(start_date=start, end_date=end).index]
     pre = [d.date() for d in cal.schedule(start_date=start - timedelta(days=500),
                                           end_date=start - timedelta(days=1)).index]
-    return pre[-rec.get("warmup_sessions", WARMUP_SESSIONS):], main
+    n_warm = int(rec.get("warmup_sessions", WARMUP_SESSIONS))
+    # pre[-0:] is the WHOLE list, not an empty one: zero must be explicit.
+    return (pre[-n_warm:] if n_warm > 0 else []), main
+
+
+def validated_sessions(vintage: str) -> tuple[list[date], list[date]]:
+    """Frozen (warm-up, main) sessions, refusing a grouped tree that differs.
+
+    A missing grouped file is an incomplete spine; an extra one (stale, stray,
+    or outside the frozen range) would emit membership or shift the history
+    count. Either is refused rather than silently tolerated.
+    """
+    warmup, main = frozen_sessions(vintage)
+    grouped_dir = ROOT / vintage / "raw" / "grouped"
+    present = {date.fromisoformat(p.stem.replace(".json", "")) for p in grouped_dir.glob("*.json.gz")}
+    expected = set(warmup) | set(main)
+    missing, extra = sorted(expected - present), sorted(present - expected)
+    if missing or extra:
+        raise RuntimeError(
+            f"grouped tree does not match the frozen sessions: {len(missing)} missing "
+            f"(e.g. {missing[:3]}), {len(extra)} extra (e.g. {extra[:3]}) — re-run `spine`")
+    return warmup, main
+
+
+def trailing_snapshot_date(vintage: str) -> date:
+    """The session after the frozen end: the comparison snapshot for the final month."""
+    import pandas_market_calendars as mcal
+
+    end = date.fromisoformat(json.loads((ROOT / vintage / "contract.json").read_text())["end"])
+    sched = mcal.get_calendar("NYSE").schedule(start_date=end + timedelta(days=1),
+                                               end_date=end + timedelta(days=10))
+    return sched.index[0].date()
+
+
+def _trailing_labels(vintage: str) -> dict[str, dict] | None:
+    """Labels as of the trailing snapshot date, or None if it was not acquired.
+
+    Used ONLY to detect transitions inside the final membership month (there is
+    no later monthly snapshot to compare with). It never labels a session.
+    """
+    root = ROOT / vintage / "raw" / "reference_trailing"
+    pages = sorted(root.glob("*/page-*.json.gz")) if root.exists() else []
+    if not pages:
+        return None
+    labels: dict[str, dict] = {}
+    for page in pages:
+        for row in _read_raw(page).get("results", []):
+            t = row.get("ticker")
+            if t:
+                labels[t] = {"type": row.get("type"),
+                             "exchange": _EXCHANGE_MAP.get(row.get("primary_exchange", ""), "")}
+    return labels
 _EXCHANGE_MAP = {
     "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
     "ARCX": "NYSE", "BATS": "NASDAQ",
@@ -517,6 +568,31 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
                 cursor = nxt.split("cursor=")[-1]
                 page += 1
             logger.info("  reference %04d-%02d: %d page(s)", year, month, page)
+        # Trailing comparison snapshot (final month only; never labels a session).
+        trail = trailing_snapshot_date(vintage)
+        if trail > _today_et():
+            ref_holes.append(f"trailing/{trail} (not yet available)")
+        else:
+            page, cursor = 1, None
+            while True:
+                path = _raw_path(vintage, "reference_trailing", str(trail), f"page-{page}.json.gz")
+                if path.exists():
+                    payload = _read_raw(path)
+                else:
+                    params = {"market": "stocks", "date": str(trail), "limit": 1000}
+                    if cursor:
+                        params["cursor"] = cursor
+                    payload = await _get(client, f"{BASE}/v3/reference/tickers", params)
+                    if payload.get("_failed"):
+                        ref_holes.append(f"trailing/{trail}/page-{page}")
+                        break
+                    _write_raw(path, payload)
+                nxt = payload.get("next_url")
+                if not nxt:
+                    break
+                cursor = nxt.split("cursor=")[-1]
+                page += 1
+            logger.info("  trailing reference %s: %d page(s)", trail, page)
         if holes or ref_holes:
             logger.error(
                 "spine INCOMPLETE: %d grouped hole(s), %d reference hole(s) %s — "
@@ -563,7 +639,7 @@ def build_membership(vintage: str) -> dict[date, dict]:
     strict = v3
     warmup: set[date] = set()
     if v3:
-        pre, _main = frozen_sessions(vintage)
+        pre, _main = validated_sessions(vintage)
         warmup = set(pre)
     grouped_dir = ROOT / vintage / "raw" / "grouped"
     per_date: dict[date, dict] = {}
@@ -680,8 +756,11 @@ def transition_candidates(vintage: str) -> list[dict]:
     labels_by_month = _classification_by_month(vintage)
     months = sorted(labels_by_month)
     grouped_dir = ROOT / vintage / "raw" / "grouped"
-    sessions = sorted(date.fromisoformat(p.stem.replace(".json", ""))
-                      for p in grouped_dir.glob("*.json.gz"))
+    _warmup, sessions = validated_sessions(vintage)
+    trailing = _trailing_labels(vintage)
+    if trailing is None:
+        raise RuntimeError("no trailing comparison snapshot — the final month's transitions "
+                           "cannot be discovered; re-run `spine`")
     pre_by_date: dict[date, set[str]] = {}
     for d in sessions:
         rows = _read_raw(grouped_dir / f"{d}.json.gz").get("results", []) or []
@@ -691,12 +770,15 @@ def transition_candidates(vintage: str) -> list[dict]:
             and r["c"] > MIN_PRICE and r["v"] > MIN_SHARE_VOLUME
         }
     out = []
-    for a, b in zip(months, months[1:]):
+    pairs = [(a, labels_by_month[b]) for a, b in zip(months, months[1:])]
+    if months:
+        pairs.append((months[-1], trailing))
+    for a, new_l in pairs:
         window = [d for d in sessions if (d.year, d.month) == a]
         if not window:
             continue
         relevant = set().union(*(pre_by_date[d] for d in window))
-        old_l, new_l = labels_by_month[a], labels_by_month[b]
+        old_l = labels_by_month[a]
         for t in sorted(relevant):
             if _membership_relevant_change(old_l.get(t), new_l.get(t)):
                 out.append({"ticker": t, "month": a, "old": old_l.get(t), "new": new_l.get(t),
@@ -791,10 +873,11 @@ def resolved_overrides(vintage: str, labels_by_month: dict) -> dict[date, dict[s
     out: dict[date, dict[str, dict | None]] = defaultdict(dict)
     if not root.exists() or contract_version(vintage) != "v3":
         return {}
-    grouped_dir = ROOT / vintage / "raw" / "grouped"
-    sessions = sorted(date.fromisoformat(p.stem.replace(".json", ""))
-                      for p in grouped_dir.glob("*.json.gz"))
+    _warmup, sessions = validated_sessions(vintage)
+    expected = _expected_transition_keys(vintage)
     for path in sorted(root.glob("*/*.result.json.gz")):
+        if (path.parent.name, path.name.replace(".result.json.gz", "")) not in expected:
+            continue                    # orphan result: never applied
         r = _read_raw(path)
         y, m = (int(x) for x in r["month"].split("-"))
         start = r.get("effective") or r.get("ambiguous_from")
@@ -815,16 +898,27 @@ def transition_status(vintage: str) -> dict:
     the monthly label for that window — a plausible, wrong universe. Audit and
     report therefore refuse a v3 vintage until every candidate is resolved.
     """
-    expected = {(f"{c['month'][0]:04d}-{c['month'][1]:02d}", c["ticker"])
-                for c in transition_candidates(vintage)}
+    expected = _expected_transition_keys(vintage)
     root = ROOT / vintage / "raw" / "transitions"
     done = set()
     if root.exists():
         for p in root.glob("*/*.result.json.gz"):
             done.add((p.parent.name, p.name.replace(".result.json.gz", "")))
-    missing = sorted(expected - done)
+    missing, extra = sorted(expected - done), sorted(done - expected)
     return {"expected": len(expected), "resolved": len(expected & done),
-            "missing": missing, "complete": not missing}
+            "missing": missing, "extra": extra, "complete": not missing and not extra}
+
+
+_EXPECTED_CACHE: dict[tuple[str, str], set] = {}
+
+
+def _expected_transition_keys(vintage: str) -> set[tuple[str, str]]:
+    """Candidate keys are a pure function of the frozen spine (grouped + snapshots)."""
+    key = (str(ROOT), vintage)
+    if key not in _EXPECTED_CACHE:
+        _EXPECTED_CACHE[key] = {(f"{c['month'][0]:04d}-{c['month'][1]:02d}", c["ticker"])
+                                for c in transition_candidates(vintage)}
+    return _EXPECTED_CACHE[key]
 
 
 def overrides_fingerprint(vintage: str) -> str:
@@ -832,7 +926,10 @@ def overrides_fingerprint(vintage: str) -> str:
     root = ROOT / vintage / "raw" / "transitions"
     h = hashlib.sha256()
     if root.exists():
+        expected = _expected_transition_keys(vintage) if contract_version(vintage) == "v3" else None
         for p in sorted(root.glob("*/*.result.json.gz")):
+            if expected is not None and (p.parent.name, p.name.replace(".result.json.gz", "")) not in expected:
+                continue
             h.update(str(p.relative_to(root)).encode())
             h.update(json.dumps(_read_raw(p), sort_keys=True).encode())
     return h.hexdigest()
@@ -845,7 +942,8 @@ def require_transitions_complete(vintage: str) -> None:
     if not st["complete"]:
         raise RuntimeError(
             f"§3a-v2 incomplete: {len(st['missing'])} of {st['expected']} transitions unresolved "
-            f"(e.g. {st['missing'][:3]}) — run `transitions` until complete")
+            f"(e.g. {st['missing'][:3]}), {len(st['extra'])} orphan result(s) "
+            f"(e.g. {st['extra'][:3]}) — run `transitions` / remove orphans before reporting")
 
 
 def resolved_label(labels_by_month: dict, overrides: dict, ticker: str, d: date) -> dict | None:

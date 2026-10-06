@@ -28,6 +28,7 @@ HALT_EXCHANGE_UNKNOWN_PCT = 1.0
 # former 0.5%/month exchange limit was unresolvable at ~134 labelled pairs/month
 # (the smallest non-zero rate expressible is 0.75%).
 HALT_DRIFT_EXCHANGE_DISAGREEMENTS = 0
+HALT_DRIFT_EXCHANGE_PCT_V2 = 0.5   # v2 vintages replay their original rule
 # §A.5: PIT daily count vs contemporaneous live eligible count.
 HALT_LIVE_COUNT_DIVERGENCE_PCT = 15.0
 # §A.5-v2 / R5: the live-count gate is evaluated only over a window in which no
@@ -226,10 +227,18 @@ def _audit_results(vintage: str) -> dict:
                 if held_ok != actual_ok and (actual_type or held_type) in ELIGIBLE_TYPES:
                     rec["exchange_membership_flip"] += 1
 
+    if planned is not None:
+        observed = {f"{d.name}/{p.name.replace('.json.gz', '')}"
+                    for d in audit_dir.glob("*") for p in d.glob("*.json.gz")}
+        missing = sorted(planned - observed)
+        if missing:
+            return {"ran": False, "incomplete": True, "missing_count": len(missing),
+                    "reason": f"{len(missing)} planned audit pair(s) never observed "
+                              f"(e.g. {missing[:3]}) — re-run `audit` until complete"}
     return {"ran": True, "per_month": dict(per_month)}
 
 
-def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
+def unknown_rate_gates(membership: dict, v3: bool = True) -> tuple[dict, list[str]]:
     """§A.5 unknown-rate gates, both of them, for both metrics.
 
     Two rules, and they catch different failures:
@@ -294,15 +303,16 @@ def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
                 continue
             median = statistics.median(window)
             entry[f"{metric}_trailing_median_pct"] = round(median, 4)
-            if median > 0 and rate > 2.0 * median:
+            if (median > 0 or not v3) and rate > 2.0 * median:
                 halts.append(
                     f"{m}: {metric} {rate:.4f}% > 2x trailing-12m median "
                     f"{median:.4f}% (relative)"
                 )
         per_month[m] = entry
 
-    return {"per_month": per_month,
-            "rule": "absolute >1%; relative >2x trailing-12m median when that median > 0 (R6)"}, halts
+    rule = ("absolute >1%; relative >2x trailing-12m median when that median > 0 (R6)" if v3
+            else "absolute >1% and relative >2x trailing-12m median")
+    return {"per_month": per_month, "rule": rule}, halts
 
 
 def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[str]]:
@@ -407,9 +417,19 @@ def live_count_gate_v3(vintage: str, membership: dict, boundaries: list | None =
 
     import pandas_market_calendars as mcal  # noqa: PLC0415
 
-    has_mcap = any("eligible" in rec for rec in membership.values())
-    boundaries = boundaries if boundaries is not None else universe_definition_boundaries()
-    last_change = boundaries[-1] if boundaries else None
+    has_mcap = bool(membership) and all("eligible" in rec for rec in membership.values())
+    if boundaries is None:
+        try:
+            boundaries = universe_definition_boundaries()
+        except RuntimeError as exc:
+            return {"ran": True, "rule": "R5", "status": "DEFERRED",
+                    "reason": f"universe-definition history unavailable ({exc}); "
+                              "an unknown history is never treated as 'no changes'"}, []
+    if not boundaries:
+        return {"ran": True, "rule": "R5", "status": "DEFERRED",
+                "reason": "git history returned no universe-definition commits — implausible, "
+                          "refusing to treat it as a clean window"}, []
+    last_change = boundaries[-1]
     live_path = ROOT / vintage / "raw" / "live" / "dashboard.json.gz"
     rows = (_read_raw(live_path).get("run_history") or []) if live_path.exists() else []
     clean = []
@@ -418,14 +438,15 @@ def live_count_gate_v3(vintage: str, membership: dict, boundaries: list | None =
             r = _date.fromisoformat(str(row.get("date"))[:10])
         except ValueError:
             continue
-        if row.get("universe") and (last_change is None or r > last_change):
+        if row.get("universe") and r > last_change:
             clean.append((r, row["universe"]))
-    result = {"ran": True, "rule": "R5", "last_definition_change": str(last_change) if last_change else None,
+    result = {"ran": True, "rule": "R5", "last_definition_change": str(last_change),
               "clean_live_observations": len(clean), "min_required": LIVE_GATE_MIN_CLEAN_OBS,
               "threshold_pct": HALT_LIVE_COUNT_DIVERGENCE_PCT}
     if not has_mcap:
         result["status"] = "DEFERRED"
-        result["reason"] = "PIT count is pre-market-cap; live applies mcap >= $300M — evaluate after Phase B"
+        result["reason"] = ("PIT count is pre-market-cap (or Phase B is incomplete); live applies "
+                            "mcap >= $300M — evaluate after Phase B covers every session")
         return result, []
     if len(clean) < LIVE_GATE_MIN_CLEAN_OBS:
         result["status"] = "DEFERRED"
@@ -504,7 +525,7 @@ def write_report(vintage: str) -> dict:
 
     # Pooled rates are REPORTED for continuity but no longer gate anything —
     # they cannot see a single catastrophic month (see unknown_rate_gates).
-    windowed, halts = unknown_rate_gates(membership)
+    windowed, halts = unknown_rate_gates(membership, v3=v3)
 
     ledger_path = base / "request_ledger.jsonl"
     ledger_summary = {"present": ledger_path.exists()}
@@ -546,11 +567,15 @@ def write_report(vintage: str) -> dict:
                     f"(contamination={rec['contamination']}, "
                     f"false_exclusion={rec['false_exclusion']}) — zero tolerated"
                 )
-            if rec["exchange_disagree"] > HALT_DRIFT_EXCHANGE_DISAGREEMENTS:
+            if v3 and rec["exchange_disagree"] > HALT_DRIFT_EXCHANGE_DISAGREEMENTS:
                 halts.append(
                     f"{month}: {rec['exchange_disagree']} exchange disagreement(s) "
                     f"(membership flips={rec['exchange_membership_flip']}) — zero tolerated (R2)"
                 )
+            elif not v3 and rec["labelled"]:
+                exch_pct = 100.0 * rec["exchange_disagree"] / rec["labelled"]
+                if exch_pct > HALT_DRIFT_EXCHANGE_PCT_V2:
+                    halts.append(f"{month}: exchange drift {exch_pct:.2f}% > {HALT_DRIFT_EXCHANGE_PCT_V2}%")
 
     raw_files = sorted((base / "raw").rglob("*.json.gz"))
     n_quarters = len({(d.year, (d.month - 1) // 3) for d in dates}) if v3 else 12
@@ -635,11 +660,20 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
     expected = manifest_doc.get("raw_hashes", {})
     if not expected:
         raise SystemExit(f"{src} carries no raw_hashes")
-    if manifest_doc.get("contract_version") == "v3":
-        stamp = base / "contract.json"
-        if not stamp.exists() or _sha256(stamp) != manifest_doc.get("contract_stamp_sha256"):
-            raise SystemExit("VERIFY FAILED: manifest says contract v3 but contract.json is "
-                             "missing or does not match — the vintage would replay as v2")
+    stamp = base / "contract.json"
+    local_v = json.loads(stamp.read_text()).get("version") if stamp.exists() else "v2"
+    manifest_v = manifest_doc.get("contract_version", "v2")
+    if local_v != manifest_v:
+        raise SystemExit(f"VERIFY FAILED: local contract {local_v} != manifest contract {manifest_v}")
+    if manifest_v not in ("v2", "v3"):
+        raise SystemExit(f"VERIFY FAILED: unknown contract version {manifest_v!r}")
+    if manifest_v == "v3":
+        digest = _sha256(stamp)
+        if digest != manifest_doc.get("contract_stamp_sha256"):
+            raise SystemExit("VERIFY FAILED: contract.json does not match the manifest — "
+                             "the vintage would not replay under its own rules")
+        if hashlib.sha256(stamp.read_bytes()).hexdigest() != manifest_doc.get("config_sha256"):
+            raise SystemExit("VERIFY FAILED: config hash mismatch")
 
     present = {
         str(p.relative_to(base)): p
@@ -676,6 +710,22 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
     return result
 
 
+_REPO_RE = __import__("re").compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def _repo_is_private(repo: str) -> bool | None:
+    """True only if GitHub says the repository is private; None if unknown."""
+    import subprocess
+    try:
+        out = subprocess.run(["gh", "api", f"repos/{repo}", "--jq", ".private"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() == "true"
+
+
 def package(vintage: str) -> Path:
     """Build the Release archive and stamp its own hash.
 
@@ -703,17 +753,20 @@ def package(vintage: str) -> Path:
     # repository, and always with --repo.
     import os
     target = os.environ.get("PIT_RELEASE_REPO", "").strip()
-    out = {"archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1)}
-    if target and target != "raysyhuang/multi-agentic-screener":
-        out["upload"] = (
-            f"gh release create pit-universe-{vintage} '{archive}' --repo {target} "
-            f"--title 'PIT universe vintage {vintage}' --notes 'manifest sha256 in repo'"
-        )
-        out["note"] = f"confirm {target} is PRIVATE before running this"
+    out = {"archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1), "upload": None}
+    if not target:
+        out["note"] = "no upload: set PIT_RELEASE_REPO to a PRIVATE repository (R8)"
+    elif not _REPO_RE.fullmatch(target):
+        out["note"] = f"no upload: {target!r} is not an owner/repo name"
+    elif _repo_is_private(target) is not True:
+        out["note"] = (f"no upload: {target} is not verifiably PRIVATE (R8). This vintage holds "
+                       "licensed Polygon data and must never go to a public repository.")
     else:
-        out["upload"] = None
-        out["note"] = ("no upload command: set PIT_RELEASE_REPO to a PRIVATE repository "
-                       "(R8). Never upload to the public screener repo.")
+        # An argument vector, not a shell string: nothing here is ever interpolated by a shell.
+        out["upload"] = ["gh", "release", "create", f"pit-universe-{vintage}", str(archive),
+                         "--repo", target, "--title", f"PIT universe vintage {vintage}",
+                         "--notes", "manifest sha256 committed in the screener repo"]
+        out["note"] = f"{target} verified PRIVATE"
     print(json.dumps(out, indent=2))
     return archive
 
