@@ -45,7 +45,8 @@ def _mark(snap_dir: Path, as_of: str) -> None:
 
 
 def _snap(path: Path, payload, as_of: str) -> None:
-    _w(path, payload)
+    """A one-page snapshot with request provenance and a completion marker."""
+    _w(path, {**payload, "_request": {"as_of": as_of, "cursor": None}})
     _mark(path.parent, as_of)
 
 
@@ -370,7 +371,8 @@ def test_unmarked_or_altered_snapshot_is_refused(vintage):
     with pytest.raises(RuntimeError, match="no completion marker"):
         pa._classification_by_month(VINTAGE)
     _mark(vintage / "raw" / "reference" / "2024-02", "2024-02-01")
-    _w(vintage / "raw" / "reference" / "2024-02" / "page-1.json.gz", {"results": []})
+    _w(vintage / "raw" / "reference" / "2024-02" / "page-1.json.gz",
+       {"results": [], "_request": {"as_of": "2024-02-01", "cursor": None}})
     with pytest.raises(RuntimeError, match="changed since completion"):
         pa._classification_by_month(VINTAGE)
 
@@ -469,7 +471,8 @@ def test_v2_zero_median_keeps_its_original_relative_halt():
 def test_marker_over_a_page_that_still_has_next_url_is_refused(vintage):
     d = vintage / "raw" / "reference" / "2024-02"
     _w(d / "page-1.json.gz", {"results": [{"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"}],
-                              "next_url": "x?cursor=more"})
+                              "next_url": "x?cursor=more",
+                              "_request": {"as_of": "2024-02-01", "cursor": None}})
     _mark(d, "2024-02-01")
     with pytest.raises(RuntimeError, match="pagination chain broken"):
         pa._classification_by_month(VINTAGE)
@@ -545,3 +548,47 @@ def test_verify_covers_completion_markers_for_v3(vintage):
     (raw / "reference" / "2024-02" / pa.SNAPSHOT_MARKER).unlink()
     with pytest.raises(SystemExit, match="VERIFY FAILED"):
         pr.verify(VINTAGE)
+
+
+@pytest.mark.asyncio
+async def test_valid_marker_fast_path_returns_true_without_any_request(vintage, monkeypatch):
+    async def no_calls(*a, **k):
+        raise AssertionError("a valid marker must not trigger a request")
+    monkeypatch.setattr(pa, "_get", no_calls)
+    assert await pa._fetch_snapshot(None, VINTAGE, ("reference", "2024-02"), date(2024, 2, 1)) is True
+
+
+@pytest.mark.asyncio
+async def test_unproven_unmarked_pages_are_quarantined_and_refetched(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    d = tmp_path / "v" / "raw" / "reference" / "2024-02"
+    _w(d / "page-1.json.gz", {"results": [{"ticker": "OLD"}], "next_url": "x?cursor=c2"})   # no provenance
+    _w(d / "page-2.json.gz", {"results": [{"ticker": "OTHER"}]})
+    calls = []
+
+    async def fake_get(client, url, params, allow_404=False):
+        calls.append(params.get("cursor"))
+        return {"results": [{"ticker": "NEW"}]}
+    monkeypatch.setattr(pa, "_get", fake_get)
+    assert await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1)) is True
+    assert calls == [None]                                         # refetched from page 1
+    assert list((d.parent).glob("2024-02.untrusted-*"))           # old pages kept, quarantined
+    labels = pa._read_snapshot(d, require_complete=True, expected_as_of=date(2024, 2, 1))
+    assert set(labels) == {"NEW"}
+
+
+def test_page_from_another_chain_breaks_provenance(vintage):
+    d = vintage / "raw" / "reference" / "2024-02"
+    _w(d / "page-1.json.gz", {"results": [], "next_url": "x?cursor=c2",
+                              "_request": {"as_of": "2024-02-01", "cursor": None}})
+    _w(d / "page-2.json.gz", {"results": [], "_request": {"as_of": "2024-02-01", "cursor": "zzz"}})
+    _mark(d, "2024-02-01")
+    with pytest.raises(RuntimeError, match="provenance does not continue the chain"):
+        pa._classification_by_month(VINTAGE)
+
+
+def test_missing_monthly_snapshot_is_refused(vintage):
+    import shutil
+    shutil.rmtree(vintage / "raw" / "reference" / "2024-02")
+    with pytest.raises(RuntimeError, match="monthly snapshot\\(s\\) missing"):
+        pa._classification_by_month(VINTAGE)

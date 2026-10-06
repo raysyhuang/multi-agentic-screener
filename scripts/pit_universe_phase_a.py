@@ -589,6 +589,16 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
     if marker.exists():
         _read_snapshot(marker.parent, require_complete=True, expected_as_of=as_of)  # raises if invalid
         return True
+    snap_dir = marker.parent
+    # Existing unmarked pages are reused only if each one PROVES it belongs to
+    # this snapshot: requested for this as-of date with exactly the cursor the
+    # previous page handed out. Pages without that provenance (written by older
+    # code, or from another chain) are moved aside — raw data is never deleted —
+    # and the snapshot is fetched again from page 1.
+    if snap_dir.exists() and not _pages_have_provenance(snap_dir, as_of):
+        aside = snap_dir.with_name(f"{snap_dir.name}.untrusted-{_utc_stamp()}")
+        snap_dir.rename(aside)
+        logger.warning("  snapshot %s: unproven pages moved to %s; refetching", "/".join(sub), aside.name)
     page, cursor, hashes = 1, None, []
     while True:
         path = _raw_path(vintage, *sub, f"page-{page}.json.gz")
@@ -603,6 +613,7 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
                 logger.error("  snapshot %s page %d unrecoverable (%s) — left INCOMPLETE",
                              "/".join(sub), page, payload.get("_reason"))
                 return False
+            payload["_request"] = {"as_of": str(as_of), "cursor": cursor}
             _write_raw(path, payload)
         hashes.append(_sha256_file(path))
         nxt = payload.get("next_url")
@@ -613,6 +624,33 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
     marker.write_text(json.dumps({"as_of": str(as_of), "pages": page, "page_sha256": hashes}))
     logger.info("  snapshot %s: %d page(s), complete", "/".join(sub), page)
     return True
+
+
+def _cursor_of(next_url: str | None) -> str | None:
+    return next_url.split("cursor=")[-1] if next_url else None
+
+
+def _pages_have_provenance(snap_dir: Path, as_of: date) -> bool:
+    """Every existing page was requested for as_of with its predecessor's cursor."""
+    pages = sorted(snap_dir.glob("page-*.json.gz"), key=lambda p: int(p.name.split("-")[1].split(".")[0]))
+    if [p.name for p in pages] != [f"page-{i}.json.gz" for i in range(1, len(pages) + 1)]:
+        return False
+    expected_cursor = None
+    for p in pages:
+        try:
+            payload = _read_raw(p)
+        except Exception:  # noqa: BLE001 — corrupt bytes are unproven by definition
+            return False
+        req = payload.get("_request")
+        if not req or req.get("as_of") != str(as_of) or req.get("cursor") != expected_cursor:
+            return False
+        expected_cursor = _cursor_of(payload.get("next_url"))
+    return True
+
+
+def _utc_stamp() -> str:
+    from datetime import datetime, timezone
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
 
 
 def _sha256_file(path: Path) -> str:
@@ -647,10 +685,16 @@ def _read_snapshot(snap_dir: Path, require_complete: bool,
         if [_sha256_file(p) for p in pages] != m["page_sha256"]:
             raise RuntimeError(f"snapshot {name}: page bytes changed since completion")
         payloads = [_read_raw(p) for p in pages]
+        expected_cursor = None
         for i, payload in enumerate(payloads, 1):
             has_next = bool(payload.get("next_url"))
             if (i < n and not has_next) or (i == n and has_next):
                 raise RuntimeError(f"snapshot {name}: pagination chain broken at page {i} of {n}")
+            req = payload.get("_request") or {}
+            if req.get("as_of") != m.get("as_of") or req.get("cursor") != expected_cursor:
+                raise RuntimeError(f"snapshot {name}: page {i} provenance does not continue the chain "
+                                   f"(as_of {req.get('as_of')}, cursor {req.get('cursor')!r})")
+            expected_cursor = _cursor_of(payload.get("next_url"))
     else:
         payloads = [_read_raw(p) for p in pages]
     labels: dict[str, dict] = {}
@@ -674,9 +718,15 @@ def _classification_by_month(vintage: str) -> dict[tuple[int, int], dict[str, di
     if v3:
         for d in frozen_sessions(vintage)[1]:
             first_session.setdefault((d.year, d.month), d)
+        present = {tuple(int(x) for x in p.name.split("-")) for p in ref_root.glob("*")
+                   if p.is_dir() and "." not in p.name}
+        missing = sorted(set(first_session) - present)
+        if missing:
+            raise RuntimeError(f"{len(missing)} monthly snapshot(s) missing, e.g. {missing[:3]} — "
+                               "a month without its own snapshot would inherit stale labels")
     for month_dir in sorted(ref_root.glob("*")):
-        if not month_dir.is_dir():
-            continue
+        if not month_dir.is_dir() or (v3 and "." in month_dir.name):
+            continue                  # *.untrusted-* directories are quarantined evidence
         year, month = (int(x) for x in month_dir.name.split("-"))
         if v3:
             if (year, month) not in first_session:
