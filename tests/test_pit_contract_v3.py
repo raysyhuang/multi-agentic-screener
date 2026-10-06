@@ -1,4 +1,4 @@
-"""PIT universe contract v3 (rulings R1-R8, 2026-10-06), on a synthetic vintage.
+"""PIT universe contract v3 (rulings R1-R9 + Phase B, 2026-10-06), on a synthetic vintage.
 
 R1 transition resolution, R2 zero-tolerance exchange drift, R3 ADR eligibility,
 R6 the zero-median ratio rule, and the version stamp that keeps v2 vintages
@@ -841,3 +841,55 @@ def test_v3_steps_refuse_to_run_with_uncommitted_governed_changes(monkeypatch):
         pa.require_clean_code()
     monkeypatch.setattr(subprocess, "run", lambda args, **kw: R("" if "status" in args else "abc123\n"))
     assert pa.require_clean_code() == "abc123"
+
+
+
+@pytest.mark.asyncio
+async def test_completed_legacy_snapshot_is_quarantined_and_refetched(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    d = tmp_path / "v" / "raw" / "reference" / "2024-02"
+    _w(d / "page-1.json.gz", {"results": [{"ticker": "OLD"}],
+                              "_request": {"as_of": "2024-02-01", "cursor": None}})        # no identity
+    (d / pa.SNAPSHOT_MARKER).write_text(json.dumps(
+        {"as_of": "2024-02-01", "pages": 1, "page_sha256": [pa._sha256_file(d / "page-1.json.gz")]}))
+
+    async def fake_get(client, url, params, allow_404=False):
+        return {"results": [{"ticker": "NEW"}]}
+    monkeypatch.setattr(pa, "_get", fake_get)
+    assert await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1))
+    assert list(d.parent.glob("2024-02.untrusted-*"))
+    assert set(pa._read_snapshot(d, True, date(2024, 2, 1))) == {"NEW"}
+
+
+@pytest.mark.asyncio
+async def test_details_file_for_another_date_is_not_counted_complete(vintage, monkeypatch):
+    await _phase_b_ready(vintage, monkeypatch, {"PBR": 30e6, "LNG": 1e6, "NEWCO": 1e6})
+    path = pa._details_path(VINTAGE, "PBR", (2024, 1))
+    payload = pa._read_raw(path)
+    payload["_request"]["date"] = "2023-12-01"
+    pa._write_raw_unchecked(path, payload)
+    st = pa.phase_b_status(VINTAGE)
+    assert not st["complete"] and ("PBR", (2024, 1)) in st["invalid"]
+
+
+def test_malformed_ledger_line_fails_closed(tmp_path):
+    p = tmp_path / "l.jsonl"
+    p.write_text('{"event": "request", "n": 1}\nnot json\n')
+    with pytest.raises(RuntimeError, match="unparseable ledger line"):
+        pa.RequestLedger(p)
+
+
+@pytest.mark.asyncio
+async def test_audit_estimate_must_equal_the_recomputed_one_exactly(vintage, monkeypatch):
+    await _phase_b_ready(vintage, monkeypatch, {"PBR": 21e6, "LNG": 1e6, "NEWCO": 1e8})
+
+    async def audit_get(client, url, params, allow_404=False):
+        return {"results": {"ticker": url.rsplit("/", 1)[-1], "market_cap": 5e8}}
+    monkeypatch.setattr(pa, "_get", audit_get)
+    await pa.run_mcap_audit(VINTAGE)
+    f = next((vintage / "raw" / "mcap_audit").rglob("*.json.gz"))
+    payload = pa._read_raw(f)
+    payload["_audit"]["estimate"] = payload["_audit"]["estimate"] * (1 + 1e-9)
+    pa._write_raw_unchecked(f, payload)
+    _, halts = pr.mcap_gates(VINTAGE, pa.build_membership_with_mcap(VINTAGE))
+    assert any("does not match its planned pair" in h for h in halts)

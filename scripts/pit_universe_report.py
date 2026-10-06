@@ -167,7 +167,9 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
                     key = f"{p.parent.parent.name}/{p.parent.name}/{p.name.replace('.json.gz', '')}"
                     part, d_s, t, v = expected_rows[key]
                     if (meta.get("part"), meta.get("date"), meta.get("ticker")) != (part, d_s, t) \
-                            or abs(float(meta.get("estimate", -1)) - v) > 1e-6 * max(1.0, v):
+                            or meta.get("estimate") != v:
+                        # Exact: the stored estimate must BE the recomputed one, so no
+                        # tolerance can straddle the $300M threshold.
                         halts.append(f"§3d audit record {key} does not match its planned pair")
                         continue
                     actual = (payload.get("results") or {}).get("market_cap")
@@ -175,7 +177,7 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
                     if payload.get("_not_found") or actual is None:
                         rec["unverifiable"] += 1
                         continue
-                    flipped = (meta["estimate"] > MIN_MCAP) != (float(actual) > MIN_MCAP)
+                    flipped = (v > MIN_MCAP) != (float(actual) > MIN_MCAP)   # recomputed estimate
                     if meta["part"] == "band":
                         rec["band"] += 1
                         rec["band_disagree"] += int(flipped)
@@ -662,14 +664,23 @@ def write_report(vintage: str) -> dict:
         if not lp.exists():
             halts.append("no phase B request ledger — market-cap provenance is unverifiable")
         else:
-            calls = failures = 0
+            calls = failures = malformed = 0
             for line in lp.read_text().splitlines():
-                try:
-                    ev = json.loads(line).get("event") if line.strip() else None
-                except json.JSONDecodeError:
+                if not line.strip():
                     continue
+                try:
+                    ev = json.loads(line).get("event")
+                except json.JSONDecodeError:
+                    malformed += 1
+                    continue
+                if ev not in ("request", "failure"):
+                    malformed += 1
                 calls += ev == "request"
                 failures += ev == "failure"
+            if malformed:
+                halts.append(f"phase B ledger has {malformed} malformed record(s) — spend unverifiable")
+            if calls > PHASE_B_CALL_CEILING:
+                halts.append(f"phase B ledger shows {calls} calls > ceiling {PHASE_B_CALL_CEILING}")
             phase_b_ledger = {"calls": calls, "durable_failures": failures,
                               "ceiling": PHASE_B_CALL_CEILING,
                               "headroom": PHASE_B_CALL_CEILING - calls}

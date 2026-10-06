@@ -1,7 +1,7 @@
 """Phase A of the PIT universe build — the membership spine.
 
 Contract: outputs/research/PIT_UNIVERSE_CONTRACT.md (v3: frozen #77 + #79, rulings
-R1-R8 of 2026-10-06 in §12).
+R1-R9 and the Phase B budget of 2026-10-06 in §12 and its addendum).
 
 Phase A acquires everything except market cap:
 
@@ -282,10 +282,15 @@ class RequestLedger:
                     # '"event": "request"' with a space, so the obvious
                     # `'"event":"request"' in line` check silently counts zero
                     # and every restart resets the ceiling to full budget.
-                    if json.loads(line).get("event") == "request":
-                        n += 1
-                except json.JSONDecodeError:
-                    logger.warning("unparseable ledger line skipped")
+                    rec = json.loads(line)
+                except json.JSONDecodeError as exc:
+                    # A skipped line understates spend and so overstates the
+                    # remaining budget. Fail closed.
+                    raise RuntimeError(f"unparseable ledger line in {self.path}: {line[:80]!r}") from exc
+                if rec.get("event") not in ("request", "failure"):
+                    raise RuntimeError(f"unknown ledger event in {self.path}: {line[:80]!r}")
+                if rec["event"] == "request":
+                    n += 1
         return n
 
     def would_exceed(self) -> bool:
@@ -637,16 +642,26 @@ async def _fetch_paged(client, vintage: str, sub: tuple[str, ...], url: str,
     completion marker only when a page with no next_url is reached.
     """
     marker = _raw_path(vintage, *sub, SNAPSHOT_MARKER)
-    if marker.exists():
-        _read_paged(marker.parent, True, as_of, _request_identity(url, base_params))  # raises if invalid
-        return True
     snap_dir = marker.parent
+    request_id = _request_identity(url, base_params)
+    if marker.exists():
+        legacy = "endpoint" not in json.loads(marker.read_text())
+        if not legacy:
+            _read_paged(snap_dir, True, as_of, request_id)  # raises if invalid: fail closed
+            return True
+        # Completed under the pre-identity format: it cannot prove which query it
+        # answers. Quarantine the whole directory (never delete) and refetch.
+        aside = snap_dir.with_name(f"{snap_dir.name}.untrusted-{_utc_stamp()}")
+        if aside.exists():
+            raise RuntimeError(f"quarantine target {aside} already exists")
+        snap_dir.rename(aside)
+        logger.warning("  snapshot %s: legacy completed snapshot moved to %s; refetching",
+                       "/".join(sub), aside.name)
     # Existing unmarked pages are reused only if each one PROVES it belongs to
     # this snapshot: requested for this as-of date with exactly the cursor the
     # previous page handed out. Pages without that provenance (written by older
     # code, or from another chain) are moved aside — raw data is never deleted —
     # and the snapshot is fetched again from page 1.
-    request_id = _request_identity(url, base_params)
     if snap_dir.exists() and not _pages_have_provenance(snap_dir, as_of, request_id):
         aside = snap_dir.with_name(f"{snap_dir.name}.untrusted-{_utc_stamp()}")
         if aside.exists():
@@ -1445,7 +1460,11 @@ async def fetch_mcap_details(vintage: str) -> None:
         for i, (t, q) in enumerate(pairs, 1):
             path = _details_path(vintage, t, q)
             if path.exists():
-                continue
+                if _details_valid(vintage, t, q, snaps):
+                    continue
+                aside = path.with_name(f"{path.name}.untrusted-{_utc_stamp()}")
+                path.rename(aside)          # never deleted; refetched below
+                logger.warning("  details %s %s: unproven file moved aside", t, q)
             payload = await _get(client, f"{BASE}/v3/reference/tickers/{t}",
                                  {"date": str(snaps[q])}, allow_404=True)
             if payload.get("_failed"):
@@ -1458,17 +1477,35 @@ async def fetch_mcap_details(vintage: str) -> None:
                 logger.info("  details: %d fetched (%d/%d)", done, i, len(pairs))
 
 
+def _details_valid(vintage: str, t: str, q: tuple[int, int], snaps: dict) -> bool:
+    """The file at the expected path answers exactly (ticker, quarter snapshot date)."""
+    try:
+        payload = _read_raw(_details_path(vintage, t, q))
+    except Exception:  # noqa: BLE001
+        return False
+    if payload.get("_request") != {"ticker": t, "date": str(snaps[q])}:
+        return False
+    res = payload.get("results")
+    return payload.get("_not_found") is True or (isinstance(res, dict) and res.get("ticker") == t)
+
+
 def phase_b_status(vintage: str) -> dict:
     expected = {(t, q) for t, q in mcap_candidates(vintage)}
+    snaps = quarter_snapshot_dates(vintage)
     root = ROOT / vintage / "raw" / "details"
-    present = set()
+    present, invalid = set(), []
     if root.exists():
         for p in root.glob("*/*.json.gz"):
             y, qn = p.parent.name.split("-Q")
-            present.add((p.name.replace(".json.gz", ""), (int(y), int(qn))))
+            key = (p.name.replace(".json.gz", ""), (int(y), int(qn)))
+            if key in expected and not _details_valid(vintage, key[0], key[1], snaps):
+                invalid.append(key)
+                continue
+            present.add(key)
     missing, extra = sorted(expected - present), sorted(present - expected)
     return {"expected": len(expected), "present": len(expected & present),
-            "missing": missing, "extra": extra, "complete": not missing and not extra}
+            "missing": missing, "extra": extra, "invalid": sorted(invalid),
+            "complete": not missing and not extra}
 
 
 def mcap_estimates(vintage: str, membership: dict | None = None) -> dict[tuple[date, str], float | None]:
