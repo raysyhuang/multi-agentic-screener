@@ -592,3 +592,60 @@ def test_missing_monthly_snapshot_is_refused(vintage):
     shutil.rmtree(vintage / "raw" / "reference" / "2024-02")
     with pytest.raises(RuntimeError, match="monthly snapshot\\(s\\) missing"):
         pa._classification_by_month(VINTAGE)
+
+
+def test_cursor_is_parsed_from_the_query_not_string_split():
+    assert pa._cursor_of("https://api.polygon.io/v3/reference/tickers?cursor=abc&limit=1000") == "abc"
+    assert pa._cursor_of("https://x/y?limit=1&cursor=abc") == "abc"
+    assert pa._cursor_of(None) is None
+    with pytest.raises(RuntimeError, match="exactly one cursor"):
+        pa._cursor_of("https://x/y?cursor=a&cursor=b")
+
+
+@pytest.mark.asyncio
+async def test_pagination_passes_only_the_cursor_value(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    seen = []
+
+    async def fake_get(client, url, params, allow_404=False):
+        seen.append(params.get("cursor"))
+        if params.get("cursor") is None:
+            return {"results": [{"ticker": "A"}], "next_url": "https://x/v3?cursor=c2&limit=1000"}
+        return {"results": [{"ticker": "B"}]}
+    monkeypatch.setattr(pa, "_get", fake_get)
+    assert await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1))
+    assert seen == [None, "c2"]
+    labels = pa._read_snapshot(tmp_path / "v" / "raw" / "reference" / "2024-02", True, date(2024, 2, 1))
+    assert set(labels) == {"A", "B"}
+
+
+def test_noncanonical_month_directory_is_refused(vintage):
+    import shutil
+    shutil.copytree(vintage / "raw" / "reference" / "2024-02", vintage / "raw" / "reference" / "2024-2")
+    with pytest.raises(RuntimeError, match="unexpected reference directories"):
+        pa._classification_by_month(VINTAGE)
+    shutil.rmtree(vintage / "raw" / "reference" / "2024-02")
+    with pytest.raises(RuntimeError, match="missing"):
+        pa._classification_by_month(VINTAGE)
+
+
+@pytest.mark.asyncio
+async def test_two_quarantines_in_the_same_second_do_not_collide(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    d = tmp_path / "v" / "raw" / "reference" / "2024-02"
+    calls = {"n": 0}
+
+    async def fake_get(client, url, params, allow_404=False):
+        calls["n"] += 1
+        return {"_failed": True, "_reason": "http_503"}
+    monkeypatch.setattr(pa, "_get", fake_get)
+    for _ in range(2):
+        _w(d / "page-1.json.gz", {"results": []})                      # unproven page again
+        assert await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1)) is False
+    assert len(list(d.parent.glob("2024-02.untrusted-*"))) == 2
+
+
+def test_malformed_page_name_is_unproven_not_a_crash(tmp_path):
+    d = tmp_path / "snap"
+    _w(d / "page-old.json.gz", {"results": []})
+    assert pa._pages_have_provenance(d, date(2024, 2, 1)) is False

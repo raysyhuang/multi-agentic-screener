@@ -597,6 +597,8 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
     # and the snapshot is fetched again from page 1.
     if snap_dir.exists() and not _pages_have_provenance(snap_dir, as_of):
         aside = snap_dir.with_name(f"{snap_dir.name}.untrusted-{_utc_stamp()}")
+        if aside.exists():
+            raise RuntimeError(f"quarantine target {aside} already exists")
         snap_dir.rename(aside)
         logger.warning("  snapshot %s: unproven pages moved to %s; refetching", "/".join(sub), aside.name)
     page, cursor, hashes = 1, None, []
@@ -619,7 +621,7 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
         nxt = payload.get("next_url")
         if not nxt:
             break
-        cursor = nxt.split("cursor=")[-1]
+        cursor = _cursor_of(nxt)
         page += 1
     marker.write_text(json.dumps({"as_of": str(as_of), "pages": page, "page_sha256": hashes}))
     logger.info("  snapshot %s: %d page(s), complete", "/".join(sub), page)
@@ -627,30 +629,54 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
 
 
 def _cursor_of(next_url: str | None) -> str | None:
-    return next_url.split("cursor=")[-1] if next_url else None
+    """The `cursor` query parameter of a next_url — parsed, never string-split.
+
+    Splitting on 'cursor=' would swallow any parameters after it ('abc&x=1').
+    Exactly one non-empty cursor is required; anything else is a broken chain.
+    """
+    if not next_url:
+        return None
+    from urllib.parse import parse_qs, urlsplit
+    values = parse_qs(urlsplit(next_url).query).get("cursor", [])
+    if len(values) != 1 or not values[0]:
+        raise RuntimeError(f"next_url without exactly one cursor: {next_url[:80]!r}")
+    return values[0]
+
+
+def _page_number(path: Path) -> int | None:
+    """N for an exact 'page-N.json.gz' name, else None (never raises)."""
+    import re
+    m = re.fullmatch(r"page-([1-9][0-9]*)\.json\.gz", path.name)
+    return int(m.group(1)) if m else None
 
 
 def _pages_have_provenance(snap_dir: Path, as_of: date) -> bool:
     """Every existing page was requested for as_of with its predecessor's cursor."""
-    pages = sorted(snap_dir.glob("page-*.json.gz"), key=lambda p: int(p.name.split("-")[1].split(".")[0]))
+    files = list(snap_dir.glob("page-*"))
+    numbers = [_page_number(p) for p in files]
+    if any(n is None for n in numbers):
+        return False                          # a malformed page name is unproven
+    pages = [p for _, p in sorted(zip(numbers, files))]
     if [p.name for p in pages] != [f"page-{i}.json.gz" for i in range(1, len(pages) + 1)]:
         return False
     expected_cursor = None
     for p in pages:
         try:
             payload = _read_raw(p)
-        except Exception:  # noqa: BLE001 — corrupt bytes are unproven by definition
+            req = payload.get("_request")
+            if not req or req.get("as_of") != str(as_of) or req.get("cursor") != expected_cursor:
+                return False
+            expected_cursor = _cursor_of(payload.get("next_url"))
+        except Exception:  # noqa: BLE001 — corrupt bytes or a malformed next_url are unproven
             return False
-        req = payload.get("_request")
-        if not req or req.get("as_of") != str(as_of) or req.get("cursor") != expected_cursor:
-            return False
-        expected_cursor = _cursor_of(payload.get("next_url"))
     return True
 
 
 def _utc_stamp() -> str:
+    """Quarantine suffix: UTC time plus a random tag, so two quarantines never collide."""
+    import uuid
     from datetime import datetime, timezone
-    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    return datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%S%fZ") + "-" + uuid.uuid4().hex[:8]
 
 
 def _sha256_file(path: Path) -> str:
@@ -666,7 +692,11 @@ def _read_snapshot(snap_dir: Path, require_complete: bool,
     valid JSON, every non-final page carrying a next_url and the final page none.
     """
     marker = snap_dir / SNAPSHOT_MARKER
-    pages = sorted(snap_dir.glob("page-*.json.gz"), key=lambda p: int(p.name.split("-")[1].split(".")[0]))
+    files = list(snap_dir.glob("page-*"))
+    numbers = [_page_number(p) for p in files]
+    if require_complete and any(n is None for n in numbers):
+        raise RuntimeError(f"snapshot {snap_dir.name}: malformed page file name(s)")
+    pages = [p for n, p in sorted((n, p) for n, p in zip(numbers, files) if n is not None)]
     payloads: list[dict] = []
     if require_complete:
         name = f"{snap_dir.parent.name}/{snap_dir.name}"
@@ -718,12 +748,20 @@ def _classification_by_month(vintage: str) -> dict[tuple[int, int], dict[str, di
     if v3:
         for d in frozen_sessions(vintage)[1]:
             first_session.setdefault((d.year, d.month), d)
-        present = {tuple(int(x) for x in p.name.split("-")) for p in ref_root.glob("*")
-                   if p.is_dir() and "." not in p.name}
-        missing = sorted(set(first_session) - present)
+        expected_names = {f"{y:04d}-{m:02d}": (y, m) for (y, m) in first_session}
+        present_names = {p.name for p in ref_root.glob("*") if p.is_dir() and "." not in p.name}
+        missing = sorted(set(expected_names) - present_names)
+        extra = sorted(present_names - set(expected_names))
         if missing:
             raise RuntimeError(f"{len(missing)} monthly snapshot(s) missing, e.g. {missing[:3]} — "
                                "a month without its own snapshot would inherit stale labels")
+        if extra:
+            raise RuntimeError(f"unexpected reference directories {extra[:3]} — only canonical "
+                               "YYYY-MM names inside the frozen range are allowed")
+        for name, ym in sorted(expected_names.items()):
+            out[ym] = _read_snapshot(ref_root / name, require_complete=True,
+                                     expected_as_of=first_session[ym])
+        return out
     for month_dir in sorted(ref_root.glob("*")):
         if not month_dir.is_dir() or (v3 and "." in month_dir.name):
             continue                  # *.untrusted-* directories are quarantined evidence
