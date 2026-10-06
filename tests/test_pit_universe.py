@@ -412,8 +412,11 @@ def test_known_market_holidays_are_not_sessions():
     assert date(2025, 7, 3) in sessions, "a half day is still a session"
 
 
-def test_an_adr_the_live_book_trades_is_reported_as_pit_being_stricter():
+def test_an_adr_the_live_book_trades_is_reported_as_pit_being_stricter(tmp_path, monkeypatch):
     """§4 — the attribution that inverts the conclusion if you get it wrong.
+
+    v2 semantics (an unstamped vintage): CS only, so the ADR is PIT-stricter.
+    Contract v3 (R3) admits ADRC; see tests/test_pit_contract_v3.py.
 
     `src/signals/filter.py` gates exchange, ETF/fund flags, price, volume and
     market cap. It never requires common stock, so PIT's `type == "CS"` is a
@@ -433,8 +436,12 @@ def test_an_adr_the_live_book_trades_is_reported_as_pit_being_stricter():
         "ETF1": {"type": "ETF", "exchange": "NASDAQ"},
     }}
 
+    import pit_universe_phase_a as _pa
     import pit_universe_report as rep
 
+    # Never write under the real outputs/pit_universe: an acquisition may be running.
+    monkeypatch.setattr(rep, "ROOT", tmp_path)
+    monkeypatch.setattr(_pa, "ROOT", tmp_path)
     orig = rep._read_raw
     rep._read_raw = lambda p: {"candidates": rows}
     try:
@@ -448,8 +455,6 @@ def test_an_adr_the_live_book_trades_is_reported_as_pit_being_stricter():
             result, halts = live_divergence("stub")
         finally:
             mod.build_membership, mod._classification_by_month = real_m, real_l
-            import shutil
-            shutil.rmtree(rep.ROOT / "stub", ignore_errors=True)
     finally:
         rep._read_raw = orig
 

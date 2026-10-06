@@ -34,7 +34,7 @@ HALT_LIVE_COUNT_DIVERGENCE_PCT = 15.0
 # universe-definition change merged, and only with at least this many clean
 # live observations. (a) is set by the independent verifier, not by the author
 # who has seen the vintage; until it is set the gate reports DEFERRED.
-LIVE_GATE_MIN_CLEAN_OBS: int | None = None
+LIVE_GATE_MIN_CLEAN_OBS: int = 60   # R5(a), set by Codex 2026-10-06: ~one quarter of daily runs
 # R5 (b): a merge touching any of these is a universe-definition change.
 UNIVERSE_DEFINITION_PATHS = (
     "src/signals/filter.py",
@@ -114,6 +114,19 @@ def _contract_version(vintage: str) -> str:
     return contract_version(vintage)
 
 
+def _code_sha() -> str | None:
+    import subprocess
+    for exe in ("git", "/opt/homebrew/bin/git"):
+        try:
+            out = subprocess.run([exe, "-C", str(ROOT.parent.parent), "rev-parse", "HEAD"],
+                                 capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return out.stdout.strip()
+    return None
+
+
 def _audit_results(vintage: str) -> dict:
     """Compare date-specific classification against the forward-held label (§3b)."""
     audit_dir = ROOT / vintage / "raw" / "audit"
@@ -132,6 +145,17 @@ def _audit_results(vintage: str) -> dict:
 
     labels_by_month = _classification_by_month(vintage)
     overrides = resolved_overrides(vintage, labels_by_month)
+    planned: set[str] | None = None
+    from pit_universe_phase_a import contract_version, overrides_fingerprint  # noqa: PLC0415
+    if contract_version(vintage) == "v3":
+        plan_path = ROOT / vintage / "audit_plan.json"
+        if not plan_path.exists():
+            return {"ran": False, "reason": "no audit plan — the v3 audit has not run"}
+        plan = json.loads(plan_path.read_text())
+        if plan.get("overrides_sha256") != overrides_fingerprint(vintage):
+            return {"ran": False, "stale": True,
+                    "reason": "audit sample was drawn under different transition results"}
+        planned = set(plan["pairs"])
     per_month: dict[str, dict] = defaultdict(lambda: {
         "sampled": 0, "verifiable": 0, "unverifiable": 0,
         # Only pairs whose forward-held label EXISTS can test drift. A pair with
@@ -150,6 +174,8 @@ def _audit_results(vintage: str) -> dict:
 
     for month_dir in sorted(audit_dir.glob("*")):
         for path in sorted(month_dir.glob("*.json.gz")):
+            if planned is not None and f"{month_dir.name}/{path.name.replace('.json.gz', '')}" not in planned:
+                continue
             payload = _read_raw(path)
             meta = payload.get("_audit", {})
             actual = payload.get("results") or {}
@@ -292,6 +318,9 @@ def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[st
     missing from it while the population is wrong.
     """
     base = ROOT / vintage
+    from pit_universe_phase_a import contract_version  # noqa: PLC0415
+    if contract_version(vintage) == "v3":
+        return live_count_gate_v3(vintage, membership)
     live_path = base / "raw" / "live" / "dashboard.json.gz"
     if not live_path.exists():
         return {"ran": False}, ["live count divergence has no snapshot to run against"]
@@ -338,10 +367,107 @@ def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[st
     return result, halts
 
 
+def universe_definition_boundaries(repo: Path | None = None) -> list:
+    """Dates on which a universe-definition change merged to main (R5 b).
+
+    Detected from git history, never remembered by hand: any commit on main
+    touching the definition paths. The live-count gate only trusts live runs
+    strictly after the latest boundary.
+    """
+    import subprocess
+    from datetime import date as _date  # noqa: PLC0415
+
+    repo = repo or ROOT.parent.parent
+    for exe in ("git", "/opt/homebrew/bin/git"):
+        try:
+            out = subprocess.run(
+                [exe, "-C", str(repo), "log", "--first-parent", "origin/main",
+                 "--format=%cs", "--", *UNIVERSE_DEFINITION_PATHS],
+                capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return sorted({_date.fromisoformat(x) for x in out.stdout.split()})
+    raise RuntimeError("git unusable: cannot detect universe-definition boundaries (R5 b)")
+
+
+def live_count_gate_v3(vintage: str, membership: dict, boundaries: list | None = None) -> tuple[dict, list[str]]:
+    """§A.5 live-count gate under v3 (R5): clean window, pairing, and comparability.
+
+    Three rules, each fail-safe toward DEFERRED (neither pass nor fail):
+      * comparability — live's count applies mcap >= $300M; a pre-market-cap
+        PIT count is not the same quantity, so the gate waits for Phase B;
+      * clean window — only live runs strictly after the latest universe-
+        definition merge count (R5 b), and at least LIVE_GATE_MIN_CLEAN_OBS of
+        them must exist (R5 a);
+      * pairing — a live row is dated by its morning RUN date R; the PIT session
+        it describes is previous_trading_day(R).
+    """
+    from datetime import date as _date  # noqa: PLC0415
+
+    import pandas_market_calendars as mcal  # noqa: PLC0415
+
+    has_mcap = any("eligible" in rec for rec in membership.values())
+    boundaries = boundaries if boundaries is not None else universe_definition_boundaries()
+    last_change = boundaries[-1] if boundaries else None
+    live_path = ROOT / vintage / "raw" / "live" / "dashboard.json.gz"
+    rows = (_read_raw(live_path).get("run_history") or []) if live_path.exists() else []
+    clean = []
+    for row in rows:
+        try:
+            r = _date.fromisoformat(str(row.get("date"))[:10])
+        except ValueError:
+            continue
+        if row.get("universe") and (last_change is None or r > last_change):
+            clean.append((r, row["universe"]))
+    result = {"ran": True, "rule": "R5", "last_definition_change": str(last_change) if last_change else None,
+              "clean_live_observations": len(clean), "min_required": LIVE_GATE_MIN_CLEAN_OBS,
+              "threshold_pct": HALT_LIVE_COUNT_DIVERGENCE_PCT}
+    if not has_mcap:
+        result["status"] = "DEFERRED"
+        result["reason"] = "PIT count is pre-market-cap; live applies mcap >= $300M — evaluate after Phase B"
+        return result, []
+    if len(clean) < LIVE_GATE_MIN_CLEAN_OBS:
+        result["status"] = "DEFERRED"
+        result["reason"] = f"{len(clean)} clean live observations < {LIVE_GATE_MIN_CLEAN_OBS}"
+        return result, []
+    cal = mcal.get_calendar("NYSE")
+    pairs = []
+    for r, live_n in clean:
+        prev = cal.schedule(start_date=r - _td(days=10), end_date=r - _td(days=1)).index
+        if not len(prev):
+            continue
+        d = prev[-1].date()
+        if d in membership:
+            pit_n = len(membership[d]["eligible"])
+            pairs.append(100.0 * abs(pit_n - live_n) / max(1, live_n))
+    if len(pairs) < LIVE_GATE_MIN_CLEAN_OBS:
+        result["status"] = "DEFERRED"
+        result["reason"] = f"only {len(pairs)} clean observations fall inside the vintage"
+        return result, []
+    med = statistics.median(pairs)
+    result.update({"status": "EVALUATED", "paired": len(pairs), "median_divergence_pct": round(med, 2)})
+    halts = []
+    if med > HALT_LIVE_COUNT_DIVERGENCE_PCT:
+        halts.append(f"live count divergence (R5): median {med:.1f}% > {HALT_LIVE_COUNT_DIVERGENCE_PCT}% "
+                     f"over {len(pairs)} clean paired observations")
+    return result, halts
+
+
+def _td(**kw):
+    from datetime import timedelta  # noqa: PLC0415
+    return timedelta(**kw)
+
+
 def write_report(vintage: str) -> dict:
     from pit_universe_phase_a import build_membership  # noqa: PLC0415
 
+    from pit_universe_phase_a import contract_version, require_transitions_complete  # noqa: PLC0415
+
     base = ROOT / vintage
+    v3 = contract_version(vintage) == "v3"
+    if v3:
+        require_transitions_complete(vintage)
     membership = build_membership(vintage)
     if not membership:
         raise SystemExit(f"no grouped data under {base}/raw/grouped — run `spine` first")
@@ -410,6 +536,8 @@ def write_report(vintage: str) -> dict:
     halts.extend(count_halts)
 
     audit = _audit_results(vintage)
+    if v3 and not audit.get("ran"):
+        halts.append(f"classification audit not usable: {audit.get('reason')}")
     if audit.get("ran"):
         for month, rec in sorted(audit["per_month"].items()):
             if rec["type_disagree"]:
@@ -425,7 +553,7 @@ def write_report(vintage: str) -> dict:
                 )
 
     raw_files = sorted((base / "raw").rglob("*.json.gz"))
-    n_quarters = len({(d.year, (d.month - 1) // 3) for d in dates})
+    n_quarters = len({(d.year, (d.month - 1) // 3) for d in dates}) if v3 else 12
     manifest = {
         "vintage": vintage,
         "timezone": "America/New_York",
@@ -434,12 +562,14 @@ def write_report(vintage: str) -> dict:
         "phase": "A",
         "constraints_applied": {
             "min_price": 5.0, "min_share_volume": 500_000,
-            "exchanges": ["NYSE", "NASDAQ"], "type": sorted(_eligible_types(vintage)),
+            "exchanges": ["NYSE", "NASDAQ"],
+            "type": sorted(_eligible_types(vintage)) if v3 else "CS",
             "market_cap": "NOT APPLIED — Phase B",
         },
-        "classification_policy": ("forward-held monthly from the snapshot date, with "
-                                  "membership-relevant transitions resolved to the day (§3a-v2)"),
-        "contract_version": _contract_version(vintage),
+        "classification_policy": (
+            "forward-held monthly from the snapshot date, with membership-relevant "
+            "transitions resolved to the day (§3a-v2)" if v3
+            else "forward-held monthly, applied from snapshot date only"),
         "raw_file_count": len(raw_files),
         "raw_hashes": {str(p.relative_to(base)): _sha256(p) for p in raw_files},
         "distinct_eligible_tickers_pre_mcap": len(distinct_eligible),
@@ -465,6 +595,18 @@ def write_report(vintage: str) -> dict:
         },
     }
 
+    if v3:
+        # Schema additions are v3-only so a v2 vintage's manifest replays exactly.
+        stamp = base / "contract.json"
+        manifest["contract_version"] = _contract_version(vintage)
+        manifest["contract_stamp_sha256"] = _sha256(stamp)
+        manifest["normalization_version"] = "phase-a/v3"
+        manifest["code_sha"] = _code_sha()
+        manifest["config_sha256"] = hashlib.sha256(stamp.read_bytes()).hexdigest()
+        from pit_universe_phase_a import transition_status  # noqa: PLC0415
+        manifest["transition_resolution"] = {k: v for k, v in transition_status(vintage).items()
+                                             if k != "missing"}
+
     (base / "manifest.json").write_text(json.dumps(manifest, indent=2))
     (base / "daily_counts.json").write_text(json.dumps(daily_counts, indent=2))
 
@@ -489,9 +631,15 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
     if not src.exists():
         raise SystemExit(f"no manifest at {src} — nothing to verify against")
 
-    expected = json.loads(src.read_text()).get("raw_hashes", {})
+    manifest_doc = json.loads(src.read_text())
+    expected = manifest_doc.get("raw_hashes", {})
     if not expected:
         raise SystemExit(f"{src} carries no raw_hashes")
+    if manifest_doc.get("contract_version") == "v3":
+        stamp = base / "contract.json"
+        if not stamp.exists() or _sha256(stamp) != manifest_doc.get("contract_stamp_sha256"):
+            raise SystemExit("VERIFY FAILED: manifest says contract v3 but contract.json is "
+                             "missing or does not match — the vintage would replay as v2")
 
     present = {
         str(p.relative_to(base)): p
@@ -541,7 +689,8 @@ def package(vintage: str) -> Path:
     archive = base.parent / f"pit-universe-{vintage}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(base / "raw", arcname=f"{vintage}/raw")
-        for extra in ("manifest.json", "request_ledger.jsonl", "daily_counts.json"):
+        for extra in ("manifest.json", "request_ledger.jsonl", "daily_counts.json",
+                      "contract.json", "audit_plan.json"):
             if (base / extra).exists():
                 tar.add(base / extra, arcname=f"{vintage}/{extra}")
 
@@ -549,14 +698,23 @@ def package(vintage: str) -> Path:
     (base / "archive.sha256").write_text(f"{digest}  {archive.name}\n")
     size_mb = archive.stat().st_size / (1 << 20)
     logger.info("archive %s (%.1f MB) sha256=%s", archive.name, size_mb, digest)
-    print(json.dumps({
-        "archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1),
-        "upload": (
-            f"gh release create pit-universe-{vintage} '{archive}' "
-            f"--title 'PIT universe vintage {vintage}' --notes-file "
-            f"outputs/research/PIT_PHASE_A_HALT_FINDINGS.md"
-        ),
-    }, indent=2))
+    # R8: the vintage contains licensed Polygon data and this repo is PUBLIC, so
+    # an upload command is only emitted for an explicitly configured private
+    # repository, and always with --repo.
+    import os
+    target = os.environ.get("PIT_RELEASE_REPO", "").strip()
+    out = {"archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1)}
+    if target and target != "raysyhuang/multi-agentic-screener":
+        out["upload"] = (
+            f"gh release create pit-universe-{vintage} '{archive}' --repo {target} "
+            f"--title 'PIT universe vintage {vintage}' --notes 'manifest sha256 in repo'"
+        )
+        out["note"] = f"confirm {target} is PRIVATE before running this"
+    else:
+        out["upload"] = None
+        out["note"] = ("no upload command: set PIT_RELEASE_REPO to a PRIVATE repository "
+                       "(R8). Never upload to the public screener repo.")
+    print(json.dumps(out, indent=2))
     return archive
 
 
@@ -595,12 +753,19 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
             "live-universe divergence check has no snapshot to run against"
         ]
 
-    from pit_universe_phase_a import _classification_by_month, build_membership  # noqa: PLC0415
+    from pit_universe_phase_a import (  # noqa: PLC0415
+        _classification_by_month, build_membership, contract_version, eligible_types_for,
+        resolved_label, resolved_overrides,
+    )
 
     live = _read_raw(live_path)
     membership = build_membership(vintage)
     labels = _classification_by_month(vintage)
     covered = set(membership)
+    v3 = contract_version(vintage) == "v3"
+    eligible_types = eligible_types_for(vintage)
+    overrides = resolved_overrides(vintage, labels) if v3 else {}
+    sessions_sorted = sorted(covered)
 
     from datetime import date as _date  # noqa: PLC0415
 
@@ -615,6 +780,14 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
             d = _date.fromisoformat(str(run_date)[:10])
         except ValueError:
             continue
+        if v3:
+            # Live rows carry the morning RUN date; the session they describe is
+            # the previous trading session (R5 pairing).
+            prior = [x for x in sessions_sorted if x < d]
+            d = prior[-1] if prior and (d - prior[-1]).days <= 5 else None
+            if d is None:
+                out_of_range += 1
+                continue
         if d not in covered:
             out_of_range += 1
             continue
@@ -622,8 +795,11 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         if ticker in set(membership[d]["eligible_pre_mcap"]):
             continue
         # Absent from PIT. Attribute it.
-        keys = [k for k in labels if k <= (d.year, d.month)]
-        held = (labels[max(keys)].get(ticker) or {}) if keys else {}
+        if v3:
+            held = resolved_label(labels, overrides, ticker, d) or {}
+        else:
+            keys = [k for k in labels if k <= (d.year, d.month)]
+            held = (labels[max(keys)].get(ticker) or {}) if keys else {}
         record = {
             "ticker": ticker, "date": str(d), "model": row.get("model"),
             "picked": row.get("picked"), "rank": row.get("rank"),
@@ -632,7 +808,17 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         }
         held_type = held.get("type")
         on_allowed_exchange = held.get("exchange") in ("NYSE", "NASDAQ")
-        if held_type == "CS" and on_allowed_exchange:
+        if held_type in eligible_types and on_allowed_exchange:
+            # Under v3 the observable price/volume and history gates can also
+            # exclude it; only a name passing those is a real PIT contradiction.
+            if v3 and ticker not in set(membership[d]["pre_classification"]):
+                pit_stricter.append({**record, "reason": "price_or_volume_on_D"})
+                continue
+            if v3:
+                # Resolved label eligible, observables pass, still absent: the
+                # only remaining gate is the §11 history rule, which live lacks.
+                pit_stricter.append({**record, "reason": "insufficient_history"})
+                continue
             pit_false_exclusions.append(record)
         elif held_type in ("ETF", "FUND", "ETN"):
             live_gate_misses.append(record)

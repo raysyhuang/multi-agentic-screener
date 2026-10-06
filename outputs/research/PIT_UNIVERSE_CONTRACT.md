@@ -441,6 +441,13 @@ R1 Classification:  forward-held monthly + §3a-v2 transition resolution. For ea
                     carrying the new label (<= 5 probes) and apply it with day resolution.
                     A probe matching neither label makes the rest of that month UNKNOWN
                     (excluded, counted). Every probe is a persisted raw response.
+                    Assumption, stated rather than hidden: at most one membership-relevant
+                    change per ticker per month (binary search cannot prove the FIRST of
+                    several, and a change that reverts within the month is invisible to
+                    snapshots). The residual risk is carried by the zero-tolerance §3b audit.
+                    Completeness is fail-closed: audit and report refuse a vintage with any
+                    unresolved candidate, and the audit sample is bound to the transition
+                    results it was drawn under.
 R2 Drift audit:     zero tolerance on BOTH axes (type and exchange). Supersedes the 0.5%
                     exchange limit, which was unresolvable at ~134 labelled pairs/month.
 R3 Security type:   eligible = Polygon CS ∪ ADRC (mirrors live, §2). ETF/ETN/fund/
@@ -450,8 +457,12 @@ R5 Live-count gate: (b) a universe-definition change is any merge touching
                     src/signals/filter.py, the screener query in src/data/fmp_client.py,
                     or src/data/universe_selection.py; the gate evaluates only clean
                     post-change live observations, detected automatically.
-                    (a) minimum clean observations: set by the verifier (Codex), not by the
-                    author who has seen the vintage. Until set, the gate reports DEFERRED.
+                    (a) minimum clean observations = 60 (~one quarter of daily runs), set by
+                    the verifier (Codex) from sampling stability and serial dependence, without
+                    reference to the August divergence values.
+                    Pairing: live run date R <-> PIT session previous_trading_day(R).
+                    Comparability: live applies mcap >= $300M, so the gate compares the
+                    post-Phase-B PIT count and reports DEFERRED until Phase B exists.
                     First clean window starts 2026-10-06 (#130 changed the definition).
 R6 Ratio gate:      when the trailing-12-month median is 0, the absolute gate governs; the
                     2x relative rule applies only to a positive median.
@@ -459,6 +470,10 @@ R7 Range:           2017-01-03 -> last completed session (~9.75 years, 118 month
                     momentum core can reach >= 84 monthly observations after a 12-month
                     warm-up. Polygon serves grouped bars and as-of reference data back to
                     at least 2016 (probed 2026-10-06). Phase A ceiling 45,000 calls.
+                    The range is frozen in contract.json at creation (end = last completed
+                    session then); a resume never extends it. 200 warm-up sessions before
+                    the start are acquired for the §11 history rule and emit no membership.
+                    Price and volume thresholds are strict (> $5, > 500K) per §3.
 R8 Distribution:    the vintage archive goes to a release asset on a PRIVATE repo (this
                     repo is public; Polygon redistribution). Manifest (hashes) stays here.
 ```
