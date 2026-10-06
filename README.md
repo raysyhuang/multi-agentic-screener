@@ -83,6 +83,8 @@ Systematic probe → backtest → refute-or-promote workflow. Scripts live in `s
 
 Supporting infrastructure: Polygon minute-bar fetch with a windowed intraday cache, an intraday same-bar tie resolver in the exit engine, and hardened Polygon retries.
 
+Supplementary offline diagnostics: [factor orthogonalization](docs/research_factor_orthogonalization.md) is research-only and does not replace DSR, validation cards, or walk-forward testing.
+
 ## Regime Detection
 
 All signals are gated by market regime. Sniper is hard-blocked in bear markets.
