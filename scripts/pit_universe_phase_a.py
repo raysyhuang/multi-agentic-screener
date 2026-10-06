@@ -1,6 +1,7 @@
 """Phase A of the PIT universe build — the membership spine.
 
-Contract: outputs/research/PIT_UNIVERSE_CONTRACT.md (frozen, #77 + #79).
+Contract: outputs/research/PIT_UNIVERSE_CONTRACT.md (v3: frozen #77 + #79, rulings
+R1-R8 of 2026-10-06 in §12).
 
 Phase A acquires everything except market cap:
 
@@ -27,8 +28,9 @@ Design rules taken from the contract, not invented here:
     exclusion is reachable and not just contamination (§3b).
 
 Usage:
-    python scripts/pit_universe_phase_a.py spine   [--years 3] [--vintage ET-DATE]
-    python scripts/pit_universe_phase_a.py audit   [--vintage ET-DATE]
+    python scripts/pit_universe_phase_a.py spine       [--start 2017-01-03] [--vintage ET-DATE]
+    python scripts/pit_universe_phase_a.py transitions [--vintage ET-DATE]
+    python scripts/pit_universe_phase_a.py audit       [--vintage ET-DATE]
     python scripts/pit_universe_phase_a.py report  [--vintage ET-DATE]
     python scripts/pit_universe_phase_a.py verify  [--vintage ET-DATE] [--manifest PATH]
     python scripts/pit_universe_phase_a.py package [--vintage ET-DATE]
@@ -70,6 +72,49 @@ ROOT = Path(__file__).resolve().parent.parent / "outputs" / "pit_universe"
 MIN_PRICE = 5.0
 MIN_SHARE_VOLUME = 500_000
 ALLOWED_EXCHANGES = {"NYSE", "NASDAQ"}
+# R3 (contract §12): membership mirrors the LIVE eligibility constraints (§2),
+# and live admits ADR common stock (FMP isEtf/isFund=false). `CS` alone dropped
+# 23 liquid ADRs the book actually trades, PBR picked at rank 1.
+ELIGIBLE_TYPES = frozenset({"CS", "ADRC"})
+# R7 (§12): the momentum core needs >= 84 monthly observations plus a 12-month
+# warm-up, so >= 8 years. Polygon serves survivorship-free grouped bars and
+# as-of reference data back to at least 2016 (probed 2026-10-06).
+DEFAULT_START = date(2017, 1, 3)
+# Contract versions. A vintage is normalized under the rules it was ACQUIRED
+# under, recorded in <vintage>/contract.json at spine time. A vintage without the
+# stamp predates v3 and keeps v2 semantics (CS only, monthly labels with no
+# transition overrides), so a frozen artifact still replays byte-identically.
+CONTRACT_VERSION = "v3"
+_V2_ELIGIBLE_TYPES = frozenset({"CS"})
+
+
+def contract_version(vintage: str) -> str:
+    stamp = ROOT / vintage / "contract.json"
+    if stamp.exists():
+        return json.loads(stamp.read_text()).get("version", "v2")
+    return "v2"
+
+
+def eligible_types_for(vintage: str) -> frozenset[str]:
+    return ELIGIBLE_TYPES if contract_version(vintage) == "v3" else _V2_ELIGIBLE_TYPES
+
+
+def _stamp_contract(vintage: str) -> None:
+    stamp = ROOT / vintage / "contract.json"
+    if stamp.exists():
+        existing = json.loads(stamp.read_text()).get("version")
+        if existing != CONTRACT_VERSION:
+            raise RuntimeError(
+                f"vintage {vintage} was acquired under contract {existing}; "
+                f"refusing to extend it under {CONTRACT_VERSION} — start a new vintage")
+        return
+    stamp.parent.mkdir(parents=True, exist_ok=True)
+    stamp.write_text(json.dumps({
+        "version": CONTRACT_VERSION,
+        "eligible_types": sorted(ELIGIBLE_TYPES),
+        "transition_resolution": "§3a-v2",
+        "rulings": "R1-R8, 2026-10-06 (contract §12)",
+    }, indent=2))
 _EXCHANGE_MAP = {
     "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
     "ARCX": "NYSE", "BATS": "NASDAQ",
@@ -78,7 +123,7 @@ _EXCHANGE_MAP = {
 
 # §3b audit. Sampler version is recorded in the manifest; changing any of these
 # constants is a version bump, never a silent edit.
-SAMPLER_VERSION = "phase-a/1"
+SAMPLER_VERSION = "phase-a/2"  # contract v3: ELIGIBLE_TYPES + transition-resolved labels
 AUDIT_SEED = 20260812
 AUDIT_PAIRS_PER_MONTH = 200
 AUDIT_BUCKETS = ("common_stock", "etf_fund_other", "unknown")
@@ -87,12 +132,14 @@ AUDIT_BUCKETS = ("common_stock", "etf_fund_other", "unknown")
 # family and no burst parallelism (§A.3).
 REQUEST_DELAY_S = 0.12
 
-# Hard Phase A ceiling. The contract authorises ~8,200 calls; transition
-# resolution (§3a-v2, pending ruling) adds ~1,200. The ceiling is enforced in
-# `_get` and aborts the run, because a budget that is only ever compared against
-# an estimate AFTER the run is not a budget — the 1.9M-call naive build this
-# design exists to avoid would have been discovered the same way.
-PHASE_A_CALL_CEILING = 12_000
+# Hard Phase A ceiling. Contract v3 (R7: ~9.75 years) authorises ~2,450 grouped
+# + ~1,500 reference pages + ~23,600 audit pairs + transition resolution, which
+# is <= 5 probes per candidate (§3a-v2). The ceiling is enforced in `_get`
+# and aborts the run, because a budget that is only ever compared against an
+# estimate AFTER the run is not a budget — the 1.9M-call naive build this design
+# exists to avoid would have been discovered the same way.
+PHASE_A_CALL_CEILING = 45_000
+# §3a-v2 binary search costs ceil(log2(sessions in month)) <= 5 probes per transition.
 
 
 class BudgetExceeded(RuntimeError):
@@ -340,25 +387,27 @@ def _today_et() -> date:
     return datetime.now(ZoneInfo("America/New_York")).date()
 
 
-def et_sessions(years: float) -> list[date]:
+def et_sessions(years: float | None = None, start: date | None = None) -> list[date]:
     """Actual NYSE sessions, so holidays cost no calls.
 
     Ends at the last COMPLETED session: today's bars do not exist until the
     session closes, and a partial file frozen into a vintage would be worse
-    than a missing one.
+    than a missing one. ``start`` (contract v3) takes precedence over ``years``.
     """
     import pandas_market_calendars as mcal
 
     end = _today_et() - timedelta(days=1)
-    start = end - timedelta(days=int(365.25 * years))
+    if start is None:
+        start = end - timedelta(days=int(365.25 * (years if years is not None else 3.0)))
     sched = mcal.get_calendar("NYSE").schedule(start_date=start, end_date=end)
     return [d.date() for d in sched.index]
 
 
 # ── step 1: spine ────────────────────────────────────────────────────────────
 
-async def fetch_spine(vintage: str, years: float) -> None:
-    sessions = et_sessions(years)
+async def fetch_spine(vintage: str, years: float | None = None, start: date | None = None) -> None:
+    _stamp_contract(vintage)
+    sessions = et_sessions(years, start)
     months = sorted({(d.year, d.month) for d in sessions})
     logger.info(
         "spine: %d ET sessions, %d monthly reference snapshots",
@@ -461,6 +510,8 @@ def _label_for(labels_by_month: dict, d: date) -> dict[str, dict]:
 def build_membership(vintage: str) -> dict[date, dict]:
     """Per-session membership under every constraint Phase A can evaluate."""
     labels_by_month = _classification_by_month(vintage)
+    overrides = resolved_overrides(vintage, labels_by_month)
+    eligible_types = eligible_types_for(vintage)
     grouped_dir = ROOT / vintage / "raw" / "grouped"
     per_date: dict[date, dict] = {}
 
@@ -468,6 +519,8 @@ def build_membership(vintage: str) -> dict[date, dict]:
         d = date.fromisoformat(path.stem.replace(".json", ""))
         results = _read_raw(path).get("results", []) or []
         labels = _label_for(labels_by_month, d)
+        if d in overrides:
+            labels = {**labels, **overrides[d]}
 
         traded, pre_class, eligible = [], [], []
         reasons: Counter = Counter()
@@ -498,8 +551,10 @@ def build_membership(vintage: str) -> dict[date, dict]:
             if not label.get("exchange"):
                 reasons["exchange_unknown"] += 1
                 continue
-            if label["type"] != "CS":
-                reasons["not_common_stock"] += 1
+            if label["type"] not in eligible_types:
+                # v2 vintages keep their original reason key so they replay.
+                reasons["ineligible_type" if eligible_types is ELIGIBLE_TYPES
+                        else "not_common_stock"] += 1
                 continue
             if label["exchange"] not in ALLOWED_EXCHANGES:
                 reasons["failed_exchange"] += 1
@@ -515,12 +570,180 @@ def build_membership(vintage: str) -> dict[date, dict]:
     return per_date
 
 
+# ── step 1b: transition resolution (§3a-v2, ruling R1) ────────────────────────
+#
+# Exchange and security type are EVENT-DRIVEN attributes: a venue transfer or a
+# reclassification happens on a specific date, and a forward-held monthly label
+# is wrong for up to a month after it (LNG, Feb 2024). For every ticker whose
+# label differs between two consecutive monthly snapshots in a way that can
+# change membership, the exact first session carrying the new label is found by
+# bounded binary search on the per-ticker as-of endpoint, and applied with day
+# resolution. Only tickers that pass the observable price/volume constraints on
+# some session in the window are resolved: nothing else can enter membership,
+# so resolving it would spend calls that cannot change the dataset.
+
+def _eligible(label: dict | None) -> bool:
+    """v3 eligibility; transition resolution only exists for v3 vintages."""
+    return bool(label) and label.get("type") in ELIGIBLE_TYPES and label.get("exchange") in ALLOWED_EXCHANGES
+
+
+def _membership_relevant_change(old: dict | None, new: dict | None) -> bool:
+    """Type changes always; exchange changes only when they cross the eligible set.
+
+    An absent label (a mid-month listing) differs from any present one.
+    """
+    old_type = (old or {}).get("type")
+    new_type = (new or {}).get("type")
+    if old_type != new_type:
+        return True
+    return _eligible(old) != _eligible(new)
+
+
+def transition_candidates(vintage: str) -> list[dict]:
+    """(ticker, month) pairs needing day resolution, with the sessions to search."""
+    labels_by_month = _classification_by_month(vintage)
+    months = sorted(labels_by_month)
+    grouped_dir = ROOT / vintage / "raw" / "grouped"
+    sessions = sorted(date.fromisoformat(p.stem.replace(".json", ""))
+                      for p in grouped_dir.glob("*.json.gz"))
+    pre_by_date: dict[date, set[str]] = {}
+    for d in sessions:
+        rows = _read_raw(grouped_dir / f"{d}.json.gz").get("results", []) or []
+        pre_by_date[d] = {
+            r["T"] for r in rows
+            if r.get("T") and r.get("c") is not None and r.get("v") is not None
+            and r["c"] >= MIN_PRICE and r["v"] >= MIN_SHARE_VOLUME
+        }
+    out = []
+    for a, b in zip(months, months[1:]):
+        window = [d for d in sessions if (d.year, d.month) == a]
+        if not window:
+            continue
+        relevant = set().union(*(pre_by_date[d] for d in window))
+        old_l, new_l = labels_by_month[a], labels_by_month[b]
+        for t in sorted(relevant):
+            if _membership_relevant_change(old_l.get(t), new_l.get(t)):
+                out.append({"ticker": t, "month": a, "old": old_l.get(t), "new": new_l.get(t),
+                            "sessions": window})
+    return out
+
+
+def _label_from_asof(payload: dict) -> dict | None:
+    res = payload.get("results") or {}
+    if payload.get("_not_found") or not res or not res.get("type"):
+        return None
+    return {"type": res.get("type"),
+            "exchange": _EXCHANGE_MAP.get(res.get("primary_exchange", ""), "")}
+
+
+def _same(a: dict | None, b: dict | None) -> bool:
+    if not a or not b:
+        return not a and not b
+    return a.get("type") == b.get("type") and _eligible(a) == _eligible(b)
+
+
+async def resolve_transitions(vintage: str) -> None:
+    """Binary-search each candidate's first session carrying the new label.
+
+    Every probe's raw response is persisted before use (replay determinism). A
+    probe returning neither the old nor the new label makes the window
+    AMBIGUOUS: recorded, and the ticker is treated as unknown (excluded and
+    counted) for the unresolved sessions — never guessed.
+    """
+    if contract_version(vintage) != "v3":
+        raise RuntimeError(f"vintage {vintage} is not a contract-v3 vintage; §3a-v2 does not apply")
+    cands = transition_candidates(vintage)
+    logger.info("transitions: %d candidate(s) to resolve", len(cands))
+    async with httpx.AsyncClient() as client:
+        for i, c in enumerate(cands, 1):
+            t, (y, m) = c["ticker"], c["month"]
+            out_path = _raw_path(vintage, "transitions", f"{y:04d}-{m:02d}", f"{t}.result.json.gz")
+            if out_path.exists():
+                continue
+            window = c["sessions"]
+            # Invariant: label(window[lo]) == old (the snapshot date itself, by
+            # construction) and the next snapshot carries new. Find the first
+            # index whose as-of label equals new.
+            lo, hi = 0, len(window)        # hi == len(window): new from the next snapshot on
+            probes: list[dict] = []
+            ambiguous = probe_failed = False
+            while hi - lo > 1:             # <= ceil(log2(len(window))) probes
+                mid = (lo + hi) // 2
+                d = window[mid]
+                ppath = _raw_path(vintage, "transitions", f"{y:04d}-{m:02d}", f"{t}_{d}.json.gz")
+                if ppath.exists():
+                    payload = _read_raw(ppath)
+                else:
+                    payload = await _get(client, f"{BASE}/v3/reference/tickers/{t}",
+                                         {"date": str(d)}, allow_404=True)
+                    if payload.get("_failed"):
+                        logger.error("  transition %s %s probe failed (%s)", t, d, payload.get("_reason"))
+                        probe_failed = True
+                        break
+                    _write_raw_unchecked(ppath, payload)
+                label = _label_from_asof(payload)
+                probes.append({"date": str(d), "label": label})
+                if _same(label, c["new"]):
+                    hi = mid
+                elif _same(label, c["old"]):
+                    lo = mid
+                else:
+                    ambiguous = True
+                    break
+            if probe_failed:
+                continue            # no result written: a resume retries this window
+            result = {
+                "ticker": t, "month": f"{y:04d}-{m:02d}", "old": c["old"], "new": c["new"],
+                "effective": None if (ambiguous or hi >= len(window)) else str(window[hi]),
+                "ambiguous_from": str(window[lo + 1]) if ambiguous else None,
+                "probes": probes,
+            }
+            _write_raw_unchecked(out_path, result)
+            if i % 100 == 0:
+                logger.info("  transitions: %d/%d", i, len(cands))
+    logger.info("transition resolution complete")
+
+
+def resolved_overrides(vintage: str, labels_by_month: dict) -> dict[date, dict[str, dict | None]]:
+    """{session: {ticker: label}} for sessions where §3a-v2 replaces the held label.
+
+    From ``effective`` to the end of the month the ticker carries the NEW label.
+    From ``ambiguous_from`` to the end of the month it carries no label (unknown,
+    excluded and counted). Before either, the forward-held label stands.
+    """
+    root = ROOT / vintage / "raw" / "transitions"
+    out: dict[date, dict[str, dict | None]] = defaultdict(dict)
+    if not root.exists() or contract_version(vintage) != "v3":
+        return {}
+    grouped_dir = ROOT / vintage / "raw" / "grouped"
+    sessions = sorted(date.fromisoformat(p.stem.replace(".json", ""))
+                      for p in grouped_dir.glob("*.json.gz"))
+    for path in sorted(root.glob("*/*.result.json.gz")):
+        r = _read_raw(path)
+        y, m = (int(x) for x in r["month"].split("-"))
+        start = r.get("effective") or r.get("ambiguous_from")
+        if not start:
+            continue
+        start_d = date.fromisoformat(start)
+        label = r["new"] if r.get("effective") else None
+        for d in sessions:
+            if (d.year, d.month) == (y, m) and d >= start_d:
+                out[d][r["ticker"]] = label
+    return dict(out)
+
+
+def resolved_label(labels_by_month: dict, overrides: dict, ticker: str, d: date) -> dict | None:
+    if d in overrides and ticker in overrides[d]:
+        return overrides[d][ticker]
+    return _label_for(labels_by_month, d).get(ticker)
+
+
 # ── step 2: classification drift audit (§3b) ─────────────────────────────────
 
-def _bucket(label: dict | None) -> str:
+def _bucket(label: dict | None, eligible_types: frozenset[str] = ELIGIBLE_TYPES) -> str:
     if label is None or not label.get("type"):
         return "unknown"
-    return "common_stock" if label["type"] == "CS" else "etf_fund_other"
+    return "common_stock" if label["type"] in eligible_types else "etf_fund_other"
 
 
 def audit_sample(vintage: str, membership: dict[date, dict]) -> dict[tuple[int, int], list]:
@@ -531,6 +754,7 @@ def audit_sample(vintage: str, membership: dict[date, dict]) -> dict[tuple[int, 
     reproducible.
     """
     labels_by_month = _classification_by_month(vintage)
+    overrides = resolved_overrides(vintage, labels_by_month)
     by_month: dict[tuple[int, int], list[tuple[date, str]]] = defaultdict(list)
     for d, rec in membership.items():
         for t in rec["pre_classification"]:
@@ -538,10 +762,10 @@ def audit_sample(vintage: str, membership: dict[date, dict]) -> dict[tuple[int, 
 
     sampled: dict[tuple[int, int], list] = {}
     for month, pairs in sorted(by_month.items()):
-        labels = labels_by_month.get(month, {})
         strata: dict[str, list] = {b: [] for b in AUDIT_BUCKETS}
         for pair in sorted(pairs):                      # canonical order
-            strata[_bucket(labels.get(pair[1]))].append(pair)
+            strata[_bucket(resolved_label(labels_by_month, overrides, pair[1], pair[0]),
+                           eligible_types_for(vintage))].append(pair)
 
         per_bucket = AUDIT_PAIRS_PER_MONTH // len(AUDIT_BUCKETS)
         chosen: list = []
@@ -606,21 +830,26 @@ async def run_audit(vintage: str) -> None:
 
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", choices=["spine", "audit", "report", "verify", "package",
-                                 "divergence-fetch"])
+    ap.add_argument("step", choices=["spine", "transitions", "audit", "report", "verify",
+                                     "package", "divergence-fetch"])
     ap.add_argument("--manifest", help="verify against this manifest instead of the vintage's own")
-    ap.add_argument("--years", type=float, default=3.0)
+    ap.add_argument("--years", type=float, default=None)
+    ap.add_argument("--start", type=date.fromisoformat, default=None,
+                    help=f"first ET session (contract v3 default {DEFAULT_START})")
     ap.add_argument("--vintage", default=None, help="ET date tag; defaults to today ET")
     args = ap.parse_args()
 
     vintage = args.vintage or str(_today_et())
     logger.info("vintage %s  step %s", vintage, args.step)
 
-    if args.step in ("spine", "audit"):
+    if args.step in ("spine", "transitions", "audit"):
         ledger = _open_ledger(vintage)
         try:
             if args.step == "spine":
-                asyncio.run(fetch_spine(vintage, args.years))
+                start = args.start or (None if args.years is not None else DEFAULT_START)
+                asyncio.run(fetch_spine(vintage, args.years, start))
+            elif args.step == "transitions":
+                asyncio.run(resolve_transitions(vintage))
             else:
                 asyncio.run(run_audit(vintage))
         except BudgetExceeded as e:

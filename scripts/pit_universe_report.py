@@ -23,9 +23,24 @@ ROOT = Path(__file__).resolve().parent.parent / "outputs" / "pit_universe"
 # §A.5 halt thresholds. Breaching any of these blocks research consumption.
 HALT_TYPE_UNKNOWN_PCT = 1.0
 HALT_EXCHANGE_UNKNOWN_PCT = 1.0
-HALT_DRIFT_EXCHANGE_PCT = 0.5
+# R2 (contract §12): with §3a-v2 transition resolution no legitimate mechanism
+# produces a drift disagreement on either axis, so both are zero tolerance. The
+# former 0.5%/month exchange limit was unresolvable at ~134 labelled pairs/month
+# (the smallest non-zero rate expressible is 0.75%).
+HALT_DRIFT_EXCHANGE_DISAGREEMENTS = 0
 # §A.5: PIT daily count vs contemporaneous live eligible count.
 HALT_LIVE_COUNT_DIVERGENCE_PCT = 15.0
+# §A.5-v2 / R5: the live-count gate is evaluated only over a window in which no
+# universe-definition change merged, and only with at least this many clean
+# live observations. (a) is set by the independent verifier, not by the author
+# who has seen the vintage; until it is set the gate reports DEFERRED.
+LIVE_GATE_MIN_CLEAN_OBS: int | None = None
+# R5 (b): a merge touching any of these is a universe-definition change.
+UNIVERSE_DEFINITION_PATHS = (
+    "src/signals/filter.py",
+    "src/data/fmp_client.py",
+    "src/data/universe_selection.py",
+)
 
 
 def _calendar_provenance() -> dict:
@@ -89,6 +104,16 @@ def _atr_pct_by_ticker(vintage: str, sample_days: int = 60) -> dict[str, float]:
     return out
 
 
+def _eligible_types(vintage: str):
+    from pit_universe_phase_a import eligible_types_for  # noqa: PLC0415
+    return eligible_types_for(vintage)
+
+
+def _contract_version(vintage: str) -> str:
+    from pit_universe_phase_a import contract_version  # noqa: PLC0415
+    return contract_version(vintage)
+
+
 def _audit_results(vintage: str) -> dict:
     """Compare date-specific classification against the forward-held label (§3b)."""
     audit_dir = ROOT / vintage / "raw" / "audit"
@@ -98,9 +123,15 @@ def _audit_results(vintage: str) -> dict:
     from pit_universe_phase_a import (  # noqa: PLC0415
         ALLOWED_EXCHANGES as ALLOWED,
         _classification_by_month,
+        eligible_types_for,
+        resolved_label,
+        resolved_overrides,
     )
 
+    ELIGIBLE_TYPES = eligible_types_for(vintage)
+
     labels_by_month = _classification_by_month(vintage)
+    overrides = resolved_overrides(vintage, labels_by_month)
     per_month: dict[str, dict] = defaultdict(lambda: {
         "sampled": 0, "verifiable": 0, "unverifiable": 0,
         # Only pairs whose forward-held label EXISTS can test drift. A pair with
@@ -118,8 +149,6 @@ def _audit_results(vintage: str) -> dict:
     })
 
     for month_dir in sorted(audit_dir.glob("*")):
-        y, m = (int(x) for x in month_dir.name.split("-"))
-        held = labels_by_month.get((y, m), {})
         for path in sorted(month_dir.glob("*.json.gz")):
             payload = _read_raw(path)
             meta = payload.get("_audit", {})
@@ -137,7 +166,11 @@ def _audit_results(vintage: str) -> dict:
 
             from pit_universe_phase_a import _EXCHANGE_MAP  # noqa: PLC0415
 
-            held_label = held.get(ticker) or {}
+            from datetime import date as _d  # noqa: PLC0415
+            # The label under audit is the one membership actually used: the
+            # forward-held monthly label after §3a-v2 transition overrides.
+            held_label = resolved_label(labels_by_month, overrides, ticker,
+                                        _d.fromisoformat(meta.get("date"))) or {}
             held_type = held_label.get("type")
             actual_type = actual.get("type")
             actual_exch = _EXCHANGE_MAP.get(actual.get("primary_exchange", ""), "")
@@ -156,15 +189,15 @@ def _audit_results(vintage: str) -> dict:
             if actual_type and held_type != actual_type:
                 rec["type_disagree"] += 1
                 # Direction matters: one contaminates, one silently shrinks.
-                if held_type == "CS" and actual_type != "CS":
+                if held_type in ELIGIBLE_TYPES and actual_type not in ELIGIBLE_TYPES:
                     rec["contamination"] += 1
-                elif actual_type == "CS":
+                elif actual_type in ELIGIBLE_TYPES and held_type not in ELIGIBLE_TYPES:
                     rec["false_exclusion"] += 1
             if actual_exch and held_label.get("exchange") != actual_exch:
                 rec["exchange_disagree"] += 1
                 held_ok = held_label.get("exchange") in ALLOWED
                 actual_ok = actual_exch in ALLOWED
-                if held_ok != actual_ok and (actual_type or held_type) == "CS":
+                if held_ok != actual_ok and (actual_type or held_type) in ELIGIBLE_TYPES:
                     rec["exchange_membership_flip"] += 1
 
     return {"ran": True, "per_month": dict(per_month)}
@@ -188,11 +221,11 @@ def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
     exchange entirely). Writing a gate that is easier to compute than the one
     that was frozen is silently reinterpreting the contract.
 
-    The median baseline is deliberately literal, including where it degenerates:
-    when the trailing median is 0 — which is the normal state for
-    `exchange_unknown` — any non-zero month exceeds 2x0 and halts. That may be
-    stricter than intended, but softening it here would be a second unilateral
-    reinterpretation, so it is implemented as written and flagged for ruling.
+    R6 (contract §12): when the trailing median is 0 — the normal state for
+    `exchange_unknown` — the ratio is undefined, not maximally strict, so the
+    absolute gate governs that month and the 2x rule applies only to a positive
+    median. The three relative breaches the literal rule found (2025-05, 2025-09,
+    2026-06, type axis) all had positive medians and stay caught.
     """
     by_month: dict[str, dict[str, float]] = defaultdict(
         lambda: {"pre": 0, "type_unknown": 0, "exchange_unknown": 0}
@@ -235,14 +268,15 @@ def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
                 continue
             median = statistics.median(window)
             entry[f"{metric}_trailing_median_pct"] = round(median, 4)
-            if rate > 2.0 * median:
+            if median > 0 and rate > 2.0 * median:
                 halts.append(
                     f"{m}: {metric} {rate:.4f}% > 2x trailing-12m median "
                     f"{median:.4f}% (relative)"
                 )
         per_month[m] = entry
 
-    return {"per_month": per_month, "rule": "absolute >1% and relative >2x trailing-12m median"}, halts
+    return {"per_month": per_month,
+            "rule": "absolute >1%; relative >2x trailing-12m median when that median > 0 (R6)"}, halts
 
 
 def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[str]]:
@@ -384,12 +418,14 @@ def write_report(vintage: str) -> dict:
                     f"(contamination={rec['contamination']}, "
                     f"false_exclusion={rec['false_exclusion']}) — zero tolerated"
                 )
-            if rec["labelled"]:
-                exch_pct = 100.0 * rec["exchange_disagree"] / rec["labelled"]
-                if exch_pct > HALT_DRIFT_EXCHANGE_PCT:
-                    halts.append(f"{month}: exchange drift {exch_pct:.2f}% > {HALT_DRIFT_EXCHANGE_PCT}%")
+            if rec["exchange_disagree"] > HALT_DRIFT_EXCHANGE_DISAGREEMENTS:
+                halts.append(
+                    f"{month}: {rec['exchange_disagree']} exchange disagreement(s) "
+                    f"(membership flips={rec['exchange_membership_flip']}) — zero tolerated (R2)"
+                )
 
     raw_files = sorted((base / "raw").rglob("*.json.gz"))
+    n_quarters = len({(d.year, (d.month - 1) // 3) for d in dates})
     manifest = {
         "vintage": vintage,
         "timezone": "America/New_York",
@@ -398,10 +434,12 @@ def write_report(vintage: str) -> dict:
         "phase": "A",
         "constraints_applied": {
             "min_price": 5.0, "min_share_volume": 500_000,
-            "exchanges": ["NYSE", "NASDAQ"], "type": "CS",
+            "exchanges": ["NYSE", "NASDAQ"], "type": sorted(_eligible_types(vintage)),
             "market_cap": "NOT APPLIED — Phase B",
         },
-        "classification_policy": "forward-held monthly, applied from snapshot date only",
+        "classification_policy": ("forward-held monthly from the snapshot date, with "
+                                  "membership-relevant transitions resolved to the day (§3a-v2)"),
+        "contract_version": _contract_version(vintage),
         "raw_file_count": len(raw_files),
         "raw_hashes": {str(p.relative_to(base)): _sha256(p) for p in raw_files},
         "distinct_eligible_tickers_pre_mcap": len(distinct_eligible),
@@ -420,10 +458,10 @@ def write_report(vintage: str) -> dict:
         "halts": halts,
         "phase_b_gate": {
             "distinct_tickers": len(distinct_eligible),
-            "quarters": 12,
-            "projected_detail_calls": len(distinct_eligible) * 12,
+            "quarters": n_quarters,
+            "projected_detail_calls": len(distinct_eligible) * n_quarters,
             "ceiling": 75_000,
-            "within_ceiling": len(distinct_eligible) * 12 <= 75_000,
+            "within_ceiling": len(distinct_eligible) * n_quarters <= 75_000,
         },
     }
 

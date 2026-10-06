@@ -427,3 +427,40 @@ History:         minimum 200 prior bars available as of D
 Delisting:       include through final trading day; never forward-fill after
 Volume:          single-day share volume, matching live screener semantics
 ```
+
+## §12 — Frozen rulings, contract v3 (Ray, 2026-10-06; independent verifier: Codex)
+
+Adopted as recommended in `PIT_RULINGS_REQUEST_2026-10.md`. Neo's role as reviewer of record passes to Codex for this contract version. Vintages acquired under v3 carry `<vintage>/contract.json`; an unstamped vintage keeps v2 semantics, so frozen v2 artifacts still replay byte-identically.
+
+```
+R1 Classification:  forward-held monthly + §3a-v2 transition resolution. For each ticker
+                    that passes price+volume on some session in the month and whose label
+                    changes between consecutive snapshots in a membership-relevant way (any
+                    type change incl. appearance; any exchange change crossing the eligible
+                    set), binary-search the per-ticker as-of endpoint for the first session
+                    carrying the new label (<= 5 probes) and apply it with day resolution.
+                    A probe matching neither label makes the rest of that month UNKNOWN
+                    (excluded, counted). Every probe is a persisted raw response.
+R2 Drift audit:     zero tolerance on BOTH axes (type and exchange). Supersedes the 0.5%
+                    exchange limit, which was unresolvable at ~134 labelled pairs/month.
+R3 Security type:   eligible = Polygon CS ∪ ADRC (mirrors live, §2). ETF/ETN/fund/
+                    preferred/warrant/unit/right remain excluded.
+R4 Volume:          unchanged from §11 — D's share volume.
+R5 Live-count gate: (b) a universe-definition change is any merge touching
+                    src/signals/filter.py, the screener query in src/data/fmp_client.py,
+                    or src/data/universe_selection.py; the gate evaluates only clean
+                    post-change live observations, detected automatically.
+                    (a) minimum clean observations: set by the verifier (Codex), not by the
+                    author who has seen the vintage. Until set, the gate reports DEFERRED.
+                    First clean window starts 2026-10-06 (#130 changed the definition).
+R6 Ratio gate:      when the trailing-12-month median is 0, the absolute gate governs; the
+                    2x relative rule applies only to a positive median.
+R7 Range:           2017-01-03 -> last completed session (~9.75 years, 118 months), so the
+                    momentum core can reach >= 84 monthly observations after a 12-month
+                    warm-up. Polygon serves grouped bars and as-of reference data back to
+                    at least 2016 (probed 2026-10-06). Phase A ceiling 45,000 calls.
+R8 Distribution:    the vintage archive goes to a release asset on a PRIVATE repo (this
+                    repo is public; Polygon redistribution). Manifest (hashes) stays here.
+```
+
+Open item carried forward: Phase B market-cap acquisition scales with distinct tickers × quarters. At ~9.75 years that is likely to exceed the 75,000-call ceiling set for 3 years. The ceiling and cadence are to be re-ruled once Phase A reports the distinct-ticker count. No number is pre-committed here.
