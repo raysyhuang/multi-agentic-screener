@@ -195,18 +195,10 @@ def _trailing_labels(vintage: str) -> dict[str, dict] | None:
     Used ONLY to detect transitions inside the final membership month (there is
     no later monthly snapshot to compare with). It never labels a session.
     """
-    root = ROOT / vintage / "raw" / "reference_trailing"
-    pages = sorted(root.glob("*/page-*.json.gz")) if root.exists() else []
-    if not pages:
-        return None
-    labels: dict[str, dict] = {}
-    for page in pages:
-        for row in _read_raw(page).get("results", []):
-            t = row.get("ticker")
-            if t:
-                labels[t] = {"type": row.get("type"),
-                             "exchange": _EXCHANGE_MAP.get(row.get("primary_exchange", ""), "")}
-    return labels
+    snap_dir = ROOT / vintage / "raw" / "reference_trailing" / str(trailing_snapshot_date(vintage))
+    if not (snap_dir / SNAPSHOT_MARKER).exists():
+        return None                       # absent or incomplete: candidate generation refuses
+    return _read_snapshot(snap_dir, require_complete=True)
 _EXCHANGE_MAP = {
     "XNYS": "NYSE", "XNAS": "NASDAQ", "XASE": "AMEX",
     "ARCX": "NYSE", "BATS": "NASDAQ",
@@ -536,63 +528,25 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
         )
 
         # Monthly classification snapshot, taken on the first session of each
-        # month and applied FORWARD ONLY (§3a).
+        # month and applied FORWARD ONLY (§3a). A snapshot counts only once its
+        # pagination has completed (marker written): a truncated snapshot is
+        # worse than an absent one, since every ticker on the unreached pages
+        # would silently become type_unknown.
         ref_holes: list[str] = []
+        warm = set(warmup)
         for year, month in months:
-            snap = next(d for d in sessions if (d.year, d.month) == (year, month) and d not in set(warmup))
-            page, cursor = 1, None
-            while True:
-                path = _raw_path(vintage, "reference", f"{year:04d}-{month:02d}", f"page-{page}.json.gz")
-                if path.exists():
-                    payload = _read_raw(path)
-                else:
-                    params = {"market": "stocks", "date": str(snap), "limit": 1000}
-                    if cursor:
-                        params["cursor"] = cursor
-                    payload = await _get(client, f"{BASE}/v3/reference/tickers", params)
-                    if payload.get("_failed"):
-                        # A truncated monthly snapshot is worse than an absent
-                        # one: every ticker on the unreached pages silently
-                        # becomes type_unknown and drops out of the universe.
-                        logger.error(
-                            "  reference %04d-%02d: page %d unrecoverable (%s) — "
-                            "month left INCOMPLETE",
-                            year, month, page, payload.get("_reason"),
-                        )
-                        ref_holes.append(f"{year:04d}-{month:02d}/page-{page}")
-                        break
-                    _write_raw(path, payload)
-                nxt = payload.get("next_url")
-                if not nxt:
-                    break
-                cursor = nxt.split("cursor=")[-1]
-                page += 1
-            logger.info("  reference %04d-%02d: %d page(s)", year, month, page)
+            snap = next(d for d in sessions if (d.year, d.month) == (year, month) and d not in warm)
+            sub = ("reference", f"{year:04d}-{month:02d}")
+            if not await _fetch_snapshot(client, vintage, sub, snap):
+                ref_holes.append("/".join(sub))
         # Trailing comparison snapshot (final month only; never labels a session).
+        # Only once that session has COMPLETED: before the close, an as-of query
+        # for today is not a post-final-session observation.
         trail = trailing_snapshot_date(vintage)
-        if trail > _today_et():
-            ref_holes.append(f"trailing/{trail} (not yet available)")
-        else:
-            page, cursor = 1, None
-            while True:
-                path = _raw_path(vintage, "reference_trailing", str(trail), f"page-{page}.json.gz")
-                if path.exists():
-                    payload = _read_raw(path)
-                else:
-                    params = {"market": "stocks", "date": str(trail), "limit": 1000}
-                    if cursor:
-                        params["cursor"] = cursor
-                    payload = await _get(client, f"{BASE}/v3/reference/tickers", params)
-                    if payload.get("_failed"):
-                        ref_holes.append(f"trailing/{trail}/page-{page}")
-                        break
-                    _write_raw(path, payload)
-                nxt = payload.get("next_url")
-                if not nxt:
-                    break
-                cursor = nxt.split("cursor=")[-1]
-                page += 1
-            logger.info("  trailing reference %s: %d page(s)", trail, page)
+        if not _session_complete(trail):
+            ref_holes.append(f"reference_trailing/{trail} (session not yet complete)")
+        elif not await _fetch_snapshot(client, vintage, ("reference_trailing", str(trail)), trail):
+            ref_holes.append(f"reference_trailing/{trail}")
         if holes or ref_holes:
             logger.error(
                 "spine INCOMPLETE: %d grouped hole(s), %d reference hole(s) %s — "
@@ -601,14 +555,97 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
             )
 
 
+def _session_complete(d: date) -> bool:
+    """True once session d has closed (16:15 ET margin), judged in ET, never local time."""
+    from datetime import datetime, time
+    from zoneinfo import ZoneInfo
+
+    now = datetime.now(ZoneInfo("America/New_York"))
+    return d < now.date() or (d == now.date() and now.time() >= time(16, 15))
+
+
+SNAPSHOT_MARKER = "_complete.json"
+
+
+async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: date) -> bool:
+    """Page through /v3/reference/tickers as of a date; mark complete only at the last page.
+
+    Resumable: existing pages are re-read (their next_url drives the walk), so a
+    run interrupted mid-pagination continues where it stopped and writes the
+    completion marker only when a page with no next_url is reached.
+    """
+    marker = _raw_path(vintage, *sub, SNAPSHOT_MARKER)
+    if marker.exists():
+        return True
+    page, cursor, hashes = 1, None, []
+    while True:
+        path = _raw_path(vintage, *sub, f"page-{page}.json.gz")
+        if path.exists():
+            payload = _read_raw(path)
+        else:
+            params = {"market": "stocks", "date": str(as_of), "limit": 1000}
+            if cursor:
+                params["cursor"] = cursor
+            payload = await _get(client, f"{BASE}/v3/reference/tickers", params)
+            if payload.get("_failed"):
+                logger.error("  snapshot %s page %d unrecoverable (%s) — left INCOMPLETE",
+                             "/".join(sub), page, payload.get("_reason"))
+                return False
+            _write_raw(path, payload)
+        hashes.append(_sha256_file(path))
+        nxt = payload.get("next_url")
+        if not nxt:
+            break
+        cursor = nxt.split("cursor=")[-1]
+        page += 1
+    marker.write_text(json.dumps({"as_of": str(as_of), "pages": page, "page_sha256": hashes}))
+    logger.info("  snapshot %s: %d page(s), complete", "/".join(sub), page)
+    return True
+
+
+def _sha256_file(path: Path) -> str:
+    return hashlib.sha256(path.read_bytes()).hexdigest()
+
+
+def _read_snapshot(snap_dir: Path, require_complete: bool) -> dict[str, dict]:
+    """Labels from one snapshot directory; v3 refuses an unmarked or altered one."""
+    marker = snap_dir / SNAPSHOT_MARKER
+    pages = sorted(snap_dir.glob("page-*.json.gz"), key=lambda p: int(p.name.split("-")[1].split(".")[0]))
+    if require_complete:
+        if not marker.exists():
+            raise RuntimeError(f"snapshot {snap_dir.name} has no completion marker — pagination "
+                               "incomplete; re-run `spine`")
+        m = json.loads(marker.read_text())
+        names = [p.name for p in pages]
+        if names != [f"page-{i}.json.gz" for i in range(1, m["pages"] + 1)]:
+            raise RuntimeError(f"snapshot {snap_dir.name}: pages {names[:3]}... do not match marker")
+        if [_sha256_file(p) for p in pages] != m["page_sha256"]:
+            raise RuntimeError(f"snapshot {snap_dir.name}: page bytes changed since completion")
+    labels: dict[str, dict] = {}
+    for page in pages:
+        for row in _read_raw(page).get("results", []):
+            t = row.get("ticker")
+            if t:
+                labels[t] = {"type": row.get("type"),
+                             "exchange": _EXCHANGE_MAP.get(row.get("primary_exchange", ""), "")}
+    return labels
+
+
 # ── normalization ────────────────────────────────────────────────────────────
 
 def _classification_by_month(vintage: str) -> dict[tuple[int, int], dict[str, dict]]:
     """Forward-held monthly labels: {(y, m): {ticker: {type, exchange}}}."""
     out: dict[tuple[int, int], dict[str, dict]] = {}
     ref_root = ROOT / vintage / "raw" / "reference"
+    v3 = contract_version(vintage) == "v3"
     for month_dir in sorted(ref_root.glob("*")):
+        if not month_dir.is_dir():
+            continue
         year, month = (int(x) for x in month_dir.name.split("-"))
+        if v3:
+            out[(year, month)] = _read_snapshot(month_dir, require_complete=True)
+            continue
+        # v2: original semantics (pages in lexical order, no completion marker).
         labels: dict[str, dict] = {}
         for page in sorted(month_dir.glob("page-*.json.gz")):
             for row in _read_raw(page).get("results", []):
@@ -786,6 +823,14 @@ def transition_candidates(vintage: str) -> list[dict]:
     return out
 
 
+def _candidate_inputs_sha(c: dict) -> str:
+    """Identity of a candidate's inputs: a result is valid only for these exact inputs."""
+    return hashlib.sha256(json.dumps({
+        "ticker": c["ticker"], "month": list(c["month"]), "old": c["old"], "new": c["new"],
+        "sessions": [str(d) for d in c["sessions"]],
+    }, sort_keys=True).encode()).hexdigest()
+
+
 def _label_from_asof(payload: dict) -> dict | None:
     res = payload.get("results") or {}
     if payload.get("_not_found") or not res or not res.get("type"):
@@ -816,8 +861,11 @@ async def resolve_transitions(vintage: str) -> None:
         for i, c in enumerate(cands, 1):
             t, (y, m) = c["ticker"], c["month"]
             out_path = _raw_path(vintage, "transitions", f"{y:04d}-{m:02d}", f"{t}.result.json.gz")
-            if out_path.exists():
-                continue
+            inputs_sha = _candidate_inputs_sha(c)
+            if out_path.exists() and _read_raw(out_path).get("inputs_sha256") == inputs_sha:
+                continue                    # resolved for exactly these inputs
+            # Absent, or resolved for different inputs (e.g. a snapshot completed
+            # later): recompute. Cached probe responses are reused.
             window = c["sessions"]
             # Invariant: label(window[lo]) == old (the snapshot date itself, by
             # construction) and the next snapshot carries new. Find the first
@@ -855,6 +903,7 @@ async def resolve_transitions(vintage: str) -> None:
                 "effective": None if (ambiguous or hi >= len(window)) else str(window[hi]),
                 "ambiguous_from": str(window[lo + 1]) if ambiguous else None,
                 "probes": probes,
+                "inputs_sha256": inputs_sha,
             }
             _write_raw_unchecked(out_path, result)
             if i % 100 == 0:
@@ -874,11 +923,14 @@ def resolved_overrides(vintage: str, labels_by_month: dict) -> dict[date, dict[s
     if not root.exists() or contract_version(vintage) != "v3":
         return {}
     _warmup, sessions = validated_sessions(vintage)
-    expected = _expected_transition_keys(vintage)
+    expected = _expected_transition_inputs(vintage)
     for path in sorted(root.glob("*/*.result.json.gz")):
-        if (path.parent.name, path.name.replace(".result.json.gz", "")) not in expected:
+        key = (path.parent.name, path.name.replace(".result.json.gz", ""))
+        if key not in expected:
             continue                    # orphan result: never applied
         r = _read_raw(path)
+        if r.get("inputs_sha256") != expected[key]:
+            continue                    # stale result (other inputs): never applied
         y, m = (int(x) for x in r["month"].split("-"))
         start = r.get("effective") or r.get("ambiguous_from")
         if not start:
@@ -898,27 +950,50 @@ def transition_status(vintage: str) -> dict:
     the monthly label for that window — a plausible, wrong universe. Audit and
     report therefore refuse a v3 vintage until every candidate is resolved.
     """
-    expected = _expected_transition_keys(vintage)
+    expected = _expected_transition_inputs(vintage)
     root = ROOT / vintage / "raw" / "transitions"
-    done = set()
+    done, stale = set(), []
     if root.exists():
         for p in root.glob("*/*.result.json.gz"):
-            done.add((p.parent.name, p.name.replace(".result.json.gz", "")))
-    missing, extra = sorted(expected - done), sorted(done - expected)
-    return {"expected": len(expected), "resolved": len(expected & done),
-            "missing": missing, "extra": extra, "complete": not missing and not extra}
+            key = (p.parent.name, p.name.replace(".result.json.gz", ""))
+            if key in expected and _read_raw(p).get("inputs_sha256") != expected[key]:
+                stale.append(key)           # resolved for other inputs: not done
+                continue
+            done.add(key)
+    missing = sorted(set(expected) - done)
+    extra = sorted(done - set(expected))
+    return {"expected": len(expected), "resolved": len(set(expected) & done),
+            "missing": missing, "extra": extra, "stale": sorted(stale),
+            "complete": not missing and not extra}
 
 
-_EXPECTED_CACHE: dict[tuple[str, str], set] = {}
+_EXPECTED_CACHE: dict[tuple, dict] = {}
+
+
+def _spine_fingerprint(vintage: str) -> str:
+    """Cheap identity of the spine inputs (paths, sizes, mtimes)."""
+    raw = ROOT / vintage / "raw"
+    h = hashlib.sha256()
+    for sub_ in ("grouped", "reference", "reference_trailing"):
+        for p in sorted((raw / sub_).rglob("*")) if (raw / sub_).exists() else []:
+            if p.is_file():
+                st = p.stat()
+                h.update(f"{p.relative_to(raw)}:{st.st_size}:{st.st_mtime_ns}".encode())
+    return h.hexdigest()
+
+
+def _expected_transition_inputs(vintage: str) -> dict[tuple[str, str], str]:
+    """{(month, ticker): inputs sha} — cached only while the spine inputs are unchanged."""
+    key = (str(ROOT), vintage, _spine_fingerprint(vintage))
+    if key not in _EXPECTED_CACHE:
+        _EXPECTED_CACHE.clear()
+        _EXPECTED_CACHE[key] = {(f"{c['month'][0]:04d}-{c['month'][1]:02d}", c["ticker"]):
+                                _candidate_inputs_sha(c) for c in transition_candidates(vintage)}
+    return _EXPECTED_CACHE[key]
 
 
 def _expected_transition_keys(vintage: str) -> set[tuple[str, str]]:
-    """Candidate keys are a pure function of the frozen spine (grouped + snapshots)."""
-    key = (str(ROOT), vintage)
-    if key not in _EXPECTED_CACHE:
-        _EXPECTED_CACHE[key] = {(f"{c['month'][0]:04d}-{c['month'][1]:02d}", c["ticker"])
-                                for c in transition_candidates(vintage)}
-    return _EXPECTED_CACHE[key]
+    return set(_expected_transition_inputs(vintage))
 
 
 def overrides_fingerprint(vintage: str) -> str:
@@ -926,9 +1001,11 @@ def overrides_fingerprint(vintage: str) -> str:
     root = ROOT / vintage / "raw" / "transitions"
     h = hashlib.sha256()
     if root.exists():
-        expected = _expected_transition_keys(vintage) if contract_version(vintage) == "v3" else None
+        expected = _expected_transition_inputs(vintage) if contract_version(vintage) == "v3" else None
         for p in sorted(root.glob("*/*.result.json.gz")):
-            if expected is not None and (p.parent.name, p.name.replace(".result.json.gz", "")) not in expected:
+            key = (p.parent.name, p.name.replace(".result.json.gz", ""))
+            if expected is not None and (key not in expected
+                                         or _read_raw(p).get("inputs_sha256") != expected[key]):
                 continue
             h.update(str(p.relative_to(root)).encode())
             h.update(json.dumps(_read_raw(p), sort_keys=True).encode())
@@ -942,7 +1019,7 @@ def require_transitions_complete(vintage: str) -> None:
     if not st["complete"]:
         raise RuntimeError(
             f"§3a-v2 incomplete: {len(st['missing'])} of {st['expected']} transitions unresolved "
-            f"(e.g. {st['missing'][:3]}), {len(st['extra'])} orphan result(s) "
+            f"(e.g. {st['missing'][:3]}; {len(st['stale'])} stale), {len(st['extra'])} orphan result(s) "
             f"(e.g. {st['extra'][:3]}) — run `transitions` / remove orphans before reporting")
 
 

@@ -37,6 +37,18 @@ def _w(path: Path, payload) -> None:
         fh.write(json.dumps(payload).encode())
 
 
+def _mark(snap_dir: Path, as_of: str) -> None:
+    """Completion marker for a one-page synthetic snapshot."""
+    pages = sorted(snap_dir.glob("page-*.json.gz"))
+    (snap_dir / pa.SNAPSHOT_MARKER).write_text(json.dumps({
+        "as_of": as_of, "pages": len(pages), "page_sha256": [pa._sha256_file(p) for p in pages]}))
+
+
+def _snap(path: Path, payload, as_of: str) -> None:
+    _w(path, payload)
+    _mark(path.parent, as_of)
+
+
 @pytest.fixture
 def vintage(tmp_path, monkeypatch):
     """Feb-2024 grouped bars + Feb/Mar snapshots. LNG moves XASE->XNYS on 02-05;
@@ -52,18 +64,18 @@ def vintage(tmp_path, monkeypatch):
         if d >= date(2024, 2, 12):
             rows.append({"T": "NEWCO", "c": 20.0, "v": 1e6})
         _w(base / "raw" / "grouped" / f"{d}.json.gz", {"results": rows})
-    _w(base / "raw" / "reference" / "2024-02" / "page-1.json.gz", {"results": [
+    _snap(base / "raw" / "reference" / "2024-02" / "page-1.json.gz", {"results": [
         {"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"},
         {"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"},
-    ]})
+    ]}, "2024-02-01")
     mar = {"results": [
         {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
         {"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"},
         {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"},
     ]}
-    _w(base / "raw" / "reference" / "2024-03" / "page-1.json.gz", mar)
+    _snap(base / "raw" / "reference" / "2024-03" / "page-1.json.gz", mar, "2024-03-01")
     # Trailing comparison snapshot: the session after the frozen end (2024-03-01).
-    _w(base / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", mar)
+    _snap(base / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", mar, "2024-03-04")
     pa._EXPECTED_CACHE.clear()
     return base
 
@@ -162,6 +174,7 @@ def test_any_exchange_disagreement_halts(vintage):
         "_audit": {"bucket": "common_stock", "date": "2024-02-22", "ticker": "LNG"},
     })
     (vintage / "audit_plan.json").write_text(json.dumps({
+        "sampler_version": pa.SAMPLER_VERSION,
         "overrides_sha256": pa.overrides_fingerprint(VINTAGE),
         "pairs": ["2024-02/LNG_2024-02-22"]}))
     res = pr._audit_results(VINTAGE)
@@ -236,7 +249,8 @@ def test_package_never_emits_an_upload_to_the_public_repo(vintage, monkeypatch, 
 
 def test_audit_results_refuse_a_sample_drawn_under_other_transition_results(vintage):
     (vintage / "raw" / "audit").mkdir(parents=True)
-    (vintage / "audit_plan.json").write_text(json.dumps({"overrides_sha256": "stale", "pairs": []}))
+    (vintage / "audit_plan.json").write_text(json.dumps({
+        "sampler_version": pa.SAMPLER_VERSION, "overrides_sha256": "stale", "pairs": []}))
     res = pr._audit_results(VINTAGE)
     assert res["ran"] is False and res.get("stale") is True
 
@@ -247,8 +261,7 @@ def test_final_month_transition_is_discovered_against_the_trailing_snapshot(vint
         {"ticker": "PBR", "type": "ETF", "primary_exchange": "XNYS"},       # changes in March
         {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"},
     ]}
-    _w(vintage / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", trailing)
-    pa._EXPECTED_CACHE.clear()
+    _snap(vintage / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", trailing, "2024-03-04")
     cands = {(c["ticker"], c["month"]) for c in pa.transition_candidates(VINTAGE)}
     assert ("PBR", (2024, 3)) in cands
 
@@ -299,6 +312,7 @@ def test_incomplete_audit_plan_is_not_reported_as_run(vintage):
         "results": {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
         "_audit": {"bucket": "common_stock", "date": "2024-02-22", "ticker": "LNG"}})
     (vintage / "audit_plan.json").write_text(json.dumps({
+        "sampler_version": pa.SAMPLER_VERSION,
         "overrides_sha256": pa.overrides_fingerprint(VINTAGE),
         "pairs": ["2024-02/LNG_2024-02-22", "2024-02/PBR_2024-02-22"]}))
     res = pr._audit_results(VINTAGE)
@@ -331,3 +345,121 @@ def test_verify_rejects_a_manifest_that_drops_the_v3_identity(vintage):
     (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}}))
     with pytest.raises(SystemExit, match="local contract v3 != manifest contract v2"):
         pr.verify(VINTAGE)
+
+
+def test_trailing_snapshot_is_not_available_until_its_session_has_closed(monkeypatch):
+    from datetime import datetime
+    from zoneinfo import ZoneInfo
+
+    class _DT(datetime):
+        now_val = datetime(2026, 10, 6, 14, 0, tzinfo=ZoneInfo("America/New_York"))
+
+        @classmethod
+        def now(cls, tz=None):
+            return cls.now_val
+    import datetime as dtmod
+    monkeypatch.setattr(dtmod, "datetime", _DT)
+    assert pa._session_complete(date(2026, 10, 5)) is True
+    assert pa._session_complete(date(2026, 10, 6)) is False          # before the close
+    _DT.now_val = datetime(2026, 10, 6, 16, 30, tzinfo=ZoneInfo("America/New_York"))
+    assert pa._session_complete(date(2026, 10, 6)) is True
+
+
+def test_unmarked_or_altered_snapshot_is_refused(vintage):
+    (vintage / "raw" / "reference" / "2024-02" / pa.SNAPSHOT_MARKER).unlink()
+    with pytest.raises(RuntimeError, match="no completion marker"):
+        pa._classification_by_month(VINTAGE)
+    _mark(vintage / "raw" / "reference" / "2024-02", "2024-02-01")
+    _w(vintage / "raw" / "reference" / "2024-02" / "page-1.json.gz", {"results": []})
+    with pytest.raises(RuntimeError, match="changed since completion"):
+        pa._classification_by_month(VINTAGE)
+
+
+def test_trailing_snapshot_in_the_wrong_date_directory_does_not_count(vintage):
+    import shutil
+    shutil.move(str(vintage / "raw" / "reference_trailing" / "2024-03-04"),
+                str(vintage / "raw" / "reference_trailing" / "2024-03-05"))
+    with pytest.raises(RuntimeError, match="trailing comparison snapshot"):
+        pa.transition_candidates(VINTAGE)
+
+
+@pytest.mark.asyncio
+async def test_partial_pagination_writes_no_marker_and_resumes(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    responses = {None: {"results": [{"ticker": "A"}], "next_url": "x?cursor=c2"},
+                 "c2": {"_failed": True, "_reason": "http_503"}}
+
+    async def fake_get(client, url, params, allow_404=False):
+        return responses[params.get("cursor")]
+    monkeypatch.setattr(pa, "_get", fake_get)
+    assert await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1)) is False
+    assert not (tmp_path / "v" / "raw" / "reference" / "2024-02" / pa.SNAPSHOT_MARKER).exists()
+    responses["c2"] = {"results": [{"ticker": "B"}]}
+    assert await pa._fetch_snapshot(None, "v", ("reference", "2024-02"), date(2024, 2, 1)) is True
+    m = json.loads((tmp_path / "v" / "raw" / "reference" / "2024-02" / pa.SNAPSHOT_MARKER).read_text())
+    assert m["pages"] == 2
+
+
+@pytest.mark.asyncio
+async def test_result_for_other_inputs_is_stale_and_recomputed(vintage, monkeypatch):
+    fake_get, calls = _fake_get_factory(_truth)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+    path = vintage / "raw" / "transitions" / "2024-02" / "LNG.result.json.gz"
+    r = pa._read_raw(path)
+    r["inputs_sha256"] = "other-inputs"
+    pa._write_raw_unchecked(path, r)
+    st = pa.transition_status(VINTAGE)
+    assert not st["complete"] and ("2024-02", "LNG") in st["stale"]
+    await pa.resolve_transitions(VINTAGE)
+    assert pa.transition_status(VINTAGE)["complete"]
+
+
+def test_candidate_cache_follows_spine_changes_in_the_same_process(vintage):
+    first = pa._expected_transition_keys(VINTAGE)
+    trailing = {"results": [
+        {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+        {"ticker": "PBR", "type": "ETF", "primary_exchange": "XNYS"},
+        {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"}]}
+    import os
+    import time
+    time.sleep(0.01)
+    _snap(vintage / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", trailing, "2024-03-04")
+    os.utime(vintage / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz")
+    assert ("2024-03", "PBR") in pa._expected_transition_keys(VINTAGE) - first
+
+
+def test_unplanned_audit_file_or_old_sampler_is_not_reported_as_run(vintage):
+    _w(vintage / "raw" / "audit" / "2024-02" / "LNG_2024-02-22.json.gz", {
+        "results": {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+        "_audit": {"bucket": "common_stock", "date": "2024-02-22", "ticker": "LNG"}})
+    _w(vintage / "raw" / "audit" / "2024-02" / "PBR_2024-02-22.json.gz", {"results": {}, "_audit": {}})
+    plan = {"sampler_version": pa.SAMPLER_VERSION, "overrides_sha256": pa.overrides_fingerprint(VINTAGE),
+            "pairs": ["2024-02/LNG_2024-02-22"]}
+    (vintage / "audit_plan.json").write_text(json.dumps(plan))
+    res = pr._audit_results(VINTAGE)
+    assert res["ran"] is False and res["extra_count"] == 1
+    (vintage / "raw" / "audit" / "2024-02" / "PBR_2024-02-22.json.gz").unlink()
+    (vintage / "audit_plan.json").write_text(json.dumps({**plan, "sampler_version": "phase-a/1"}))
+    assert pr._audit_results(VINTAGE)["ran"] is False
+
+
+def test_verify_rejects_v2_local_against_v3_manifest_and_wrong_vintage(vintage):
+    (vintage / "contract.json").unlink()
+    (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}, "contract_version": "v3"}))
+    with pytest.raises(SystemExit, match="local contract v2 != manifest contract v3"):
+        pr.verify(VINTAGE)
+    (vintage / "manifest.json").write_text(json.dumps({"raw_hashes": {"x": "y"}, "vintage": "1999-01-01"}))
+    with pytest.raises(SystemExit, match="manifest is for vintage"):
+        pr.verify(VINTAGE)
+
+
+def test_v2_zero_median_keeps_its_original_relative_halt():
+    membership = {}
+    for i in range(14):
+        d = date(2023 + (i // 12), (i % 12) + 1, 3)
+        membership[d] = {"pre_classification": ["X"] * 200,
+                         "exclusions": {"exchange_unknown": 1 if i == 13 else 0, "type_unknown": 0}}
+    _, halts_v2 = pr.unknown_rate_gates(membership, v3=False)
+    _, halts_v3 = pr.unknown_rate_gates(membership, v3=True)
+    assert any("relative" in h for h in halts_v2) and halts_v3 == []

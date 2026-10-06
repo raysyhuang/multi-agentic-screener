@@ -153,6 +153,10 @@ def _audit_results(vintage: str) -> dict:
         if not plan_path.exists():
             return {"ran": False, "reason": "no audit plan — the v3 audit has not run"}
         plan = json.loads(plan_path.read_text())
+        from pit_universe_phase_a import SAMPLER_VERSION  # noqa: PLC0415
+        if plan.get("sampler_version") != SAMPLER_VERSION:
+            return {"ran": False, "stale": True,
+                    "reason": f"audit plan sampler {plan.get('sampler_version')!r} != {SAMPLER_VERSION!r}"}
         if plan.get("overrides_sha256") != overrides_fingerprint(vintage):
             return {"ran": False, "stale": True,
                     "reason": "audit sample was drawn under different transition results"}
@@ -230,11 +234,13 @@ def _audit_results(vintage: str) -> dict:
     if planned is not None:
         observed = {f"{d.name}/{p.name.replace('.json.gz', '')}"
                     for d in audit_dir.glob("*") for p in d.glob("*.json.gz")}
-        missing = sorted(planned - observed)
-        if missing:
-            return {"ran": False, "incomplete": True, "missing_count": len(missing),
-                    "reason": f"{len(missing)} planned audit pair(s) never observed "
-                              f"(e.g. {missing[:3]}) — re-run `audit` until complete"}
+        missing, extra = sorted(planned - observed), sorted(observed - planned)
+        if missing or extra:
+            return {"ran": False, "incomplete": bool(missing), "missing_count": len(missing),
+                    "extra_count": len(extra),
+                    "reason": f"audit set != plan: {len(missing)} planned pair(s) never observed "
+                              f"(e.g. {missing[:3]}), {len(extra)} unplanned file(s) "
+                              f"(e.g. {extra[:3]}) — complete the audit / quarantine extras"}
     return {"ran": True, "per_month": dict(per_month)}
 
 
@@ -657,6 +663,9 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
         raise SystemExit(f"no manifest at {src} — nothing to verify against")
 
     manifest_doc = json.loads(src.read_text())
+    if manifest_doc.get("vintage") not in (None, vintage):
+        raise SystemExit(f"VERIFY FAILED: manifest is for vintage {manifest_doc.get('vintage')!r}, "
+                         f"not {vintage!r}")
     expected = manifest_doc.get("raw_hashes", {})
     if not expected:
         raise SystemExit(f"{src} carries no raw_hashes")
