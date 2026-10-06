@@ -86,6 +86,7 @@ DEFAULT_START = date(2017, 1, 3)
 # transition overrides), so a frozen artifact still replays byte-identically.
 CONTRACT_VERSION = "v3"
 _V2_ELIGIBLE_TYPES = frozenset({"CS"})
+RULINGS = "R1-R9 + Phase B budget, 2026-10-06 (contract §12 and its addendum)"
 # §11 history rule: >= 200 prior bars as of D. A v3 vintage acquires this many
 # warm-up sessions BEFORE its start so early dates can be evaluated; warm-up
 # sessions feed the history count only and never emit membership.
@@ -139,7 +140,7 @@ def _stamp_contract(vintage: str, start: date, end: date) -> dict:
         "price_rule": "close > 5.00 (strict)", "volume_rule": "share volume > 500,000 (strict)",
         "min_prior_bars": MIN_PRIOR_BARS, "warmup_sessions": WARMUP_SESSIONS,
         "start": str(start), "end": str(end),
-        "rulings": "R1-R8, 2026-10-06 (contract §12)",
+        "rulings": RULINGS,
     }
     stamp.write_text(json.dumps(rec, indent=2))
     return rec
@@ -566,12 +567,9 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
             if raw_fetched % 100 == 0:
                 logger.info("  grouped_raw: %d fetched", raw_fetched)
         # R9: every split executing from the warm-up start to the frozen end.
-        if not await _fetch_paged(
-                client, vintage, ("splits",), f"{BASE}/v3/reference/splits",
-                {"execution_date.gte": str(warmup[0] if warmup else main_sessions[0]),
-                 "execution_date.lte": str(main_sessions[-1]), "limit": 1000, "order": "asc",
-                 "sort": "execution_date"},
-                main_sessions[-1]):
+        sreq = splits_request(vintage)
+        if not await _fetch_paged(client, vintage, ("splits",), f"{BASE}{sreq['endpoint']}",
+                                  sreq["params"], main_sessions[-1]):
             holes += 1
 
         # Monthly classification snapshot, taken on the first session of each
@@ -640,7 +638,7 @@ async def _fetch_paged(client, vintage: str, sub: tuple[str, ...], url: str,
     """
     marker = _raw_path(vintage, *sub, SNAPSHOT_MARKER)
     if marker.exists():
-        _read_snapshot(marker.parent, require_complete=True, expected_as_of=as_of)  # raises if invalid
+        _read_paged(marker.parent, True, as_of, _request_identity(url, base_params))  # raises if invalid
         return True
     snap_dir = marker.parent
     # Existing unmarked pages are reused only if each one PROVES it belongs to
@@ -648,7 +646,8 @@ async def _fetch_paged(client, vintage: str, sub: tuple[str, ...], url: str,
     # previous page handed out. Pages without that provenance (written by older
     # code, or from another chain) are moved aside — raw data is never deleted —
     # and the snapshot is fetched again from page 1.
-    if snap_dir.exists() and not _pages_have_provenance(snap_dir, as_of):
+    request_id = _request_identity(url, base_params)
+    if snap_dir.exists() and not _pages_have_provenance(snap_dir, as_of, request_id):
         aside = snap_dir.with_name(f"{snap_dir.name}.untrusted-{_utc_stamp()}")
         if aside.exists():
             raise RuntimeError(f"quarantine target {aside} already exists")
@@ -668,7 +667,7 @@ async def _fetch_paged(client, vintage: str, sub: tuple[str, ...], url: str,
                 logger.error("  snapshot %s page %d unrecoverable (%s) — left INCOMPLETE",
                              "/".join(sub), page, payload.get("_reason"))
                 return False
-            payload["_request"] = {"as_of": str(as_of), "cursor": cursor}
+            payload["_request"] = {"as_of": str(as_of), "cursor": cursor, **request_id}
             _write_raw(path, payload)
         hashes.append(_sha256_file(path))
         nxt = payload.get("next_url")
@@ -676,7 +675,8 @@ async def _fetch_paged(client, vintage: str, sub: tuple[str, ...], url: str,
             break
         cursor = _cursor_of(nxt)
         page += 1
-    marker.write_text(json.dumps({"as_of": str(as_of), "pages": page, "page_sha256": hashes}))
+    marker.write_text(json.dumps({"as_of": str(as_of), "pages": page, "page_sha256": hashes,
+                                  **request_id}))
     logger.info("  snapshot %s: %d page(s), complete", "/".join(sub), page)
     return True
 
@@ -703,7 +703,30 @@ def _page_number(path: Path) -> int | None:
     return int(m.group(1)) if m else None
 
 
-def _pages_have_provenance(snap_dir: Path, as_of: date) -> bool:
+def _request_identity(url: str, base_params: dict) -> dict:
+    """Endpoint and canonical non-cursor parameters: what a page claims to answer."""
+    return {"endpoint": url.replace(BASE, ""),
+            "params": {k: str(v) for k, v in sorted(base_params.items())}}
+
+
+REFERENCE_ENDPOINT = "/v3/reference/tickers"
+SPLITS_ENDPOINT = "/v3/reference/splits"
+
+
+def reference_request(as_of: date) -> dict:
+    return _request_identity(f"{BASE}{REFERENCE_ENDPOINT}",
+                             {"market": "stocks", "date": str(as_of), "limit": 1000})
+
+
+def splits_request(vintage: str) -> dict:
+    warmup, main = frozen_sessions(vintage)
+    return _request_identity(f"{BASE}{SPLITS_ENDPOINT}", {
+        "execution_date.gte": str(warmup[0] if warmup else main[0]),
+        "execution_date.lte": str(main[-1]), "limit": 1000, "order": "asc",
+        "sort": "execution_date"})
+
+
+def _pages_have_provenance(snap_dir: Path, as_of: date, request_id: dict | None = None) -> bool:
     """Every existing page was requested for as_of with its predecessor's cursor."""
     files = list(snap_dir.glob("page-*"))
     numbers = [_page_number(p) for p in files]
@@ -718,6 +741,8 @@ def _pages_have_provenance(snap_dir: Path, as_of: date) -> bool:
             payload = _read_raw(p)
             req = payload.get("_request")
             if not req or req.get("as_of") != str(as_of) or req.get("cursor") != expected_cursor:
+                return False
+            if request_id is not None and any(req.get(k) != v for k, v in request_id.items()):
                 return False
             expected_cursor = _cursor_of(payload.get("next_url"))
         except Exception:  # noqa: BLE001 — corrupt bytes or a malformed next_url are unproven
@@ -740,7 +765,8 @@ def _read_snapshot(snap_dir: Path, require_complete: bool,
                    expected_as_of: date | None = None) -> dict[str, dict]:
     """Labels from one reference snapshot directory (validated by `_read_paged`)."""
     labels: dict[str, dict] = {}
-    for payload in _read_paged(snap_dir, require_complete, expected_as_of):
+    req = reference_request(expected_as_of) if (require_complete and expected_as_of) else None
+    for payload in _read_paged(snap_dir, require_complete, expected_as_of, req):
         for row in payload.get("results", []):
             t = row.get("ticker")
             if t:
@@ -750,7 +776,7 @@ def _read_snapshot(snap_dir: Path, require_complete: bool,
 
 
 def _read_paged(snap_dir: Path, require_complete: bool,
-                expected_as_of: date | None = None) -> list[dict]:
+                expected_as_of: date | None = None, request_id: dict | None = None) -> list[dict]:
     """Payloads of one paged directory; v3 refuses anything not provably complete.
 
     Complete means: a marker for the expected as-of date, pages 1..N contiguous
@@ -775,6 +801,9 @@ def _read_paged(snap_dir: Path, require_complete: bool,
             raise RuntimeError(f"snapshot {name}: malformed marker")
         if expected_as_of is not None and m.get("as_of") != str(expected_as_of):
             raise RuntimeError(f"snapshot {name}: marker as_of {m.get('as_of')} != expected {expected_as_of}")
+        if request_id is not None and any(m.get(k) != v for k, v in request_id.items()):
+            raise RuntimeError(f"snapshot {name}: marker request {m.get('endpoint')} {m.get('params')} "
+                               f"!= expected {request_id}")
         names = [p.name for p in pages]
         if names != [f"page-{i}.json.gz" for i in range(1, n + 1)]:
             raise RuntimeError(f"snapshot {name}: pages {names[:3]}... do not match marker")
@@ -787,7 +816,8 @@ def _read_paged(snap_dir: Path, require_complete: bool,
             if (i < n and not has_next) or (i == n and has_next):
                 raise RuntimeError(f"snapshot {name}: pagination chain broken at page {i} of {n}")
             req = payload.get("_request") or {}
-            if req.get("as_of") != m.get("as_of") or req.get("cursor") != expected_cursor:
+            if (req.get("as_of") != m.get("as_of") or req.get("cursor") != expected_cursor
+                    or (request_id is not None and any(req.get(k) != v for k, v in request_id.items()))):
                 raise RuntimeError(f"snapshot {name}: page {i} provenance does not continue the chain "
                                    f"(as_of {req.get('as_of')}, cursor {req.get('cursor')!r})")
             expected_cursor = _cursor_of(payload.get("next_url"))
@@ -817,7 +847,7 @@ def splits_by_ticker(vintage: str) -> dict[str, list[tuple[date, float]]]:
     rec = json.loads((ROOT / vintage / "contract.json").read_text())
     out: dict[str, list[tuple[date, float]]] = defaultdict(list)
     for payload in _read_paged(ROOT / vintage / "raw" / "splits", True,
-                               date.fromisoformat(rec["end"])):
+                               date.fromisoformat(rec["end"]), splits_request(vintage)):
         for row in payload.get("results", []):
             t, ed = row.get("ticker"), row.get("execution_date")
             sf, st = row.get("split_from"), row.get("split_to")
@@ -1510,7 +1540,10 @@ def mcap_audit_sample(vintage: str) -> dict[str, list[tuple[str, date, str, floa
             by_month[f"{d.year:04d}-{d.month:02d}"].append((d, t, v))
     lo, hi = MIN_MCAP * (1 - MCAP_BAND), MIN_MCAP * (1 + MCAP_BAND)
     out: dict[str, list] = {}
-    for idx, month in enumerate(sorted(by_month)):
+    first = frozen_sessions(vintage)[1][0]
+    for month in sorted(by_month):
+        y, mo = (int(x) for x in month.split("-"))
+        idx = (y - first.year) * 12 + (mo - first.month)   # 0-based from the range start (§3d)
         pairs = sorted(by_month[month], key=lambda x: (x[0], x[1]))
         band = [p for p in pairs if lo <= p[2] <= hi]
         below = [p for p in pairs if p[2] < lo]
@@ -1525,15 +1558,22 @@ def mcap_audit_sample(vintage: str) -> dict[str, list[tuple[str, date, str, floa
         chosen = [("band", *p) for p in draw(band, BAND_PER_MONTH, "band")]
         want_above = 13 if idx % 2 == 0 else 12
         want_below = SENTINEL_PER_MONTH - want_above
-        take_above = min(want_above, len(above))
-        take_below = min(want_below, len(below))
-        spare = SENTINEL_PER_MONTH - take_above - take_below
-        if spare and len(above) > take_above:
-            take_above = min(len(above), take_above + spare)
-        elif spare and len(below) > take_below:
-            take_below = min(len(below), take_below + spare)
-        chosen += [("sentinel_above", *p) for p in draw(above, take_above, "above")]
-        chosen += [("sentinel_below", *p) for p in draw(below, take_below, "below")]
+        sel_above = draw(above, want_above, "above")
+        sel_below = draw(below, want_below, "below")
+        # §3d: an underfilled stratum is audited in full and its unused allocation
+        # goes to the other stratum as "the next pairs in canonical order" — the
+        # first not-yet-chosen pairs of that stratum, not another seeded draw.
+        spare = SENTINEL_PER_MONTH - len(sel_above) - len(sel_below)
+        for pool, sel in ((above, sel_above), (below, sel_below)):
+            if spare <= 0:
+                break
+            taken = set(sel)
+            extra = [p for p in pool if p not in taken][:spare]
+            sel.extend(extra)
+            sel.sort(key=lambda x: (x[0], x[1]))
+            spare -= len(extra)
+        chosen += [("sentinel_above", *p) for p in sel_above]
+        chosen += [("sentinel_below", *p) for p in sel_below]
         out[month] = chosen
     return out
 
@@ -1546,11 +1586,16 @@ def _mcap_estimates_fingerprint(sample: dict) -> str:
     return h.hexdigest()
 
 
-async def run_mcap_audit(vintage: str) -> None:
-    sample = mcap_audit_sample(vintage)
-    plan = {"sampler_version": MCAP_SAMPLER_VERSION, "seed": MCAP_AUDIT_SEED,
+def expected_mcap_plan(vintage: str, sample: dict | None = None) -> dict:
+    sample = sample if sample is not None else mcap_audit_sample(vintage)
+    return {"sampler_version": MCAP_SAMPLER_VERSION, "seed": MCAP_AUDIT_SEED,
             "sample_sha256": _mcap_estimates_fingerprint(sample),
             "pairs": sorted(f"{m}/{part}/{t}_{d}" for m, rows in sample.items() for part, d, t, _ in rows)}
+
+
+async def run_mcap_audit(vintage: str) -> None:
+    sample = mcap_audit_sample(vintage)
+    plan = expected_mcap_plan(vintage, sample)
     plan_path = ROOT / vintage / "mcap_audit_plan.json"
     if plan_path.exists() and json.loads(plan_path.read_text()) != plan:
         raise RuntimeError("mcap audit plan changed since the last run — start a new vintage")
@@ -1572,6 +1617,32 @@ async def run_mcap_audit(vintage: str) -> None:
                 _write_raw_unchecked(path, payload)
 
 
+_GOVERNED_PATHS = ("scripts/pit_universe_phase_a.py", "scripts/pit_universe_report.py")
+
+
+def require_clean_code() -> str:
+    """The commit a v3 step runs must be exactly the code it executes.
+
+    A manifest records HEAD; running with uncommitted edits to the governed
+    scripts would attribute their output to a commit that never contained them.
+    """
+    import subprocess
+    repo = Path(__file__).resolve().parent.parent
+    for exe in ("git", "/opt/homebrew/bin/git"):
+        try:
+            st = subprocess.run([exe, "-C", str(repo), "status", "--porcelain", "--", *_GOVERNED_PATHS],
+                                capture_output=True, text=True, timeout=30)
+            head = subprocess.run([exe, "-C", str(repo), "rev-parse", "HEAD"],
+                                  capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if st.returncode == 0 and head.returncode == 0:
+            if st.stdout.strip():
+                raise SystemExit(f"refusing to run: uncommitted changes to governed scripts:\n{st.stdout}")
+            return head.stdout.strip()
+    raise SystemExit("refusing to run: git unavailable, cannot establish code identity")
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
     ap.add_argument("step", choices=["spine", "transitions", "audit", "mcap", "mcap-audit",
@@ -1585,6 +1656,8 @@ def main() -> None:
 
     vintage = args.vintage or str(_today_et())
     logger.info("vintage %s  step %s", vintage, args.step)
+    if args.step != "verify" and (contract_version(vintage) == "v3" or args.step == "spine"):
+        logger.info("code identity: %s", require_clean_code())
 
     if args.step in ("mcap", "mcap-audit"):
         ledger = _open_ledger(vintage, "B")

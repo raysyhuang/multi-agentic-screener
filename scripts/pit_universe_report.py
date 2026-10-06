@@ -122,7 +122,7 @@ HALT_MCAP_BAND_DISAGREE_PCT = 2.0  # §3d part 1, per month
 def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
     """§A.5 market-cap-unknown rate and the §3d threshold audit (band + sentinel)."""
     from pit_universe_phase_a import (  # noqa: PLC0415
-        MCAP_SAMPLER_VERSION, MIN_MCAP, _mcap_estimates_fingerprint, mcap_audit_sample,
+        MIN_MCAP, expected_mcap_plan, mcap_audit_sample,
     )
 
     halts: list[str] = []
@@ -144,9 +144,11 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
     else:
         plan = json.loads(plan_path.read_text())
         sample = mcap_audit_sample(vintage)
-        if (plan.get("sampler_version") != MCAP_SAMPLER_VERSION
-                or plan.get("sample_sha256") != _mcap_estimates_fingerprint(sample)):
-            halts.append("§3d audit plan does not match the current estimates/sampler — rerun on a new vintage")
+        expected_rows = {f"{m}/{part}/{t}_{d}": (part, str(d), t, v)
+                         for m, rows in sample.items() for part, d, t, v in rows}
+        if plan != expected_mcap_plan(vintage, sample):
+            halts.append("§3d audit plan is not exactly the plan the current estimates and sampler "
+                         "produce — rerun on a new vintage")
         else:
             root = ROOT / vintage / "raw" / "mcap_audit"
             observed = {f"{p.parent.parent.name}/{p.parent.name}/{p.name.replace('.json.gz', '')}"
@@ -162,6 +164,12 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
                 for p in sorted(root.glob("*/*/*.json.gz")):
                     payload = _read_raw(p)
                     meta = payload.get("_audit", {})
+                    key = f"{p.parent.parent.name}/{p.parent.name}/{p.name.replace('.json.gz', '')}"
+                    part, d_s, t, v = expected_rows[key]
+                    if (meta.get("part"), meta.get("date"), meta.get("ticker")) != (part, d_s, t) \
+                            or abs(float(meta.get("estimate", -1)) - v) > 1e-6 * max(1.0, v):
+                        halts.append(f"§3d audit record {key} does not match its planned pair")
+                        continue
                     actual = (payload.get("results") or {}).get("market_cap")
                     rec = months[p.parent.parent.name]
                     if payload.get("_not_found") or actual is None:
@@ -183,6 +191,11 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
                                          f"{HALT_MCAP_BAND_DISAGREE_PCT}%")
                     if rec["sentinel_flip"]:
                         halts.append(f"{month}: §3d sentinel flip ({rec['sentinel_flip']}) — zero tolerated")
+                    if rec["unverifiable"]:
+                        # Fail closed: an unanswered pair is not evidence of agreement,
+                        # and the contract defines no replacement policy.
+                        halts.append(f"{month}: {rec['unverifiable']} §3d pair(s) unverifiable "
+                                     "(no as-of market_cap) — audit not passed")
                 audit = {"ran": True, "per_month": dict(months)}
     return {"mcap_unknown_by_month": dict(per_month), "threshold_audit": audit}, halts
 
@@ -642,6 +655,27 @@ def write_report(vintage: str) -> dict:
     else:
         halts.append("no request ledger — provenance of this vintage is unverifiable")
 
+    phase_b_ledger = None
+    if v3 and phase_b and phase_b["complete"]:
+        from pit_universe_phase_a import PHASE_B_CALL_CEILING  # noqa: PLC0415
+        lp = base / "request_ledger_phase_b.jsonl"
+        if not lp.exists():
+            halts.append("no phase B request ledger — market-cap provenance is unverifiable")
+        else:
+            calls = failures = 0
+            for line in lp.read_text().splitlines():
+                try:
+                    ev = json.loads(line).get("event") if line.strip() else None
+                except json.JSONDecodeError:
+                    continue
+                calls += ev == "request"
+                failures += ev == "failure"
+            phase_b_ledger = {"calls": calls, "durable_failures": failures,
+                              "ceiling": PHASE_B_CALL_CEILING,
+                              "headroom": PHASE_B_CALL_CEILING - calls}
+            if failures:
+                halts.append(f"phase B ledger records {failures} unrecovered failure(s)")
+
     divergence, divergence_halts = live_divergence(vintage)
     halts.extend(divergence_halts)
     count_divergence, count_halts = live_count_divergence(vintage, membership)
@@ -719,6 +753,15 @@ def write_report(vintage: str) -> dict:
         # Schema additions are v3-only so a v2 vintage's manifest replays exactly.
         manifest["phase"] = "B" if (phase_b and phase_b["complete"]) else "A"
         manifest["phase_b"] = phase_b
+        manifest["phase_b_ledger"] = phase_b_ledger
+        # The 3-year projection (distinct x all quarters vs 75,000) is superseded by
+        # the eligible-quarter rule and the 140,000 ceiling (Ray, 2026-10-06).
+        from pit_universe_phase_a import PHASE_B_CALL_CEILING  # noqa: PLC0415
+        manifest["phase_b_gate"] = {
+            "rule": "shares lookups for (ticker, quarter) pairs eligible pre-mcap on >= 1 session",
+            "lookups_required": phase_b["expected"] if phase_b else None,
+            "ceiling": PHASE_B_CALL_CEILING,
+        }
         manifest["market_cap"] = mcap_section
         if phase_b and phase_b["complete"]:
             manifest["constraints_applied"]["market_cap"] = (

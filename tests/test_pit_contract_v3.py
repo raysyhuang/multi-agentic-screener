@@ -37,17 +37,26 @@ def _w(path: Path, payload) -> None:
         fh.write(json.dumps(payload).encode())
 
 
-def _mark(snap_dir: Path, as_of: str) -> None:
-    """Completion marker for a one-page synthetic snapshot."""
+def _req_for(snap_dir: Path, as_of: str) -> dict:
+    if snap_dir.name == "splits":
+        return pa.splits_request(VINTAGE)
+    return pa.reference_request(date.fromisoformat(as_of))
+
+
+def _mark(snap_dir: Path, as_of: str, request: dict | None = None) -> None:
+    """Completion marker for a synthetic snapshot, carrying its request identity."""
     pages = sorted(snap_dir.glob("page-*.json.gz"))
+    req = request if request is not None else _req_for(snap_dir, as_of)
     (snap_dir / pa.SNAPSHOT_MARKER).write_text(json.dumps({
-        "as_of": as_of, "pages": len(pages), "page_sha256": [pa._sha256_file(p) for p in pages]}))
+        "as_of": as_of, "pages": len(pages), "page_sha256": [pa._sha256_file(p) for p in pages],
+        **req}))
 
 
 def _snap(path: Path, payload, as_of: str) -> None:
     """A one-page snapshot with request provenance and a completion marker."""
-    _w(path, {**payload, "_request": {"as_of": as_of, "cursor": None}})
-    _mark(path.parent, as_of)
+    req = _req_for(path.parent, as_of)
+    _w(path, {**payload, "_request": {"as_of": as_of, "cursor": None, **req}})
+    _mark(path.parent, as_of, req)
 
 
 @pytest.fixture
@@ -376,7 +385,7 @@ def test_unmarked_or_altered_snapshot_is_refused(vintage):
         pa._classification_by_month(VINTAGE)
     _mark(vintage / "raw" / "reference" / "2024-02", "2024-02-01")
     _w(vintage / "raw" / "reference" / "2024-02" / "page-1.json.gz",
-       {"results": [], "_request": {"as_of": "2024-02-01", "cursor": None}})
+       {"results": [], "_request": {"as_of": "2024-02-01", "cursor": None, **pa.reference_request(date(2024, 2, 1))}})
     with pytest.raises(RuntimeError, match="changed since completion"):
         pa._classification_by_month(VINTAGE)
 
@@ -476,7 +485,7 @@ def test_marker_over_a_page_that_still_has_next_url_is_refused(vintage):
     d = vintage / "raw" / "reference" / "2024-02"
     _w(d / "page-1.json.gz", {"results": [{"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"}],
                               "next_url": "x?cursor=more",
-                              "_request": {"as_of": "2024-02-01", "cursor": None}})
+                              "_request": {"as_of": "2024-02-01", "cursor": None, **pa.reference_request(date(2024, 2, 1))}})
     _mark(d, "2024-02-01")
     with pytest.raises(RuntimeError, match="pagination chain broken"):
         pa._classification_by_month(VINTAGE)
@@ -584,8 +593,8 @@ async def test_unproven_unmarked_pages_are_quarantined_and_refetched(tmp_path, m
 def test_page_from_another_chain_breaks_provenance(vintage):
     d = vintage / "raw" / "reference" / "2024-02"
     _w(d / "page-1.json.gz", {"results": [], "next_url": "x?cursor=c2",
-                              "_request": {"as_of": "2024-02-01", "cursor": None}})
-    _w(d / "page-2.json.gz", {"results": [], "_request": {"as_of": "2024-02-01", "cursor": "zzz"}})
+                              "_request": {"as_of": "2024-02-01", "cursor": None, **pa.reference_request(date(2024, 2, 1))}})
+    _w(d / "page-2.json.gz", {"results": [], "_request": {"as_of": "2024-02-01", "cursor": "zzz", **pa.reference_request(date(2024, 2, 1))}})
     _mark(d, "2024-02-01")
     with pytest.raises(RuntimeError, match="provenance does not continue the chain"):
         pa._classification_by_month(VINTAGE)
@@ -753,3 +762,82 @@ def test_phase_b_ledger_has_its_own_ceiling(tmp_path, monkeypatch):
     led = pa._open_ledger("v", "B")
     assert led.ceiling == pa.PHASE_B_CALL_CEILING and led.path.name == "request_ledger_phase_b.jsonl"
     led.close()
+
+
+def test_sentinel_underfill_takes_the_next_pairs_in_canonical_order(monkeypatch):
+    from datetime import date as D
+    below = [(D(2024, 2, 1), f"B{i}", 1e6) for i in range(3)]               # only 3 below
+    above = [(D(2024, 2, 1), f"A{i:02d}", 1e10) for i in range(40)]
+    est = {(d, t): v for d, t, v in below + above}
+    monkeypatch.setattr(pa, "mcap_estimates", lambda v: est)
+    monkeypatch.setattr(pa, "frozen_sessions", lambda v: ([], [D(2024, 2, 1)]))
+    rows = pa.mcap_audit_sample("x")["2024-02"]
+    sel_above = [t for p, d, t, v in rows if p == "sentinel_above"]
+    sel_below = [t for p, d, t, v in rows if p == "sentinel_below"]
+    assert len(sel_below) == 3 and len(sel_above) == 22                     # 13 seeded + 9 spare
+    import random
+    rng = random.Random(f"{pa.MCAP_AUDIT_SEED}:{pa.MCAP_SAMPLER_VERSION}:2024-02:above")
+    seeded = {t for _, t, _ in rng.sample(sorted(above), 13)}
+    first_unselected = [t for _, t, _ in sorted(above) if t not in seeded][:9]
+    assert set(sel_above) == seeded | set(first_unselected)
+
+
+
+def test_sentinel_month_parity_counts_from_the_frozen_range_start(monkeypatch):
+    from datetime import date as D
+    est = {(D(2024, 3, 1), f"A{i:02d}", ): 1e10 for i in range(30)}
+    est = {(d, t): v for (d, t), v in est.items()}
+    est.update({(D(2024, 3, 1), f"B{i:02d}"): 1e6 for i in range(30)})
+    monkeypatch.setattr(pa, "mcap_estimates", lambda v: est)
+    # Range starts in January: March is index 2 (even) -> 13 above, even though it is
+    # the FIRST month that has estimates.
+    monkeypatch.setattr(pa, "frozen_sessions", lambda v: ([], [D(2024, 1, 2), D(2024, 3, 1)]))
+    rows = pa.mcap_audit_sample("x")["2024-03"]
+    assert sum(p == "sentinel_above" for p, *_ in rows) == 13
+    monkeypatch.setattr(pa, "frozen_sessions", lambda v: ([], [D(2024, 2, 1), D(2024, 3, 1)]))
+    rows = pa.mcap_audit_sample("x")["2024-03"]
+    assert sum(p == "sentinel_above" for p, *_ in rows) == 12
+
+
+def test_splits_marker_for_a_different_query_is_refused(vintage):
+    d = vintage / "raw" / "splits"
+    other = {**pa.splits_request(VINTAGE), "params": {**pa.splits_request(VINTAGE)["params"],
+                                                       "execution_date.gte": "2023-01-01"}}
+    _w(d / "page-1.json.gz", {"results": [], "_request": {"as_of": "2024-03-01", "cursor": None, **other}})
+    _mark(d, "2024-03-01", other)
+    with pytest.raises(RuntimeError, match="marker request"):
+        pa.splits_by_ticker(VINTAGE)
+
+
+@pytest.mark.asyncio
+async def test_unverifiable_or_tampered_mcap_audit_never_passes(vintage, monkeypatch):
+    await _phase_b_ready(vintage, monkeypatch, {"PBR": 21e6, "LNG": 1e6, "NEWCO": 1e8})
+
+    async def audit_get(client, url, params, allow_404=False):
+        return {"results": None, "_not_found": True}          # vendor has no as-of market cap
+    monkeypatch.setattr(pa, "_get", audit_get)
+    await pa.run_mcap_audit(VINTAGE)
+    m = pa.build_membership_with_mcap(VINTAGE)
+    section, halts = pr.mcap_gates(VINTAGE, m)
+    assert any("unverifiable" in h for h in halts)
+    plan = json.loads((vintage / "mcap_audit_plan.json").read_text())
+    plan["pairs"] = plan["pairs"][:-1]
+    (vintage / "mcap_audit_plan.json").write_text(json.dumps(plan))
+    _, halts = pr.mcap_gates(VINTAGE, m)
+    assert any("not exactly the plan" in h for h in halts)
+
+
+def test_v3_steps_refuse_to_run_with_uncommitted_governed_changes(monkeypatch):
+    import subprocess
+
+    class R:
+        def __init__(self, out):
+            self.returncode, self.stdout = 0, out
+
+    def fake_run(args, **kw):
+        return R(" M scripts/pit_universe_phase_a.py\n" if "status" in args else "abc123\n")
+    monkeypatch.setattr(subprocess, "run", fake_run)
+    with pytest.raises(SystemExit, match="uncommitted changes"):
+        pa.require_clean_code()
+    monkeypatch.setattr(subprocess, "run", lambda args, **kw: R("" if "status" in args else "abc123\n"))
+    assert pa.require_clean_code() == "abc123"
