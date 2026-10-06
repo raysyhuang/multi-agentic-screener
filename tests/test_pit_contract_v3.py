@@ -893,3 +893,21 @@ async def test_audit_estimate_must_equal_the_recomputed_one_exactly(vintage, mon
     pa._write_raw_unchecked(f, payload)
     _, halts = pr.mcap_gates(VINTAGE, pa.build_membership_with_mcap(VINTAGE))
     assert any("does not match its planned pair" in h for h in halts)
+
+
+def test_phase_a_report_ledger_with_malformed_line_halts(vintage, monkeypatch):
+    (vintage / "request_ledger.jsonl").write_text('{"event": "request", "n": 1}\nnot json\n')
+    monkeypatch.setattr(pa, "require_transitions_complete", lambda v: None)
+    monkeypatch.setattr(pr, "live_divergence", lambda v: ({}, []))
+    monkeypatch.setattr(pr, "live_count_divergence", lambda v, m: ({}, []))
+    monkeypatch.setattr(pr, "_atr_pct_by_ticker", lambda v: {})
+    manifest = pr.write_report(VINTAGE)
+    assert any("malformed" in h for h in manifest["halts"])
+
+
+def test_not_found_details_with_a_body_is_invalid(vintage):
+    snaps = pa.quarter_snapshot_dates(VINTAGE)
+    path = pa._details_path(VINTAGE, "PBR", (2024, 1))
+    pa._write_raw_unchecked(path, {"_not_found": True, "results": {"ticker": "PBR"},
+                                   "_request": {"ticker": "PBR", "date": str(snaps[(2024, 1)])}})
+    assert pa._details_valid(VINTAGE, "PBR", (2024, 1), snaps) is False

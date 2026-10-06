@@ -1486,7 +1486,9 @@ def _details_valid(vintage: str, t: str, q: tuple[int, int], snaps: dict) -> boo
     if payload.get("_request") != {"ticker": t, "date": str(snaps[q])}:
         return False
     res = payload.get("results")
-    return payload.get("_not_found") is True or (isinstance(res, dict) and res.get("ticker") == t)
+    if payload.get("_not_found") is True:
+        return res is None                   # a 404 must not also carry a body
+    return isinstance(res, dict) and res.get("ticker") == t
 
 
 def phase_b_status(vintage: str) -> dict:

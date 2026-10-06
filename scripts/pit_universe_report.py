@@ -636,19 +636,26 @@ def write_report(vintage: str) -> dict:
     ledger_path = base / "request_ledger.jsonl"
     ledger_summary = {"present": ledger_path.exists()}
     if ledger_path.exists():
-        calls = failures = 0
+        calls = failures = malformed = 0
         for line in ledger_path.read_text().splitlines():
             if not line.strip():
                 continue
             try:
                 event = json.loads(line).get("event")
             except json.JSONDecodeError:
+                malformed += 1
                 continue
             if event == "request":
                 calls += 1
             elif event == "failure":
                 failures += 1
+            else:
+                malformed += 1
         ledger_summary = {"present": True, "calls": calls, "durable_failures": failures}
+        if v3 and malformed:
+            # A skipped record understates spend; v2 keeps its original tolerance.
+            halts.append(f"request ledger has {malformed} malformed/unknown record(s) — spend unverifiable")
+            ledger_summary["malformed"] = malformed
         if failures:
             # A vintage with unrecovered holes is incomplete by construction;
             # reporting it as a dataset would present a partial universe as a
