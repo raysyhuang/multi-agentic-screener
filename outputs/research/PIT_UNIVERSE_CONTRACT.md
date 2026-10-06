@@ -479,3 +479,33 @@ R8 Distribution:    the vintage archive goes to a release asset on a PRIVATE rep
 ```
 
 Open item carried forward: Phase B market-cap acquisition scales with distinct tickers × quarters. At ~9.75 years that is likely to exceed the 75,000-call ceiling set for 3 years. The ceiling and cadence are to be re-ruled once Phase A reports the distinct-ticker count. No number is pre-committed here.
+
+### §12 addendum (2026-10-06) — R9 point-in-time observables, and the Phase B budget
+
+```
+R9 Observables:     membership decisions on D use what was observable on D. Price
+                    (> $5) and share volume (> 500K) are evaluated on UNADJUSTED
+                    grouped bars (adjusted=false) for D. Market cap is estimated as
+                    weighted_shares_outstanding as of the quarter's first session
+                    x split multiplier (split_to/split_from for splits executing after
+                    that date through D) x D's unadjusted close. Split-adjusted bars
+                    remain the history count's input and the input for returns.
+                    Why: split-adjusted closes are look-ahead (a $1 stock that later
+                    reverse-splits shows a $10 adjusted close; registry
+                    R-2026-09-price-screen-lookahead), and quarterly shares x an
+                    adjusted close misstates market cap by the split ratio (NVDA
+                    2024-06-07: $120.89 adjusted vs $1,208.88 actual).
+                    Acquired: raw/grouped_raw/<D> for every membership session, and
+                    raw/splits (paged, provenance-chained, completion-marked) from
+                    the warm-up start to the frozen end. A missing unadjusted bar
+                    excludes the name (counted no_unadjusted_bar).
+Phase B budget:     (Ray) shares lookups ONLY for (ticker, quarter) pairs in which the
+                    ticker passed every non-market-cap gate on >= 1 session: 117,544
+                    on the provisional count, vs 324,600 for the full grid. Separate
+                    ledger, ceiling 140,000 (lookups + §3d audit ~75/month + retries).
+                    Market cap > $300M (strict, as the live screener). §A.5 market-cap
+                    unknown > 5% in any month halts. §3d band (50/month, > 2%
+                    disagreement halts) and sentinel (25/month, 12 below / 13 above,
+                    alternating; any flip halts) are sampled canonically, seeded, with
+                    the plan bound to the estimates it was drawn from.
+```

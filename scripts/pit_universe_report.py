@@ -115,6 +115,78 @@ def _contract_version(vintage: str) -> str:
     return contract_version(vintage)
 
 
+HALT_MCAP_UNKNOWN_PCT = 5.0       # §A.5
+HALT_MCAP_BAND_DISAGREE_PCT = 2.0  # §3d part 1, per month
+
+
+def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
+    """§A.5 market-cap-unknown rate and the §3d threshold audit (band + sentinel)."""
+    from pit_universe_phase_a import (  # noqa: PLC0415
+        MCAP_SAMPLER_VERSION, MIN_MCAP, _mcap_estimates_fingerprint, mcap_audit_sample,
+    )
+
+    halts: list[str] = []
+    per_month: dict[str, dict] = defaultdict(lambda: {"pre_mcap": 0, "mcap_unknown": 0})
+    for d, rec in membership.items():
+        m = per_month[f"{d.year:04d}-{d.month:02d}"]
+        m["pre_mcap"] += len(rec["eligible_pre_mcap"])
+        m["mcap_unknown"] += rec["exclusions"].get("mcap_unknown", 0)
+    for month, m in sorted(per_month.items()):
+        rate = 100.0 * m["mcap_unknown"] / max(1, m["pre_mcap"])
+        m["mcap_unknown_pct"] = round(rate, 4)
+        if rate > HALT_MCAP_UNKNOWN_PCT:
+            halts.append(f"{month}: market-cap unknown {rate:.2f}% > {HALT_MCAP_UNKNOWN_PCT}%")
+
+    audit: dict = {"ran": False}
+    plan_path = ROOT / vintage / "mcap_audit_plan.json"
+    if not plan_path.exists():
+        halts.append("§3d threshold audit has not run — phase B not accepted")
+    else:
+        plan = json.loads(plan_path.read_text())
+        sample = mcap_audit_sample(vintage)
+        if (plan.get("sampler_version") != MCAP_SAMPLER_VERSION
+                or plan.get("sample_sha256") != _mcap_estimates_fingerprint(sample)):
+            halts.append("§3d audit plan does not match the current estimates/sampler — rerun on a new vintage")
+        else:
+            root = ROOT / vintage / "raw" / "mcap_audit"
+            observed = {f"{p.parent.parent.name}/{p.parent.name}/{p.name.replace('.json.gz', '')}"
+                        for p in root.glob("*/*/*.json.gz")} if root.exists() else set()
+            planned = set(plan["pairs"])
+            if observed != planned:
+                halts.append(f"§3d audit set != plan ({len(planned - observed)} missing, "
+                             f"{len(observed - planned)} unplanned)")
+            else:
+                months: dict[str, dict] = defaultdict(lambda: {"band": 0, "band_disagree": 0,
+                                                               "sentinel": 0, "sentinel_flip": 0,
+                                                               "unverifiable": 0})
+                for p in sorted(root.glob("*/*/*.json.gz")):
+                    payload = _read_raw(p)
+                    meta = payload.get("_audit", {})
+                    actual = (payload.get("results") or {}).get("market_cap")
+                    rec = months[p.parent.parent.name]
+                    if payload.get("_not_found") or actual is None:
+                        rec["unverifiable"] += 1
+                        continue
+                    flipped = (meta["estimate"] > MIN_MCAP) != (float(actual) > MIN_MCAP)
+                    if meta["part"] == "band":
+                        rec["band"] += 1
+                        rec["band_disagree"] += int(flipped)
+                    else:
+                        rec["sentinel"] += 1
+                        rec["sentinel_flip"] += int(flipped)
+                for month, rec in sorted(months.items()):
+                    if rec["band"]:
+                        pct = 100.0 * rec["band_disagree"] / rec["band"]
+                        rec["band_disagree_pct"] = round(pct, 2)
+                        if pct > HALT_MCAP_BAND_DISAGREE_PCT:
+                            halts.append(f"{month}: §3d band disagreement {pct:.1f}% > "
+                                         f"{HALT_MCAP_BAND_DISAGREE_PCT}%")
+                    if rec["sentinel_flip"]:
+                        halts.append(f"{month}: §3d sentinel flip ({rec['sentinel_flip']}) — zero tolerated")
+                audit = {"ran": True, "per_month": dict(months)}
+    return {"mcap_unknown_by_month": dict(per_month), "threshold_audit": audit}, halts
+
+
 def _code_sha() -> str | None:
     import subprocess
     for exe in ("git", "/opt/homebrew/bin/git"):
@@ -493,9 +565,15 @@ def write_report(vintage: str) -> dict:
 
     base = ROOT / vintage
     v3 = contract_version(vintage) == "v3"
+    phase_b = None
     if v3:
         require_transitions_complete(vintage)
-    membership = build_membership(vintage)
+        from pit_universe_phase_a import build_membership_with_mcap, phase_b_status  # noqa: PLC0415
+        phase_b = phase_b_status(vintage)
+        phase_b = {k: v for k, v in phase_b.items() if k not in ("missing", "extra")} | {
+            "missing_count": len(phase_b["missing"]), "extra_count": len(phase_b["extra"])}
+    membership = (build_membership_with_mcap(vintage) if phase_b and phase_b["complete"]
+                  else build_membership(vintage))
     if not membership:
         raise SystemExit(f"no grouped data under {base}/raw/grouped — run `spine` first")
 
@@ -532,6 +610,13 @@ def write_report(vintage: str) -> dict:
     # Pooled rates are REPORTED for continuity but no longer gate anything —
     # they cannot see a single catastrophic month (see unknown_rate_gates).
     windowed, halts = unknown_rate_gates(membership, v3=v3)
+    mcap_section = None
+    if v3:
+        if not (phase_b and phase_b["complete"]):
+            halts.append(f"phase B (market cap) incomplete: {phase_b} — dataset not signed off")
+        else:
+            mcap_section, mcap_halts = mcap_gates(vintage, membership)
+            halts.extend(mcap_halts)
 
     ledger_path = base / "request_ledger.jsonl"
     ledger_summary = {"present": ledger_path.exists()}
@@ -632,6 +717,16 @@ def write_report(vintage: str) -> dict:
 
     if v3:
         # Schema additions are v3-only so a v2 vintage's manifest replays exactly.
+        manifest["phase"] = "B" if (phase_b and phase_b["complete"]) else "A"
+        manifest["phase_b"] = phase_b
+        manifest["market_cap"] = mcap_section
+        if phase_b and phase_b["complete"]:
+            manifest["constraints_applied"]["market_cap"] = (
+                "> $300M, estimated as quarterly as-of shares x split multiplier x unadjusted close (§3c, R9)")
+            manifest["distinct_eligible_tickers"] = len({t for r in membership.values() for t in r["eligible"]})
+            for row in daily_counts:
+                from datetime import date as _d  # noqa: PLC0415
+                row["eligible"] = len(membership[_d.fromisoformat(row["date"])]["eligible"])
         stamp = base / "contract.json"
         manifest["contract_version"] = _contract_version(vintage)
         manifest["contract_stamp_sha256"] = _sha256(stamp)

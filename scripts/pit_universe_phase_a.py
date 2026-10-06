@@ -176,6 +176,12 @@ def validated_sessions(vintage: str) -> tuple[list[date], list[date]]:
         raise RuntimeError(
             f"grouped tree does not match the frozen sessions: {len(missing)} missing "
             f"(e.g. {missing[:3]}), {len(extra)} extra (e.g. {extra[:3]}) — re-run `spine`")
+    raw_dir = ROOT / vintage / "raw" / "grouped_raw"
+    raw_present = {date.fromisoformat(p.stem.replace(".json", "")) for p in raw_dir.glob("*.json.gz")}
+    if raw_present != set(main):
+        raise RuntimeError(
+            f"grouped_raw tree does not match the membership sessions: "
+            f"{len(set(main) - raw_present)} missing, {len(raw_present - set(main))} extra — re-run `spine`")
     return warmup, main
 
 
@@ -224,6 +230,12 @@ REQUEST_DELAY_S = 0.12
 # estimate AFTER the run is not a budget — the 1.9M-call naive build this design
 # exists to avoid would have been discovered the same way.
 PHASE_A_CALL_CEILING = 45_000
+# Phase B (Ray, 2026-10-06): shares lookups only for (ticker, quarter) pairs in
+# which the ticker passed every non-market-cap constraint on >= 1 session —
+# ~117.5k on this vintage — plus the §3d threshold audit (~75/month) and retries.
+PHASE_B_CALL_CEILING = 140_000
+def _ceiling_for(phase: str) -> int:
+    return {"A": PHASE_A_CALL_CEILING, "B": PHASE_B_CALL_CEILING}[phase]
 # §3a-v2 binary search costs ceil(log2(sessions in month)) <= 5 probes per transition.
 
 
@@ -244,8 +256,11 @@ class RequestLedger:
     and a ledger is a file we may attach to a public artifact.
     """
 
-    def __init__(self, path: Path) -> None:
+    def __init__(self, path: Path, ceiling: int | None = None) -> None:
         self.path = path
+        # Resolved at construction, not at import, so the module constant stays
+        # the single source of truth (and is patchable in tests).
+        self.ceiling = ceiling if ceiling is not None else PHASE_A_CALL_CEILING
         self.path.parent.mkdir(parents=True, exist_ok=True)
         self.calls = self._replay_count()
         self.failures: list[dict] = []
@@ -273,7 +288,7 @@ class RequestLedger:
         return n
 
     def would_exceed(self) -> bool:
-        return self.calls >= PHASE_A_CALL_CEILING
+        return self.calls >= self.ceiling
 
     def record(self, url: str, params: dict, status: int | str, attempt: int) -> None:
         self.calls += 1
@@ -306,12 +321,13 @@ class RequestLedger:
 _LEDGER: RequestLedger | None = None
 
 
-def _open_ledger(vintage: str) -> RequestLedger:
+def _open_ledger(vintage: str, phase: str = "A") -> RequestLedger:
     global _LEDGER
-    _LEDGER = RequestLedger(ROOT / vintage / "request_ledger.jsonl")
+    name = "request_ledger.jsonl" if phase == "A" else f"request_ledger_phase_{phase.lower()}.jsonl"
+    _LEDGER = RequestLedger(ROOT / vintage / name, _ceiling_for(phase))
     logger.info(
-        "ledger: %d calls already spent on this vintage, ceiling %d",
-        _LEDGER.calls, PHASE_A_CALL_CEILING,
+        "ledger (phase %s): %d calls already spent on this vintage, ceiling %d",
+        phase, _LEDGER.calls, _LEDGER.ceiling,
     )
     return _LEDGER
 
@@ -383,7 +399,7 @@ async def _get(
         if _LEDGER.would_exceed():
             _LEDGER.record_failure(url, params, "budget_ceiling_reached", attempt)
             raise BudgetExceeded(
-                f"Phase A ceiling {PHASE_A_CALL_CEILING} reached ({_LEDGER.calls} "
+                f"call ceiling {_LEDGER.ceiling} reached ({_LEDGER.calls} "
                 f"spent) on attempt {attempt}. Raising it is a contract change, "
                 "not a flag."
             )
@@ -496,6 +512,7 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
     sessions_now = et_sessions(None, start or DEFAULT_START)
     _stamp_contract(vintage, start or DEFAULT_START, sessions_now[-1])
     warmup, sessions = frozen_sessions(vintage)
+    main_sessions = list(sessions)
     # Reference snapshots are needed for membership months only; warm-up
     # sessions need bars (for the prior-bar count) and nothing else.
     months = sorted({(d.year, d.month) for d in sessions})
@@ -527,6 +544,35 @@ async def fetch_spine(vintage: str, years: float | None = None, start: date | No
         logger.info(
             "grouped daily done: %d fetched, %d resumed, %d HOLES", fetched, skipped, holes
         )
+
+        # R9: unadjusted bars for the membership sessions (price/volume/mcap as
+        # observable on D). Warm-up sessions only feed the history count.
+        raw_fetched = 0
+        for d in main_sessions:
+            path = _raw_path(vintage, "grouped_raw", f"{d}.json.gz")
+            if path.exists():
+                continue
+            payload = await _get(
+                client, f"{BASE}/v2/aggs/grouped/locale/us/market/stocks/{d}",
+                {"adjusted": "false"},
+            )
+            if payload.get("_failed"):
+                holes += 1
+                logger.error("  grouped_raw %s: unrecoverable (%s)", d, payload.get("_reason"))
+                continue
+            payload["_request"] = {"date": str(d), "adjusted": False}
+            _write_raw(path, payload)
+            raw_fetched += 1
+            if raw_fetched % 100 == 0:
+                logger.info("  grouped_raw: %d fetched", raw_fetched)
+        # R9: every split executing from the warm-up start to the frozen end.
+        if not await _fetch_paged(
+                client, vintage, ("splits",), f"{BASE}/v3/reference/splits",
+                {"execution_date.gte": str(warmup[0] if warmup else main_sessions[0]),
+                 "execution_date.lte": str(main_sessions[-1]), "limit": 1000, "order": "asc",
+                 "sort": "execution_date"},
+                main_sessions[-1]):
+            holes += 1
 
         # Monthly classification snapshot, taken on the first session of each
         # month and applied FORWARD ONLY (§3a). A snapshot counts only once its
@@ -579,7 +625,14 @@ SNAPSHOT_MARKER = "_complete.json"
 
 
 async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: date) -> bool:
-    """Page through /v3/reference/tickers as of a date; mark complete only at the last page.
+    """Reference-tickers snapshot as of a date (see `_fetch_paged`)."""
+    return await _fetch_paged(client, vintage, sub, f"{BASE}/v3/reference/tickers",
+                              {"market": "stocks", "date": str(as_of), "limit": 1000}, as_of)
+
+
+async def _fetch_paged(client, vintage: str, sub: tuple[str, ...], url: str,
+                       base_params: dict, as_of: date) -> bool:
+    """Page through a cursor-paginated endpoint; mark complete only at the last page.
 
     Resumable: existing pages are re-read (their next_url drives the walk), so a
     run interrupted mid-pagination continues where it stopped and writes the
@@ -607,10 +660,10 @@ async def _fetch_snapshot(client, vintage: str, sub: tuple[str, ...], as_of: dat
         if path.exists():
             payload = _read_raw(path)
         else:
-            params = {"market": "stocks", "date": str(as_of), "limit": 1000}
+            params = dict(base_params)
             if cursor:
                 params["cursor"] = cursor
-            payload = await _get(client, f"{BASE}/v3/reference/tickers", params)
+            payload = await _get(client, url, params)
             if payload.get("_failed"):
                 logger.error("  snapshot %s page %d unrecoverable (%s) — left INCOMPLETE",
                              "/".join(sub), page, payload.get("_reason"))
@@ -685,7 +738,20 @@ def _sha256_file(path: Path) -> str:
 
 def _read_snapshot(snap_dir: Path, require_complete: bool,
                    expected_as_of: date | None = None) -> dict[str, dict]:
-    """Labels from one snapshot directory; v3 refuses anything not provably complete.
+    """Labels from one reference snapshot directory (validated by `_read_paged`)."""
+    labels: dict[str, dict] = {}
+    for payload in _read_paged(snap_dir, require_complete, expected_as_of):
+        for row in payload.get("results", []):
+            t = row.get("ticker")
+            if t:
+                labels[t] = {"type": row.get("type"),
+                             "exchange": _EXCHANGE_MAP.get(row.get("primary_exchange", ""), "")}
+    return labels
+
+
+def _read_paged(snap_dir: Path, require_complete: bool,
+                expected_as_of: date | None = None) -> list[dict]:
+    """Payloads of one paged directory; v3 refuses anything not provably complete.
 
     Complete means: a marker for the expected as-of date, pages 1..N contiguous
     with N >= 1, one recorded hash per page matching the stored bytes, every page
@@ -727,14 +793,46 @@ def _read_snapshot(snap_dir: Path, require_complete: bool,
             expected_cursor = _cursor_of(payload.get("next_url"))
     else:
         payloads = [_read_raw(p) for p in pages]
-    labels: dict[str, dict] = {}
-    for payload in payloads:
+    return payloads
+
+
+# ── R9: point-in-time observables (unadjusted bars, splits) ──────────────────
+#
+# Membership on day D must use what was observable on D. Split-adjusted closes
+# rewrite history: a $1 stock that later reverse-splits 1:10 shows a $10
+# adjusted close years earlier and passes the $5 floor (registry
+# R-2026-09-price-screen-lookahead); and quarterly shares x an adjusted close
+# misstates market cap by the split ratio (NVDA 2024-06-07: $120.89 adjusted vs
+# $1,208.88 actual, so 2.5B shares gave $302B instead of ~$3.02T). Price,
+# volume and market cap therefore use UNADJUSTED bars; adjusted bars remain for
+# history counting and for returns.
+
+def _raw_bars(vintage: str, d: date) -> dict[str, dict]:
+    path = ROOT / vintage / "raw" / "grouped_raw" / f"{d}.json.gz"
+    return {r["T"]: r for r in (_read_raw(path).get("results", []) or []) if r.get("T")}
+
+
+def splits_by_ticker(vintage: str) -> dict[str, list[tuple[date, float]]]:
+    """{ticker: [(execution_date, shares multiplier split_to/split_from)]}, sorted."""
+    rec = json.loads((ROOT / vintage / "contract.json").read_text())
+    out: dict[str, list[tuple[date, float]]] = defaultdict(list)
+    for payload in _read_paged(ROOT / vintage / "raw" / "splits", True,
+                               date.fromisoformat(rec["end"])):
         for row in payload.get("results", []):
-            t = row.get("ticker")
-            if t:
-                labels[t] = {"type": row.get("type"),
-                             "exchange": _EXCHANGE_MAP.get(row.get("primary_exchange", ""), "")}
-    return labels
+            t, ed = row.get("ticker"), row.get("execution_date")
+            sf, st = row.get("split_from"), row.get("split_to")
+            if t and ed and sf and st:
+                out[t].append((date.fromisoformat(ed), float(st) / float(sf)))
+    return {t: sorted(v) for t, v in out.items()}
+
+
+def split_factor(splits: list[tuple[date, float]], after: date, through: date) -> float:
+    """Product of share multipliers for splits executing in (after, through]."""
+    f = 1.0
+    for ed, mult in splits:
+        if after < ed <= through:
+            f *= mult
+    return f
 
 
 # ── normalization ────────────────────────────────────────────────────────────
@@ -821,6 +919,7 @@ def build_membership(vintage: str) -> dict[date, dict]:
         labels = _label_for(labels_by_month, d)
         if d in overrides:
             labels = {**labels, **overrides[d]}
+        raw = _raw_bars(vintage, d) if v3 else {}
 
         traded, pre_class, eligible = [], [], []
         reasons: Counter = Counter()
@@ -833,6 +932,13 @@ def build_membership(vintage: str) -> dict[date, dict]:
                 reasons["no_price_or_volume"] += 1
                 continue
             traded.append(ticker)
+            if v3:
+                # R9: the price and volume a screener could see ON D.
+                rb = raw.get(ticker)
+                if rb is None or rb.get("c") is None or rb.get("v") is None:
+                    reasons["no_unadjusted_bar"] += 1
+                    continue
+                close, volume = rb["c"], rb["v"]
 
             # Observable constraints first — this set is the audit population,
             # deliberately drawn BEFORE classification (§3b).
@@ -927,10 +1033,11 @@ def transition_candidates(vintage: str) -> list[dict]:
                            "cannot be discovered; re-run `spine`")
     pre_by_date: dict[date, set[str]] = {}
     for d in sessions:
-        rows = _read_raw(grouped_dir / f"{d}.json.gz").get("results", []) or []
+        adjusted = {r["T"] for r in (_read_raw(grouped_dir / f"{d}.json.gz").get("results", []) or [])
+                    if r.get("T") and r.get("c") is not None and r.get("v") is not None}
         pre_by_date[d] = {
-            r["T"] for r in rows
-            if r.get("T") and r.get("c") is not None and r.get("v") is not None
+            t for t, r in _raw_bars(vintage, d).items()        # R9: unadjusted, observable on D
+            if t in adjusted and r.get("c") is not None and r.get("v") is not None
             and r["c"] > MIN_PRICE and r["v"] > MIN_SHARE_VOLUME
         }
     out = []
@@ -1260,10 +1367,215 @@ async def run_audit(vintage: str) -> None:
     logger.info("audit fetch complete: %d pairs", total)
 
 
+# ── Phase B: market-cap estimate (§3c) and threshold audit (§3d) ─────────────
+
+MIN_MCAP = 300_000_000          # live screener: marketCapMoreThan=300M (strict)
+MCAP_BAND = 0.20
+MCAP_SAMPLER_VERSION = "phase-b/1"
+MCAP_AUDIT_SEED = 20261006
+BAND_PER_MONTH = 50
+SENTINEL_PER_MONTH = 25
+
+
+def _quarter(d: date) -> tuple[int, int]:
+    return (d.year, (d.month - 1) // 3 + 1)
+
+
+def quarter_snapshot_dates(vintage: str) -> dict[tuple[int, int], date]:
+    """First membership session of each quarter: the shares-outstanding as-of date."""
+    out: dict[tuple[int, int], date] = {}
+    for d in frozen_sessions(vintage)[1]:
+        out.setdefault(_quarter(d), d)
+    return out
+
+
+def mcap_candidates(vintage: str) -> list[tuple[str, tuple[int, int]]]:
+    """(ticker, quarter) pairs where the ticker passed every non-mcap gate on >= 1 session.
+
+    No other quarter's market cap can affect membership, so no other lookup is made.
+    """
+    require_transitions_complete(vintage)
+    pairs = set()
+    for d, rec in build_membership(vintage).items():
+        q = _quarter(d)
+        pairs.update((t, q) for t in rec["eligible_pre_mcap"])
+    return sorted(pairs)
+
+
+def _details_path(vintage: str, t: str, q: tuple[int, int]) -> Path:
+    return _raw_path(vintage, "details", f"{q[0]:04d}-Q{q[1]}", f"{t}.json.gz")
+
+
+async def fetch_mcap_details(vintage: str) -> None:
+    snaps = quarter_snapshot_dates(vintage)
+    pairs = mcap_candidates(vintage)
+    logger.info("phase B: %d (ticker, quarter) shares lookups", len(pairs))
+    async with httpx.AsyncClient() as client:
+        done = 0
+        for i, (t, q) in enumerate(pairs, 1):
+            path = _details_path(vintage, t, q)
+            if path.exists():
+                continue
+            payload = await _get(client, f"{BASE}/v3/reference/tickers/{t}",
+                                 {"date": str(snaps[q])}, allow_404=True)
+            if payload.get("_failed"):
+                logger.error("  details %s %s unrecoverable (%s)", t, q, payload.get("_reason"))
+                continue
+            payload["_request"] = {"ticker": t, "date": str(snaps[q])}
+            _write_raw_unchecked(path, payload)
+            done += 1
+            if done % 1000 == 0:
+                logger.info("  details: %d fetched (%d/%d)", done, i, len(pairs))
+
+
+def phase_b_status(vintage: str) -> dict:
+    expected = {(t, q) for t, q in mcap_candidates(vintage)}
+    root = ROOT / vintage / "raw" / "details"
+    present = set()
+    if root.exists():
+        for p in root.glob("*/*.json.gz"):
+            y, qn = p.parent.name.split("-Q")
+            present.add((p.name.replace(".json.gz", ""), (int(y), int(qn))))
+    missing, extra = sorted(expected - present), sorted(present - expected)
+    return {"expected": len(expected), "present": len(expected & present),
+            "missing": missing, "extra": extra, "complete": not missing and not extra}
+
+
+def mcap_estimates(vintage: str, membership: dict | None = None) -> dict[tuple[date, str], float | None]:
+    """{(D, ticker): estimated market cap or None} for every pre-mcap-eligible pair.
+
+    estimate = weighted_shares_outstanding as of the quarter's first session
+             x split multiplier for splits executing after that date through D
+             x D's UNADJUSTED close (R9).
+    """
+    st = phase_b_status(vintage)
+    if not st["complete"]:
+        raise RuntimeError(f"phase B incomplete: {len(st['missing'])} missing, "
+                           f"{len(st['extra'])} extra details — run `mcap`")
+    membership = membership or build_membership(vintage)
+    snaps = quarter_snapshot_dates(vintage)
+    splits = splits_by_ticker(vintage)
+    shares: dict[tuple[str, tuple[int, int]], float | None] = {}
+    out: dict[tuple[date, str], float | None] = {}
+    for d in sorted(membership):
+        q = _quarter(d)
+        raw = _raw_bars(vintage, d)
+        for t in membership[d]["eligible_pre_mcap"]:
+            if (t, q) not in shares:
+                payload = _read_raw(_details_path(vintage, t, q))
+                res = payload.get("results") or {}
+                wso = res.get("weighted_shares_outstanding")
+                shares[(t, q)] = float(wso) if wso and not payload.get("_not_found") else None
+            wso = shares[(t, q)]
+            close = (raw.get(t) or {}).get("c")
+            if wso is None or close is None:
+                out[(d, t)] = None
+                continue
+            out[(d, t)] = wso * split_factor(splits.get(t, []), snaps[q], d) * float(close)
+    return out
+
+
+def build_membership_with_mcap(vintage: str) -> dict[date, dict]:
+    """Phase A membership plus the market-cap gate. Only when Phase B is complete."""
+    membership = build_membership(vintage)
+    est = mcap_estimates(vintage, membership)
+    for d, rec in membership.items():
+        eligible, reasons = [], Counter()
+        for t in rec["eligible_pre_mcap"]:
+            v = est[(d, t)]
+            if v is None:
+                reasons["mcap_unknown"] += 1
+            elif v > MIN_MCAP:
+                eligible.append(t)
+            else:
+                reasons["failed_mcap"] += 1
+        rec["eligible"] = eligible
+        rec["exclusions"] = {**rec["exclusions"], **reasons}
+    return membership
+
+
+def mcap_audit_sample(vintage: str) -> dict[str, list[tuple[str, date, str, float]]]:
+    """§3d deterministic sample per month: [(part, D, ticker, estimate)].
+
+    Canonical (D, ticker) order before every seeded draw. Band: up to 50 pairs
+    with |est - 300M| <= 20%. Sentinel: 25 outside the band, 12 below / 13
+    above, the 13th going ABOVE on even month index (0-based from the range
+    start) and BELOW on odd. An underfilled stratum is audited in full and its
+    unused allocation is drawn (same seed) from the other stratum.
+    """
+    est = mcap_estimates(vintage)
+    by_month: dict[str, list[tuple[date, str, float]]] = defaultdict(list)
+    for (d, t), v in est.items():
+        if v is not None:
+            by_month[f"{d.year:04d}-{d.month:02d}"].append((d, t, v))
+    lo, hi = MIN_MCAP * (1 - MCAP_BAND), MIN_MCAP * (1 + MCAP_BAND)
+    out: dict[str, list] = {}
+    for idx, month in enumerate(sorted(by_month)):
+        pairs = sorted(by_month[month], key=lambda x: (x[0], x[1]))
+        band = [p for p in pairs if lo <= p[2] <= hi]
+        below = [p for p in pairs if p[2] < lo]
+        above = [p for p in pairs if p[2] > hi]
+
+        def draw(pool, k, tag):
+            if len(pool) <= k:
+                return list(pool)
+            rng = random.Random(f"{MCAP_AUDIT_SEED}:{MCAP_SAMPLER_VERSION}:{month}:{tag}")
+            return sorted(rng.sample(pool, k), key=lambda x: (x[0], x[1]))
+
+        chosen = [("band", *p) for p in draw(band, BAND_PER_MONTH, "band")]
+        want_above = 13 if idx % 2 == 0 else 12
+        want_below = SENTINEL_PER_MONTH - want_above
+        take_above = min(want_above, len(above))
+        take_below = min(want_below, len(below))
+        spare = SENTINEL_PER_MONTH - take_above - take_below
+        if spare and len(above) > take_above:
+            take_above = min(len(above), take_above + spare)
+        elif spare and len(below) > take_below:
+            take_below = min(len(below), take_below + spare)
+        chosen += [("sentinel_above", *p) for p in draw(above, take_above, "above")]
+        chosen += [("sentinel_below", *p) for p in draw(below, take_below, "below")]
+        out[month] = chosen
+    return out
+
+
+def _mcap_estimates_fingerprint(sample: dict) -> str:
+    h = hashlib.sha256()
+    for month in sorted(sample):
+        for part, d, t, v in sample[month]:
+            h.update(f"{month}|{part}|{d}|{t}|{v:.2f}".encode())
+    return h.hexdigest()
+
+
+async def run_mcap_audit(vintage: str) -> None:
+    sample = mcap_audit_sample(vintage)
+    plan = {"sampler_version": MCAP_SAMPLER_VERSION, "seed": MCAP_AUDIT_SEED,
+            "sample_sha256": _mcap_estimates_fingerprint(sample),
+            "pairs": sorted(f"{m}/{part}/{t}_{d}" for m, rows in sample.items() for part, d, t, _ in rows)}
+    plan_path = ROOT / vintage / "mcap_audit_plan.json"
+    if plan_path.exists() and json.loads(plan_path.read_text()) != plan:
+        raise RuntimeError("mcap audit plan changed since the last run — start a new vintage")
+    plan_path.write_text(json.dumps(plan))
+    total = sum(len(v) for v in sample.values())
+    logger.info("mcap audit: %d pairs across %d months", total, len(sample))
+    async with httpx.AsyncClient() as client:
+        for month, rows in sorted(sample.items()):
+            for part, d, t, v in rows:
+                path = _raw_path(vintage, "mcap_audit", month, part, f"{t}_{d}.json.gz")
+                if path.exists():
+                    continue
+                payload = await _get(client, f"{BASE}/v3/reference/tickers/{t}",
+                                     {"date": str(d)}, allow_404=True)
+                if payload.get("_failed"):
+                    logger.error("  mcap audit %s %s unrecoverable (%s)", t, d, payload.get("_reason"))
+                    continue
+                payload["_audit"] = {"part": part, "date": str(d), "ticker": t, "estimate": v}
+                _write_raw_unchecked(path, payload)
+
+
 def main() -> None:
     ap = argparse.ArgumentParser()
-    ap.add_argument("step", choices=["spine", "transitions", "audit", "report", "verify",
-                                     "package", "divergence-fetch"])
+    ap.add_argument("step", choices=["spine", "transitions", "audit", "mcap", "mcap-audit",
+                                     "report", "verify", "package", "divergence-fetch"])
     ap.add_argument("--manifest", help="verify against this manifest instead of the vintage's own")
     ap.add_argument("--years", type=float, default=None)
     ap.add_argument("--start", type=date.fromisoformat, default=None,
@@ -1274,6 +1586,18 @@ def main() -> None:
     vintage = args.vintage or str(_today_et())
     logger.info("vintage %s  step %s", vintage, args.step)
 
+    if args.step in ("mcap", "mcap-audit"):
+        ledger = _open_ledger(vintage, "B")
+        try:
+            asyncio.run(fetch_mcap_details(vintage) if args.step == "mcap" else run_mcap_audit(vintage))
+        except BudgetExceeded as e:
+            logger.error("ABORTED ON BUDGET: %s", e)
+            raise SystemExit(2) from e
+        finally:
+            ledger.close()
+            logger.info("phase B ledger closed: %d calls, %d durable failure(s)",
+                        ledger.calls, len(ledger.failures))
+        return
     if args.step in ("spine", "transitions", "audit"):
         ledger = _open_ledger(vintage)
         try:

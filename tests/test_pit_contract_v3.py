@@ -65,6 +65,9 @@ def vintage(tmp_path, monkeypatch):
         if d >= date(2024, 2, 12):
             rows.append({"T": "NEWCO", "c": 20.0, "v": 1e6})
         _w(base / "raw" / "grouped" / f"{d}.json.gz", {"results": rows})
+        # R9: unadjusted bars (no splits in this fixture, so identical).
+        _w(base / "raw" / "grouped_raw" / f"{d}.json.gz", {"results": rows})
+    _snap(base / "raw" / "splits" / "page-1.json.gz", {"results": []}, "2024-03-01")
     _snap(base / "raw" / "reference" / "2024-02" / "page-1.json.gz", {"results": [
         {"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"},
         {"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"},
@@ -184,8 +187,9 @@ def test_any_exchange_disagreement_halts(vintage):
 
 
 def test_price_and_volume_thresholds_are_strict_under_v3(vintage):
-    _w(vintage / "raw" / "grouped" / f"{FEB[1]}.json.gz", {"results": [
-        {"T": "LNG", "c": 5.0, "v": 2e6}, {"T": "PBR", "c": 15.0, "v": 500_000}]})
+    rows = [{"T": "LNG", "c": 5.0, "v": 2e6}, {"T": "PBR", "c": 15.0, "v": 500_000}]
+    _w(vintage / "raw" / "grouped" / f"{FEB[1]}.json.gz", {"results": rows})
+    _w(vintage / "raw" / "grouped_raw" / f"{FEB[1]}.json.gz", {"results": rows})
     m = pa.build_membership(VINTAGE)[FEB[1]]
     assert m["exclusions"]["failed_price"] == 1 and m["exclusions"]["failed_volume"] == 1
 
@@ -649,3 +653,103 @@ def test_malformed_page_name_is_unproven_not_a_crash(tmp_path):
     d = tmp_path / "snap"
     _w(d / "page-old.json.gz", {"results": []})
     assert pa._pages_have_provenance(d, date(2024, 2, 1)) is False
+
+
+
+# ── R9: unadjusted observables ──────────────────────────────────────────────
+
+def test_price_filter_uses_the_unadjusted_close_not_a_split_adjusted_one(vintage):
+    """A stock that later reverse-splits shows a high ADJUSTED close; on D it traded at $1."""
+    d = FEB[2]
+    _w(vintage / "raw" / "grouped" / f"{d}.json.gz", {"results": [
+        {"T": "LNG", "c": 150.0, "v": 2e6}, {"T": "PBR", "c": 15.0, "v": 9e6}]})
+    _w(vintage / "raw" / "grouped_raw" / f"{d}.json.gz", {"results": [
+        {"T": "LNG", "c": 150.0, "v": 2e6}, {"T": "PBR", "c": 1.5, "v": 9e6}]})   # $1.50 on D
+    m = pa.build_membership(VINTAGE)[d]
+    assert "PBR" not in m["eligible_pre_mcap"] and m["exclusions"]["failed_price"] == 1
+
+
+def test_missing_unadjusted_bar_excludes_and_counts(vintage):
+    d = FEB[3]
+    _w(vintage / "raw" / "grouped_raw" / f"{d}.json.gz", {"results": [{"T": "LNG", "c": 150.0, "v": 2e6}]})
+    m = pa.build_membership(VINTAGE)[d]
+    assert "PBR" not in m["eligible_pre_mcap"] and m["exclusions"]["no_unadjusted_bar"] == 1
+
+
+def test_grouped_raw_tree_must_match_membership_sessions(vintage):
+    (vintage / "raw" / "grouped_raw" / f"{FEB[0]}.json.gz").unlink()
+    with pytest.raises(RuntimeError, match="grouped_raw tree"):
+        pa.build_membership(VINTAGE)
+
+
+def test_split_factor_covers_splits_after_the_snapshot_through_d():
+    splits = [(date(2024, 6, 10), 10.0), (date(2024, 9, 1), 0.5)]
+    assert pa.split_factor(splits, date(2024, 4, 1), date(2024, 6, 7)) == 1.0
+    assert pa.split_factor(splits, date(2024, 4, 1), date(2024, 6, 10)) == 10.0
+    assert pa.split_factor(splits, date(2024, 4, 1), date(2024, 9, 3)) == 5.0
+
+
+# ── Phase B ──────────────────────────────────────────────────────────────────
+
+async def _phase_b_ready(vintage, monkeypatch, shares):
+    fake_get, _ = _fake_get_factory(_truth)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+
+    async def details_get(client, url, params, allow_404=False):
+        t = url.rsplit("/", 1)[-1]
+        if shares.get(t) is None:
+            return {"results": None, "_not_found": True}
+        return {"results": {"ticker": t, "weighted_shares_outstanding": shares[t],
+                            "market_cap": shares[t] * 10}}
+    monkeypatch.setattr(pa, "_get", details_get)
+    await pa.fetch_mcap_details(VINTAGE)
+
+
+@pytest.mark.asyncio
+async def test_phase_b_lookups_only_for_eligible_quarters_and_mcap_gate(vintage, monkeypatch):
+    # PBR at $15 x 30M shares = $450M (in); LNG at $150 x 1M = $150M (out); NEWCO unknown.
+    await _phase_b_ready(vintage, monkeypatch, {"PBR": 30e6, "LNG": 1e6, "NEWCO": None})
+    st = pa.phase_b_status(VINTAGE)
+    assert st["complete"]
+    assert {t for t, q in pa.mcap_candidates(VINTAGE)} == {"LNG", "PBR", "NEWCO"}
+    m = pa.build_membership_with_mcap(VINTAGE)
+    day = m[date(2024, 2, 20)]
+    assert day["eligible"] == ["PBR"]
+    assert day["exclusions"]["failed_mcap"] == 1 and day["exclusions"]["mcap_unknown"] == 1
+
+
+@pytest.mark.asyncio
+async def test_mcap_estimate_applies_the_split_multiplier_within_the_quarter(vintage, monkeypatch):
+    await _phase_b_ready(vintage, monkeypatch, {"PBR": 10e6, "LNG": 1e6, "NEWCO": 1e6})
+    # 1:2 forward split on 2024-02-14: shares double, unadjusted price halves from then on.
+    _snap(vintage / "raw" / "splits" / "page-1.json.gz", {"results": [
+        {"ticker": "PBR", "execution_date": "2024-02-14", "split_from": 1, "split_to": 2}]}, "2024-03-01")
+    for d in FEB + [MAR1]:
+        if d >= date(2024, 2, 14):
+            rows = pa._read_raw(vintage / "raw" / "grouped_raw" / f"{d}.json.gz")["results"]
+            for r in rows:
+                if r["T"] == "PBR":
+                    r["c"] = 7.5
+            _w(vintage / "raw" / "grouped_raw" / f"{d}.json.gz", {"results": rows})
+    est = pa.mcap_estimates(VINTAGE)
+    assert est[(date(2024, 2, 13), "PBR")] == pytest.approx(150e6)
+    assert est[(date(2024, 2, 14), "PBR")] == pytest.approx(150e6)          # continuous across the split
+
+
+@pytest.mark.asyncio
+async def test_mcap_audit_sample_is_deterministic_and_allocates_12_13(vintage, monkeypatch):
+    await _phase_b_ready(vintage, monkeypatch, {"PBR": 21e6, "LNG": 1e6, "NEWCO": 1e8})
+    a = pa.mcap_audit_sample(VINTAGE)
+    assert a == pa.mcap_audit_sample(VINTAGE)
+    parts = {p for rows in a.values() for p, *_ in rows}
+    assert "band" in parts                                    # PBR: 21M x $15 = $315M, inside +-20%
+    for rows in a.values():
+        assert sum(1 for p, *_ in rows if p.startswith("sentinel")) <= pa.SENTINEL_PER_MONTH
+
+
+def test_phase_b_ledger_has_its_own_ceiling(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    led = pa._open_ledger("v", "B")
+    assert led.ceiling == pa.PHASE_B_CALL_CEILING and led.path.name == "request_ledger_phase_b.jsonl"
+    led.close()
