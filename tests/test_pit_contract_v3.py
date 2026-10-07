@@ -911,3 +911,30 @@ def test_not_found_details_with_a_body_is_invalid(vintage):
     pa._write_raw_unchecked(path, {"_not_found": True, "results": {"ticker": "PBR"},
                                    "_request": {"ticker": "PBR", "date": str(snaps[(2024, 1)])}})
     assert pa._details_valid(VINTAGE, "PBR", (2024, 1), snaps) is False
+
+
+def test_a_failure_recovered_by_a_later_answer_does_not_halt(tmp_path):
+    p = tmp_path / "l.jsonl"
+    rows = [
+        {"event": "request", "n": 1, "endpoint": "/v3/reference/tickers", "params_sha256": "aa",
+         "status": "network:ProxyError", "attempt": 6},
+        {"event": "failure", "endpoint": "/v3/reference/tickers", "params_sha256": "aa",
+         "reason": "network:ProxyError", "attempts": 6},
+        {"event": "request", "n": 2, "endpoint": "/v3/reference/tickers", "params_sha256": "aa",
+         "status": 200, "attempt": 1},                                   # the resume refilled it
+        {"event": "failure", "endpoint": "/v2/aggs/x", "params_sha256": "bb",
+         "reason": "http_503", "attempts": 6},                          # never refilled
+    ]
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    s = pr.summarize_ledger(p)
+    assert s == {"calls": 2, "failures_total": 2, "recovered": 1, "unrecovered": 1, "malformed": 0}
+
+
+def test_an_answer_before_the_failure_does_not_count_as_recovery(tmp_path):
+    p = tmp_path / "l.jsonl"
+    rows = [
+        {"event": "request", "n": 1, "endpoint": "/e", "params_sha256": "aa", "status": 200, "attempt": 1},
+        {"event": "failure", "endpoint": "/e", "params_sha256": "aa", "reason": "x", "attempts": 6},
+    ]
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    assert pr.summarize_ledger(p)["unrecovered"] == 1

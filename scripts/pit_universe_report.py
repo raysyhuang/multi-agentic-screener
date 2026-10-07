@@ -202,6 +202,42 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
     return {"mcap_unknown_by_month": dict(per_month), "threshold_audit": audit}, halts
 
 
+def summarize_ledger(path: Path) -> dict:
+    """Calls, failures and malformed records of a request ledger, in file order.
+
+    A failure is UNRECOVERED unless a later request with the same endpoint and
+    parameter digest was answered (HTTP 200, or 404 where 404 is an observation).
+    Ledgers are append-only, so a transient error that a resume later fixed
+    stays on record — as recovered — instead of blocking sign-off forever, and a
+    hole that was never refilled still halts.
+    """
+    calls = malformed = 0
+    failures: list[tuple[int, tuple]] = []
+    answered: dict[tuple, int] = {}
+    for i, line in enumerate(path.read_text().splitlines()):
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            malformed += 1
+            continue
+        ev = rec.get("event")
+        key = (rec.get("endpoint"), rec.get("params_sha256"))
+        if ev == "request":
+            calls += 1
+            if rec.get("status") in (200, 404):
+                answered[key] = i
+        elif ev == "failure":
+            failures.append((i, key))
+        else:
+            malformed += 1
+    unrecovered = [k for i, k in failures if answered.get(k, -1) < i]
+    return {"calls": calls, "failures_total": len(failures),
+            "recovered": len(failures) - len(unrecovered),
+            "unrecovered": len(unrecovered), "malformed": malformed}
+
+
 def _code_sha() -> str | None:
     import subprocess
     for exe in ("git", "/opt/homebrew/bin/git"):
@@ -652,6 +688,11 @@ def write_report(vintage: str) -> dict:
             else:
                 malformed += 1
         ledger_summary = {"present": True, "calls": calls, "durable_failures": failures}
+        if v3:
+            # v3: count only failures no later request recovered (v2 keeps the original rule).
+            ls = summarize_ledger(ledger_path)
+            failures = ls["unrecovered"]
+            ledger_summary = {"present": True, **ls}
         if v3 and malformed:
             # A skipped record understates spend; v2 keeps its original tolerance.
             halts.append(f"request ledger has {malformed} malformed/unknown record(s) — spend unverifiable")
@@ -688,8 +729,9 @@ def write_report(vintage: str) -> dict:
                 halts.append(f"phase B ledger has {malformed} malformed record(s) — spend unverifiable")
             if calls > PHASE_B_CALL_CEILING:
                 halts.append(f"phase B ledger shows {calls} calls > ceiling {PHASE_B_CALL_CEILING}")
-            phase_b_ledger = {"calls": calls, "durable_failures": failures,
-                              "ceiling": PHASE_B_CALL_CEILING,
+            ls = summarize_ledger(lp)
+            failures = ls["unrecovered"]
+            phase_b_ledger = {**ls, "ceiling": PHASE_B_CALL_CEILING,
                               "headroom": PHASE_B_CALL_CEILING - calls}
             if failures:
                 halts.append(f"phase B ledger records {failures} unrecovered failure(s)")
