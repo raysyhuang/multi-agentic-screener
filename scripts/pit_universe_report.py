@@ -707,10 +707,14 @@ def write_report(vintage: str) -> dict:
             if not line.strip():
                 continue
             try:
-                event = json.loads(line).get("event")
+                parsed = json.loads(line)
             except json.JSONDecodeError:
                 malformed += 1
                 continue
+            if not isinstance(parsed, dict):        # valid JSON that is not a record
+                malformed += 1
+                continue
+            event = parsed.get("event")
             if event == "request":
                 calls += 1
             elif event == "failure":
@@ -748,10 +752,14 @@ def write_report(vintage: str) -> dict:
                 if not line.strip():
                     continue
                 try:
-                    ev = json.loads(line).get("event")
+                    parsed = json.loads(line)
                 except json.JSONDecodeError:
                     malformed += 1
                     continue
+                if not isinstance(parsed, dict):
+                    malformed += 1
+                    continue
+                ev = parsed.get("event")
                 if ev not in ("request", "failure"):
                     malformed += 1
                 calls += ev == "request"

@@ -986,6 +986,8 @@ def test_budget_ceiling_failure_is_unrecovered_until_answered(tmp_path):
 async def test_disallowed_client_error_is_recorded_as_a_failure_before_raising(tmp_path, monkeypatch):
     import httpx
     monkeypatch.setattr(pa, "ROOT", tmp_path)
+    (tmp_path / "v").mkdir()
+    (tmp_path / "v" / "contract.json").write_text(json.dumps({"version": "v3"}))
     led = pa._open_ledger("v")
 
     class Resp:
@@ -1003,3 +1005,30 @@ async def test_disallowed_client_error_is_recorded_as_a_failure_before_raising(t
     led.close()
     s = pr.summarize_ledger(tmp_path / "v" / "request_ledger.jsonl")
     assert s["failures_total"] == 1 and s["unrecovered"] == 1 and s["malformed"] == 0
+
+
+@pytest.mark.parametrize("line", ["[]", "null", "42", '"x"'])
+def test_non_object_ledger_lines_are_malformed_not_a_crash(tmp_path, line):
+    p = tmp_path / "l.jsonl"
+    p.write_text(line + "\n")
+    assert pr.summarize_ledger(p)["malformed"] == 1
+    with pytest.raises(RuntimeError, match="ledger"):
+        pa.RequestLedger(p)
+
+
+def test_phase_a_report_loop_halts_on_a_non_object_line(vintage, monkeypatch):
+    (vintage / "request_ledger.jsonl").write_text('{"event": "request", "n": 1}\n[]\n')
+    monkeypatch.setattr(pa, "require_transitions_complete", lambda v: None)
+    monkeypatch.setattr(pr, "live_divergence", lambda v: ({}, []))
+    monkeypatch.setattr(pr, "live_count_divergence", lambda v, m: ({}, []))
+    monkeypatch.setattr(pr, "_atr_pct_by_ticker", lambda v: {})
+    manifest = pr.write_report(VINTAGE)
+    assert any("malformed" in h for h in manifest["halts"])
+
+
+def test_client_error_failures_are_recorded_only_for_v3_ledgers(tmp_path, monkeypatch):
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    (tmp_path / "v3v").mkdir()
+    (tmp_path / "v3v" / "contract.json").write_text(json.dumps({"version": "v3"}))
+    assert pa._open_ledger("v3v").record_client_errors is True
+    assert pa._open_ledger("v2v").record_client_errors is False

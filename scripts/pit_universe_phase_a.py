@@ -287,7 +287,7 @@ class RequestLedger:
                     # A skipped line understates spend and so overstates the
                     # remaining budget. Fail closed.
                     raise RuntimeError(f"unparseable ledger line in {self.path}: {line[:80]!r}") from exc
-                if rec.get("event") not in ("request", "failure"):
+                if not isinstance(rec, dict) or rec.get("event") not in ("request", "failure"):
                     raise RuntimeError(f"unknown ledger event in {self.path}: {line[:80]!r}")
                 if rec["event"] == "request":
                     n += 1
@@ -337,6 +337,9 @@ def _open_ledger(vintage: str, phase: str = "A") -> RequestLedger:
     global _LEDGER
     name = "request_ledger.jsonl" if phase == "A" else f"request_ledger_phase_{phase.lower()}.jsonl"
     _LEDGER = RequestLedger(ROOT / vintage / name, _ceiling_for(phase))
+    # Recording disallowed client errors as durable failures is a v3 ledger
+    # rule (v3 understands recovery); v2 vintages keep their original records.
+    _LEDGER.record_client_errors = contract_version(vintage) == "v3"
     logger.info(
         "ledger (phase %s): %d calls already spent on this vintage, ceiling %d",
         phase, _LEDGER.calls, _LEDGER.ceiling,
@@ -451,7 +454,7 @@ async def _get(
             await asyncio.sleep(wait)
             continue
 
-        if resp.status_code >= 400:
+        if resp.status_code >= 400 and getattr(_LEDGER, "record_client_errors", False):
             # Any other client error is fatal for this request; record it as a
             # durable failure first so the ledger never shows it as answered.
             _LEDGER.record_failure(url, params, f"http_{resp.status_code}", attempt)
