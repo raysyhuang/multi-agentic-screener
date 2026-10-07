@@ -1175,7 +1175,10 @@ def _quarantine_orphan_results(vintage: str, cands: list[dict]) -> None:
     stamp = _utc_stamp()
     for p in sorted(root.glob("*/*.result.json.gz")):
         if (p.parent.name, p.name.replace(".result.json.gz", "")) not in keys:
-            p.rename(p.with_name(f"{p.name}.orphan-{stamp}"))
+            aside = p.with_name(f"{p.name}.orphan-{stamp}")
+            if aside.exists():          # rename() would silently replace it
+                raise RuntimeError(f"quarantine target {aside} already exists")
+            p.rename(aside)
             logger.warning("quarantined orphan transition result %s", p.relative_to(root))
 
 

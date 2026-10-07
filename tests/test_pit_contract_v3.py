@@ -1157,6 +1157,20 @@ def _scenario(vintage, name):
             if t == "PBR":
                 return ("ETF", "XNYS") if d < date(2024, 2, 20) else None
             return _truth(t, d)
+    elif name == "pbr_exchange_unknown":      # eligible -> exchange_unknown on 02-20
+        mar = base + [{"ticker": "PBR", "type": "ADRC", "primary_exchange": "XXXX"}]
+
+        def truth(t, d):
+            return ("ADRC", "XXXX") if t == "PBR" and d >= date(2024, 2, 20) else _truth(t, d)
+    elif name == "newco_labelled_after_first_passer":
+        # NEWCO trades from 02-12 but the reference data only carries it from
+        # 02-15: the first probe returns the old outcome and the search moves lo.
+        mar = base + [{"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"}]
+
+        def truth(t, d):
+            if t == "NEWCO":
+                return None if d < date(2024, 2, 15) else ("CS", "XNAS")
+            return _truth(t, d)
     elif name == "lng_moves_before_first_passer":
         # LNG fails the price rule through 02-08, so its first passer session
         # (02-09) is after the 02-05 move: the result must still be exact.
@@ -1178,6 +1192,7 @@ def _scenario(vintage, name):
 
 @pytest.mark.asyncio
 @pytest.mark.parametrize("name", ["pbr_to_etf", "pbr_disappears", "etf_disappears",
+                                  "pbr_exchange_unknown", "newco_labelled_after_first_passer",
                                   "lng_moves_before_first_passer"])
 async def test_resolved_membership_and_exclusions_equal_the_daily_truth(vintage, monkeypatch, name):
     # Exactness on BOTH what decides membership and what the §A.5 gates count.
@@ -1201,3 +1216,15 @@ async def test_neither_label_on_the_first_probe_is_ambiguous_from_the_first_pass
     await pa.resolve_transitions(VINTAGE)
     r = pa._read_raw(vintage / "raw" / "transitions" / "2024-02" / "NEWCO.result.json.gz")
     assert r["effective"] is None and r["ambiguous_from"] == "2024-02-12"
+
+
+def test_orphan_quarantine_refuses_to_overwrite(vintage, monkeypatch):
+    monkeypatch.setattr(pa, "_utc_stamp", lambda: "FIXED")
+    d = vintage / "raw" / "transitions" / "2024-02"
+    orphan = d / "GHOST.result.json.gz"
+    pa._write_raw_unchecked(orphan, {"ticker": "GHOST", "v": "new"})
+    earlier = d / "GHOST.result.json.gz.orphan-FIXED"
+    pa._write_raw_unchecked(earlier, {"ticker": "GHOST", "v": "old"})
+    with pytest.raises(RuntimeError, match="already exists"):
+        pa._quarantine_orphan_results(VINTAGE, [])
+    assert pa._read_raw(orphan)["v"] == "new" and pa._read_raw(earlier)["v"] == "old"
