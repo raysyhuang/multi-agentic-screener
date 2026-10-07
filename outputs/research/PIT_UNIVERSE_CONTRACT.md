@@ -509,3 +509,24 @@ Phase B budget:     (Ray) shares lookups ONLY for (ticker, quarter) pairs in whi
                     alternating; any flip halts) are sampled canonically, seeded, with
                     the plan bound to the estimates it was drawn from.
 ```
+
+### §12 addendum 2 (2026-10-07) — R1 search domain refined to relevant sessions
+
+The first full run produced 8,058 §3a-v2 candidates: 5,334 appearances (mostly new listings), 2,441 disappearances (mostly delistings) and about 280 type/exchange changes. Resolving all of them would have exceeded the Phase A ceiling. R1's own principle is to resolve only what can change membership, so applied exactly:
+
+```
+Relevant session:   a session on which the ticker passes every NON-classification
+                    gate: unadjusted close > $5, unadjusted volume > 500K, and
+                    >= 200 prior bars (R9, §11).
+Candidate:          a membership-relevant label change (as before) with >= 1
+                    relevant session in the month, where the old or the new label
+                    is eligible (if neither is, the ticker is excluded either way).
+Search domain:      the ticker's relevant sessions only. The last relevant session
+                    is probed first; if it still carries the old label, no relevant
+                    session changes (one probe). Otherwise binary search finds the
+                    first relevant session carrying the new label. The result is
+                    exact for membership, which is only ever evaluated on relevant
+                    sessions; the override still runs to month end.
+```
+
+On vintage 2026-10-06 this gives 2,237 candidates and at most 7,287 probes. Leaving an appearance whose new label is ineligible unresolved keeps those names as type_unknown for the month, which is conservative for the §A.5 unknown-rate gate.

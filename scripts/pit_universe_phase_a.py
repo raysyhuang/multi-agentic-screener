@@ -1080,24 +1080,41 @@ def _membership_relevant_change(old: dict | None, new: dict | None) -> bool:
 
 
 def transition_candidates(vintage: str) -> list[dict]:
-    """(ticker, month) pairs needing day resolution, with the sessions to search."""
+    """(ticker, month) pairs needing day resolution, with the sessions to search.
+
+    A label only matters on a session where every NON-classification gate
+    already passes: unadjusted close > $5, unadjusted volume > 500K and >= 200
+    prior bars (R9 and §11). Those are the ticker's "relevant" sessions. A
+    candidate is a membership-relevant label change (§3a-v2) that ALSO has
+    relevant sessions in the month and where the old or the new label is
+    eligible — when neither is, the ticker is excluded either way. The search
+    domain is the relevant sessions only, so the resolved date is exact for
+    membership while new listings (no history yet) and changes after a
+    delisting's last qualifying session cost nothing.
+    """
     labels_by_month = _classification_by_month(vintage)
     months = sorted(labels_by_month)
     grouped_dir = ROOT / vintage / "raw" / "grouped"
-    _warmup, sessions = validated_sessions(vintage)
+    warmup, sessions = validated_sessions(vintage)
     trailing = _trailing_labels(vintage)
     if trailing is None:
         raise RuntimeError("no trailing comparison snapshot — the final month's transitions "
                            "cannot be discovered; re-run `spine`")
-    pre_by_date: dict[date, set[str]] = {}
-    for d in sessions:
+    relevant_by_date: dict[date, set[str]] = {}
+    bars_seen: Counter = Counter()
+    main = set(sessions)
+    for d in list(warmup) + list(sessions):
         adjusted = {r["T"] for r in (_read_raw(grouped_dir / f"{d}.json.gz").get("results", []) or [])
                     if r.get("T") and r.get("c") is not None and r.get("v") is not None}
-        pre_by_date[d] = {
-            t for t, r in _raw_bars(vintage, d).items()        # R9: unadjusted, observable on D
-            if t in adjusted and r.get("c") is not None and r.get("v") is not None
-            and r["c"] > MIN_PRICE and r["v"] > MIN_SHARE_VOLUME
-        }
+        if d in main:
+            relevant_by_date[d] = {
+                t for t, r in _raw_bars(vintage, d).items()    # R9: unadjusted, observable on D
+                if t in adjusted and r.get("c") is not None and r.get("v") is not None
+                and r["c"] > MIN_PRICE and r["v"] > MIN_SHARE_VOLUME
+                and bars_seen[t] >= MIN_PRIOR_BARS             # §11, strictly before D
+            }
+        for t in adjusted:                                      # counted after D is judged
+            bars_seen[t] += 1
     out = []
     pairs = [(a, labels_by_month[b]) for a, b in zip(months, months[1:])]
     if months:
@@ -1106,12 +1123,16 @@ def transition_candidates(vintage: str) -> list[dict]:
         window = [d for d in sessions if (d.year, d.month) == a]
         if not window:
             continue
-        relevant = set().union(*(pre_by_date[d] for d in window))
         old_l = labels_by_month[a]
-        for t in sorted(relevant):
-            if _membership_relevant_change(old_l.get(t), new_l.get(t)):
-                out.append({"ticker": t, "month": a, "old": old_l.get(t), "new": new_l.get(t),
-                            "sessions": window})
+        tickers = set().union(*(relevant_by_date[d] for d in window))
+        for t in sorted(tickers):
+            old, new = old_l.get(t), new_l.get(t)
+            if not _membership_relevant_change(old, new):
+                continue
+            if not (_eligible(old) or _eligible(new)):
+                continue                # excluded under both labels: membership unchanged
+            out.append({"ticker": t, "month": a, "old": old, "new": new,
+                        "sessions": [d for d in window if t in relevant_by_date[d]]})
     return out
 
 
@@ -1162,11 +1183,17 @@ async def resolve_transitions(vintage: str) -> None:
             # Invariant: label(window[lo]) == old (the snapshot date itself, by
             # construction) and the next snapshot carries new. Find the first
             # index whose as-of label equals new.
-            lo, hi = 0, len(window)        # hi == len(window): new from the next snapshot on
+            # `window` holds only the ticker's relevant sessions. Virtual bounds:
+            # lo = -1 is the month's snapshot (old label), hi = len(window) the
+            # next snapshot (new label). Probe the LAST relevant session first:
+            # if it still carries the old label, no relevant session changes.
+            lo, hi = -1, len(window)
             probes: list[dict] = []
             ambiguous = probe_failed = False
-            while hi - lo > 1:             # <= ceil(log2(len(window))) probes
-                mid = (lo + hi) // 2
+            first = True
+            while hi - lo > 1:             # <= 1 + ceil(log2(len(window))) probes
+                mid = len(window) - 1 if first else (lo + hi) // 2
+                first = False
                 d = window[mid]
                 ppath = _raw_path(vintage, "transitions", f"{y:04d}-{m:02d}", f"{t}_{d}.json.gz")
                 if ppath.exists():

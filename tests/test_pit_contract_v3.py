@@ -1032,3 +1032,40 @@ def test_client_error_failures_are_recorded_only_for_v3_ledgers(tmp_path, monkey
     (tmp_path / "v3v" / "contract.json").write_text(json.dumps({"version": "v3"}))
     assert pa._open_ledger("v3v").record_client_errors is True
     assert pa._open_ledger("v2v").record_client_errors is False
+
+
+def test_a_change_between_two_ineligible_labels_is_not_a_candidate(vintage):
+    trailing = {"results": [
+        {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+        {"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"},
+        {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"},
+    ]}
+    # FEB snapshot: give PBR an ineligible type, MAR: another ineligible type.
+    _snap(vintage / "raw" / "reference" / "2024-02" / "page-1.json.gz", {"results": [
+        {"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"},
+        {"ticker": "PBR", "type": "ETF", "primary_exchange": "XNYS"}]}, "2024-02-01")
+    _snap(vintage / "raw" / "reference" / "2024-03" / "page-1.json.gz", {"results": [
+        {"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+        {"ticker": "PBR", "type": "ETV", "primary_exchange": "XNYS"},
+        {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"}]}, "2024-03-01")
+    _snap(vintage / "raw" / "reference_trailing" / "2024-03-04" / "page-1.json.gz", trailing, "2024-03-04")
+    cands = {(c["ticker"], c["month"]) for c in pa.transition_candidates(VINTAGE)}
+    assert ("PBR", (2024, 2)) not in cands
+
+
+def test_a_ticker_without_history_on_any_session_is_not_a_candidate(vintage, monkeypatch):
+    monkeypatch.setattr(pa, "MIN_PRIOR_BARS", 20)       # NEWCO lists 02-12: <= 12 prior bars all month
+    cands = {(c["ticker"], c["month"]) for c in pa.transition_candidates(VINTAGE)}
+    assert ("NEWCO", (2024, 2)) not in cands
+
+
+@pytest.mark.asyncio
+async def test_no_change_before_the_last_relevant_session_costs_one_probe(vintage, monkeypatch):
+    def unchanged(t, d):
+        return ("CS", "XASE") if t == "LNG" else _truth(t, d)    # LNG still AMEX on every Feb probe
+    fake_get, calls = _fake_get_factory(unchanged)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+    assert sum(1 for t, _ in calls if t == "LNG") == 1
+    r = pa._read_raw(vintage / "raw" / "transitions" / "2024-02" / "LNG.result.json.gz")
+    assert r["effective"] is None and r["ambiguous_from"] is None
