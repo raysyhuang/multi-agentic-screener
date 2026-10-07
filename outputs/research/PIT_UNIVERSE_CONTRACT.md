@@ -510,23 +510,29 @@ Phase B budget:     (Ray) shares lookups ONLY for (ticker, quarter) pairs in whi
                     the plan bound to the estimates it was drawn from.
 ```
 
-### §12 addendum 2 (2026-10-07) — R1 search domain refined to relevant sessions
+### §12 addendum 2 (2026-10-07) — R1 candidate rule made exact for membership AND the §A.5 counts
 
-The first full run produced 8,058 §3a-v2 candidates: 5,334 appearances (mostly new listings), 2,441 disappearances (mostly delistings) and about 280 type/exchange changes. Resolving all of them would have exceeded the Phase A ceiling. R1's own principle is to resolve only what can change membership, so applied exactly:
+The first full run produced 8,058 §3a-v2 candidates under the "type changed, or exchange crossed the eligible set" rule. That rule is over-inclusive in one place (ETF→ETV changes nothing) and under-inclusive in another (an ETF dropping out of the reference data turns `not_common_stock` into `type_unknown`, which the §A.5 gates count). A first refinement restricted the search to sessions that also pass the 200-bar history rule; Codex rejected it because the §A.5 unknown-rate gates count classification outcomes on every price/volume passer, with or without history, so it could have understated unknowns and produced a false PASS. The adopted rule:
 
 ```
-Relevant session:   a session on which the ticker passes every NON-classification
-                    gate: unadjusted close > $5, unadjusted volume > 500K, and
-                    >= 200 prior bars (R9, §11).
-Candidate:          a membership-relevant label change (as before) with >= 1
-                    relevant session in the month, where the old or the new label
-                    is eligible (if neither is, the ticker is excluded either way).
-Search domain:      the ticker's relevant sessions only. The last relevant session
-                    is probed first; if it still carries the old label, no relevant
-                    session changes (one probe). Otherwise binary search finds the
-                    first relevant session carrying the new label. The result is
-                    exact for membership, which is only ever evaluated on relevant
-                    sessions; the override still runs to month end.
+Outcome:            the classification step of build_membership as one category —
+                    type_unknown | exchange_unknown | not_common_stock |
+                    failed_exchange | eligible. One function serves both.
+Passer session:     the ticker passes unadjusted close > $5 and volume > 500K (R9).
+                    Classification is evaluated, and counted, on exactly these.
+Candidate:          outcome(old) != outcome(new), with >= 1 passer session in the month.
+Search domain:      the ticker's passer sessions. Bounds: the month snapshot (old)
+                    and the next snapshot (new). The first probe is the endpoint
+                    whose likely answer ends the search: the first passer session
+                    for an appearance (old = type_unknown), else the last. Then
+                    binary search; a probe matching neither outcome is AMBIGUOUS
+                    from the first unproven passer session (unknown, counted).
+Exactness:          under the §3a-v2 one-change-per-month assumption, membership
+                    and every exclusion count equal those of a per-session as-of
+                    labelling (pinned by an equivalence test over four scenarios).
+Versioning:         TRANSITION_RESOLVER_VERSION is part of each result's inputs
+                    hash; results for windows that are no longer candidates are
+                    quarantined (renamed, never deleted).
 ```
 
-On vintage 2026-10-06 this gives 2,237 candidates and at most 7,287 probes. Leaving an appearance whose new label is ineligible unresolved keeps those names as type_unknown for the month, which is conservative for the §A.5 unknown-rate gate.
+Vintage 2026-10-06: 7,926 candidates. Probe cost is between 7,926 (one probe each) and 20,805 (worst case). Phase A has spent 7,761 calls and the audit needs up to 23,600, against the 45,000 ceiling. That leaves 13,639 calls for transitions, enough unless the probes beyond one per candidate exceed about 5,700. The ceiling is enforced: an overrun records an unrecovered failure and halts, and raising the ceiling is Ray's decision.

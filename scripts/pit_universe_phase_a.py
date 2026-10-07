@@ -1016,20 +1016,12 @@ def build_membership(vintage: str) -> dict[date, dict]:
                     continue
             pre_class.append(ticker)
 
-            label = labels.get(ticker)
-            if label is None or not label.get("type"):
-                reasons["type_unknown"] += 1
-                continue
-            if not label.get("exchange"):
-                reasons["exchange_unknown"] += 1
-                continue
-            if label["type"] not in eligible_types:
+            outcome = _classification_outcome(labels.get(ticker), eligible_types)
+            if outcome != "eligible":
                 # v2 vintages keep their original reason key so they replay.
-                reasons["ineligible_type" if eligible_types is ELIGIBLE_TYPES
-                        else "not_common_stock"] += 1
-                continue
-            if label["exchange"] not in ALLOWED_EXCHANGES:
-                reasons["failed_exchange"] += 1
+                if outcome == "not_common_stock" and eligible_types is ELIGIBLE_TYPES:
+                    outcome = "ineligible_type"
+                reasons[outcome] += 1
                 continue
             if v3 and bars_seen[ticker] < MIN_PRIOR_BARS:
                 reasons["insufficient_history"] += 1
@@ -1067,54 +1059,65 @@ def _eligible(label: dict | None) -> bool:
     return bool(label) and label.get("type") in ELIGIBLE_TYPES and label.get("exchange") in ALLOWED_EXCHANGES
 
 
-def _membership_relevant_change(old: dict | None, new: dict | None) -> bool:
-    """Type changes always; exchange changes only when they cross the eligible set.
+def _classification_outcome(label: dict | None, eligible_types=None) -> str:
+    """The classification step of build_membership, as one category.
 
-    An absent label (a mid-month listing) differs from any present one.
+    Single source of truth for both membership and §3a-v2: a label change
+    matters exactly when it changes this category, because the category is
+    both what decides membership and what the §A.5 gates count.
     """
-    old_type = (old or {}).get("type")
-    new_type = (new or {}).get("type")
-    if old_type != new_type:
-        return True
-    return _eligible(old) != _eligible(new)
+    eligible_types = ELIGIBLE_TYPES if eligible_types is None else eligible_types
+    if label is None or not label.get("type"):
+        return "type_unknown"
+    if not label.get("exchange"):
+        return "exchange_unknown"
+    if label["type"] not in eligible_types:
+        return "not_common_stock"
+    if label["exchange"] not in ALLOWED_EXCHANGES:
+        return "failed_exchange"
+    return "eligible"
+
+
+def _membership_relevant_change(old: dict | None, new: dict | None) -> bool:
+    """A change of classification outcome (eligibility OR exclusion category).
+
+    Exclusion categories are counted by the §A.5 unknown-rate gates, so e.g.
+    ETF -> absent (not_common_stock -> type_unknown) is relevant even though
+    the ticker is excluded either way; ETF -> ETV (same category) is not.
+    """
+    return _classification_outcome(old) != _classification_outcome(new)
 
 
 def transition_candidates(vintage: str) -> list[dict]:
     """(ticker, month) pairs needing day resolution, with the sessions to search.
 
-    A label only matters on a session where every NON-classification gate
-    already passes: unadjusted close > $5, unadjusted volume > 500K and >= 200
-    prior bars (R9 and §11). Those are the ticker's "relevant" sessions. A
-    candidate is a membership-relevant label change (§3a-v2) that ALSO has
-    relevant sessions in the month and where the old or the new label is
-    eligible — when neither is, the ticker is excluded either way. The search
-    domain is the relevant sessions only, so the resolved date is exact for
-    membership while new listings (no history yet) and changes after a
-    delisting's last qualifying session cost nothing.
+    Classification is evaluated, and its outcome counted by the §A.5 gates, on
+    every session where the ticker passes the observable price/volume
+    constraints (unadjusted, R9) — the "passer" sessions. A candidate is a
+    change of classification outcome between consecutive snapshots with at
+    least one passer session in the month; the search domain is those passer
+    sessions. On them the resolved date is exact for membership (which only
+    ever applies on a subset of them) and for every exclusion count; on any
+    other session the label is never consulted.
     """
     labels_by_month = _classification_by_month(vintage)
     months = sorted(labels_by_month)
     grouped_dir = ROOT / vintage / "raw" / "grouped"
-    warmup, sessions = validated_sessions(vintage)
+    _warmup, sessions = validated_sessions(vintage)
     trailing = _trailing_labels(vintage)
     if trailing is None:
         raise RuntimeError("no trailing comparison snapshot — the final month's transitions "
                            "cannot be discovered; re-run `spine`")
-    relevant_by_date: dict[date, set[str]] = {}
-    bars_seen: Counter = Counter()
-    main = set(sessions)
-    for d in list(warmup) + list(sessions):
+    passers_by_date: dict[date, set[str]] = {}
+    for d in sessions:
+        # Same row predicate as build_membership's pre_classification set.
         adjusted = {r["T"] for r in (_read_raw(grouped_dir / f"{d}.json.gz").get("results", []) or [])
                     if r.get("T") and r.get("c") is not None and r.get("v") is not None}
-        if d in main:
-            relevant_by_date[d] = {
-                t for t, r in _raw_bars(vintage, d).items()    # R9: unadjusted, observable on D
-                if t in adjusted and r.get("c") is not None and r.get("v") is not None
-                and r["c"] > MIN_PRICE and r["v"] > MIN_SHARE_VOLUME
-                and bars_seen[t] >= MIN_PRIOR_BARS             # §11, strictly before D
-            }
-        for t in adjusted:                                      # counted after D is judged
-            bars_seen[t] += 1
+        passers_by_date[d] = {
+            t for t, r in _raw_bars(vintage, d).items()
+            if t in adjusted and r.get("c") is not None and r.get("v") is not None
+            and r["c"] > MIN_PRICE and r["v"] > MIN_SHARE_VOLUME
+        }
     out = []
     pairs = [(a, labels_by_month[b]) for a, b in zip(months, months[1:])]
     if months:
@@ -1124,21 +1127,23 @@ def transition_candidates(vintage: str) -> list[dict]:
         if not window:
             continue
         old_l = labels_by_month[a]
-        tickers = set().union(*(relevant_by_date[d] for d in window))
-        for t in sorted(tickers):
+        for t in sorted(set().union(*(passers_by_date[d] for d in window))):
             old, new = old_l.get(t), new_l.get(t)
-            if not _membership_relevant_change(old, new):
-                continue
-            if not (_eligible(old) or _eligible(new)):
-                continue                # excluded under both labels: membership unchanged
-            out.append({"ticker": t, "month": a, "old": old, "new": new,
-                        "sessions": [d for d in window if t in relevant_by_date[d]]})
+            if _membership_relevant_change(old, new):
+                out.append({"ticker": t, "month": a, "old": old, "new": new,
+                            "sessions": [d for d in window if t in passers_by_date[d]]})
     return out
+
+
+# Bump whenever the meaning of a resolution changes, so every earlier result is
+# stale (recomputed) even where its other inputs happen to coincide.
+TRANSITION_RESOLVER_VERSION = 2
 
 
 def _candidate_inputs_sha(c: dict) -> str:
     """Identity of a candidate's inputs: a result is valid only for these exact inputs."""
     return hashlib.sha256(json.dumps({
+        "resolver": TRANSITION_RESOLVER_VERSION,
         "ticker": c["ticker"], "month": list(c["month"]), "old": c["old"], "new": c["new"],
         "sessions": [str(d) for d in c["sessions"]],
     }, sort_keys=True).encode()).hexdigest()
@@ -1153,9 +1158,25 @@ def _label_from_asof(payload: dict) -> dict | None:
 
 
 def _same(a: dict | None, b: dict | None) -> bool:
-    if not a or not b:
-        return not a and not b
-    return a.get("type") == b.get("type") and _eligible(a) == _eligible(b)
+    """Equivalent for membership and gate counts: same classification outcome."""
+    return _classification_outcome(a) == _classification_outcome(b)
+
+
+def _quarantine_orphan_results(vintage: str, cands: list[dict]) -> None:
+    """Move results whose candidate no longer exists aside (never deleted).
+
+    A changed candidate rule leaves results for windows that are no longer
+    candidates; they are never applied, but completion counts them as extra.
+    """
+    root = ROOT / vintage / "raw" / "transitions"
+    if not root.exists():
+        return
+    keys = {(f"{c['month'][0]:04d}-{c['month'][1]:02d}", c["ticker"]) for c in cands}
+    stamp = _utc_stamp()
+    for p in sorted(root.glob("*/*.result.json.gz")):
+        if (p.parent.name, p.name.replace(".result.json.gz", "")) not in keys:
+            p.rename(p.with_name(f"{p.name}.orphan-{stamp}"))
+            logger.warning("quarantined orphan transition result %s", p.relative_to(root))
 
 
 async def resolve_transitions(vintage: str) -> None:
@@ -1170,6 +1191,7 @@ async def resolve_transitions(vintage: str) -> None:
         raise RuntimeError(f"vintage {vintage} is not a contract-v3 vintage; §3a-v2 does not apply")
     cands = transition_candidates(vintage)
     logger.info("transitions: %d candidate(s) to resolve", len(cands))
+    _quarantine_orphan_results(vintage, cands)
     async with httpx.AsyncClient() as client:
         for i, c in enumerate(cands, 1):
             t, (y, m) = c["ticker"], c["month"]
@@ -1183,16 +1205,23 @@ async def resolve_transitions(vintage: str) -> None:
             # Invariant: label(window[lo]) == old (the snapshot date itself, by
             # construction) and the next snapshot carries new. Find the first
             # index whose as-of label equals new.
-            # `window` holds only the ticker's relevant sessions. Virtual bounds:
+            # `window` holds only the ticker's passer sessions. Virtual bounds:
             # lo = -1 is the month's snapshot (old label), hi = len(window) the
-            # next snapshot (new label). Probe the LAST relevant session first:
-            # if it still carries the old label, no relevant session changes.
+            # next snapshot (new label). The first probe is the endpoint whose
+            # likely answer ends the search: for an appearance (old unknown,
+            # typically a new listing) the FIRST passer session (new there means
+            # new on all of them); otherwise the LAST (old there means no passer
+            # session changes, e.g. a delisting after its final passer session).
             lo, hi = -1, len(window)
             probes: list[dict] = []
             ambiguous = probe_failed = False
             first = True
+            appearance = _classification_outcome(c["old"]) == "type_unknown"
             while hi - lo > 1:             # <= 1 + ceil(log2(len(window))) probes
-                mid = len(window) - 1 if first else (lo + hi) // 2
+                if first:
+                    mid = 0 if appearance else len(window) - 1
+                else:
+                    mid = (lo + hi) // 2
                 first = False
                 d = window[mid]
                 ppath = _raw_path(vintage, "transitions", f"{y:04d}-{m:02d}", f"{t}_{d}.json.gz")

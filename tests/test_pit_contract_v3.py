@@ -1053,10 +1053,49 @@ def test_a_change_between_two_ineligible_labels_is_not_a_candidate(vintage):
     assert ("PBR", (2024, 2)) not in cands
 
 
-def test_a_ticker_without_history_on_any_session_is_not_a_candidate(vintage, monkeypatch):
-    monkeypatch.setattr(pa, "MIN_PRIOR_BARS", 20)       # NEWCO lists 02-12: <= 12 prior bars all month
+def test_history_does_not_shrink_the_candidate_domain(vintage, monkeypatch):
+    # The §A.5 gates count classification outcomes on every price/volume passer,
+    # with or without history, so a no-history listing must still be resolved.
+    monkeypatch.setattr(pa, "MIN_PRIOR_BARS", 20)
     cands = {(c["ticker"], c["month"]) for c in pa.transition_candidates(VINTAGE)}
-    assert ("NEWCO", (2024, 2)) not in cands
+    assert ("NEWCO", (2024, 2)) in cands
+
+
+def test_outcome_category_decides_relevance():
+    etf = {"type": "ETF", "exchange": "XNYS"}
+    assert pa._membership_relevant_change(etf, None)                       # not_common_stock -> type_unknown
+    assert not pa._membership_relevant_change(etf, {"type": "ETV", "exchange": "XNYS"})
+    assert pa._membership_relevant_change({"type": "CS", "exchange": "XNYS"}, None)
+    assert not pa._membership_relevant_change(None, {"type": None, "exchange": "XNYS"})
+
+
+def test_resolver_version_is_part_of_the_inputs_hash(monkeypatch):
+    c = {"ticker": "X", "month": (2024, 2), "old": None, "new": None, "sessions": []}
+    h = pa._candidate_inputs_sha(c)
+    monkeypatch.setattr(pa, "TRANSITION_RESOLVER_VERSION", pa.TRANSITION_RESOLVER_VERSION + 1)
+    assert pa._candidate_inputs_sha(c) != h
+
+
+@pytest.mark.asyncio
+async def test_orphan_results_are_quarantined_not_counted(vintage, monkeypatch):
+    fake_get, _ = _fake_get_factory(_truth)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    orphan = vintage / "raw" / "transitions" / "2024-02" / "GHOST.result.json.gz"
+    pa._write_raw_unchecked(orphan, {"ticker": "GHOST"})
+    await pa.resolve_transitions(VINTAGE)
+    assert not orphan.exists()
+    assert list(orphan.parent.glob("GHOST.result.json.gz.orphan-*"))
+    assert pa.transition_status(VINTAGE)["complete"]
+
+
+@pytest.mark.asyncio
+async def test_an_appearance_resolved_on_the_first_passer_session_costs_one_probe(vintage, monkeypatch):
+    fake_get, calls = _fake_get_factory(_truth)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+    r = pa._read_raw(vintage / "raw" / "transitions" / "2024-02" / "NEWCO.result.json.gz")
+    assert sum(1 for t, _ in calls if t == "NEWCO") == 1
+    assert r["effective"] == r["probes"][0]["date"]
 
 
 @pytest.mark.asyncio
@@ -1069,3 +1108,96 @@ async def test_no_change_before_the_last_relevant_session_costs_one_probe(vintag
     assert sum(1 for t, _ in calls if t == "LNG") == 1
     r = pa._read_raw(vintage / "raw" / "transitions" / "2024-02" / "LNG.result.json.gz")
     assert r["effective"] is None and r["ambiguous_from"] is None
+
+
+def _label_dict(t, lab):
+    # Through the same parser the resolver uses, so exchange codes are mapped identically.
+    if lab is None:
+        return None
+    return pa._label_from_asof({"results": {"ticker": t, "type": lab[0], "primary_exchange": lab[1]}})
+
+
+def _brute_force_membership(monkeypatch, truth, tickers):
+    """Membership with the TRUE as-of label on every session (no transitions)."""
+    sessions = pa.validated_sessions(VINTAGE)[1]
+    over = {d: {t: _label_dict(t, truth(t, d)) for t in tickers} for d in sessions}
+    with monkeypatch.context() as mp:
+        mp.setattr(pa, "resolved_overrides", lambda v, labels: over)
+        return pa.build_membership(VINTAGE)
+
+
+def _set_reference(vintage, month_dir, rows, as_of, trailing=False):
+    sub = "reference_trailing" if trailing else "reference"
+    d = vintage / "raw" / sub / month_dir
+    for p in d.glob("*"):
+        p.unlink()
+    _snap(d / "page-1.json.gz", {"results": rows}, as_of)
+
+
+def _scenario(vintage, name):
+    base = [{"ticker": "LNG", "type": "CS", "primary_exchange": "XNYS"},
+            {"ticker": "NEWCO", "type": "CS", "primary_exchange": "XNAS"}]
+    if name == "pbr_to_etf":                  # eligible -> not_common_stock on 02-20
+        mar = base + [{"ticker": "PBR", "type": "ETF", "primary_exchange": "XNYS"}]
+
+        def truth(t, d):
+            return ("ETF", "XNYS") if t == "PBR" and d >= date(2024, 2, 20) else _truth(t, d)
+    elif name == "pbr_disappears":            # eligible -> type_unknown on 02-20
+        mar = base
+
+        def truth(t, d):
+            return None if t == "PBR" and d >= date(2024, 2, 20) else _truth(t, d)
+    elif name == "etf_disappears":            # not_common_stock -> type_unknown (Codex's false-PASS case)
+        _set_reference(vintage, "2024-02", [
+            {"ticker": "LNG", "type": "CS", "primary_exchange": "XASE"},
+            {"ticker": "PBR", "type": "ETF", "primary_exchange": "XNYS"}], "2024-02-01")
+        mar = base
+
+        def truth(t, d):
+            if t == "PBR":
+                return ("ETF", "XNYS") if d < date(2024, 2, 20) else None
+            return _truth(t, d)
+    elif name == "lng_moves_before_first_passer":
+        # LNG fails the price rule through 02-08, so its first passer session
+        # (02-09) is after the 02-05 move: the result must still be exact.
+        for d in FEB:
+            if d < date(2024, 2, 9):
+                for sub in ("grouped", "grouped_raw"):
+                    p = vintage / "raw" / sub / f"{d}.json.gz"
+                    rows = [dict(r, c=3.0) if r["T"] == "LNG" else r for r in pa._read_raw(p)["results"]]
+                    _w(p, {"results": rows})
+        mar = base + [{"ticker": "PBR", "type": "ADRC", "primary_exchange": "XNYS"}]
+        truth = _truth
+    else:
+        raise ValueError(name)
+    _set_reference(vintage, "2024-03", mar, "2024-03-01")
+    _set_reference(vintage, "2024-03-04", mar, "2024-03-04", trailing=True)
+    pa._EXPECTED_CACHE.clear()
+    return truth
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("name", ["pbr_to_etf", "pbr_disappears", "etf_disappears",
+                                  "lng_moves_before_first_passer"])
+async def test_resolved_membership_and_exclusions_equal_the_daily_truth(vintage, monkeypatch, name):
+    # Exactness on BOTH what decides membership and what the §A.5 gates count.
+    truth = _scenario(vintage, name)
+    expected = _brute_force_membership(monkeypatch, truth, ["LNG", "PBR", "NEWCO"])
+    fake_get, _ = _fake_get_factory(truth)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+    got = pa.build_membership(VINTAGE)
+    for d in FEB:
+        assert sorted(got[d]["eligible_pre_mcap"]) == sorted(expected[d]["eligible_pre_mcap"]), d
+        assert got[d]["exclusions"] == expected[d]["exclusions"], d
+
+
+@pytest.mark.asyncio
+async def test_neither_label_on_the_first_probe_is_ambiguous_from_the_first_passer(vintage, monkeypatch):
+    def weird(t, d):
+        return ("ETF", "XNYS") if t == "NEWCO" else _truth(t, d)    # neither absent nor CS/XNAS
+    fake_get, _ = _fake_get_factory(weird)
+    monkeypatch.setattr(pa, "_get", fake_get)
+    await pa.resolve_transitions(VINTAGE)
+    r = pa._read_raw(vintage / "raw" / "transitions" / "2024-02" / "NEWCO.result.json.gz")
+    assert r["effective"] is None and r["ambiguous_from"] == "2024-02-12"
