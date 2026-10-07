@@ -202,18 +202,39 @@ def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
     return {"mcap_unknown_by_month": dict(per_month), "threshold_audit": audit}, halts
 
 
+def _valid_ledger_record(rec: dict) -> bool:
+    """Schema of a ledger line. Anything else is malformed and takes no part in recovery."""
+    import re
+    ep, dg = rec.get("endpoint"), rec.get("params_sha256")
+    if not (isinstance(ep, str) and ep.startswith("/") and isinstance(dg, str)
+            and re.fullmatch(r"[0-9a-f]{16}", dg)):
+        return False
+    full = rec.get("params_sha256_full")
+    if full is not None and not (isinstance(full, str) and re.fullmatch(r"[0-9a-f]{64}", full)
+                                 and full[:16] == dg):
+        return False
+    if rec.get("event") == "request":
+        return isinstance(rec.get("attempt"), int) and isinstance(rec.get("status"), (int, str))
+    if rec.get("event") == "failure":
+        return isinstance(rec.get("reason"), str) and isinstance(rec.get("attempts"), int)
+    return False
+
+
 def summarize_ledger(path: Path) -> dict:
     """Calls, failures and malformed records of a request ledger, in file order.
 
-    A failure is UNRECOVERED unless a later request with the same endpoint and
-    parameter digest was answered (HTTP 200, or 404 where 404 is an observation).
-    Ledgers are append-only, so a transient error that a resume later fixed
-    stays on record — as recovered — instead of blocking sign-off forever, and a
-    hole that was never refilled still halts.
+    A failure is UNRECOVERED unless a LATER request for the identical request
+    (same endpoint and parameter digest — the full SHA-256 when both records
+    carry it) was answered: HTTP 200, or 404 only when that request was made
+    with allow_404=True (404 is an observation there and an error elsewhere).
+    Ledgers are append-only, so a transient error a resume later fixed stays on
+    record as recovered instead of blocking sign-off forever, while a hole that
+    was never refilled still halts. Records failing the schema are malformed:
+    counted, excluded from recovery, and the v3 report halts on them.
     """
     calls = malformed = 0
-    failures: list[tuple[int, tuple]] = []
-    answered: dict[tuple, int] = {}
+    failures: list[tuple[int, tuple, str | None]] = []
+    answered: dict[tuple, list[tuple[int, str | None]]] = {}
     for i, line in enumerate(path.read_text().splitlines()):
         if not line.strip():
             continue
@@ -222,17 +243,26 @@ def summarize_ledger(path: Path) -> dict:
         except json.JSONDecodeError:
             malformed += 1
             continue
-        ev = rec.get("event")
-        key = (rec.get("endpoint"), rec.get("params_sha256"))
-        if ev == "request":
-            calls += 1
-            if rec.get("status") in (200, 404):
-                answered[key] = i
-        elif ev == "failure":
-            failures.append((i, key))
-        else:
+        if not isinstance(rec, dict) or not _valid_ledger_record(rec):
             malformed += 1
-    unrecovered = [k for i, k in failures if answered.get(k, -1) < i]
+            if isinstance(rec, dict) and rec.get("event") == "request":
+                calls += 1          # spend still counts toward the ceiling
+            continue
+        key = (rec["endpoint"], rec["params_sha256"])
+        full = rec.get("params_sha256_full")
+        if rec["event"] == "request":
+            calls += 1
+            st = rec["status"]
+            if st == 200 or (st == 404 and rec.get("allow_404") is True):
+                answered.setdefault(key, []).append((i, full))
+        else:
+            failures.append((i, key, full))
+
+    def recovered(i: int, key: tuple, full: str | None) -> bool:
+        return any(j > i and (full is None or f is None or f == full)
+                   for j, f in answered.get(key, []))
+
+    unrecovered = [(i, k) for i, k, f in failures if not recovered(i, k, f)]
     return {"calls": calls, "failures_total": len(failures),
             "recovered": len(failures) - len(unrecovered),
             "unrecovered": len(unrecovered), "malformed": malformed}
@@ -689,9 +719,10 @@ def write_report(vintage: str) -> dict:
                 malformed += 1
         ledger_summary = {"present": True, "calls": calls, "durable_failures": failures}
         if v3:
-            # v3: count only failures no later request recovered (v2 keeps the original rule).
+            # v3: count only failures no later request recovered (v2 keeps the original rule),
+            # and the stricter schema decides what is malformed.
             ls = summarize_ledger(ledger_path)
-            failures = ls["unrecovered"]
+            failures, malformed = ls["unrecovered"], ls["malformed"]
             ledger_summary = {"present": True, **ls}
         if v3 and malformed:
             # A skipped record understates spend; v2 keeps its original tolerance.
@@ -731,6 +762,8 @@ def write_report(vintage: str) -> dict:
                 halts.append(f"phase B ledger shows {calls} calls > ceiling {PHASE_B_CALL_CEILING}")
             ls = summarize_ledger(lp)
             failures = ls["unrecovered"]
+            if ls["malformed"] and not malformed:
+                halts.append(f"phase B ledger has {ls['malformed']} malformed record(s) — spend unverifiable")
             phase_b_ledger = {**ls, "ceiling": PHASE_B_CALL_CEILING,
                               "headroom": PHASE_B_CALL_CEILING - calls}
             if failures:

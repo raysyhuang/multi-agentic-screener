@@ -916,13 +916,13 @@ def test_not_found_details_with_a_body_is_invalid(vintage):
 def test_a_failure_recovered_by_a_later_answer_does_not_halt(tmp_path):
     p = tmp_path / "l.jsonl"
     rows = [
-        {"event": "request", "n": 1, "endpoint": "/v3/reference/tickers", "params_sha256": "aa",
+        {"event": "request", "n": 1, "endpoint": "/v3/reference/tickers", "params_sha256": "aa" * 8,
          "status": "network:ProxyError", "attempt": 6},
-        {"event": "failure", "endpoint": "/v3/reference/tickers", "params_sha256": "aa",
+        {"event": "failure", "endpoint": "/v3/reference/tickers", "params_sha256": "aa" * 8,
          "reason": "network:ProxyError", "attempts": 6},
-        {"event": "request", "n": 2, "endpoint": "/v3/reference/tickers", "params_sha256": "aa",
+        {"event": "request", "n": 2, "endpoint": "/v3/reference/tickers", "params_sha256": "aa" * 8,
          "status": 200, "attempt": 1},                                   # the resume refilled it
-        {"event": "failure", "endpoint": "/v2/aggs/x", "params_sha256": "bb",
+        {"event": "failure", "endpoint": "/v2/aggs/x", "params_sha256": "bb" * 8,
          "reason": "http_503", "attempts": 6},                          # never refilled
     ]
     p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
@@ -933,8 +933,73 @@ def test_a_failure_recovered_by_a_later_answer_does_not_halt(tmp_path):
 def test_an_answer_before_the_failure_does_not_count_as_recovery(tmp_path):
     p = tmp_path / "l.jsonl"
     rows = [
-        {"event": "request", "n": 1, "endpoint": "/e", "params_sha256": "aa", "status": 200, "attempt": 1},
-        {"event": "failure", "endpoint": "/e", "params_sha256": "aa", "reason": "x", "attempts": 6},
+        {"event": "request", "n": 1, "endpoint": "/v3/e", "params_sha256": "aa" * 8, "status": 200, "attempt": 1},
+        {"event": "failure", "endpoint": "/v3/e", "params_sha256": "aa" * 8, "reason": "x", "attempts": 6},
     ]
     p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
     assert pr.summarize_ledger(p)["unrecovered"] == 1
+
+
+def _ledger(tmp_path, rows):
+    p = tmp_path / "l.jsonl"
+    p.write_text("\n".join(json.dumps(r) for r in rows) + "\n")
+    return pr.summarize_ledger(p)
+
+
+_FAIL = {"event": "failure", "endpoint": "/v3/reference/tickers/X", "params_sha256": "aa" * 8,
+         "reason": "network:ProxyError", "attempts": 6}
+
+
+def _req(status, allow_404=False, **kw):
+    return {"event": "request", "n": 1, "endpoint": "/v3/reference/tickers/X", "params_sha256": "aa" * 8,
+            "status": status, "attempt": 1, "allow_404": allow_404, **kw}
+
+
+def test_a_disallowed_404_never_counts_as_recovery(tmp_path):
+    assert _ledger(tmp_path, [_FAIL, _req(404, allow_404=False)])["unrecovered"] == 1
+    assert _ledger(tmp_path, [_FAIL, _req(404, allow_404=True)])["unrecovered"] == 0
+    assert _ledger(tmp_path, [_FAIL, {k: v for k, v in _req(404).items() if k != "allow_404"}])["unrecovered"] == 1
+
+
+def test_records_without_identity_are_malformed_and_cannot_recover(tmp_path):
+    bad_fail = {"event": "failure", "reason": "x", "attempts": 1}
+    bad_req = {"event": "request", "status": 200, "attempt": 1}
+    s = _ledger(tmp_path, [bad_fail, bad_req])
+    assert s["malformed"] == 2 and s["recovered"] == 0 and s["calls"] == 1
+
+
+def test_different_params_or_full_digest_do_not_recover(tmp_path):
+    other = {**_req(200), "params_sha256": "bb" * 8}
+    assert _ledger(tmp_path, [_FAIL, other])["unrecovered"] == 1
+    full_a, full_b = "aa" * 8 + "1" * 48, "aa" * 8 + "2" * 48         # same short digest, different full
+    s = _ledger(tmp_path, [{**_FAIL, "params_sha256_full": full_a}, _req(200, params_sha256_full=full_b)])
+    assert s["unrecovered"] == 1
+
+
+def test_budget_ceiling_failure_is_unrecovered_until_answered(tmp_path):
+    fail = {**_FAIL, "reason": "budget_ceiling_reached"}
+    assert _ledger(tmp_path, [fail])["unrecovered"] == 1
+    assert _ledger(tmp_path, [fail, _req(200)])["unrecovered"] == 0
+
+
+@pytest.mark.asyncio
+async def test_disallowed_client_error_is_recorded_as_a_failure_before_raising(tmp_path, monkeypatch):
+    import httpx
+    monkeypatch.setattr(pa, "ROOT", tmp_path)
+    led = pa._open_ledger("v")
+
+    class Resp:
+        status_code = 403
+        def raise_for_status(self):
+            raise httpx.HTTPStatusError("forbidden", request=None, response=None)
+        def json(self):
+            return {}
+
+    class Client:
+        async def get(self, *a, **k):
+            return Resp()
+    with pytest.raises(httpx.HTTPStatusError):
+        await pa._get(Client(), f"{pa.BASE}/v2/x", {"a": 1})
+    led.close()
+    s = pr.summarize_ledger(tmp_path / "v" / "request_ledger.jsonl")
+    assert s["failures_total"] == 1 and s["unrecovered"] == 1 and s["malformed"] == 0

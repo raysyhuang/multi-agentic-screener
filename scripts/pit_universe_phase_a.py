@@ -296,23 +296,29 @@ class RequestLedger:
     def would_exceed(self) -> bool:
         return self.calls >= self.ceiling
 
-    def record(self, url: str, params: dict, status: int | str, attempt: int) -> None:
+    @staticmethod
+    def _digest(params: dict) -> str:
+        return hashlib.sha256(json.dumps(params, sort_keys=True).encode()).hexdigest()
+
+    def record(self, url: str, params: dict, status: int | str, attempt: int,
+               allow_404: bool = False) -> None:
         self.calls += 1
+        full = self._digest(params)
         self._fh.write(json.dumps({
             "event": "request", "n": self.calls,
             "endpoint": url.replace(BASE, ""),
-            "params_sha256": hashlib.sha256(
-                json.dumps(params, sort_keys=True).encode()
-            ).hexdigest()[:16],
+            "params_sha256": full[:16], "params_sha256_full": full,
             "status": status, "attempt": attempt,
+            # Whether a 404 is an observation (allow_404) or an error for this
+            # request: only the former may count as an answer.
+            "allow_404": allow_404,
         }) + "\n")
 
     def record_failure(self, url: str, params: dict, reason: str, attempts: int) -> None:
+        full = self._digest(params)
         rec = {
             "event": "failure", "endpoint": url.replace(BASE, ""),
-            "params_sha256": hashlib.sha256(
-                json.dumps(params, sort_keys=True).encode()
-            ).hexdigest()[:16],
+            "params_sha256": full[:16], "params_sha256_full": full,
             "reason": reason, "attempts": attempts,
         }
         self.failures.append(rec)
@@ -412,7 +418,7 @@ async def _get(
         try:
             resp = await client.get(url, params=params, headers=headers, timeout=60)
         except httpx.HTTPError as e:
-            _LEDGER.record(url, params, f"network:{type(e).__name__}", attempt)
+            _LEDGER.record(url, params, f"network:{type(e).__name__}", attempt, allow_404)
             if attempt == attempts:
                 _LEDGER.record_failure(url, params, f"network:{type(e).__name__}", attempt)
                 return {"results": None, "_failed": True, "_reason": type(e).__name__}
@@ -420,7 +426,7 @@ async def _get(
             await asyncio.sleep(2 ** attempt)
             continue
 
-        _LEDGER.record(url, params, resp.status_code, attempt)
+        _LEDGER.record(url, params, resp.status_code, attempt, allow_404)
 
         if resp.status_code == 429:
             wait = min(60, 2 ** attempt)
@@ -445,6 +451,10 @@ async def _get(
             await asyncio.sleep(wait)
             continue
 
+        if resp.status_code >= 400:
+            # Any other client error is fatal for this request; record it as a
+            # durable failure first so the ledger never shows it as answered.
+            _LEDGER.record_failure(url, params, f"http_{resp.status_code}", attempt)
         resp.raise_for_status()
         await asyncio.sleep(REQUEST_DELAY_S)
         return resp.json()
