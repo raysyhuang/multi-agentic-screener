@@ -24,6 +24,32 @@ SIBLING_REPOS = {
 SIBLING_REPOS_AVAILABLE = all(p.exists() for p in SIBLING_REPOS.values())
 
 
+def pytest_configure(config):
+    """Cut the test suite off from the developer's `.env`.
+
+    `Settings` loads `PROJECT_ROOT/.env` (src/config.py), so on a machine with
+    real credentials the suite sees populated API keys and a live DATABASE_URL,
+    while CI sees neither. Tests that touch settings therefore pass locally and
+    fail on the runner — three times in one session, each costing a CI round
+    trip: `validate_keys_for_mode()` in the worker, then again in `main()`, and
+    an aggregator cache test reaching the real SQLite file.
+
+    The failure is one-directional and that is what makes it expensive: local
+    is the permissive environment, so it never catches what CI will reject. The
+    fix is to make the strict one the default. A test needing credentials must
+    now state that by stubbing settings, rather than inheriting whatever the
+    machine happens to carry.
+
+    Verified before landing: the full suite passes with `.env` moved aside, so
+    this changes which environment tests see, not which tests pass.
+    """
+    from src import config as config_mod
+
+    config_mod.Settings.model_config["env_file"] = None
+    # Drop any Settings already built from the dotenv during collection.
+    config_mod._settings = None
+
+
 def pytest_collection_modifyitems(config, items):
     """Auto-skip @pytest.mark.sibling_repo tests when repos aren't cloned."""
     if SIBLING_REPOS_AVAILABLE:
