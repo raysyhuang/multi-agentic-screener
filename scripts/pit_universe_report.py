@@ -1027,6 +1027,11 @@ def package(vintage: str) -> Path:
     return archive
 
 
+def _sorted_nullable(values) -> list:
+    """Deterministically sort report labels while preserving unknown as null."""
+    return sorted(set(values), key=lambda value: (value is None, str(value)))
+
+
 def live_divergence(vintage: str) -> tuple[dict, list[str]]:
     """Compare PIT membership against what the LIVE pipeline actually saw.
 
@@ -1136,6 +1141,11 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
             # live does not have.
             pit_stricter.append(record)
 
+    # ``held_type`` can legitimately be absent when the live ticker never
+    # appears in a frozen classification snapshot.  Python 3 cannot order
+    # ``None`` and ``str`` directly; preserve the unknown as JSON null and sort
+    # it last instead of crashing the entire acceptance report.
+    stricter_types = _sorted_nullable(r.get("held_type") for r in pit_stricter)
     result = {
         "ran": True,
         "live_candidates_in_range": checked,
@@ -1145,7 +1155,7 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         "pit_stricter_than_live": pit_stricter[:25],
         "pit_stricter_than_live_count": len(pit_stricter),
         "pit_stricter_picked_count": sum(1 for r in pit_stricter if r.get("picked")),
-        "pit_stricter_types": sorted({r.get("held_type") for r in pit_stricter}),
+        "pit_stricter_types": stricter_types,
         "pit_stricter_tickers": sorted({r["ticker"] for r in pit_stricter}),
         "explained_by_live_gates": live_gate_misses[:25],
         "explained_by_live_gates_count": len(live_gate_misses),
@@ -1162,6 +1172,6 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         halts.append(
             f"live divergence: PIT excludes {len(pit_stricter)} live candidate-day(s) "
             f"({picked} actually PICKED) on constraints live does not apply — "
-            f"types {sorted({r.get('held_type') for r in pit_stricter})}"
+            f"types {stricter_types}"
         )
     return result, halts

@@ -1016,6 +1016,11 @@ def test_non_object_ledger_lines_are_malformed_not_a_crash(tmp_path, line):
         pa.RequestLedger(p)
 
 
+def test_live_divergence_type_summary_can_include_unknown():
+    """A missing frozen type is a reported unknown, not a report-time crash."""
+    assert pr._sorted_nullable(["CS", None, "ADRC", "CS"]) == ["ADRC", "CS", None]
+
+
 def test_phase_a_report_loop_halts_on_a_non_object_line(vintage, monkeypatch):
     (vintage / "request_ledger.jsonl").write_text('{"event": "request", "n": 1}\n[]\n')
     monkeypatch.setattr(pa, "require_transitions_complete", lambda v: None)
