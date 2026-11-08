@@ -76,6 +76,8 @@ This is not a strategy-tuning protocol. It sets acceptance thresholds only.
 
 **Streams are measured separately and never blended.** Blending `mas_official` with the manual sleeve is what produced the false "MR is a coin flip" conclusion; the same error is available here and is explicitly out of bounds.
 
+**The measurement window is enforced in code, not by the reader.** `src/streams.MEASUREMENT_WINDOW_START` is 2026-09-19 and the exporter drops any measured stream's trade entered before it, counting the exclusions into `pre_window_excluded` and stamping `measurement_window_start` in the bundle. Until 2026-09-21 this export was a rolling 90-day window with no window filter at all, so pre-window entries were inflating `n`, the entry-date dispersion and the CI in the very field this document names as decisional. Comparator streams (the official book's history) are not under measurement and keep their full history.
+
 **Source of truth:** `outcome` rows in the mirror DB, stamped by `run_afternoon_check` via the afternoon lane, and the per-stream `alpha_summary` in the exported bundle. Not screenshots, not the Discord brief, not a hand-tallied list.
 
 **Exact field paths** — named now so no test can be "clarified" later into whichever field happens to pass:
@@ -91,9 +93,13 @@ This is not a strategy-tuning protocol. It sets acceptance thresholds only.
 
 **The benchmark is SPY, fixed in advance.** `BENCHMARKS = {"spy": "SPY", "qqq": "QQQ"}` (`export_dashboard_data.py:43`), so two benchmarks exist and both are exported. Every test in this document reads `["spy"]`. Choosing the benchmark after seeing which one passes is not permitted.
 
-**The interval is a percentile bootstrap, named here before it can matter.** `_alpha_summary` draws 10,000 resampled means and takes the 2.5th and 97.5th order statistics — `means = sorted(...); lo, hi = means[249], means[9749]` (`export_dashboard_data.py:66-89`). It is **not** a normal or t interval, and it is **not** symmetric about the point estimate: the pinned comparator's published interval `[−0.5856, +1.8895]` has midpoint 0.6520 against a mean of 0.6408.
+**The interval is a percentile entry-date cluster bootstrap, named here before it can matter.** `_alpha_summary` groups trades by `entry_date`, draws 10,000 resamples of whole date clusters, and takes the 2.5th and 97.5th order statistics. Trades opened into the same market conditions therefore move together in a resample. It is **not** a normal or t interval, and it is **not** symmetric about the point estimate. `entry_date_clusters` is exported beside `n` so the effective date count is visible.
+
+> **At least three distinct entry dates are required for an interval to be computed at all.** The resample draws whole clusters: a stream whose trades all entered on one day has a single cluster to draw, so every resample reproduces the same set and the interval collapses to zero width. Three same-day losses would then satisfy S1's `ci_hi < 0` on a "statistically established" reading of a number that contains no variation. Below three clusters `ci_lo` and `ci_hi` are `null` (see the next paragraph) so no decision can read a degenerate interval. This is a **tightening** (amendment rule 4), recorded 2026-09-21, before any stream reached Tier 1. Three clusters is the floor for computing an interval and is nowhere near the floor for deciding on one — that is the time-dispersion rule below.
 
 > Condition 5 compares point estimates, so today the method does not affect any test. It is documented now precisely because that could change: the moment anyone argues for "beat the CI" instead of "beat the point estimate," an undocumented interval method becomes load-bearing on a number whose interval spans −0.59 to +1.89. **Naming it while no result exists costs nothing; naming it afterwards is a choice about a result.**
+
+**`ci_lo` and `ci_hi` are `null` when a stream has fewer than 3 entry-date clusters** — no interval is computed at all, and `ci_unavailable` says so. The descriptive fields (`n`, `mean`, `beat_pct`, `entry_date_clusters`, `max_cluster_share`) are still exported, because a stream with trades must not look like a stream with none. `null` is fail-closed in both consumers: JavaScript compares false, Python raises.
 
 **Do not use the `significant` field for any test here.** It is two-sided — `bool(lo > 0 or hi < 0)` (`:89`) — while Tier 2 and S1 are both one-sided. Read `ci_lo` and `ci_hi` directly.
 
@@ -119,7 +125,7 @@ These exist so that `n` and "a valid week" are fixed before anyone wants them to
 
 ### Tier 0 — Display only (already in effect)
 
-`_alpha_summary` (`scripts/export_dashboard_data.py:66`) emits per-stream stats at **n ≥ 3**. This threshold exists so the dashboard has something to render. **It is not a read.** No decision of any kind may cite a stream below Tier 1.
+`_alpha_summary` (`scripts/export_dashboard_data.py:66`) emits per-stream stats at **n ≥ 3 and at least 3 distinct entry dates**. This threshold exists so the dashboard has something to render. **It is not a read.** No decision of any kind may cite a stream below Tier 1.
 
 ### Evaluation points — fixed in advance
 
@@ -163,6 +169,8 @@ Below n = 30 the only permitted statements are descriptive: "n closed trades so 
 **All** of the following, on the same stream, simultaneously:
 
 1. **n ≥ 30** closed trades — `alpha_summary[<stream>]["spy"]["n"] >= 30`.
+1b. **The time-dispersion rule applies** — the qualifying trades must span at least `max(15, n/2)` distinct entry days ([Time dispersion](#time-dispersion--required-alongside-n-at-every-tier)); 15 days at the first n=30 read. Stated here as a condition rather than left implicit, because it is the condition the interval depends on: the bootstrap resamples whole entry-date clusters, so the effective sample is the number of dates, not the number of trades. `entry_date_clusters` is exported for exactly this check, and `decision_eligible` is the same comparison computed for convenience — **this document, not that field, is authoritative.**
+1c. **Kish effective clusters ≥ 10** — `alpha_summary[<stream>]["spy"]["effective_clusters"] >= 10`, registered 2026-09-21 by Ray while no stream had an in-window trade. The entry-day COUNT does not control concentration: 16 trades on one day plus 14 singletons is 15 days, which passes 1b, while that one day carries 53% of the estimate and the sample is worth about 3.3 balanced days. `effective_clusters` (`1/Σw²`, the number of equally sized days carrying the same information) sees that; the day count cannot. **Ten, not the round-4 review's stricter ≥20 days and ≥15 effective:** an unreachable bar is its own failure mode — the 2026-07 regime gate demanded of MR a cohort it could only earn by trading while blocking it from trading, and a sleeve that dies of its bar rather than of its alpha teaches nothing. Ten rejects the pathological sample while ordinary PEAD shapes score 12–15. Conditions 1b and 1c are both required and independent: either can be met while the other is not, and `decision_blocked_reason` names whichever failed.
 2. **Bootstrap 95% CI of mean alpha vs SPY strictly above zero** — `alpha_summary[<stream>]["spy"]["ci_lo"] > 0`. A positive mean whose CI crosses zero is a lean, not an edge; that sentence is already the docstring of the function that computes it.
 3. **≥ 2 distinct market regimes represented, each with ≥ 10 closed trades**, where a trade's regime is obtained by joining `trades[<stream>][i]["signal_date"]` to `run_history[date == signal_date]["regime"]`, using the repo's `bull` / `bear` / `choppy` keys. Trades whose `signal_date` has no matching `run_history` row are **excluded from the regime count** (they still count toward `n`). A sleeve that has only ever traded one regime has not been tested.
 4. **No execution-config drift** during the measurement window (see [Invalidating conditions](#invalidating-conditions)).
@@ -282,21 +290,17 @@ Until that exists, streams may reach n = 30 and be *described*, but **no Tier 2 
 
 A stream **stops** (paper trading halted, sleeve retired or rebuilt) when **either** fires:
 
-**S1 — Statistically established negative.** At a fixed evaluation point with **n ≥ 30**, the bootstrap 95% CI of mean alpha vs SPY is **entirely below zero** — `alpha_summary[<stream>]["spy"]["ci_hi"] < 0`. This is the symmetric mirror of Tier 2's promotion test. It cannot be argued away by "small sample" — 30 is the same floor promotion must clear.
+**S1 — Statistically established negative.** At a fixed evaluation point with **n ≥ 30 and the time-dispersion rule met** — `max(15, n/2)` distinct entry days, the same bar every tier carries. The dispersion rule said "every tier threshold", and a stop is not a tier, so S1 was not covered by it; that was a gap, and closing it is a tightening recorded 2026-09-21 before any stream reached n=30. A stop decided on a handful of crowded days is the same error as a promotion decided on them, and S1 retires a sleeve. At that point the bootstrap 95% CI of mean alpha vs SPY is **entirely below zero** — `alpha_summary[<stream>]["spy"]["ci_hi"] < 0`. This is the symmetric mirror of Tier 2's promotion test. It cannot be argued away by "small sample" — 30 is the same floor promotion must clear.
 
 **S2 — Drawdown breach.** Paper-sleeve equity drawdown (concurrency-capped, as computed by the unified exit engine, not a sum of per-trade returns) reaches the number in the table below. This one fires regardless of `n`, because a large enough loss is decision-relevant before it is statistically significant.
 
 > **Neither stop condition is discretionary.** If S1 or S2 fires, the sleeve stops and the restart requires a written reason. "It's about to turn around" is not a reason.
 
-## Known limitation of the CI — it is optimistic
+## CI amendment — 2026-09-21
 
-`_alpha_summary` bootstraps by resampling **trades** iid (`rng.choices(a, k=n)`, `export_dashboard_data.py:81`). Concurrent positions share the same day's market move. Alpha-vs-SPY strips the index factor but **not** sector co-movement or same-day clustering, so the effective sample is smaller than `n` and **the interval is narrower than it should be**.
+The former iid trade bootstrap was replaced with an **entry-date cluster bootstrap** before any stream reached a decision point. This is a tightening: same-day positions are no longer treated as independent bets, so concentrated samples generally receive wider intervals. The measurement window opened 2026-09-19 and no affected stream had a pending n=30 decision when this amendment landed.
 
-Consequence: the CI is biased toward *firing* — both Tier 2 promotion and S1 stop trigger more readily than a correct interval would justify. This is stated here rather than silently inherited.
-
-Two mitigations, in order of preference:
-1. **Proper fix** — resample entry-*days* rather than trades. Requires a code change to `_alpha_summary` and is the right answer if anyone has the time.
-2. **Zero-code mitigation, in force until then** — Tier 2 must clear at a **pre-named evaluation point** (n = 30 / 50 / 100), never "at some point when it happened to look good." The fixed evaluation points above are what keep an optimistic interval from being harvested.
+The fixed evaluation points remain binding. Clustering fixes within-day dependence; it does not make repeated daily peeking valid, and it does not remove residual sector or multi-day dependence.
 
 ## Thresholds Ray must set
 

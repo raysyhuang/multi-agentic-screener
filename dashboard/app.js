@@ -537,15 +537,38 @@ function renderCharts(data, streams, keys) {
       // Color by SIGNIFICANCE, not just sign: green/red only when the CI excludes
       // zero (established); neutral navy when it crosses zero (a lean, not proven).
       const v = Object.assign(el("div"), { className: "v", textContent: `${s.mean >= 0 ? "+" : ""}${fmt(s.mean)}%` });
-      v.style.color = s.significant ? (s.mean > 0 ? "var(--success-tx)" : "var(--crit-tx)") : "var(--navy)";
+      v.style.color = (s.significant && s.decision_eligible !== false)
+        ? (s.mean > 0 ? "var(--success-tx)" : "var(--crit-tx)") : "var(--navy)";
       d.append(v);
       const ci = el("div"); ci.className = "s";
       ci.style.color = "var(--body)"; ci.style.fontFeatureSettings = '"tnum"';
-      ci.innerHTML = `95% CI [${s.ci_lo >= 0 ? "+" : ""}${fmt(s.ci_lo)}, ${s.ci_hi >= 0 ? "+" : ""}${fmt(s.ci_hi)}]` +
-        (s.significant ? ` <span class="badge ok">✓ excl. 0</span>` : ` <span class="badge neutral">crosses 0</span>`);
+      // No interval below the cluster floor: too few distinct entry dates to
+      // resample. Say that instead of printing a CI of nulls.
+      const hasCI = Number.isFinite(s.ci_lo) && Number.isFinite(s.ci_hi);
+      // An interval that excludes zero is only badged as established once the
+      // stream also meets the time-dispersion rule. Below it the interval is
+      // real but too few entry dates carry it, so the badge stays neutral —
+      // a green tick there is the exact over-reading this tile exists to stop.
+      const decisive = s.significant && s.decision_eligible !== false;
+      const badge = decisive
+        ? ` <span class="badge ok">✓ excl. 0</span>`
+        : s.significant
+          ? ` <span class="badge neutral">excl. 0 · ${s.entry_date_clusters}/${s.min_decision_clusters ?? "?"} entry dates</span>`
+          : ` <span class="badge neutral">crosses 0</span>`;
+      ci.innerHTML = hasCI
+        ? `95% CI [${s.ci_lo >= 0 ? "+" : ""}${fmt(s.ci_lo)}, ${s.ci_hi >= 0 ? "+" : ""}${fmt(s.ci_hi)}]` + badge
+        : `<span class="badge neutral">no CI — ${s.ci_unavailable || "too few entry dates"}</span>`;
       d.append(ci);
+      // Entry dates, not just n: 30 trades on 3 dates is 3 market observations.
+      const dates = Number.isFinite(s.entry_date_clusters)
+        ? ` · ${s.entry_date_clusters} entry date${s.entry_date_clusters === 1 ? "" : "s"}` : "";
+      // Concentration, shown because the date count alone cannot see it: 15
+      // dates can still be one day carrying half the estimate.
+      const conc = Number.isFinite(s.effective_clusters) && Number.isFinite(s.entry_date_clusters)
+        && s.effective_clusters < s.entry_date_clusters * 0.8
+        ? ` · ~${fmt(s.effective_clusters, 1)} effective` : "";
       d.append(Object.assign(el("div"), { className: "s hint",
-        textContent: `beat S&P ${pct(s.beat_pct, 0)} · n=${s.n}${q ? ` · vs Nasdaq ${q.mean >= 0 ? "+" : ""}${fmt(q.mean)}%` : ""}` }));
+        textContent: `beat S&P ${pct(s.beat_pct, 0)} · n=${s.n}${dates}${conc}${q ? ` · vs Nasdaq ${q.mean >= 0 ? "+" : ""}${fmt(q.mean)}%` : ""}` }));
       alphaTiles.append(d);
     }
     // cumulative alpha vs S&P (sum of per-trade excess, in exit order)
