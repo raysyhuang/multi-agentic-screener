@@ -427,3 +427,112 @@ History:         minimum 200 prior bars available as of D
 Delisting:       include through final trading day; never forward-fill after
 Volume:          single-day share volume, matching live screener semantics
 ```
+
+## §12 — Frozen rulings, contract v3 (Ray, 2026-10-06; independent verifier: Codex)
+
+Adopted as recommended in `PIT_RULINGS_REQUEST_2026-10.md`. Neo's role as reviewer of record passes to Codex for this contract version. Vintages acquired under v3 carry `<vintage>/contract.json`; an unstamped vintage keeps v2 semantics, so frozen v2 artifacts still replay byte-identically.
+
+```
+R1 Classification:  forward-held monthly + §3a-v2 transition resolution. For each ticker
+                    that passes price+volume on some session in the month and whose label
+                    changes between consecutive snapshots in a membership-relevant way (any
+                    type change incl. appearance; any exchange change crossing the eligible
+                    set), binary-search the per-ticker as-of endpoint for the first session
+                    carrying the new label (<= 5 probes) and apply it with day resolution.
+                    A probe matching neither label makes the rest of that month UNKNOWN
+                    (excluded, counted). Every probe is a persisted raw response.
+                    Assumption, stated rather than hidden: at most one membership-relevant
+                    change per ticker per month (binary search cannot prove the FIRST of
+                    several, and a change that reverts within the month is invisible to
+                    snapshots). The residual risk is carried by the zero-tolerance §3b audit.
+                    Completeness is fail-closed: audit and report refuse a vintage with any
+                    unresolved candidate, and the audit sample is bound to the transition
+                    results it was drawn under.
+R2 Drift audit:     zero tolerance on BOTH axes (type and exchange). Supersedes the 0.5%
+                    exchange limit, which was unresolvable at ~134 labelled pairs/month.
+R3 Security type:   eligible = Polygon CS ∪ ADRC (mirrors live, §2). ETF/ETN/fund/
+                    preferred/warrant/unit/right remain excluded.
+R4 Volume:          unchanged from §11 — D's share volume.
+R5 Live-count gate: (b) a universe-definition change is any merge touching
+                    src/signals/filter.py, the screener query in src/data/fmp_client.py,
+                    or src/data/universe_selection.py; the gate evaluates only clean
+                    post-change live observations, detected automatically.
+                    (a) minimum clean observations = 60 (~one quarter of daily runs), set by
+                    the verifier (Codex) from sampling stability and serial dependence, without
+                    reference to the August divergence values.
+                    Pairing: live run date R <-> PIT session previous_trading_day(R).
+                    Comparability: live applies mcap >= $300M, so the gate compares the
+                    post-Phase-B PIT count and reports DEFERRED until Phase B exists.
+                    First clean window starts 2026-10-06 (#130 changed the definition).
+R6 Ratio gate:      when the trailing-12-month median is 0, the absolute gate governs; the
+                    2x relative rule applies only to a positive median.
+R7 Range:           2017-01-03 -> last completed session (~9.75 years, 118 months), so the
+                    momentum core can reach >= 84 monthly observations after a 12-month
+                    warm-up. Polygon serves grouped bars and as-of reference data back to
+                    at least 2016 (probed 2026-10-06). Phase A ceiling 45,000 calls.
+                    The range is frozen in contract.json at creation (end = last completed
+                    session then); a resume never extends it. 200 warm-up sessions before
+                    the start are acquired for the §11 history rule and emit no membership.
+                    Price and volume thresholds are strict (> $5, > 500K) per §3.
+R8 Distribution:    the vintage archive goes to a release asset on a PRIVATE repo (this
+                    repo is public; Polygon redistribution). Manifest (hashes) stays here.
+```
+
+Open item carried forward: Phase B market-cap acquisition scales with distinct tickers × quarters. At ~9.75 years that is likely to exceed the 75,000-call ceiling set for 3 years. The ceiling and cadence are to be re-ruled once Phase A reports the distinct-ticker count. No number is pre-committed here.
+
+### §12 addendum (2026-10-06) — R9 point-in-time observables, and the Phase B budget
+
+```
+R9 Observables:     membership decisions on D use what was observable on D. Price
+                    (> $5) and share volume (> 500K) are evaluated on UNADJUSTED
+                    grouped bars (adjusted=false) for D. Market cap is estimated as
+                    weighted_shares_outstanding as of the quarter's first session
+                    x split multiplier (split_to/split_from for splits executing after
+                    that date through D) x D's unadjusted close. Split-adjusted bars
+                    remain the history count's input and the input for returns.
+                    Why: split-adjusted closes are look-ahead (a $1 stock that later
+                    reverse-splits shows a $10 adjusted close; registry
+                    R-2026-09-price-screen-lookahead), and quarterly shares x an
+                    adjusted close misstates market cap by the split ratio (NVDA
+                    2024-06-07: $120.89 adjusted vs $1,208.88 actual).
+                    Acquired: raw/grouped_raw/<D> for every membership session, and
+                    raw/splits (paged, provenance-chained, completion-marked) from
+                    the warm-up start to the frozen end. A missing unadjusted bar
+                    excludes the name (counted no_unadjusted_bar).
+Phase B budget:     (Ray) shares lookups ONLY for (ticker, quarter) pairs in which the
+                    ticker passed every non-market-cap gate on >= 1 session: 117,544
+                    on the provisional count, vs 324,600 for the full grid. Separate
+                    ledger, ceiling 140,000 (lookups + §3d audit ~75/month + retries).
+                    Market cap > $300M (strict, as the live screener). §A.5 market-cap
+                    unknown > 5% in any month halts. §3d band (50/month, > 2%
+                    disagreement halts) and sentinel (25/month, 12 below / 13 above,
+                    alternating; any flip halts) are sampled canonically, seeded, with
+                    the plan bound to the estimates it was drawn from.
+```
+
+### §12 addendum 2 (2026-10-07) — R1 candidate rule made exact for membership AND the §A.5 counts
+
+The first full run produced 8,058 §3a-v2 candidates under the "type changed, or exchange crossed the eligible set" rule. That rule is over-inclusive in one place (ETF→ETV changes nothing) and under-inclusive in another (an ETF dropping out of the reference data turns `not_common_stock` into `type_unknown`, which the §A.5 gates count). A first refinement restricted the search to sessions that also pass the 200-bar history rule; Codex rejected it because the §A.5 unknown-rate gates count classification outcomes on every price/volume passer, with or without history, so it could have understated unknowns and produced a false PASS. The adopted rule:
+
+```
+Outcome:            the classification step of build_membership as one category —
+                    type_unknown | exchange_unknown | not_common_stock |
+                    failed_exchange | eligible. One function serves both.
+Passer session:     the ticker passes unadjusted close > $5 and volume > 500K (R9).
+                    Classification is evaluated, and counted, on exactly these.
+Candidate:          outcome(old) != outcome(new), with >= 1 passer session in the month.
+Search domain:      the ticker's passer sessions. Bounds: the month snapshot (old)
+                    and the next snapshot (new). The first probe is the endpoint
+                    whose likely answer ends the search: the first passer session
+                    for an appearance (old = type_unknown), else the last. Then
+                    binary search; a probe matching neither outcome is AMBIGUOUS
+                    from the first unproven passer session (unknown, counted).
+Exactness:          under the §3a-v2 one-change-per-month assumption, membership
+                    and every exclusion count equal those of a per-session as-of
+                    labelling (pinned by an equivalence test over four scenarios).
+Versioning:         TRANSITION_RESOLVER_VERSION is part of each result's inputs
+                    hash; results for windows that are no longer candidates are
+                    quarantined (renamed, never deleted).
+```
+
+Vintage 2026-10-06: 7,926 candidates. Probe cost is between 7,926 (one probe each) and 20,805 (worst case). Phase A has spent 7,761 calls and the audit needs up to 23,600, against the 45,000 ceiling. That leaves 13,639 calls for transitions, enough unless the probes beyond one per candidate exceed about 5,700. The ceiling is enforced: an overrun records an unrecovered failure and halts, and raising the ceiling is Ray's decision.

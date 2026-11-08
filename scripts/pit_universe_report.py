@@ -23,9 +23,25 @@ ROOT = Path(__file__).resolve().parent.parent / "outputs" / "pit_universe"
 # §A.5 halt thresholds. Breaching any of these blocks research consumption.
 HALT_TYPE_UNKNOWN_PCT = 1.0
 HALT_EXCHANGE_UNKNOWN_PCT = 1.0
-HALT_DRIFT_EXCHANGE_PCT = 0.5
+# R2 (contract §12): with §3a-v2 transition resolution no legitimate mechanism
+# produces a drift disagreement on either axis, so both are zero tolerance. The
+# former 0.5%/month exchange limit was unresolvable at ~134 labelled pairs/month
+# (the smallest non-zero rate expressible is 0.75%).
+HALT_DRIFT_EXCHANGE_DISAGREEMENTS = 0
+HALT_DRIFT_EXCHANGE_PCT_V2 = 0.5   # v2 vintages replay their original rule
 # §A.5: PIT daily count vs contemporaneous live eligible count.
 HALT_LIVE_COUNT_DIVERGENCE_PCT = 15.0
+# §A.5-v2 / R5: the live-count gate is evaluated only over a window in which no
+# universe-definition change merged, and only with at least this many clean
+# live observations. (a) is set by the independent verifier, not by the author
+# who has seen the vintage; until it is set the gate reports DEFERRED.
+LIVE_GATE_MIN_CLEAN_OBS: int = 60   # R5(a), set by Codex 2026-10-06: ~one quarter of daily runs
+# R5 (b): a merge touching any of these is a universe-definition change.
+UNIVERSE_DEFINITION_PATHS = (
+    "src/signals/filter.py",
+    "src/data/fmp_client.py",
+    "src/data/universe_selection.py",
+)
 
 
 def _calendar_provenance() -> dict:
@@ -89,6 +105,182 @@ def _atr_pct_by_ticker(vintage: str, sample_days: int = 60) -> dict[str, float]:
     return out
 
 
+def _eligible_types(vintage: str):
+    from pit_universe_phase_a import eligible_types_for  # noqa: PLC0415
+    return eligible_types_for(vintage)
+
+
+def _contract_version(vintage: str) -> str:
+    from pit_universe_phase_a import contract_version  # noqa: PLC0415
+    return contract_version(vintage)
+
+
+HALT_MCAP_UNKNOWN_PCT = 5.0       # §A.5
+HALT_MCAP_BAND_DISAGREE_PCT = 2.0  # §3d part 1, per month
+
+
+def mcap_gates(vintage: str, membership: dict) -> tuple[dict, list[str]]:
+    """§A.5 market-cap-unknown rate and the §3d threshold audit (band + sentinel)."""
+    from pit_universe_phase_a import (  # noqa: PLC0415
+        MIN_MCAP, expected_mcap_plan, mcap_audit_sample,
+    )
+
+    halts: list[str] = []
+    per_month: dict[str, dict] = defaultdict(lambda: {"pre_mcap": 0, "mcap_unknown": 0})
+    for d, rec in membership.items():
+        m = per_month[f"{d.year:04d}-{d.month:02d}"]
+        m["pre_mcap"] += len(rec["eligible_pre_mcap"])
+        m["mcap_unknown"] += rec["exclusions"].get("mcap_unknown", 0)
+    for month, m in sorted(per_month.items()):
+        rate = 100.0 * m["mcap_unknown"] / max(1, m["pre_mcap"])
+        m["mcap_unknown_pct"] = round(rate, 4)
+        if rate > HALT_MCAP_UNKNOWN_PCT:
+            halts.append(f"{month}: market-cap unknown {rate:.2f}% > {HALT_MCAP_UNKNOWN_PCT}%")
+
+    audit: dict = {"ran": False}
+    plan_path = ROOT / vintage / "mcap_audit_plan.json"
+    if not plan_path.exists():
+        halts.append("§3d threshold audit has not run — phase B not accepted")
+    else:
+        plan = json.loads(plan_path.read_text())
+        sample = mcap_audit_sample(vintage)
+        expected_rows = {f"{m}/{part}/{t}_{d}": (part, str(d), t, v)
+                         for m, rows in sample.items() for part, d, t, v in rows}
+        if plan != expected_mcap_plan(vintage, sample):
+            halts.append("§3d audit plan is not exactly the plan the current estimates and sampler "
+                         "produce — rerun on a new vintage")
+        else:
+            root = ROOT / vintage / "raw" / "mcap_audit"
+            observed = {f"{p.parent.parent.name}/{p.parent.name}/{p.name.replace('.json.gz', '')}"
+                        for p in root.glob("*/*/*.json.gz")} if root.exists() else set()
+            planned = set(plan["pairs"])
+            if observed != planned:
+                halts.append(f"§3d audit set != plan ({len(planned - observed)} missing, "
+                             f"{len(observed - planned)} unplanned)")
+            else:
+                months: dict[str, dict] = defaultdict(lambda: {"band": 0, "band_disagree": 0,
+                                                               "sentinel": 0, "sentinel_flip": 0,
+                                                               "unverifiable": 0})
+                for p in sorted(root.glob("*/*/*.json.gz")):
+                    payload = _read_raw(p)
+                    meta = payload.get("_audit", {})
+                    key = f"{p.parent.parent.name}/{p.parent.name}/{p.name.replace('.json.gz', '')}"
+                    part, d_s, t, v = expected_rows[key]
+                    if (meta.get("part"), meta.get("date"), meta.get("ticker")) != (part, d_s, t) \
+                            or meta.get("estimate") != v:
+                        # Exact: the stored estimate must BE the recomputed one, so no
+                        # tolerance can straddle the $300M threshold.
+                        halts.append(f"§3d audit record {key} does not match its planned pair")
+                        continue
+                    actual = (payload.get("results") or {}).get("market_cap")
+                    rec = months[p.parent.parent.name]
+                    if payload.get("_not_found") or actual is None:
+                        rec["unverifiable"] += 1
+                        continue
+                    flipped = (v > MIN_MCAP) != (float(actual) > MIN_MCAP)   # recomputed estimate
+                    if meta["part"] == "band":
+                        rec["band"] += 1
+                        rec["band_disagree"] += int(flipped)
+                    else:
+                        rec["sentinel"] += 1
+                        rec["sentinel_flip"] += int(flipped)
+                for month, rec in sorted(months.items()):
+                    if rec["band"]:
+                        pct = 100.0 * rec["band_disagree"] / rec["band"]
+                        rec["band_disagree_pct"] = round(pct, 2)
+                        if pct > HALT_MCAP_BAND_DISAGREE_PCT:
+                            halts.append(f"{month}: §3d band disagreement {pct:.1f}% > "
+                                         f"{HALT_MCAP_BAND_DISAGREE_PCT}%")
+                    if rec["sentinel_flip"]:
+                        halts.append(f"{month}: §3d sentinel flip ({rec['sentinel_flip']}) — zero tolerated")
+                    if rec["unverifiable"]:
+                        # Fail closed: an unanswered pair is not evidence of agreement,
+                        # and the contract defines no replacement policy.
+                        halts.append(f"{month}: {rec['unverifiable']} §3d pair(s) unverifiable "
+                                     "(no as-of market_cap) — audit not passed")
+                audit = {"ran": True, "per_month": dict(months)}
+    return {"mcap_unknown_by_month": dict(per_month), "threshold_audit": audit}, halts
+
+
+def _valid_ledger_record(rec: dict) -> bool:
+    """Schema of a ledger line. Anything else is malformed and takes no part in recovery."""
+    import re
+    ep, dg = rec.get("endpoint"), rec.get("params_sha256")
+    if not (isinstance(ep, str) and ep.startswith("/") and isinstance(dg, str)
+            and re.fullmatch(r"[0-9a-f]{16}", dg)):
+        return False
+    full = rec.get("params_sha256_full")
+    if full is not None and not (isinstance(full, str) and re.fullmatch(r"[0-9a-f]{64}", full)
+                                 and full[:16] == dg):
+        return False
+    if rec.get("event") == "request":
+        return isinstance(rec.get("attempt"), int) and isinstance(rec.get("status"), (int, str))
+    if rec.get("event") == "failure":
+        return isinstance(rec.get("reason"), str) and isinstance(rec.get("attempts"), int)
+    return False
+
+
+def summarize_ledger(path: Path) -> dict:
+    """Calls, failures and malformed records of a request ledger, in file order.
+
+    A failure is UNRECOVERED unless a LATER request for the identical request
+    (same endpoint and parameter digest — the full SHA-256 when both records
+    carry it) was answered: HTTP 200, or 404 only when that request was made
+    with allow_404=True (404 is an observation there and an error elsewhere).
+    Ledgers are append-only, so a transient error a resume later fixed stays on
+    record as recovered instead of blocking sign-off forever, while a hole that
+    was never refilled still halts. Records failing the schema are malformed:
+    counted, excluded from recovery, and the v3 report halts on them.
+    """
+    calls = malformed = 0
+    failures: list[tuple[int, tuple, str | None]] = []
+    answered: dict[tuple, list[tuple[int, str | None]]] = {}
+    for i, line in enumerate(path.read_text().splitlines()):
+        if not line.strip():
+            continue
+        try:
+            rec = json.loads(line)
+        except json.JSONDecodeError:
+            malformed += 1
+            continue
+        if not isinstance(rec, dict) or not _valid_ledger_record(rec):
+            malformed += 1
+            if isinstance(rec, dict) and rec.get("event") == "request":
+                calls += 1          # spend still counts toward the ceiling
+            continue
+        key = (rec["endpoint"], rec["params_sha256"])
+        full = rec.get("params_sha256_full")
+        if rec["event"] == "request":
+            calls += 1
+            st = rec["status"]
+            if st == 200 or (st == 404 and rec.get("allow_404") is True):
+                answered.setdefault(key, []).append((i, full))
+        else:
+            failures.append((i, key, full))
+
+    def recovered(i: int, key: tuple, full: str | None) -> bool:
+        return any(j > i and (full is None or f is None or f == full)
+                   for j, f in answered.get(key, []))
+
+    unrecovered = [(i, k) for i, k, f in failures if not recovered(i, k, f)]
+    return {"calls": calls, "failures_total": len(failures),
+            "recovered": len(failures) - len(unrecovered),
+            "unrecovered": len(unrecovered), "malformed": malformed}
+
+
+def _code_sha() -> str | None:
+    import subprocess
+    for exe in ("git", "/opt/homebrew/bin/git"):
+        try:
+            out = subprocess.run([exe, "-C", str(ROOT.parent.parent), "rev-parse", "HEAD"],
+                                 capture_output=True, text=True, timeout=10)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return out.stdout.strip()
+    return None
+
+
 def _audit_results(vintage: str) -> dict:
     """Compare date-specific classification against the forward-held label (§3b)."""
     audit_dir = ROOT / vintage / "raw" / "audit"
@@ -98,9 +290,30 @@ def _audit_results(vintage: str) -> dict:
     from pit_universe_phase_a import (  # noqa: PLC0415
         ALLOWED_EXCHANGES as ALLOWED,
         _classification_by_month,
+        eligible_types_for,
+        resolved_label,
+        resolved_overrides,
     )
 
+    ELIGIBLE_TYPES = eligible_types_for(vintage)
+
     labels_by_month = _classification_by_month(vintage)
+    overrides = resolved_overrides(vintage, labels_by_month)
+    planned: set[str] | None = None
+    from pit_universe_phase_a import contract_version, overrides_fingerprint  # noqa: PLC0415
+    if contract_version(vintage) == "v3":
+        plan_path = ROOT / vintage / "audit_plan.json"
+        if not plan_path.exists():
+            return {"ran": False, "reason": "no audit plan — the v3 audit has not run"}
+        plan = json.loads(plan_path.read_text())
+        from pit_universe_phase_a import SAMPLER_VERSION  # noqa: PLC0415
+        if plan.get("sampler_version") != SAMPLER_VERSION:
+            return {"ran": False, "stale": True,
+                    "reason": f"audit plan sampler {plan.get('sampler_version')!r} != {SAMPLER_VERSION!r}"}
+        if plan.get("overrides_sha256") != overrides_fingerprint(vintage):
+            return {"ran": False, "stale": True,
+                    "reason": "audit sample was drawn under different transition results"}
+        planned = set(plan["pairs"])
     per_month: dict[str, dict] = defaultdict(lambda: {
         "sampled": 0, "verifiable": 0, "unverifiable": 0,
         # Only pairs whose forward-held label EXISTS can test drift. A pair with
@@ -118,9 +331,9 @@ def _audit_results(vintage: str) -> dict:
     })
 
     for month_dir in sorted(audit_dir.glob("*")):
-        y, m = (int(x) for x in month_dir.name.split("-"))
-        held = labels_by_month.get((y, m), {})
         for path in sorted(month_dir.glob("*.json.gz")):
+            if planned is not None and f"{month_dir.name}/{path.name.replace('.json.gz', '')}" not in planned:
+                continue
             payload = _read_raw(path)
             meta = payload.get("_audit", {})
             actual = payload.get("results") or {}
@@ -137,7 +350,11 @@ def _audit_results(vintage: str) -> dict:
 
             from pit_universe_phase_a import _EXCHANGE_MAP  # noqa: PLC0415
 
-            held_label = held.get(ticker) or {}
+            from datetime import date as _d  # noqa: PLC0415
+            # The label under audit is the one membership actually used: the
+            # forward-held monthly label after §3a-v2 transition overrides.
+            held_label = resolved_label(labels_by_month, overrides, ticker,
+                                        _d.fromisoformat(meta.get("date"))) or {}
             held_type = held_label.get("type")
             actual_type = actual.get("type")
             actual_exch = _EXCHANGE_MAP.get(actual.get("primary_exchange", ""), "")
@@ -156,21 +373,31 @@ def _audit_results(vintage: str) -> dict:
             if actual_type and held_type != actual_type:
                 rec["type_disagree"] += 1
                 # Direction matters: one contaminates, one silently shrinks.
-                if held_type == "CS" and actual_type != "CS":
+                if held_type in ELIGIBLE_TYPES and actual_type not in ELIGIBLE_TYPES:
                     rec["contamination"] += 1
-                elif actual_type == "CS":
+                elif actual_type in ELIGIBLE_TYPES and held_type not in ELIGIBLE_TYPES:
                     rec["false_exclusion"] += 1
             if actual_exch and held_label.get("exchange") != actual_exch:
                 rec["exchange_disagree"] += 1
                 held_ok = held_label.get("exchange") in ALLOWED
                 actual_ok = actual_exch in ALLOWED
-                if held_ok != actual_ok and (actual_type or held_type) == "CS":
+                if held_ok != actual_ok and (actual_type or held_type) in ELIGIBLE_TYPES:
                     rec["exchange_membership_flip"] += 1
 
+    if planned is not None:
+        observed = {f"{d.name}/{p.name.replace('.json.gz', '')}"
+                    for d in audit_dir.glob("*") for p in d.glob("*.json.gz")}
+        missing, extra = sorted(planned - observed), sorted(observed - planned)
+        if missing or extra:
+            return {"ran": False, "incomplete": bool(missing), "missing_count": len(missing),
+                    "extra_count": len(extra),
+                    "reason": f"audit set != plan: {len(missing)} planned pair(s) never observed "
+                              f"(e.g. {missing[:3]}), {len(extra)} unplanned file(s) "
+                              f"(e.g. {extra[:3]}) — complete the audit / quarantine extras"}
     return {"ran": True, "per_month": dict(per_month)}
 
 
-def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
+def unknown_rate_gates(membership: dict, v3: bool = True) -> tuple[dict, list[str]]:
     """§A.5 unknown-rate gates, both of them, for both metrics.
 
     Two rules, and they catch different failures:
@@ -188,11 +415,11 @@ def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
     exchange entirely). Writing a gate that is easier to compute than the one
     that was frozen is silently reinterpreting the contract.
 
-    The median baseline is deliberately literal, including where it degenerates:
-    when the trailing median is 0 — which is the normal state for
-    `exchange_unknown` — any non-zero month exceeds 2x0 and halts. That may be
-    stricter than intended, but softening it here would be a second unilateral
-    reinterpretation, so it is implemented as written and flagged for ruling.
+    R6 (contract §12): when the trailing median is 0 — the normal state for
+    `exchange_unknown` — the ratio is undefined, not maximally strict, so the
+    absolute gate governs that month and the 2x rule applies only to a positive
+    median. The three relative breaches the literal rule found (2025-05, 2025-09,
+    2026-06, type axis) all had positive medians and stay caught.
     """
     by_month: dict[str, dict[str, float]] = defaultdict(
         lambda: {"pre": 0, "type_unknown": 0, "exchange_unknown": 0}
@@ -235,14 +462,16 @@ def unknown_rate_gates(membership: dict) -> tuple[dict, list[str]]:
                 continue
             median = statistics.median(window)
             entry[f"{metric}_trailing_median_pct"] = round(median, 4)
-            if rate > 2.0 * median:
+            if (median > 0 or not v3) and rate > 2.0 * median:
                 halts.append(
                     f"{m}: {metric} {rate:.4f}% > 2x trailing-12m median "
                     f"{median:.4f}% (relative)"
                 )
         per_month[m] = entry
 
-    return {"per_month": per_month, "rule": "absolute >1% and relative >2x trailing-12m median"}, halts
+    rule = ("absolute >1%; relative >2x trailing-12m median when that median > 0 (R6)" if v3
+            else "absolute >1% and relative >2x trailing-12m median")
+    return {"per_month": per_month, "rule": rule}, halts
 
 
 def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[str]]:
@@ -258,6 +487,9 @@ def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[st
     missing from it while the population is wrong.
     """
     base = ROOT / vintage
+    from pit_universe_phase_a import contract_version  # noqa: PLC0415
+    if contract_version(vintage) == "v3":
+        return live_count_gate_v3(vintage, membership)
     live_path = base / "raw" / "live" / "dashboard.json.gz"
     if not live_path.exists():
         return {"ran": False}, ["live count divergence has no snapshot to run against"]
@@ -304,11 +536,125 @@ def live_count_divergence(vintage: str, membership: dict) -> tuple[dict, list[st
     return result, halts
 
 
+def universe_definition_boundaries(repo: Path | None = None) -> list:
+    """Dates on which a universe-definition change merged to main (R5 b).
+
+    Detected from git history, never remembered by hand: any commit on main
+    touching the definition paths. The live-count gate only trusts live runs
+    strictly after the latest boundary.
+    """
+    import subprocess
+    from datetime import date as _date  # noqa: PLC0415
+
+    repo = repo or ROOT.parent.parent
+    for exe in ("git", "/opt/homebrew/bin/git"):
+        try:
+            out = subprocess.run(
+                [exe, "-C", str(repo), "log", "--first-parent", "origin/main",
+                 "--format=%cs", "--", *UNIVERSE_DEFINITION_PATHS],
+                capture_output=True, text=True, timeout=30)
+        except (OSError, subprocess.SubprocessError):
+            continue
+        if out.returncode == 0:
+            return sorted({_date.fromisoformat(x) for x in out.stdout.split()})
+    raise RuntimeError("git unusable: cannot detect universe-definition boundaries (R5 b)")
+
+
+def live_count_gate_v3(vintage: str, membership: dict, boundaries: list | None = None) -> tuple[dict, list[str]]:
+    """§A.5 live-count gate under v3 (R5): clean window, pairing, and comparability.
+
+    Three rules, each fail-safe toward DEFERRED (neither pass nor fail):
+      * comparability — live's count applies mcap >= $300M; a pre-market-cap
+        PIT count is not the same quantity, so the gate waits for Phase B;
+      * clean window — only live runs strictly after the latest universe-
+        definition merge count (R5 b), and at least LIVE_GATE_MIN_CLEAN_OBS of
+        them must exist (R5 a);
+      * pairing — a live row is dated by its morning RUN date R; the PIT session
+        it describes is previous_trading_day(R).
+    """
+    from datetime import date as _date  # noqa: PLC0415
+
+    import pandas_market_calendars as mcal  # noqa: PLC0415
+
+    has_mcap = bool(membership) and all("eligible" in rec for rec in membership.values())
+    if boundaries is None:
+        try:
+            boundaries = universe_definition_boundaries()
+        except RuntimeError as exc:
+            return {"ran": True, "rule": "R5", "status": "DEFERRED",
+                    "reason": f"universe-definition history unavailable ({exc}); "
+                              "an unknown history is never treated as 'no changes'"}, []
+    if not boundaries:
+        return {"ran": True, "rule": "R5", "status": "DEFERRED",
+                "reason": "git history returned no universe-definition commits — implausible, "
+                          "refusing to treat it as a clean window"}, []
+    last_change = boundaries[-1]
+    live_path = ROOT / vintage / "raw" / "live" / "dashboard.json.gz"
+    rows = (_read_raw(live_path).get("run_history") or []) if live_path.exists() else []
+    clean = []
+    for row in rows:
+        try:
+            r = _date.fromisoformat(str(row.get("date"))[:10])
+        except ValueError:
+            continue
+        if row.get("universe") and r > last_change:
+            clean.append((r, row["universe"]))
+    result = {"ran": True, "rule": "R5", "last_definition_change": str(last_change),
+              "clean_live_observations": len(clean), "min_required": LIVE_GATE_MIN_CLEAN_OBS,
+              "threshold_pct": HALT_LIVE_COUNT_DIVERGENCE_PCT}
+    if not has_mcap:
+        result["status"] = "DEFERRED"
+        result["reason"] = ("PIT count is pre-market-cap (or Phase B is incomplete); live applies "
+                            "mcap >= $300M — evaluate after Phase B covers every session")
+        return result, []
+    if len(clean) < LIVE_GATE_MIN_CLEAN_OBS:
+        result["status"] = "DEFERRED"
+        result["reason"] = f"{len(clean)} clean live observations < {LIVE_GATE_MIN_CLEAN_OBS}"
+        return result, []
+    cal = mcal.get_calendar("NYSE")
+    pairs = []
+    for r, live_n in clean:
+        prev = cal.schedule(start_date=r - _td(days=10), end_date=r - _td(days=1)).index
+        if not len(prev):
+            continue
+        d = prev[-1].date()
+        if d in membership:
+            pit_n = len(membership[d]["eligible"])
+            pairs.append(100.0 * abs(pit_n - live_n) / max(1, live_n))
+    if len(pairs) < LIVE_GATE_MIN_CLEAN_OBS:
+        result["status"] = "DEFERRED"
+        result["reason"] = f"only {len(pairs)} clean observations fall inside the vintage"
+        return result, []
+    med = statistics.median(pairs)
+    result.update({"status": "EVALUATED", "paired": len(pairs), "median_divergence_pct": round(med, 2)})
+    halts = []
+    if med > HALT_LIVE_COUNT_DIVERGENCE_PCT:
+        halts.append(f"live count divergence (R5): median {med:.1f}% > {HALT_LIVE_COUNT_DIVERGENCE_PCT}% "
+                     f"over {len(pairs)} clean paired observations")
+    return result, halts
+
+
+def _td(**kw):
+    from datetime import timedelta  # noqa: PLC0415
+    return timedelta(**kw)
+
+
 def write_report(vintage: str) -> dict:
     from pit_universe_phase_a import build_membership  # noqa: PLC0415
 
+    from pit_universe_phase_a import contract_version, require_transitions_complete  # noqa: PLC0415
+
     base = ROOT / vintage
-    membership = build_membership(vintage)
+    v3 = contract_version(vintage) == "v3"
+    phase_b = None
+    if v3:
+        require_transitions_complete(vintage)
+        from pit_universe_phase_a import build_membership_with_mcap, phase_b_status  # noqa: PLC0415
+        phase_b = phase_b_status(vintage)
+        phase_b = {k: v for k, v in phase_b.items() if k not in ("missing", "extra")} | {
+            "missing_count": len(phase_b["missing"]), "extra_count": len(phase_b["extra"])}
+    membership = (build_membership_with_mcap(vintage) if phase_b and phase_b["complete"]
+                  else build_membership(vintage))
     if not membership:
         raise SystemExit(f"no grouped data under {base}/raw/grouped — run `spine` first")
 
@@ -344,24 +690,48 @@ def write_report(vintage: str) -> dict:
 
     # Pooled rates are REPORTED for continuity but no longer gate anything —
     # they cannot see a single catastrophic month (see unknown_rate_gates).
-    windowed, halts = unknown_rate_gates(membership)
+    windowed, halts = unknown_rate_gates(membership, v3=v3)
+    mcap_section = None
+    if v3:
+        if not (phase_b and phase_b["complete"]):
+            halts.append(f"phase B (market cap) incomplete: {phase_b} — dataset not signed off")
+        else:
+            mcap_section, mcap_halts = mcap_gates(vintage, membership)
+            halts.extend(mcap_halts)
 
     ledger_path = base / "request_ledger.jsonl"
     ledger_summary = {"present": ledger_path.exists()}
     if ledger_path.exists():
-        calls = failures = 0
+        calls = failures = malformed = 0
         for line in ledger_path.read_text().splitlines():
             if not line.strip():
                 continue
             try:
-                event = json.loads(line).get("event")
+                parsed = json.loads(line)
             except json.JSONDecodeError:
+                malformed += 1
                 continue
+            if not isinstance(parsed, dict):        # valid JSON that is not a record
+                malformed += 1
+                continue
+            event = parsed.get("event")
             if event == "request":
                 calls += 1
             elif event == "failure":
                 failures += 1
+            else:
+                malformed += 1
         ledger_summary = {"present": True, "calls": calls, "durable_failures": failures}
+        if v3:
+            # v3: count only failures no later request recovered (v2 keeps the original rule),
+            # and the stricter schema decides what is malformed.
+            ls = summarize_ledger(ledger_path)
+            failures, malformed = ls["unrecovered"], ls["malformed"]
+            ledger_summary = {"present": True, **ls}
+        if v3 and malformed:
+            # A skipped record understates spend; v2 keeps its original tolerance.
+            halts.append(f"request ledger has {malformed} malformed/unknown record(s) — spend unverifiable")
+            ledger_summary["malformed"] = malformed
         if failures:
             # A vintage with unrecovered holes is incomplete by construction;
             # reporting it as a dataset would present a partial universe as a
@@ -370,12 +740,51 @@ def write_report(vintage: str) -> dict:
     else:
         halts.append("no request ledger — provenance of this vintage is unverifiable")
 
+    phase_b_ledger = None
+    if v3 and phase_b and phase_b["complete"]:
+        from pit_universe_phase_a import PHASE_B_CALL_CEILING  # noqa: PLC0415
+        lp = base / "request_ledger_phase_b.jsonl"
+        if not lp.exists():
+            halts.append("no phase B request ledger — market-cap provenance is unverifiable")
+        else:
+            calls = failures = malformed = 0
+            for line in lp.read_text().splitlines():
+                if not line.strip():
+                    continue
+                try:
+                    parsed = json.loads(line)
+                except json.JSONDecodeError:
+                    malformed += 1
+                    continue
+                if not isinstance(parsed, dict):
+                    malformed += 1
+                    continue
+                ev = parsed.get("event")
+                if ev not in ("request", "failure"):
+                    malformed += 1
+                calls += ev == "request"
+                failures += ev == "failure"
+            if malformed:
+                halts.append(f"phase B ledger has {malformed} malformed record(s) — spend unverifiable")
+            if calls > PHASE_B_CALL_CEILING:
+                halts.append(f"phase B ledger shows {calls} calls > ceiling {PHASE_B_CALL_CEILING}")
+            ls = summarize_ledger(lp)
+            failures = ls["unrecovered"]
+            if ls["malformed"] and not malformed:
+                halts.append(f"phase B ledger has {ls['malformed']} malformed record(s) — spend unverifiable")
+            phase_b_ledger = {**ls, "ceiling": PHASE_B_CALL_CEILING,
+                              "headroom": PHASE_B_CALL_CEILING - calls}
+            if failures:
+                halts.append(f"phase B ledger records {failures} unrecovered failure(s)")
+
     divergence, divergence_halts = live_divergence(vintage)
     halts.extend(divergence_halts)
     count_divergence, count_halts = live_count_divergence(vintage, membership)
     halts.extend(count_halts)
 
     audit = _audit_results(vintage)
+    if v3 and not audit.get("ran"):
+        halts.append(f"classification audit not usable: {audit.get('reason')}")
     if audit.get("ran"):
         for month, rec in sorted(audit["per_month"].items()):
             if rec["type_disagree"]:
@@ -384,12 +793,22 @@ def write_report(vintage: str) -> dict:
                     f"(contamination={rec['contamination']}, "
                     f"false_exclusion={rec['false_exclusion']}) — zero tolerated"
                 )
-            if rec["labelled"]:
+            if v3 and rec["exchange_disagree"] > HALT_DRIFT_EXCHANGE_DISAGREEMENTS:
+                halts.append(
+                    f"{month}: {rec['exchange_disagree']} exchange disagreement(s) "
+                    f"(membership flips={rec['exchange_membership_flip']}) — zero tolerated (R2)"
+                )
+            elif not v3 and rec["labelled"]:
                 exch_pct = 100.0 * rec["exchange_disagree"] / rec["labelled"]
-                if exch_pct > HALT_DRIFT_EXCHANGE_PCT:
-                    halts.append(f"{month}: exchange drift {exch_pct:.2f}% > {HALT_DRIFT_EXCHANGE_PCT}%")
+                if exch_pct > HALT_DRIFT_EXCHANGE_PCT_V2:
+                    halts.append(f"{month}: exchange drift {exch_pct:.2f}% > {HALT_DRIFT_EXCHANGE_PCT_V2}%")
 
     raw_files = sorted((base / "raw").rglob("*.json.gz"))
+    if v3:
+        # Completion markers are evidence too: hash them so an archive cannot
+        # verify with its pagination proof missing or altered.
+        raw_files = sorted(raw_files + list((base / "raw").rglob("_complete.json")))
+    n_quarters = len({(d.year, (d.month - 1) // 3) for d in dates}) if v3 else 12
     manifest = {
         "vintage": vintage,
         "timezone": "America/New_York",
@@ -398,10 +817,14 @@ def write_report(vintage: str) -> dict:
         "phase": "A",
         "constraints_applied": {
             "min_price": 5.0, "min_share_volume": 500_000,
-            "exchanges": ["NYSE", "NASDAQ"], "type": "CS",
+            "exchanges": ["NYSE", "NASDAQ"],
+            "type": sorted(_eligible_types(vintage)) if v3 else "CS",
             "market_cap": "NOT APPLIED — Phase B",
         },
-        "classification_policy": "forward-held monthly, applied from snapshot date only",
+        "classification_policy": (
+            "forward-held monthly from the snapshot date, with membership-relevant "
+            "transitions resolved to the day (§3a-v2)" if v3
+            else "forward-held monthly, applied from snapshot date only"),
         "raw_file_count": len(raw_files),
         "raw_hashes": {str(p.relative_to(base)): _sha256(p) for p in raw_files},
         "distinct_eligible_tickers_pre_mcap": len(distinct_eligible),
@@ -420,12 +843,43 @@ def write_report(vintage: str) -> dict:
         "halts": halts,
         "phase_b_gate": {
             "distinct_tickers": len(distinct_eligible),
-            "quarters": 12,
-            "projected_detail_calls": len(distinct_eligible) * 12,
+            "quarters": n_quarters,
+            "projected_detail_calls": len(distinct_eligible) * n_quarters,
             "ceiling": 75_000,
-            "within_ceiling": len(distinct_eligible) * 12 <= 75_000,
+            "within_ceiling": len(distinct_eligible) * n_quarters <= 75_000,
         },
     }
+
+    if v3:
+        # Schema additions are v3-only so a v2 vintage's manifest replays exactly.
+        manifest["phase"] = "B" if (phase_b and phase_b["complete"]) else "A"
+        manifest["phase_b"] = phase_b
+        manifest["phase_b_ledger"] = phase_b_ledger
+        # The 3-year projection (distinct x all quarters vs 75,000) is superseded by
+        # the eligible-quarter rule and the 140,000 ceiling (Ray, 2026-10-06).
+        from pit_universe_phase_a import PHASE_B_CALL_CEILING  # noqa: PLC0415
+        manifest["phase_b_gate"] = {
+            "rule": "shares lookups for (ticker, quarter) pairs eligible pre-mcap on >= 1 session",
+            "lookups_required": phase_b["expected"] if phase_b else None,
+            "ceiling": PHASE_B_CALL_CEILING,
+        }
+        manifest["market_cap"] = mcap_section
+        if phase_b and phase_b["complete"]:
+            manifest["constraints_applied"]["market_cap"] = (
+                "> $300M, estimated as quarterly as-of shares x split multiplier x unadjusted close (§3c, R9)")
+            manifest["distinct_eligible_tickers"] = len({t for r in membership.values() for t in r["eligible"]})
+            for row in daily_counts:
+                from datetime import date as _d  # noqa: PLC0415
+                row["eligible"] = len(membership[_d.fromisoformat(row["date"])]["eligible"])
+        stamp = base / "contract.json"
+        manifest["contract_version"] = _contract_version(vintage)
+        manifest["contract_stamp_sha256"] = _sha256(stamp)
+        manifest["normalization_version"] = "phase-a/v3"
+        manifest["code_sha"] = _code_sha()
+        manifest["config_sha256"] = hashlib.sha256(stamp.read_bytes()).hexdigest()
+        from pit_universe_phase_a import transition_status  # noqa: PLC0415
+        manifest["transition_resolution"] = {k: v for k, v in transition_status(vintage).items()
+                                             if k != "missing"}
 
     (base / "manifest.json").write_text(json.dumps(manifest, indent=2))
     (base / "daily_counts.json").write_text(json.dumps(daily_counts, indent=2))
@@ -451,14 +905,36 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
     if not src.exists():
         raise SystemExit(f"no manifest at {src} — nothing to verify against")
 
-    expected = json.loads(src.read_text()).get("raw_hashes", {})
+    manifest_doc = json.loads(src.read_text())
+    if manifest_doc.get("vintage") not in (None, vintage) or (
+            manifest_doc.get("contract_version") == "v3" and manifest_doc.get("vintage") != vintage):
+        raise SystemExit(f"VERIFY FAILED: manifest is for vintage {manifest_doc.get('vintage')!r}, "
+                         f"not {vintage!r}")
+    expected = manifest_doc.get("raw_hashes", {})
     if not expected:
         raise SystemExit(f"{src} carries no raw_hashes")
+    stamp = base / "contract.json"
+    local_v = json.loads(stamp.read_text()).get("version") if stamp.exists() else "v2"
+    manifest_v = manifest_doc.get("contract_version", "v2")
+    if local_v != manifest_v:
+        raise SystemExit(f"VERIFY FAILED: local contract {local_v} != manifest contract {manifest_v}")
+    if manifest_v not in ("v2", "v3"):
+        raise SystemExit(f"VERIFY FAILED: unknown contract version {manifest_v!r}")
+    if manifest_v == "v3":
+        digest = _sha256(stamp)
+        if digest != manifest_doc.get("contract_stamp_sha256"):
+            raise SystemExit("VERIFY FAILED: contract.json does not match the manifest — "
+                             "the vintage would not replay under its own rules")
+        if hashlib.sha256(stamp.read_bytes()).hexdigest() != manifest_doc.get("config_sha256"):
+            raise SystemExit("VERIFY FAILED: config hash mismatch")
 
     present = {
         str(p.relative_to(base)): p
         for p in sorted((base / "raw").rglob("*.json.gz"))
     }
+    if manifest_v == "v3":
+        present.update({str(p.relative_to(base)): p
+                        for p in sorted((base / "raw").rglob("_complete.json"))})
 
     missing = sorted(set(expected) - set(present))
     extra = sorted(set(present) - set(expected))
@@ -490,6 +966,22 @@ def verify(vintage: str, manifest_path: Path | None = None) -> dict:
     return result
 
 
+_REPO_RE = __import__("re").compile(r"[A-Za-z0-9_.-]+/[A-Za-z0-9_.-]+")
+
+
+def _repo_is_private(repo: str) -> bool | None:
+    """True only if GitHub says the repository is private; None if unknown."""
+    import subprocess
+    try:
+        out = subprocess.run(["gh", "api", f"repos/{repo}", "--jq", ".private"],
+                             capture_output=True, text=True, timeout=30)
+    except (OSError, subprocess.SubprocessError):
+        return None
+    if out.returncode != 0:
+        return None
+    return out.stdout.strip() == "true"
+
+
 def package(vintage: str) -> Path:
     """Build the Release archive and stamp its own hash.
 
@@ -503,7 +995,8 @@ def package(vintage: str) -> Path:
     archive = base.parent / f"pit-universe-{vintage}.tar.gz"
     with tarfile.open(archive, "w:gz") as tar:
         tar.add(base / "raw", arcname=f"{vintage}/raw")
-        for extra in ("manifest.json", "request_ledger.jsonl", "daily_counts.json"):
+        for extra in ("manifest.json", "request_ledger.jsonl", "daily_counts.json",
+                      "contract.json", "audit_plan.json"):
             if (base / extra).exists():
                 tar.add(base / extra, arcname=f"{vintage}/{extra}")
 
@@ -511,15 +1004,32 @@ def package(vintage: str) -> Path:
     (base / "archive.sha256").write_text(f"{digest}  {archive.name}\n")
     size_mb = archive.stat().st_size / (1 << 20)
     logger.info("archive %s (%.1f MB) sha256=%s", archive.name, size_mb, digest)
-    print(json.dumps({
-        "archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1),
-        "upload": (
-            f"gh release create pit-universe-{vintage} '{archive}' "
-            f"--title 'PIT universe vintage {vintage}' --notes-file "
-            f"outputs/research/PIT_PHASE_A_HALT_FINDINGS.md"
-        ),
-    }, indent=2))
+    # R8: the vintage contains licensed Polygon data and this repo is PUBLIC, so
+    # an upload command is only emitted for an explicitly configured private
+    # repository, and always with --repo.
+    import os
+    target = os.environ.get("PIT_RELEASE_REPO", "").strip()
+    out = {"archive": str(archive), "sha256": digest, "size_mb": round(size_mb, 1), "upload": None}
+    if not target:
+        out["note"] = "no upload: set PIT_RELEASE_REPO to a PRIVATE repository (R8)"
+    elif not _REPO_RE.fullmatch(target):
+        out["note"] = f"no upload: {target!r} is not an owner/repo name"
+    elif _repo_is_private(target) is not True:
+        out["note"] = (f"no upload: {target} is not verifiably PRIVATE (R8). This vintage holds "
+                       "licensed Polygon data and must never go to a public repository.")
+    else:
+        # An argument vector, not a shell string: nothing here is ever interpolated by a shell.
+        out["upload"] = ["gh", "release", "create", f"pit-universe-{vintage}", str(archive),
+                         "--repo", target, "--title", f"PIT universe vintage {vintage}",
+                         "--notes", "manifest sha256 committed in the screener repo"]
+        out["note"] = f"{target} verified PRIVATE"
+    print(json.dumps(out, indent=2))
     return archive
+
+
+def _sorted_nullable(values) -> list:
+    """Deterministically sort report labels while preserving unknown as null."""
+    return sorted(set(values), key=lambda value: (value is None, str(value)))
 
 
 def live_divergence(vintage: str) -> tuple[dict, list[str]]:
@@ -557,12 +1067,19 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
             "live-universe divergence check has no snapshot to run against"
         ]
 
-    from pit_universe_phase_a import _classification_by_month, build_membership  # noqa: PLC0415
+    from pit_universe_phase_a import (  # noqa: PLC0415
+        _classification_by_month, build_membership, contract_version, eligible_types_for,
+        resolved_label, resolved_overrides,
+    )
 
     live = _read_raw(live_path)
     membership = build_membership(vintage)
     labels = _classification_by_month(vintage)
     covered = set(membership)
+    v3 = contract_version(vintage) == "v3"
+    eligible_types = eligible_types_for(vintage)
+    overrides = resolved_overrides(vintage, labels) if v3 else {}
+    sessions_sorted = sorted(covered)
 
     from datetime import date as _date  # noqa: PLC0415
 
@@ -577,6 +1094,14 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
             d = _date.fromisoformat(str(run_date)[:10])
         except ValueError:
             continue
+        if v3:
+            # Live rows carry the morning RUN date; the session they describe is
+            # the previous trading session (R5 pairing).
+            prior = [x for x in sessions_sorted if x < d]
+            d = prior[-1] if prior and (d - prior[-1]).days <= 5 else None
+            if d is None:
+                out_of_range += 1
+                continue
         if d not in covered:
             out_of_range += 1
             continue
@@ -584,8 +1109,11 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         if ticker in set(membership[d]["eligible_pre_mcap"]):
             continue
         # Absent from PIT. Attribute it.
-        keys = [k for k in labels if k <= (d.year, d.month)]
-        held = (labels[max(keys)].get(ticker) or {}) if keys else {}
+        if v3:
+            held = resolved_label(labels, overrides, ticker, d) or {}
+        else:
+            keys = [k for k in labels if k <= (d.year, d.month)]
+            held = (labels[max(keys)].get(ticker) or {}) if keys else {}
         record = {
             "ticker": ticker, "date": str(d), "model": row.get("model"),
             "picked": row.get("picked"), "rank": row.get("rank"),
@@ -594,7 +1122,17 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         }
         held_type = held.get("type")
         on_allowed_exchange = held.get("exchange") in ("NYSE", "NASDAQ")
-        if held_type == "CS" and on_allowed_exchange:
+        if held_type in eligible_types and on_allowed_exchange:
+            # Under v3 the observable price/volume and history gates can also
+            # exclude it; only a name passing those is a real PIT contradiction.
+            if v3 and ticker not in set(membership[d]["pre_classification"]):
+                pit_stricter.append({**record, "reason": "price_or_volume_on_D"})
+                continue
+            if v3:
+                # Resolved label eligible, observables pass, still absent: the
+                # only remaining gate is the §11 history rule, which live lacks.
+                pit_stricter.append({**record, "reason": "insufficient_history"})
+                continue
             pit_false_exclusions.append(record)
         elif held_type in ("ETF", "FUND", "ETN"):
             live_gate_misses.append(record)
@@ -603,6 +1141,11 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
             # live does not have.
             pit_stricter.append(record)
 
+    # ``held_type`` can legitimately be absent when the live ticker never
+    # appears in a frozen classification snapshot.  Python 3 cannot order
+    # ``None`` and ``str`` directly; preserve the unknown as JSON null and sort
+    # it last instead of crashing the entire acceptance report.
+    stricter_types = _sorted_nullable(r.get("held_type") for r in pit_stricter)
     result = {
         "ran": True,
         "live_candidates_in_range": checked,
@@ -612,7 +1155,7 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         "pit_stricter_than_live": pit_stricter[:25],
         "pit_stricter_than_live_count": len(pit_stricter),
         "pit_stricter_picked_count": sum(1 for r in pit_stricter if r.get("picked")),
-        "pit_stricter_types": sorted({r.get("held_type") for r in pit_stricter}),
+        "pit_stricter_types": stricter_types,
         "pit_stricter_tickers": sorted({r["ticker"] for r in pit_stricter}),
         "explained_by_live_gates": live_gate_misses[:25],
         "explained_by_live_gates_count": len(live_gate_misses),
@@ -629,6 +1172,6 @@ def live_divergence(vintage: str) -> tuple[dict, list[str]]:
         halts.append(
             f"live divergence: PIT excludes {len(pit_stricter)} live candidate-day(s) "
             f"({picked} actually PICKED) on constraints live does not apply — "
-            f"types {sorted({r.get('held_type') for r in pit_stricter})}"
+            f"types {stricter_types}"
         )
     return result, halts
