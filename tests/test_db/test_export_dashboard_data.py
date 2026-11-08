@@ -111,7 +111,7 @@ async def test_snapshot_shape_and_stream_separation(monkeypatch):
     # Injected benchmark closes: SPY flat, QQQ up 1% d1->d2. AAA won +2% over d1->d2,
     # so alpha_spy = +2 - 0 = +2; alpha_qqq = +2 - 1 = +1.
     bench = {"spy": {d1: 500.0, d2: 500.0}, "qqq": {d1: 400.0, d2: 404.0}}
-    snap = await exp.build_snapshot(days=90, bench_closes=bench)
+    snap = await exp.build_snapshot(days=90, bench_closes=bench, as_of=d2)
 
     assert snap["latest_run"]["date"] == "2026-07-21"
     # Today = latest run's picks only.
@@ -219,7 +219,9 @@ async def test_a_paired_observation_is_never_counted_as_a_pick(monkeypatch):
             yield session
 
     monkeypatch.setattr(exp, "get_session", _fake_session)
-    snap = await exp.build_snapshot(days=90, bench_closes={"spy": {}, "qqq": {}})
+    snap = await exp.build_snapshot(
+        days=90, bench_closes={"spy": {}, "qqq": {}}, as_of=d,
+    )
 
     assert [p["source"] for p in snap["today_picks"]] == ["pead_paper"]
     # Still persisted and still visible as a position row — only the count changes.
@@ -253,7 +255,9 @@ async def test_alpha_none_when_benchmark_unavailable(monkeypatch):
             yield session
 
     monkeypatch.setattr(exp, "get_session", _fake_session)
-    snap = await exp.build_snapshot(days=90, bench_closes={"spy": {}, "qqq": {}})
+    snap = await exp.build_snapshot(
+        days=90, bench_closes={"spy": {}, "qqq": {}}, as_of=d2,
+    )
     aaa = snap["trades"]["sniper|mas_official"][0]
     assert aaa["alpha_spy"] is None and aaa["bench_spy"] is None
     assert snap["benchmark_available"] is False
