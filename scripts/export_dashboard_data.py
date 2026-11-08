@@ -337,8 +337,19 @@ def _candidates_payload(candidates, signals, outcome_by_sig) -> list[dict]:
     return out
 
 
-async def build_snapshot(days: int = 90, bench_closes: dict | None = None) -> dict:
-    cutoff = date.today() - timedelta(days=days)
+async def build_snapshot(
+    days: int = 90,
+    bench_closes: dict | None = None,
+    *,
+    as_of: date | None = None,
+) -> dict:
+    """Build a trailing snapshot ending on ``as_of`` (today by default).
+
+    An explicit end date keeps historical fixtures and replays deterministic;
+    production callers continue to use the wall-clock date.
+    """
+    snapshot_date = as_of or date.today()
+    cutoff = snapshot_date - timedelta(days=days)
     if bench_closes is None:
         bench_closes = await _benchmark_closes(days)
 
