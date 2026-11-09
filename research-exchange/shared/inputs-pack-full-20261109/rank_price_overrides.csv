@@ -1,0 +1,18 @@
+engine_ticker,month_end,signal_from,signal_to,n_signals,rank_price,reason
+AGN,2015-02-27,2015-03-31,2016-02-29,12,291.36,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2015-01-30,2015-03-31,2016-01-29,11,266.54,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-12-31,2015-03-31,2015-12-31,10,257.41,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-11-28,2015-03-31,2015-11-30,9,270.61,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-10-31,2015-03-31,2015-10-30,8,242.74,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-09-30,2015-03-31,2015-09-30,7,241.28,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-08-29,2015-03-31,2015-08-31,6,226.98,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-07-31,2015-03-31,2015-07-31,5,214.26,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-06-30,2015-03-31,2015-06-30,4,223.05,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-05-30,2015-03-31,2015-05-29,3,211.54,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-04-30,2015-03-31,2015-04-30,2,204.33,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+AGN,2014-03-31,2015-03-31,2015-03-31,1,205.85,issuer routing: AGN = Actavis/Allergan plc for signals >=2015-03-17; contractual ABBV value after 2020-05-08
+CB,2015-12-31,2016-01-29,2016-12-30,12,116.85,"ticker reuse: for signals >=2016-01-15 CB is Chubb Ltd (ex-ACE), earlier prices from ACE"
+CB,2015-11-30,2016-01-29,2016-11-30,11,114.85,"ticker reuse: for signals >=2016-01-15 CB is Chubb Ltd (ex-ACE), earlier prices from ACE"
+CB,2015-09-30,2016-01-29,2016-09-30,9,103.4,"ticker reuse: for signals >=2016-01-15 CB is Chubb Ltd (ex-ACE), earlier prices from ACE"
+CB,2015-06-30,2016-01-29,2016-06-30,6,101.68,"ticker reuse: for signals >=2016-01-15 CB is Chubb Ltd (ex-ACE), earlier prices from ACE"
+CB,2015-03-31,2016-01-29,2016-03-31,3,111.49,"ticker reuse: for signals >=2016-01-15 CB is Chubb Ltd (ex-ACE), earlier prices from ACE"

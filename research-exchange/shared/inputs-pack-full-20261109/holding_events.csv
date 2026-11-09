@@ -1,0 +1,126 @@
+execution_key,price_series,event_id,type,ex_date,process_date,ratio,cash_per_share,child_first_close,child_or_acquirer,evidence_grade,acquirer_series,acquirer_verified,action,reason
+AGN_PLC,acq:AGN_PLC,AGN_PLC_ABBV_FINAL20200508,stock,2020-05-08,2020-05-08,0.866,120.3,,ABBV,A,acq:ABBV,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:ABBV
+BBWI,acq:BBWI,LB_VSCO,spin,2021-08-03,2021-08-03,0.3333333333333333,0.0,58.23,VSCO,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+BBWI,acq:BBWI,LB_BBWI,stock,2021-08-03,2021-08-03,1.0,0.0,,BBWI,B,,,skip,held series continues past ex (already successor/renamed series)
+BDX,acq:BDX,SPIN_BDX_EMBC,spin,2022-04-01,2022-04-01,0.2,0.0,30.5,EMBC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+CB,acq:CB,CB_ACE,stock,2016-01-15,2016-01-15,0.6019,62.93,,CB,A,acq:CB,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CB
+HWM,acq:HWM,AA_ARNC,spin,2016-11-01,2016-11-01,0.3333333333333333,0.0,23.0,AA(Alcoa Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HWM,acq:HWM,ARNC_HWM,spin,2020-04-01,2020-04-01,0.25,0.0,6.92,ARNC(Arconic Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HWM,acq:HWM,ARNC_HWM_NAME,stock,2020-04-01,2020-04-01,1.0,0.0,,HWM,B,acq:HWM,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:HWM
+OXY,acq:OXY,SPIN_OXY_CRC,spin,2014-12-01,2014-12-01,0.4,0.0,7.37,CRC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+WDC,acq:WDC,WDC_SNDK,spin,2025-02-24,2025-02-24,0.3333333333333333,0.0,48.6,SNDK,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ABMD,fmp:ABMD,ABMD_CASH,cash,2022-12-22,2022-12-22,0.0,380.0,,,C,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+ALXN,fmp:ALXN,ALXN_AZN_FINAL,stock,2021-07-21,2021-07-21,2.1243,60.0,,AZN,A,acq:AZN,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:AZN
+ANDV,fmp:ANDV,ANDV_MPC,stock,2018-10-01,2018-10-01,1.6269,19.7951,,MPC,C,acq:MPC,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:MPC
+ARG,fmp:ARG,ARG_CASH,cash,2016-05-23,2016-05-23,0.0,143.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+BBWI,fmp:BBWI,LB_VSCO,spin,2021-08-03,2021-08-03,0.3333333333333333,0.0,58.23,VSCO,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+BBWI,fmp:BBWI,LB_BBWI,stock,2021-08-03,2021-08-03,1.0,0.0,,BBWI,B,,,skip,held series continues past ex (already successor/renamed series)
+BBWI,fmp:BBWI+vendor_deadj#93736966,LB_VSCO,spin,2021-08-03,2021-08-03,0.3333333333333333,0.0,58.23,VSCO,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+BBWI,fmp:BBWI+vendor_deadj#93736966,LB_BBWI,stock,2021-08-03,2021-08-03,1.0,0.0,,BBWI,B,,,skip,held series continues past ex (already successor/renamed series)
+LB,fmp:BBWI+vendor_deadj(rename LB->BBWI)#93736966,LB_VSCO,spin,2021-08-03,2021-08-03,0.3333333333333333,0.0,58.23,VSCO,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+LB,fmp:BBWI+vendor_deadj(rename LB->BBWI)#93736966,LB_BBWI,stock,2021-08-03,2021-08-03,1.0,0.0,,BBWI,B,,,skip,held series continues past ex (already successor/renamed series)
+BHGE,fmp:BHGE,BHI_BHGE,stock,2017-07-05,2017-07-05,1.0,17.5,,BHGE,B,,,skip,held series continues past ex (already successor/renamed series)
+BIIB,fmp:BIIB,SPIN_BIIB_BIVV,spin,2017-02-01,2017-02-01,0.5,0.0,44.98,BIVV,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+BRCM,fmp:BRCM,BRCM_AVGO_FINAL_APPROX,stock,2016-02-01,2016-02-01,0.0242,51.4829,,AVGO,C,acq:AVGO,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:AVGO
+CAG,fmp:CAG,SPIN_CAG_LW,spin,2016-11-10,2016-11-10,0.3333333333333333,0.0,30.33,LW,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+CERN,fmp:CERN,CERN_ORCL_CASH,cash,2022-06-08,2022-06-08,0.0,95.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+COG,fmp:COG,COG_CTRA_NAME,stock,2021-10-01,2021-10-01,1.0,0.0,,CTRA,B,acq:CTRA,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CTRA
+CPRI,fmp:CPRI,KORS_CPRI,stock,2019-01-02,2019-01-02,1.0,0.0,,CPRI,B,,,skip,held series continues past ex (already successor/renamed series)
+COG,fmp:CTRA(rename COG->CTRA),COG_CTRA_NAME,stock,2021-10-01,2021-10-01,1.0,0.0,,CTRA,B,acq:CTRA,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CTRA
+CTXS,fmp:CTXS,CTXS_CASH,cash,2022-09-30,2022-09-30,0.0,104.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+CVC,fmp:CVC,CVC_CASH,cash,2016-06-21,2016-06-21,0.0,34.9,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+DRI,fmp:DRI,SPIN_DRI_FCPT,spin,2015-11-10,2015-11-10,0.3333333333333333,0.0,20.38,FCPT,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+DXC,fmp:DXC,CSC_DXC,stock,2017-04-03,2017-04-03,1.0,0.0,,DXC,A,,,skip,held series continues past ex (already successor/renamed series)
+DXC,fmp:DXC,CSC_CSRA,spin,2015-11-30,2015-11-30,1.0,10.5,31.51,CSRA,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+EBAY,fmp:EBAY,SPIN_EBAY_PYPL,spin,2015-07-20,2015-07-20,1.0,0.0,40.47,PYPL,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+EQT,fmp:EQT,SPIN_EQT_ETRN,spin,2018-11-13,2018-11-13,0.8,0.0,20.89,ETRN,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ESRX,fmp:ESRX,ESRX_CI,stock,2018-12-24,2018-12-24,0.2434,48.75,,CI,B,acq:CI,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CI
+FMC,fmp:FMC,SPIN_FMC_LTHM,spin,2019-03-01,2019-03-01,0.935301,0.0,12.9,LTHM,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE,SPIN_GE_GEHC,spin,2023-01-04,2023-01-04,0.3333333333333333,0.0,60.49,GEHC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE,SPIN_GE_GEV,spin,2024-04-02,2024-04-02,0.25,0.0,140.0,GEV,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE+deadjusted,SPIN_GE_GEHC,spin,2023-01-04,2023-01-04,0.3333333333333333,0.0,60.49,GEHC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE+deadjusted,SPIN_GE_GEV,spin,2024-04-02,2024-04-02,0.25,0.0,140.0,GEV,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE+vendor_deadj#64565e0d,SPIN_GE_GEHC,spin,2023-01-04,2023-01-04,0.3333333333333333,0.0,60.49,GEHC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE+vendor_deadj#64565e0d,SPIN_GE_GEV,spin,2024-04-02,2024-04-02,0.25,0.0,140.0,GEV,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE+vendor_deadj#fd8debcd,SPIN_GE_GEHC,spin,2023-01-04,2023-01-04,0.3333333333333333,0.0,60.49,GEHC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,fmp:GE+vendor_deadj#fd8debcd,SPIN_GE_GEV,spin,2024-04-02,2024-04-02,0.25,0.0,140.0,GEV,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GMCR,fmp:GMCR,GMCR_CASH,cash,2016-03-03,2016-03-03,0.0,92.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+HPE,fmp:HPE,SPIN_HPE_DXC,spin,2017-04-03,2017-04-03,0.085904,0.0,67.95,DXC,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HPE,fmp:HPE,SPIN_HPE_MFGP,spin,2017-09-01,2017-09-01,0.13732611,0.0,29.15,MFGP,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HPQ,fmp:HPQ,SPIN_HPQ_HPE,spin,2015-11-02,2015-11-02,1.0,0.0,14.49,HPE,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HWM,fmp:HWM,AA_ARNC,spin,2016-11-01,2016-11-01,0.3333333333333333,0.0,23.0,AA(Alcoa Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HWM,fmp:HWM,ARNC_HWM,spin,2020-04-01,2020-04-01,0.25,0.0,6.92,ARNC(Arconic Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HWM,fmp:HWM,ARNC_HWM_NAME,stock,2020-04-01,2020-04-01,1.0,0.0,,HWM,B,acq:HWM,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:HWM
+ARNC,fmp:HWM(rename ARNC->HWM),AA_ARNC,spin,2016-11-01,2016-11-01,0.3333333333333333,0.0,23.0,AA(Alcoa Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ARNC,fmp:HWM(rename ARNC->HWM),ARNC_HWM,spin,2020-04-01,2020-04-01,0.25,0.0,6.92,ARNC(Arconic Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ARNC,fmp:HWM(rename ARNC->HWM),ARNC_HWM_NAME,stock,2020-04-01,2020-04-01,1.0,0.0,,HWM,B,acq:HWM,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:HWM
+ILMN,fmp:ILMN,SPIN_ILMN_GRAL,spin,2024-06-25,2024-06-25,0.1666666666666666,0.0,17.0,GRAL,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ILMN,fmp:ILMN+deadjusted,SPIN_ILMN_GRAL,spin,2024-06-25,2024-06-25,0.1666666666666666,0.0,17.0,GRAL,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+IP,fmp:IP,SPIN_IP_SLVM,spin,2021-10-01,2021-10-01,0.0909090909090909,0.0,33.0,SLVM,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+K,fmp:K,SPIN_K_KLG,spin,2023-10-02,2023-10-02,0.25,0.0,13.35,KLG,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+KMB,fmp:KMB,SPIN_KMB_HYH,spin,2014-11-03,2014-11-03,0.125,0.0,38.45,HYH,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+KSU,fmp:KSU,KSU_CP_FINAL20211214,stock,2021-12-14,2021-12-14,2.884,90.0,,CP,A,acq:CP,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CP
+LEN,fmp:LEN,SPIN_LEN_MRP,spin,2025-02-10,2025-02-10,0.5,0.0,23.01,MRP,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+LLTC,fmp:LLTC,LLTC_ADI_FINAL20170310,stock,2017-03-10,2017-03-10,0.2321,46.0,,ADI,A,acq:ADI,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:ADI
+MJN,fmp:MJN,MJN_CASH,cash,2017-06-15,2017-06-15,0.0,90.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+MMM,fmp:MMM,SPIN_MMM_SOLV,spin,2024-04-01,2024-04-01,0.25,0.0,69.1,SOLV,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+MMM,fmp:MMM+vendor_deadj#39804a1d,SPIN_MMM_SOLV,spin,2024-04-01,2024-04-01,0.25,0.0,69.1,SOLV,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+MRK,fmp:MRK,SPIN_MRK_OGN,spin,2021-06-03,2021-06-03,0.1,0.0,37.0,OGN,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+NI,fmp:NI,SPIN_NI_CPGX,spin,2015-07-02,2015-07-02,1.0,0.0,30.34,CPGX,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+NLSN,fmp:NLSN,NLSN_CASH,cash,2022-10-12,2022-10-12,0.0,28.0,,,C,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+O,fmp:O,SPIN_O_ONL,spin,2021-11-15,2021-11-15,0.1,0.0,21.3,ONL,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+OKE,fmp:OKE,SPIN_OKE_OGS,spin,2014-02-03,2014-02-03,0.25,0.0,33.63,OGS,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+OXY,fmp:OXY,SPIN_OXY_CRC,spin,2014-12-01,2014-12-01,0.4,0.0,7.37,CRC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+PFE,fmp:PFE,SPIN_PFE_VTRS,spin,2020-11-17,2020-11-17,0.124079,0.0,16.34,VTRS,C,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+RTX,fmp:RTX,SPIN_UTX_CARR,spin,2020-04-03,2020-04-03,1.0,0.0,16.92,CARR,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+RTX,fmp:RTX,SPIN_UTX_OTIS,spin,2020-04-03,2020-04-03,0.5,0.0,47.32,OTIS,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+T,fmp:T,SPIN_T_WBD,spin,2022-04-11,2022-04-11,0.241917,0.0,24.78,WBD,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+T,fmp:T+vendor_deadj#2d3e5ea8,SPIN_T_WBD,spin,2022-04-11,2022-04-11,0.241917,0.0,24.78,WBD,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+TIF,fmp:TIF,TIF_LVMH_FINAL20210107,cash,2021-01-07,2021-01-07,0.0,131.5,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+TSS,fmp:TSS,TSS_GPN,stock,2019-09-18,2019-09-18,0.8101,0.0,,GPN,A,acq:GPN,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:GPN
+TWTR,fmp:TWTR,TWTR_CASH,cash,2022-10-27,2022-10-27,0.0,54.2,,,C,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+VTR,fmp:VTR,SPIN_VTR_CCP,spin,2015-08-18,2015-08-18,0.25,0.0,35.58,CCP,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+WBA,fmp:WBA,WAG_WBA,stock,2014-12-31,2014-12-31,1.0,0.0,,WBA,A,,,skip,held series continues past ex (already successor/renamed series)
+WDC,fmp:WDC,WDC_SNDK,spin,2025-02-24,2025-02-24,0.3333333333333333,0.0,48.6,SNDK,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+WFM,fmp:WFM,WFM_CASH,cash,2017-08-28,2017-08-28,0.0,42.0,,,B,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+WRK,fmp:WRK,SPIN_WRK_NGVT,spin,2016-05-16,2016-05-16,0.1666666666666666,0.0,26.86,NGVT,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+WRK,fmp:WRK,WRK_SW,stock,2024-07-05,2024-07-05,1.0,5.0,,SW,A,acq:SW,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:SW
+XLNX,fmp:XLNX,XLNX_AMD,stock,2022-02-14,2022-02-14,1.7234,0.0,,AMD,A,acq:AMD,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:AMD
+XRX,fmp:XRX,SPIN_XRX_CNDT,spin,2017-01-03,2017-01-03,0.8,0.0,13.72,CNDT,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+YUM,fmp:YUM,SPIN_YUM_YUMC,spin,2016-11-01,2016-11-01,1.0,0.0,26.19,YUMC,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ADT,massive:ADT,ADT_CASH,cash,2016-05-02,2016-05-02,0.0,42.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+ALTR,massive:ALTR,ALTR_CASH,cash,2015-12-28,2015-12-28,0.0,54.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+APC,massive:APC,APC_OXY,stock,2019-08-09,2019-08-09,0.2934,59.0,,OXY,A,acq:OXY,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:OXY
+ARNC,massive:ARNC,AA_ARNC,spin,2016-11-01,2016-11-01,0.3333333333333333,0.0,23.0,AA(Alcoa Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ARNC,massive:ARNC,ARNC_HWM,spin,2020-04-01,2020-04-01,0.25,0.0,6.92,ARNC(Arconic Corp),B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+ARNC,massive:ARNC,ARNC_HWM_NAME,stock,2020-04-01,2020-04-01,1.0,0.0,,HWM,B,acq:HWM,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:HWM
+BCR,massive:BCR,BCR_BDX,stock,2017-12-29,2017-12-29,0.5077,222.93,,BDX,A,acq:BDX,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:BDX
+CA,massive:CA,CA_AVGO_CASH,cash,2018-11-05,2018-11-05,0.0,44.5,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+CAM,massive:CAM,CAM_SLB,stock,2016-04-04,2016-04-04,0.716,14.44,,SLB,C,acq:SLB,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:SLB
+CB,massive:CB,CB_ACE,stock,2016-01-15,2016-01-15,0.6019,62.93,,CB,A,acq:CB,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CB
+CHK,massive:CHK,SPIN_CHK_SSE,spin,2014-07-01,2014-07-01,14.285714285714285,0.0,25.06,SSE,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+CSRA,massive:CSRA,CSRA_CASH,cash,2018-04-04,2018-04-04,0.0,40.75,,,B,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+DD,massive:DD,SPIN_DD_CC,spin,2015-07-01,2015-07-01,0.75314,0.0,16.51,CC,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+DD,massive:DD,UNRES_DD_Q,unresolved,2025-11-03,2025-11-03,,0.0,,,,,,fail,unresolved corporate action while held -> path UNKNOWN corporate_action_unresolved
+GAS,massive:GAS,GAS_CASH,cash,2016-07-01,2016-07-01,0.0,66.0,,,C,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+GE,massive:GE,SPIN_GE_GEHC,spin,2023-01-04,2023-01-04,0.3333333333333333,0.0,60.49,GEHC,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+GE,massive:GE,SPIN_GE_GEV,spin,2024-04-02,2024-04-02,0.25,0.0,140.0,GEV,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+HAR,massive:HAR,HAR_CASH,cash,2017-03-13,2017-03-13,0.0,112.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+HSP,massive:HSP,HSP_CASH,cash,2015-09-03,2015-09-03,0.0,90.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+KORS,massive:KORS,KORS_CPRI,stock,2019-01-02,2019-01-02,1.0,0.0,,CPRI,B,acq:CPRI,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:CPRI
+KRFT,massive:KRFT,KRFT_KHC,stock,2015-07-06,2015-07-06,1.0,16.5,,KHC,C,acq:KHC,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:KHC
+LB,massive:LB,LB_VSCO,spin,2021-08-03,2021-08-03,0.3333333333333333,0.0,58.23,VSCO,B,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
+LB,massive:LB,LB_BBWI,stock,2021-08-03,2021-08-03,1.0,0.0,,BBWI,B,acq:BBWI,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:BBWI
+PCL,massive:PCL,PCL_WY,stock,2016-02-22,2016-02-22,1.6,0.0,,WY,A,acq:WY,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:WY
+PCP,massive:PCP,PCP_BRK_FINAL_20160129,cash,2016-01-29,2016-01-29,0.0,235.0,0.0,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+PLL,massive:PLL,PLL_CASH,cash,2015-08-31,2015-08-31,0.0,127.2,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+RHT,massive:RHT,RHT_CASH,cash,2019-07-09,2019-07-09,0.0,190.0,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+SCG,massive:SCG,SCG_D,stock,2019-01-02,2019-01-02,0.669,0.0,,D,A,acq:D,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:D
+SE,massive:SE,SE_SPECTRA_ENB_FINAL,stock,2017-02-27,2017-02-27,0.984,0.0,,ENB,A,acq:ENB,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:ENB
+SNDK,massive:SNDK,SNDK_WDC,stock,2016-05-12,2016-05-12,0.2387,67.5,,WDC,A,acq:WDC,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:WDC
+SNI,massive:SNI,SNI_DISCK_FINAL,stock,2018-03-06,2018-03-06,1.0584,65.82,,DISCK,A,acq:DISCK,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:DISCK
+TE,massive:TE,TE_CASH,cash,2016-07-01,2016-07-01,0.0,27.55,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+XL,massive:XL,XL_CASH,cash,2018-09-12,2018-09-12,0.0,57.6,,,A,,,apply,"cash deal: n x cash_per_share to cash, holding ends"
+AGN_PLC,v16:ACT_AGN_sameplc,AGN_PLC_ABBV_FINAL20200508,stock,2020-05-08,2020-05-08,0.866,120.3,,ABBV,A,acq:ABBV,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:ABBV
+AGN_LEGACY,v16:oldAGN_physical,AGN_OLD_ACT_FINAL_20150317,stock,2015-03-17,2015-03-17,0.3683,129.22,,AGN_PLC,A,acq:AGN_PLC,True,apply,stock deal: ratio x acquirer shares (+cash); follow acq:AGN_PLC
+UAA,v16:parent_ClassA_physical,UAA_CLASSC_FIRST_NORMAL_20160408,spin,2016-04-08,2016-04-08,1.0,0.0,44.02,UA.C,A,,,apply,"spin/special: child value (ratio x child_first_close, fee c) + cash to cash"
