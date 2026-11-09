@@ -1,0 +1,91 @@
+{
+ "v18_vs_v18_kors_max_abs_wealth_diff": 1.7763568394002505e-14,
+ "v18_vs_v18_kors_status_identical": true,
+ "v18_vs_v18_kors_failreason_identical": true,
+ "status_changed_paths": 0,
+ "fail_reason_changed_paths": 0,
+ "fail_ticker_changed_paths": 0,
+ "fail_date_changed_paths": 0,
+ "rebalance_pick_changes_by_K": {
+  "2": 363,
+  "3": 590
+ },
+ "K1_rebalances_with_pick_change": 0,
+ "affected_cells": 190,
+ "affected_cells_by_K": {
+  "2": 82,
+  "3": 108
+ },
+ "changed_paths": 796,
+ "changed_paths_by_K": {
+  "2": 320,
+  "3": 476
+ },
+ "K1_changed_paths": 0,
+ "anchors": [
+  {
+   "cell": "W9H2K1",
+   "n_known_v17": 12.0,
+   "median_CAGR_v17": 0.1673879612628843,
+   "median_CAGR_v18": 0.1673879612628843,
+   "median_MDD_v17": -0.6120441411051505,
+   "median_MDD_v18": -0.6120441411051505,
+   "n_phases_changed": 0
+  },
+  {
+   "cell": "W10H2K1",
+   "n_known_v17": 12.0,
+   "median_CAGR_v17": 0.4524028757461436,
+   "median_CAGR_v18": 0.4524028757461436,
+   "median_MDD_v17": -0.5177503642516423,
+   "median_MDD_v18": -0.5177503642516423,
+   "n_phases_changed": 0
+  },
+  {
+   "cell": "W12H4K1",
+   "n_known_v17": 12.0,
+   "median_CAGR_v17": 0.43026194183455774,
+   "median_CAGR_v18": 0.43026194183455774,
+   "median_MDD_v17": -0.5200419878403552,
+   "median_MDD_v18": -0.5200419878403552,
+   "n_phases_changed": 0
+  },
+  {
+   "cell": "W12H6K1",
+   "n_known_v17": 12.0,
+   "median_CAGR_v17": 0.38947117516286367,
+   "median_CAGR_v18": 0.38947117516286367,
+   "median_MDD_v17": -0.5158898148755808,
+   "median_MDD_v18": -0.5158898148755808,
+   "n_phases_changed": 0
+  },
+  {
+   "cell": "W12H12K1",
+   "n_known_v17": 12.0,
+   "median_CAGR_v17": 0.3639093811529587,
+   "median_CAGR_v18": 0.3639093811529587,
+   "median_MDD_v17": -0.5601659751037344,
+   "median_MDD_v18": -0.5601659751037344,
+   "n_phases_changed": 0
+  }
+ ],
+ "annual_W12H12K1_Jan": [
+  {
+   "CAGR_v17": 0.6053831083649448,
+   "CAGR_v18": 0.6053831083649448,
+   "wealth_v17": 113.78062437077092,
+   "wealth_v18": 113.78062437077092
+  }
+ ],
+ "abs_median_CAGR_delta_pp": {
+  "count": 190.0,
+  "mean": 0.3304296245867474,
+  "std": 0.4628438308254735,
+  "min": 0.0,
+  "25%": 0.0,
+  "50%": 0.14676266447007924,
+  "75%": 0.5281424195817147,
+  "max": 2.872803308639482
+ },
+ "cells_median_changed_gt_0p01pp": 112
+}
