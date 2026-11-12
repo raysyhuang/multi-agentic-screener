@@ -18,7 +18,8 @@ def ekey(t,d):
     if t=='AGN': return 'AGN_LEGACY' if d<'2015-03-17' else 'AGN_PLC'
     return 'AGN_PLC' if t=='ACT' else t
 def fl(x): return float(x) if x not in('',None) else 0.0
-def ym(m): return '%04d-%02d'%(2015+m//12,m%12+1)
+BASE_YEAR=int(os.environ.get('BASE_YEAR','2015'))   # first year of the 10-year window (2005 for Queen's cross-period pack)
+def ym(m): return '%04d-%02d'%(BASE_YEAR+m//12,m%12+1)
 class Fail(Exception): pass
 def run(W,H,K,ph):
     END=first[ym(120+ph-1)]; rebs=[]; m=ph-1

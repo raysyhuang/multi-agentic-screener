@@ -1,0 +1,7 @@
+paths 72 mismatching (>1e-9 or status) 0 max abs diff 3.11e-15
+W10H2 baseline  n=12 median CAGR 45.24% range 33.85%..50.29% median MDD -51.78% worst -54.26% median cash 0.0% beat SPY total 12/12
+W10H2 skip1     n=12 median CAGR 32.65% range 18.27%..50.43% median MDD -55.19% worst -55.35% median cash 0.0% beat SPY total 12/12
+W10H2 spy_sma10 n=12 median CAGR 36.06% range 25.59%..43.70% median MDD -53.62% worst -58.73% median cash 19.0% beat SPY total 12/12
+W12H4 baseline  n=12 median CAGR 43.03% range 30.74%..48.77% median MDD -52.00% worst -58.09% median cash 0.2% beat SPY total 12/12
+W12H4 skip1     n=12 median CAGR 39.40% range 34.43%..52.33% median MDD -49.35% worst -53.48% median cash 0.2% beat SPY total 12/12
+W12H4 spy_sma10 n=12 median CAGR 33.24% range 25.45%..48.65% median MDD -55.39% worst -58.09% median cash 21.6% beat SPY total 12/12

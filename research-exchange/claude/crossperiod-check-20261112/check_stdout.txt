@@ -1,0 +1,4 @@
+paths 25 match 25 max abs diff CAGR/MDD 1.14e-13
+W10H2K1 known 12 median CAGR -4.77% min -14.54% max 4.61% median MDD -89.50%
+W12H4K1 known 9 median CAGR -10.45% min -15.11% max 4.46% median MDD -92.98%
+W12H12K1P1 CAGR -7.49% MDD -83.81% final 0.4590
