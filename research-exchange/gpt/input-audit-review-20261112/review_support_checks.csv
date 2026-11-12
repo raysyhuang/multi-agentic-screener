@@ -1,0 +1,14 @@
+check,n,result,detail
+path_status_reason,5184,PASS,UNKNOWN=466; pick_not_tradable=417; corporate_action_unresolved=49; reasons identical
+queen_metric_diff,4718,PASS,final_multiple max_abs_diff=1.256523773918161e-10
+queen_metric_diff,4718,PASS,CAGR max_abs_diff=1.356692536091941e-13
+queen_metric_diff,4718,PASS,daily_MDD max_abs_diff=3.69038133385402e-13
+untradable_rebalance_display,417,DISCLOSED_DIFFERENCE,Queen executed-count=0 for 417; GPT attempted-count range=3..94; actual attempts before whole-path invalidation vs post-hoc suppression
+massive_vs_fmp_monthly_returns,6801,PASS_WITHIN_CLAIMED_TOLERANCE,0 observations exceed 0.5%; maximum relative difference 0.40266%
+intervals_vs_eligibility_dates,132,9_DATE_DIFFERENCES,123 of 132 signal dates agree
+member_at_signal_vs_fja05680_sp500,132,NOT_INDEPENDENTLY_CHECKED,reference snapshot/list not included in the supplied pack for an independent reconstruction
+join_dates_vs_wikipedia,173,NOT_INDEPENDENTLY_CHECKED,full source snapshots and exact sampled list not preserved for this review
+all_fixes_rank_delta,1584,ARNC_CONFIRMED,nine fixes + ARNC/EQT/HWM vendor-scale adjustments: Top1 changes=3; Top2=5; Top3=5; Top5=8; Top10=21; 752 changed rank-return cells
+all_fixes_changed_pick_paths,364,REBALANCE_EXPOSURE,Unique answer-key paths whose rebalance pick list changes on one of the five changed Top3 tables
+all_fixes_execution_replay,5184,RERUN_BUT_NOT_FULLY_VERIFIED,4632 KNOWN / 552 UNKNOWN; 363 final multiples changed vs nine-fix output; 86 known-to-unknown; 111 NOT_IN_PACK and 36 pick_not_tradable within changed-run deltas; 787 field diffs vs frozen Queen answer key
+stoploss_10_12_h2_4,324,UNCHANGED_AND_VERIFIED,"No ranking changes in W10-12; all known, max CAGR/MDD differences versus Queen ~1e-13"

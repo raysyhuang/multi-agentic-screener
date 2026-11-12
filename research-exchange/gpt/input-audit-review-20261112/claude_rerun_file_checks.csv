@@ -1,0 +1,3 @@
+file_a,file_b,bytes_a,bytes_b,byte_identical
+paths_5184_pack_inputs.csv,paths_5184_corrected_inputs.csv,834956,834956,True
+stoploss_324_pack_inputs.csv,stoploss_324_corrected_inputs.csv,65334,65334,True

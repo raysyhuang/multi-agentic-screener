@@ -1,0 +1,10 @@
+security,before_date,after_date,measure,before_value,after_value,after_over_before,note
+GOOG,2014-04-02,2014-04-03,Massive raw close,1135.1,569.74,0.5019293454321205,Raw close shows ~2:1 step across Google Class C stock dividend
+GOOG,2014-04-02,2014-04-03,Massive adjusted close,56.755,28.487,0.5019293454321204,Massive adjusted close still shows ~2:1 step; adjustment did not remove this event
+TMK,2014-07-01,2014-07-02,Massive close,82.39,54.83,0.6654933851195534,3-for-2 split payment/ex-date boundary
+DISCA,2014-08-06,2014-08-07,Massive close,83.02,40.975,0.4935557696940497,Series C stock dividend boundary; exact adjustment factor not inferred from price move alone
+BF.B,2016-08-18,2016-08-19,Massive close,99.65,50.4,0.5057701956848971,2-for-1 split boundary
+BLL,2017-05-16,2017-05-17,Massive close,80.81,39.98,0.49474074990718964,2-for-1 stock split boundary
+BF.B,2018-02-28,2018-03-01,Massive close,69.87,55.37,0.7924717332188349,5-for-4 stock dividend boundary
+PCLN / BKNG,2018-01-31,2018-02-28,Massive legacy PCLN close vs frozen-pack BKNG,1912.05,81.362,1.063805862817395,25:1 2026 split means PCLN close on current-share basis = 76.482; Massive exposes legacy PCLN separately
+IR / TT,2020-02-28,2020-03-02,Massive close,129.04,100.55,0.7792157470551767,Old IR becomes TT; new IR is Gardner Denver. 1/1.289=0.77580 versus close ratio 0.77921.
