@@ -1,0 +1,15 @@
+tables ranked: 1584
+Top3 changed after corrections: 0
+Top10 changed after corrections: 3 [('2018-04-30', 4), ('2020-07-31', 1), ('2020-10-30', 4)]
+affected (signal, W, ticker) cells: 674
+  BF.B   cells 156  signals 2016-08-31..2019-02-28  worst pack return   -56.5%  best corrected rank 21  closest gap to Top3 16.7 pp
+  BKNG   cells  78  signals 2018-02-28..2019-01-31  worst pack return   -96.4%  best corrected rank 9  closest gap to Top3 10.5 pp
+  BLL    cells  78  signals 2017-05-31..2018-04-30  worst pack return   -51.2%  best corrected rank 42  closest gap to Top3 13.1 pp
+  DISCA  cells  36  signals 2014-12-31..2015-07-31  worst pack return   -66.0%  best corrected rank 388  closest gap to Top3 61.8 pp
+  GOOGL  cells  10  signals 2014-12-31..2015-03-31  worst pack return   -56.3%  best corrected rank 342  closest gap to Top3 76.2 pp
+  IR     cells 144  signals 2020-03-31..2021-02-26  worst pack return   -81.4%  best corrected rank n/a (removed)  closest gap to Top3 n/a pp
+  TMK    cells  28  signals 2014-12-31..2015-06-30  worst pack return   -38.9%  best corrected rank 217  closest gap to Top3 53.4 pp
+  TT     cells 144  signals 2020-03-31..2021-02-26  worst pack return     0.0%  best corrected rank 7  closest gap to Top3 4.8 pp
+scan rows (monthly move <= -20% or >= +60% inside a usable lookback): 932
+vendor cross-check: 6801 monthly-return comparisons (FMP execution vs Massive rank), disagreements >0.5%: 0
+membership intervals vs eligibility: 9 of 132 signal dates differ

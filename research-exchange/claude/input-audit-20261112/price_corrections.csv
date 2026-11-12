@@ -1,0 +1,10 @@
+engine_ticker,kind,month_end,factor,event,evidence
+BKNG,scale_prices_on_or_before,2018-01-31,0.04,25-for-1 split effective 2026-04-06; prices under the old PCLN ticker were left unadjusted,"FMP splits-company BKNG: 2026-04-06 25:1. FMP close 2018-01-31 = 76.48 (pack 1912.05); 2018-02-28 = 81.36 (pack 81.362)"
+BF.B,scale_prices_on_or_before,2016-07-29,0.5,2-for-1 split 2016-08-19 not applied,FMP splits-company BF-B: 2016-08-19 2:1
+BF.B,scale_prices_on_or_before,2018-02-28,0.8,5-for-4 split 2018-03-01 not applied,FMP splits-company BF-B: 2018-03-01 5:4
+BLL,scale_prices_on_or_before,2017-04-28,0.5,2-for-1 split 2017-05-17 not applied,FMP splits-company BALL: 2017-05-17 2:1
+GOOGL,scale_prices_on_or_before,2014-03-31,0.5005005005005005,class C share dividend 2014-04-03 (999:500) not applied,FMP splits-company GOOGL: 2014-04-03 999:500
+GOOG,scale_prices_on_or_before,2014-03-31,0.5005005005005005,class C share dividend 2014-04-03 (999:500) not applied,FMP splits-company GOOGL: 2014-04-03 999:500
+TMK,scale_prices_on_or_before,2014-06-30,0.6666666666666666,3-for-2 split 2014-07-02 not applied (Torchmark; now GL),FMP splits-company GL: 2014-07-02 3:2
+DISCA,scale_prices_on_or_before,2014-07-31,0.5109862033725089,class C share dividend 2014-08-07 (1957:1000) not applied (Discovery; now WBD),FMP splits-company WBD: 2014-08-07 1957:1000
+TT,identity_stitch,2020-02-28,0.7757951900698216,"pack engine ticker IR switches issuer on 2020-03-02: before = Ingersoll-Rand plc (today's TT), after = Gardner Denver (new IR). Pack shows IR -80.8% in March 2020, treats new IR as seasoned and TT as a new member until 2021-03","FMP splits-company TT: 2020-03-02 1289:1000 (spin adjustment); pack IR 2020-02-28 = 129.04, 2020-03-31 = 24.80; pack TT first price 2020-03-31 = 82.59"

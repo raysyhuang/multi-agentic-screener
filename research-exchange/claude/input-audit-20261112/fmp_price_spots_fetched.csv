@@ -1,0 +1,25 @@
+fmp_symbol,date,endpoint,value,pack_value,pack_field,note
+LUV,2015-01-02,historical-price-eod-light,42.69,42.69,execution close fmp:LUV,annual-champion path buy
+LUV,2016-01-04,historical-price-eod-light,41.96,,execution close fmp:LUV,annual-champion path sell
+NFLX,2016-01-04,historical-price-eod-light,11,,execution close fmp:NFLX,annual-champion path buy
+NFLX,2017-01-03,historical-price-eod-light,12.75,,execution close fmp:NFLX,annual-champion path sell
+NVDA,2017-01-03,historical-price-eod-light,2.55,2.55,execution close fmp:NVDA,annual-champion path buy
+NVDA,2018-01-02,historical-price-eod-light,4.98,4.98,execution close fmp:NVDA,annual-champion path sell
+NRG,2018-01-02,historical-price-eod-light,28.9,,execution close fmp:NRG,annual-champion path buy
+NRG,2019-01-02,historical-price-eod-light,38.11,,execution close fmp:NRG,annual-champion path sell
+AMD,2019-01-02,historical-price-eod-light,18.83,,execution close fmp:AMD,annual-champion path buy
+AMD,2021-01-04,historical-price-eod-light,92.3,,execution close fmp:AMD,annual-champion path sell (held two years)
+NVDA,2021-01-04,historical-price-eod-light,13.11,13.11,execution close fmp:NVDA,annual-champion path buy
+NVDA,2022-01-03,historical-price-eod-light,30.12,30.12,execution close fmp:NVDA,annual-champion path sell
+DVN,2022-01-03,historical-price-eod-light,45.57,,execution close fmp:DVN,annual-champion path buy
+DVN,2023-01-03,historical-price-eod-light,58.12,,execution close fmp:DVN,annual-champion path sell
+OXY,2023-01-03,historical-price-eod-light,61.05,,execution close fmp:OXY,annual-champion path buy
+OXY,2024-01-02,historical-price-eod-light,60.05,,execution close fmp:OXY,annual-champion path sell
+NVDA,2024-01-02,historical-price-eod-light,48.17,48.17,execution close fmp:NVDA,annual-champion path buy
+NVDA,2025-01-02,historical-price-eod-light,138.31,138.31,execution close fmp:NVDA,annual-champion path final sale
+SPY,2015-01-02,historical-price-eod-dividend-adjusted adjClose,169.27,169.27,queen spy_daily.csv,
+SPY,2017-12-29,historical-price-eod-dividend-adjusted adjClose,233.7,233.7,queen spy_daily.csv,
+SPY,2018-12-31,historical-price-eod-dividend-adjusted adjClose,223.01,223.01,queen spy_daily.csv,
+SPY,2025-01-02,historical-price-eod-dividend-adjusted adjClose,573.36,573.36,queen spy_daily.csv,
+BKNG,2018-01-31,historical-price-eod-light,76.48,1912.05,rank_prices_month_end BKNG,pack value is 25x too high (unadjusted)
+BKNG,2018-02-28,historical-price-eod-light,81.36,81.362,rank_prices_month_end BKNG,
