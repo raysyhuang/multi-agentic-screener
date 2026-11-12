@@ -1,0 +1,116 @@
+{
+ "interval_rows": 778,
+ "interval_unique_tickers": 765,
+ "open_intervals": 467,
+ "max_start_date": "2024-12-23",
+ "max_end_date_exclusive": "2026-08-18",
+ "end_dates_in_2025_or_later": 36,
+ "eligibility_rows": 66539,
+ "signal_dates": 132,
+ "first_signal": "2014-12-31",
+ "last_signal": "2025-11-28",
+ "eligibility_rows_member_false": 0,
+ "eligibility_dup_date_ticker": 0,
+ "overlapping_interval_pairs_same_ticker": 0,
+ "year_end_signals": [
+  "2014-12-31",
+  "2015-12-31",
+  "2016-12-30",
+  "2017-12-29",
+  "2018-12-31",
+  "2019-12-31",
+  "2020-12-31",
+  "2021-12-31",
+  "2022-12-30",
+  "2023-12-29",
+  "2024-12-31"
+ ],
+ "year_end_2014_2024_all_match": true,
+ "mismatch_dates": [
+  {
+   "signal_date": "2025-03-31",
+   "n_members_from_intervals": 499,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 4
+  },
+  {
+   "signal_date": "2025-04-30",
+   "n_members_from_intervals": 499,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 4
+  },
+  {
+   "signal_date": "2025-05-30",
+   "n_members_from_intervals": 498,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 5
+  },
+  {
+   "signal_date": "2025-06-30",
+   "n_members_from_intervals": 498,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 5
+  },
+  {
+   "signal_date": "2025-07-31",
+   "n_members_from_intervals": 495,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 8
+  },
+  {
+   "signal_date": "2025-08-29",
+   "n_members_from_intervals": 493,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 10
+  },
+  {
+   "signal_date": "2025-09-30",
+   "n_members_from_intervals": 490,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 13
+  },
+  {
+   "signal_date": "2025-10-31",
+   "n_members_from_intervals": 489,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 14
+  },
+  {
+   "signal_date": "2025-11-28",
+   "n_members_from_intervals": 486,
+   "n_members_from_eligibility": 503,
+   "n_only_in_intervals": 0,
+   "n_only_in_eligibility": 17
+  }
+ ],
+ "n_matching_dates": 123,
+ "any_mismatched_name_eligible_final_true": false,
+ "union_names_only_in_eligibility": [
+  "APP",
+  "COIN",
+  "DASH",
+  "DDOG",
+  "EME",
+  "EXE",
+  "FISV",
+  "HOOD",
+  "IBKR",
+  "PSKY",
+  "Q",
+  "SNDK",
+  "SOLS",
+  "TKO",
+  "TTD",
+  "WSM",
+  "XYZ"
+ ],
+ "union_names_only_in_intervals": []
+}

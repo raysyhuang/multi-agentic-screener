@@ -1,0 +1,13 @@
+signals=132  interval_rows=778
+mismatched_signal_days=9
+2025-03-31: membership=503, intervals=499, missing=['DASH', 'EXE', 'TKO', 'WSM'], extra=[]
+2025-04-30: membership=503, intervals=499, missing=['DASH', 'EXE', 'TKO', 'WSM'], extra=[]
+2025-05-30: membership=503, intervals=498, missing=['COIN', 'DASH', 'EXE', 'TKO', 'WSM'], extra=[]
+2025-06-30: membership=503, intervals=498, missing=['COIN', 'DASH', 'EXE', 'TKO', 'WSM'], extra=[]
+2025-07-31: membership=503, intervals=495, missing=['COIN', 'DASH', 'DDOG', 'EXE', 'TKO', 'TTD', 'WSM', 'XYZ'], extra=[]
+2025-08-29: membership=503, intervals=493, missing=['COIN', 'DASH', 'DDOG', 'EXE', 'IBKR', 'PSKY', 'TKO', 'TTD', 'WSM', 'XYZ'], extra=[]
+2025-09-30: membership=503, intervals=490, missing=['APP', 'COIN', 'DASH', 'DDOG', 'EME', 'EXE', 'HOOD', 'IBKR', 'PSKY', 'TKO', 'TTD', 'WSM', 'XYZ'], extra=[]
+2025-10-31: membership=503, intervals=489, missing=['APP', 'COIN', 'DASH', 'DDOG', 'EME', 'EXE', 'HOOD', 'IBKR', 'PSKY', 'SOLS', 'TKO', 'TTD', 'WSM', 'XYZ'], extra=[]
+2025-11-28: membership=503, intervals=486, missing=['APP', 'COIN', 'DASH', 'DDOG', 'EME', 'EXE', 'FISV', 'HOOD', 'IBKR', 'PSKY', 'Q', 'SNDK', 'SOLS', 'TKO', 'TTD', 'WSM', 'XYZ'], extra=[]
+missing_but_eligible=[]
+No missing interval-member is eligible_final on checked signals.
