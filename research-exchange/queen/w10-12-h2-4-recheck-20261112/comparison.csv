@@ -1,0 +1,26 @@
+claim,item,their_number,queen_recompute,match,convention_note
+1,Top1 band paths computable,108/108,108/108,MATCH,
+1,Top1 min CAGR,20.5%,20.54%,MATCH,"paths_summary CAGR, 108 K1 paths"
+1,Top1 median CAGR,40.1%,40.42%,NEAR (median convention),standard median of 108 = 40.42%; 54th/55th sorted values = 40.12%/40.73% -> 40.1% equals the lower-middle value
+1,Top1 max CAGR,65.0%,64.96%,MATCH,"paths_summary CAGR, 108 K1 paths"
+2,W10-12 x H1-12 K1 cell medians all in 30%-45%,36/36 in band,"35/36 in band; min 30.19% (W11H12), max 45.24% (W10H2); UNKNOWN paths in these 432: 0",NEAR (W10H2 45.24% just above 45%),median over known phases; equals cells_12phase_medians.csv
+2,H2-4 not special,H2-4 not special,"mean of H2-4 cell medians 40.86% vs other H 36.33%; rank of H2-4 cells among 36: 1,11,6,8,16,12,17,7,2",see table,qualitative
+3,Years 2016-2024 where majority of 108 beat SPY,"7 of 9; lag 2018, 2023","7 of 9; lag [2018, 2023]",MATCH,"calendar year last-close to last-close; SPY FMP dividend-adjusted, same dates"
+4,Top2 median CAGR,29.5%,29.46%,MATCH,"108 K2 paths, all known=True"
+4,Top3 median CAGR,21.4%,21.39%,MATCH,"108 K3 paths, all known=True"
+4,Contemporaneous SPY CAGR,~13% (from memory),"12.97% (2015-01-02->2025-01-02 close-to-close); per-path same-window median 13.41%, range 12.16%-15.20%",MATCH,"FMP SPY dividend-adjusted (total-return proxy), no fees"
+5,NVDA share of Top1 total log return,77%,pooled 79.44% (incl. own fees) / 80.14% (market only); median per-path 80.53%,NEAR,"daily attribution, holding over (t-1,t]; fees split by leg; alt (rebalance-day move to new pick): pooled 78.64%, median 79.78%; mean per-path 81.01%"
+5,NVDA holding time share,36%,pooled day-weighted 36.36%; median per-path 36.71%; equity-weighted median 45.59%,MATCH,trading sessions held / sessions in path
+5,Median CAGR with NVDA periods as cash,~8%,6.77% (keep all fees) / 7.08% (NVDA-leg fees also removed),NEAR,NAV flat on NVDA-held sessions; other returns unchanged (no reinvestment into another pick); alt off-by-one attribution: 7.43%
+6,W9 H2-4 K1 cell medians,17%-28%,"H2 16.74%, H3 27.46%, H4 28.33%",MATCH,"12 phases each, all known"
+6,2016 median calendar return W9 vs W10-12,W9 ~+11% vs W10-12 ~+86%,W9 11.29% vs W10-12 85.59%,MATCH,"calendar year, median over 36 / 108 paths"
+6,2022 median calendar return W9 vs W10-12,W9 ~-21% vs W10-12 ~+34%,W9 -20.57% vs W10-12 34.30%,MATCH,"calendar year, median over 36 / 108 paths"
+7,Top1 -> Top3 median,~40% -> ~21%,40.42% -> 29.46% -> 21.39%,MATCH (direction); levels per claims 1/4,
+8,Top1 median CAGR entry->2019-12-31,30.9%,30.92% (alt full-yr 2016-2019: 34.89%),MATCH,split at last session <=2019-12-31; base 1.0 at entry
+8,Top1 worst path entry->2019-12-31,1.0%,0.96% (alt 2016-2019: 4.47%),MATCH,
+8,Top1 median CAGR 2020->end,50.6%,50.44% (alt 2020-2024: 54.46%),NEAR (median convention),standard median 50.44%; 54th/55th sorted = 50.29%/50.59% -> 50.6% equals the upper-middle value
+9,Top1 median max DD,-54%,-54.26%,MATCH,paths_summary daily_MDD; their figure 0-decimal
+9,Top1 worst max DD,-69%,-69.45%,MATCH,
+9,2018 median calendar return (Top1),-30%,-29.56%; median in-2018 MDD -49.46%,MATCH, calendar 2018
+9,SPY 2018,~-4%,-4.57%,NEAR,"FMP dividend-adjusted, 2017-12-29 -> 2018-12-31"
+10,Post-hoc selection from 432 cells,qualitative,not recomputable,N/A,band chosen after seeing results

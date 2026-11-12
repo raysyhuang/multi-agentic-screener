@@ -1,0 +1,1 @@
+SPY daily dividend-adjusted close (adjClose) from FMP stable endpoint historical-price-eod/dividend-adjusted via Ray's user-FMP connector, fetched 2026-11-12 (Asia/Taipei); 2014-12-01 to 2026-02-27, 2827 rows. Total-return proxy (dividends reinvested via adjustment), 2-decimal precision.
