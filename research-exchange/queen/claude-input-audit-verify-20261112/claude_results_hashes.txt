@@ -1,0 +1,6 @@
+f49fd307d57ced3d92b66f574a39e5098c5a27b5a9e1ea7197f214e1e7971ec9  /workspace/claude-audit-54a6b13-sparse-clone/research-exchange/claude/input-audit-20261112/results/paths_5184_corrected_inputs.csv
+f49fd307d57ced3d92b66f574a39e5098c5a27b5a9e1ea7197f214e1e7971ec9  /workspace/claude-audit-54a6b13-sparse-clone/research-exchange/claude/input-audit-20261112/results/paths_5184_pack_inputs.csv
+33fb3b58158995092b94b3dbf9494d0df4caf74bfd00705a191ff4abcc9eced5  /workspace/claude-audit-54a6b13-sparse-clone/research-exchange/claude/input-audit-20261112/results/run_execution_corrected_stdout.txt
+c62ebec5462956189af9c6018ced7dd47ee1bbbf2619a64d6d20f71b7416c9b3  /workspace/claude-audit-54a6b13-sparse-clone/research-exchange/claude/input-audit-20261112/results/run_stoploss_corrected_stdout.txt
+955cd30e4f88499ed4ed065fe774d01eec1212f03ba08fb378e46834cc71f341  /workspace/claude-audit-54a6b13-sparse-clone/research-exchange/claude/input-audit-20261112/results/stoploss_324_corrected_inputs.csv
+955cd30e4f88499ed4ed065fe774d01eec1212f03ba08fb378e46834cc71f341  /workspace/claude-audit-54a6b13-sparse-clone/research-exchange/claude/input-audit-20261112/results/stoploss_324_pack_inputs.csv

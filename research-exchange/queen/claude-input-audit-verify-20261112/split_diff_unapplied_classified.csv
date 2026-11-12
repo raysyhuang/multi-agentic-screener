@@ -1,0 +1,23 @@
+engine_ticker,massive_symbol,execution_date,massive_record,pack_ratio_month,classification,note
+A,A,2014-11-03,forward_split 1000:1398,0.7731,OK_spin_handled,Massive spin-adjust record; pack has QADJ (de-adjusted) + spin F SPIN_A_KEYS
+ARNC,AA,2016-11-01,forward_split 801:1000,0.8381,NEW_ERROR_double_adjustment,pack pre-ex prices = Massive AA adjusted (x0.801) but no QADJ row; engine also applies F=0.7116
+BALL,BLL,2017-05-17,stock_dividend 1:2,0.5319,LATENT_same_as_BLL,BALL engine copies BLL bars; not eligible in affected signals
+BF.B,BF.B,2016-08-19,stock_dividend 1:2,0.4944,CLAUDE_CONFIRMED,Massive adjusted==raw
+BF.B,BF.B,2018-03-01,stock_dividend 4:5,0.7795,CLAUDE_CONFIRMED,Massive adjusted==raw
+BLL,BLL,2017-05-17,stock_dividend 1:2,0.5319,CLAUDE_CONFIRMED,Massive adjusted==raw
+DHR,DHR,2016-07-05,forward_split 1000:1319,0.8064,OK_spin_handled,QADJ + SPIN_DHR_FTV
+DISCA,WBD,2014-08-07,stock_dividend 1:2,0.5131,CLAUDE_CONFIRMED,recorded only under successor WBD; DISCA bars unadjusted
+EBAY,EBAY,2015-07-20,forward_split 1000:2376,0.4668,OK_spin_handled,QADJ + SPIN_EBAY_PYPL
+FTV,FTV,2025-06-30,forward_split 1000:1327,0.7427,OK_spin_handled,QADJ + SPIN_FTV_RAL
+HON,HON,2025-10-30,forward_split 1000:1061,0.9564,OK_spin_handled,QADJ + SPIN_HON_SOLS
+HSIC,HSIC,2019-02-08,forward_split 1000:1275,0.7632,OK_spin_handled,QADJ + SPIN_HSIC_CVET
+IBM,IBM,2021-11-04,forward_split 1000:1046,0.936,OK_spin_handled,QADJ + SPIN_IBM_KD
+LH,LH,2023-07-03,forward_split 1000:1164,0.8865,OK_spin_handled,QADJ + SPIN_LH_FTRE
+MMM,MMM,2024-04-01,forward_split 1000:1196,0.9098,OK_spin_handled,QADJ + SPIN_MMM_SOLV
+SLG,SLG,2021-01-21,reverse_split 1.02918:1,1.1005,FALSE_POSITIVE,pack = Massive adjusted (non-raw: 2020-12-31 pack 61.3183 vs raw 59.58); reverse split applied; classifier ambiguous for ~3% factors
+TMK,GL,2014-07-02,forward_split 2:3,0.6438,CLAUDE_CONFIRMED,recorded only under successor GL; TMK bars unadjusted
+UA,UA,2016-04-08,stock_dividend 1:2,0.518,OK_handled_as_spin,UA engine not eligible in window; UAA uses UAA_CLASSC_FIRST_NORMAL_20160408 F=0.4973
+UAA,UA,2016-04-08,stock_dividend 1:2,0.518,OK_handled_as_spin,pack spin F=0.4973 on raw prices (single adjustment)
+XRX,XRX,2017-01-03,forward_split 1000:1518,0.7939,OK_spin_handled,QADJ + SPIN_XRX_CNDT
+YUM,YUM,2016-11-01,forward_split 1000:1391,0.7347,OK_spin_handled,QADJ + SPIN_YUM_YUMC
+EQT,EQT,2018-11-13,forward_split 1000:1837,(split_diff classified applied: pack absorbs vendor factor),NEW_ERROR_double_adjustment_LATENT,pack pre-ex = Massive adjusted (x0.54437) and F=0.5262 also applied; no QADJ; EQT not eligible after 2018-11-13 so no ranking effect

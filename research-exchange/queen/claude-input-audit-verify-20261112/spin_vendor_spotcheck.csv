@@ -1,0 +1,20 @@
+engine_ticker,massive_symbol,ex_date,check_date,pack_rank_price,massive_raw_close,massive_adj_close,verdict
+BAX,BAX,2015-07-01,2015-06-30,69.93,69.93,,pack raw -> single F adjustment OK
+HPQ,HPQ,2015-11-02,2015-10-30,26.96,26.96,,pack raw -> OK
+NI,NI,2015-07-02,2015-06-30,45.59,45.59,,pack raw -> OK
+PNR,PNR,2018-05-01,2018-04-30,67.28,67.28,,pack raw -> OK
+DWDP,DWDP,2019-04-02,2019-03-29,53.31,53.31,,pack raw -> OK
+WYND,WYN,2018-06-01,2018-05-31,108.44,108.44,,pack raw -> OK
+HPE,HPE,2017-04-03,2017-03-31,23.7,23.7,,pack raw -> OK
+T,T,2022-04-11,2022-03-31,23.63,23.63,,pack raw -> OK
+WDC,WDC,2025-02-24,2025-01-31,65.13,65.13,,pack raw -> OK
+EXC,EXC,2022-02-02,2022-01-31,57.95,57.95,,pack raw -> OK
+KDP,DPS,2018-07-10,2018-06-29,122.0,122,,pack raw -> OK
+DXC,CSC,2015-11-30,2015-10-30,66.59,66.59,,pack raw -> OK
+EQT,EQT,2018-11-13,2018-10-31,18.4921,33.97,18.4921,DOUBLE ADJUSTMENT: pack = Massive spin-adjusted (x0.54437 = 1000/1837) and engine also applies F=0.5262; no QADJ row
+ARNC,AA,2016-11-01,2016-10-31,23.0047,28.72,23.0047,DOUBLE ADJUSTMENT: pack = Massive AA (Alcoa Corp continuation) adjusted x0.801 and engine also applies F=0.7116; no QADJ row
+HWM,AA,2016-11-01,2016-10-31,23.0047,28.72,23.0047,same series as ARNC (HWM F blank; HWM not eligible in affected signals)
+APTV,DLPH,2017-12-05,2017-11-30,104.67,104.67,,pack raw -> OK
+BBWI,LB,2021-08-03,2021-07-30,80.07,80.07,,pack raw -> OK
+CAG,CAG,2016-11-10,2016-10-31,48.18,48.18,,pack raw -> OK
+DOV,DOV,2018-05-10,2018-04-30,92.7,92.7,,pack raw -> OK
