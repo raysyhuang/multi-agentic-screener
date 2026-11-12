@@ -6,7 +6,7 @@ def rd(f): return list(csv.DictReader(gzip.open(P+'/'+f,'rt') if f.endswith('.gz
 sess=[r['session'] for r in rd('trading_sessions.csv')]; si={d:i for i,d in enumerate(sess)}
 first={}
 for d in sess: first.setdefault(d[:7],d)
-rank=pickle.load(open(HERE+'/rank3.pkl','rb'))
+rank=pickle.load(open(os.environ.get('RANK_PKL',HERE+'/rank3.pkl'),'rb'))   # set RANK_PKL=rank_corrected.pkl to run on corrected data
 avail={(r['trade_date'],r['engine_ticker'],r['window_end']):r for r in rd('execution_availability.csv.gz')}
 close={(r['price_series'],r['execution_key'],r['date']):float(r['close']) for r in rd('execution_daily_closes.csv.gz')}
 lastd={(r['price_series'],r['execution_key']):r['series_last_date'] for r in rd('series_info.csv')}
@@ -84,7 +84,7 @@ def run(W,H,K,ph):
     yrs=(dt.date.fromisoformat(END)-dt.date.fromisoformat(D0)).days/365.25
     return eq,eq**(1/yrs)-1,mdd
 ref={r['path_id']:r for r in csv.DictReader(open(sys.argv[2]+'/paths_summary.csv'))}
-c=collections.Counter(); mx=collections.Counter(); bad=[]
+c=collections.Counter(); mx=collections.Counter(); bad=[]; rows=[]
 for W in range(1,13):
   for H in range(1,13):
     for K in (1,2,3):
@@ -92,12 +92,16 @@ for W in range(1,13):
         pid=f'W{W}H{H}K{K}P{ph}'; q=ref[pid]
         try:
             f,cg,md=run(W,H,K,ph)
+            rows.append([pid,W,H,K,ph,'KNOWN','',repr(f),repr(cg),repr(md),q['status'],q['final_multiple'],q['CAGR'],q['daily_MDD']])
             if q['status']=='UNKNOWN': c['I_known_Q_unknown']+=1; bad.append((pid,q['fail_reason'])); continue
             c['both_known']+=1
             for nm,a,b in(('final_rel',f,float(q['final_multiple'])),('CAGR',cg,float(q['CAGR'])),('MDD',md,float(q['daily_MDD']))):
                 dlt=abs(a-b)/(abs(b) if nm=='final_rel' else 1); mx[nm]=max(mx[nm],dlt)
                 if dlt>1e-9: c['num_mismatch_'+nm]+=1; bad.append((pid,nm,a,b))
         except Fail as e:
+            rows.append([pid,W,H,K,ph,'UNKNOWN',str(e),'','','',q['status'],q['final_multiple'],q['CAGR'],q['daily_MDD']])
             if q['status']!='UNKNOWN': c['I_unknown_Q_known']+=1; bad.append((pid,str(e)))
             else: c['both_unknown']+=1; c['reason_'+('same' if str(e)==q['fail_reason'] else 'DIFF:'+str(e)+'/'+q['fail_reason'])]+=1
 print(dict(c)); print(dict(mx)); print(bad[:15], len(bad))
+if os.environ.get('OUT_CSV'):
+    w=csv.writer(open(os.environ['OUT_CSV'],'w',newline='')); w.writerow(['path_id','W','H','K','phase','status','fail_reason','final_multiple','CAGR','daily_MDD','queen_status','queen_final_multiple','queen_CAGR','queen_daily_MDD']); w.writerows(rows)

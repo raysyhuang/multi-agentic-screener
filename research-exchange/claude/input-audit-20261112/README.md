@@ -36,6 +36,17 @@ Common pattern: the split belongs to a ticker that was later renamed, retired or
 - **Intervals vs eligibility:** 9 of 132 dates differ, as GPT and Queen already reported.
 - **Outside price spots:** `fmp_price_spots_fetched.csv` holds the 24 FMP values pulled by hand (annual-champion path, SPY, BKNG). The champion path rebuilds to 113.7806x.
 
+## Backtests rerun on the corrected data (added 18:20, Asia/Taipei)
+
+Question asked: do the backtests change once the nine corrections are applied? **No.**
+
+- `results/paths_5184_pack_inputs.csv` and `results/paths_5184_corrected_inputs.csv` — all 5,184 paths from Claude's executor, on the frozen pack and on the corrected rankings, each row next to Queen's answer. The two files are byte-identical: 4,718 known, 466 UNKNOWN, same fail reasons; max difference vs Queen 1.0e-12 (final), 1.4e-13 (CAGR), 3.7e-13 (drawdown).
+- `results/stoploss_324_pack_inputs.csv` and `results/stoploss_324_corrected_inputs.csv` — the 324 W10-12 x H2-4 paths with no stop, GPT's 30% fixed stop, and a 30%-from-peak trailing stop. Also byte-identical between the two inputs; the fixed-stop columns match GPT's file to 3e-15.
+- Reason: Top5 is unchanged in all 1,584 tables, the backtests only buy Top1-3, and none of the nine names was ever held, so execution prices are untouched.
+- Where it would matter: Top10 changes in 3 tables (BKNG rank 483 to 9 at 2018-04-30 W4; TT enters at rank 7 at 2020-07-31 W1 and rank 8 at 2020-10-30 W4), and any rule that uses the bottom of the ranking.
+
+To rerun on corrected data: run `audit_inputs.py` (writes `rank_corrected.pkl`), then set `RANK_PKL=rank_corrected.pkl` and optionally `OUT_CSV=<file>` before the executor or stop script.
+
 ## What this audit does NOT cover
 
 - The scan only catches moves of about −20% or worse in one month. A small unadjusted split (for example 10%) or a stock dividend would not stand out.

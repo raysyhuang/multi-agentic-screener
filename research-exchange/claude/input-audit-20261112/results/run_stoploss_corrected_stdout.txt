@@ -1,0 +1,8 @@
+max diffs vs GPT stop file {'cagr': 2.6645352591003757e-15, 'mdd': 1.6653345369377348e-15, 'ctrl': 1.0169642905566434e-13} fallback uses 97 mismatching paths 0 []
+K1 base CAGR med 40.42 MDD med -54.26 worst -69.45 | stop CAGR med 38.12 MDD med -54.34 worst -67.79 paths w/stop 91 stops 152 | TRAIL CAGR med 34.75 MDD med -53.61 worst -74.59 stops 436
+   paths where stop improved CAGR 19 /108; improved MDD 46 /108; trail improved CAGR 0  MDD 38
+K2 base CAGR med 29.46 MDD med -48.83 worst -58.82 | stop CAGR med 26.93 MDD med -48.33 worst -64.15 paths w/stop 108 stops 398 | TRAIL CAGR med 23.57 MDD med -48.73 worst -65.13 stops 1004
+   paths where stop improved CAGR 11 /108; improved MDD 50 /108; trail improved CAGR 3  MDD 53
+K3 base CAGR med 21.39 MDD med -44.72 worst -56.64 | stop CAGR med 19.92 MDD med -49.02 worst -62.25 paths w/stop 108 stops 583 | TRAIL CAGR med 17.48 MDD med -48.01 worst -60.63 stops 1610
+   paths where stop improved CAGR 2 /108; improved MDD 49 /108; trail improved CAGR 0  MDD 54
+{'NVDA_stops': 3, 'NVDA_trail': 5}

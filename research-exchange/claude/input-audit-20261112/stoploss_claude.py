@@ -6,7 +6,7 @@ def rd(f): return list(csv.DictReader(gzip.open(P+'/'+f,'rt') if f.endswith('.gz
 sess=[r['session'] for r in rd('trading_sessions.csv')]; si={d:i for i,d in enumerate(sess)}
 first={}
 for d in sess: first.setdefault(d[:7],d)
-rank=pickle.load(open(HERE+'/rank3.pkl','rb'))
+rank=pickle.load(open(os.environ.get('RANK_PKL',HERE+'/rank3.pkl'),'rb'))   # set RANK_PKL=rank_corrected.pkl to run on corrected data
 avail={}; availday=collections.defaultdict(list)
 for r in rd('execution_availability.csv.gz'):
     avail[(r['trade_date'],r['engine_ticker'],r['window_end'])]=r; availday[(r['trade_date'],r['engine_ticker'])].append(r)
@@ -100,7 +100,7 @@ def run(W,H,K,ph,stop=None,trail=False):
     return eq,eq**(1/yrs)-1,mdd,stops,fb
 if __name__=='__main__':
     g={r['path_id']:r for r in csv.DictReader(open(sys.argv[2]))}
-    mx=collections.Counter(); res=collections.defaultdict(list); nv=collections.Counter(); fbt=0; sc=collections.Counter(); bad=[]
+    rows=[]; mx=collections.Counter(); res=collections.defaultdict(list); nv=collections.Counter(); fbt=0; sc=collections.Counter(); bad=[]
     for W in (10,11,12):
       for H in (2,3,4):
         for K in (1,2,3):
@@ -108,6 +108,7 @@ if __name__=='__main__':
             pid=f'W{W}H{H}K{K}P{ph}'; r=g[pid]
             f,c,m,s,fb=run(W,H,K,ph,0.30); f0,c0,m0,_,_=run(W,H,K,ph,None); ft,ct,mt,stt,_=run(W,H,K,ph,0.30,True)
             fbt+=fb
+            rows.append([pid,W,H,K,ph,repr(c0),repr(m0),repr(c),repr(m),len(s),'|'.join(s),repr(ct),repr(mt),len(stt),r['cagr'],r['mdd'],r['stops']])
             d=(abs(c-float(r['cagr'])),abs(m-float(r['mdd'])),abs(c0-float(r['base_CAGR'])))
             mx['cagr']=max(mx['cagr'],d[0]); mx['mdd']=max(mx['mdd'],d[1]); mx['ctrl']=max(mx['ctrl'],d[2])
             if d[0]>1e-9 or d[1]>1e-9 or len(s)!=int(r['stops']) or '|'.join(s)!=r['stop_names']: bad.append((pid,c,r['cagr'],m,r['mdd'],len(s),r['stops']))
@@ -120,3 +121,5 @@ if __name__=='__main__':
         print(f'K{K} base CAGR med {med(0):.2f} MDD med {med(1):.2f} worst {min(x[1] for x in z)*100:.2f} | stop CAGR med {med(2):.2f} MDD med {med(3):.2f} worst {min(x[3] for x in z)*100:.2f} paths w/stop {sum(1 for x in z if x[4])} stops {sum(x[4] for x in z)} | TRAIL CAGR med {med(5):.2f} MDD med {med(6):.2f} worst {min(x[6] for x in z)*100:.2f} stops {sum(x[7] for x in z)}')
         print('   paths where stop improved CAGR',sum(1 for x in z if x[2]>x[0]),'/108; improved MDD',sum(1 for x in z if x[3]>x[1]+1e-12),'/108; trail improved CAGR',sum(1 for x in z if x[5]>x[0]),' MDD',sum(1 for x in z if x[6]>x[1]+1e-12))
     print(dict(nv))
+    if os.environ.get('OUT_CSV'):
+        w=csv.writer(open(os.environ['OUT_CSV'],'w',newline='')); w.writerow(['path_id','W','H','K','phase','base_CAGR','base_MDD','stop30_CAGR','stop30_MDD','stop30_count','stop30_names','trail30_CAGR','trail30_MDD','trail30_count','gpt_stop_CAGR','gpt_stop_MDD','gpt_stop_count']); w.writerows(rows)

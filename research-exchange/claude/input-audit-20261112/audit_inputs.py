@@ -13,7 +13,7 @@ What it does
  5. Compares membership_intervals against eligibility_by_signal on all signal dates.
 Outputs are written next to this script.
 """
-import csv,gzip,collections,os,statistics as st
+import csv,gzip,collections,os,pickle,statistics as st
 HERE=os.path.dirname(os.path.abspath(__file__))
 P=os.path.join(HERE,'..','..','shared','inputs-pack-full-20261109')+os.sep
 def rd(f): return list(csv.DictReader(gzip.open(P+f,'rt') if f.endswith('.gz') else open(P+f)))
@@ -142,3 +142,6 @@ lines+=['scan rows (monthly move <= -20%% or >= +60%% inside a usable lookback):
         'vendor cross-check: %d monthly-return comparisons (FMP execution vs Massive rank), disagreements >0.5%%: %d'%(n,len(dis)),
         'membership intervals vs eligibility: %d of %d signal dates differ'%(mm,len(member))]
 open(os.path.join(HERE,'audit_stdout.txt'),'w').write('\n'.join(lines)+'\n'); print('\n'.join(lines))
+
+# ---- 6. dump the corrected rankings so the executor and stop test can be rerun on them (file is not committed) ----
+pickle.dump({k:dict(bad=v[0],top=v[1][:5],n=len(v[0])+len(v[1])) for k,v in fixed.items()},open(os.path.join(HERE,'rank_corrected.pkl'),'wb'))
