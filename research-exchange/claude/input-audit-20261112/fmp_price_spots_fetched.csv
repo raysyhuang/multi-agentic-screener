@@ -23,3 +23,7 @@ SPY,2018-12-31,historical-price-eod-dividend-adjusted adjClose,223.01,223.01,que
 SPY,2025-01-02,historical-price-eod-dividend-adjusted adjClose,573.36,573.36,queen spy_daily.csv,
 BKNG,2018-01-31,historical-price-eod-light,76.48,1912.05,rank_prices_month_end BKNG,pack value is 25x too high (unadjusted)
 BKNG,2018-02-28,historical-price-eod-light,81.36,81.362,rank_prices_month_end BKNG,
+BIIB,2017-01-30,historical-price-eod-light,276.06,,corporate_actions_applied SPIN_BIIB_BIVV (ex 2017-02-01; parent_price_at_ex 281.69),ex date appears to be 2017-02-02
+BIIB,2017-01-31,historical-price-eod-light,277.24,,corporate_actions_applied SPIN_BIIB_BIVV (ex 2017-02-01; parent_price_at_ex 281.69),ex date appears to be 2017-02-02
+BIIB,2017-02-01,historical-price-eod-light,281.69,,corporate_actions_applied SPIN_BIIB_BIVV (ex 2017-02-01; parent_price_at_ex 281.69),ex date appears to be 2017-02-02
+BIIB,2017-02-02,historical-price-eod-light,264.23,,corporate_actions_applied SPIN_BIIB_BIVV (ex 2017-02-01; parent_price_at_ex 281.69),ex date appears to be 2017-02-02

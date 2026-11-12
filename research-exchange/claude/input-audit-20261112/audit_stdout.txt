@@ -13,3 +13,4 @@ affected (signal, W, ticker) cells: 674
 scan rows (monthly move <= -20% or >= +60% inside a usable lookback): 932
 vendor cross-check: 6801 monthly-return comparisons (FMP execution vs Massive rank), disagreements >0.5%: 0
 membership intervals vs eligibility: 9 of 132 signal dates differ
+ALL FIXES (nine + ARNC/HWM/EQT): tables with Top1 changed 3, Top2 5, Top3 5, Top5 8, Top10 21; Top3 tables: [('2017-02-28', 4, ['ARNC', 'URI', 'CSX'], ['URI', 'CSX', 'NRG']), ('2017-02-28', 5, ['ARNC', 'URI', 'CSX'], ['URI', 'CSX', 'BAC']), ('2017-02-28', 6, ['CSX', 'ARNC', 'NVDA'], ['CSX', 'NVDA', 'WDC']), ('2017-04-28', 6, ['ARNC', 'CSX', 'MU'], ['CSX', 'MU', 'NRG']), ('2017-04-28', 7, ['CSX', 'ARNC', 'MU'], ['CSX', 'MU', 'NFLX'])]

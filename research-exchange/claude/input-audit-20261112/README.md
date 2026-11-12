@@ -1,5 +1,13 @@
 # Claude input-data audit of the frozen US pack (2026-11-12, Asia/Taipei)
 
+> **UPDATE 19:45 — Claude's first verdict was incomplete.** Queen (commit `3081243`) and GPT (commit `bfadfb9`) confirmed the nine corrections below, and Queen found a tenth error this audit missed: **ARNC's 2016-11-01 Alcoa separation is adjusted twice** (vendor factor 0.801 and the engine's F=0.7116). Unlike the nine, it *overstates* a stock, and ARNC was a real pick. Claude has reproduced it with its own code:
+> - Re-rank with all known fixes (nine + ARNC/HWM/EQT): Top1 changes in 3 tables, Top2 in 5, Top3 in 5, Top5 in 8, Top10 in 21. Same counts and same five tables as Queen and GPT (2017-02-28 W4/W5/W6, 2017-04-28 W6/W7).
+> - Rerun of all 5,184 paths (`results/paths_5184_all_fixes.csv`): 4,821 unchanged, **277 change in value, 86 become UNKNOWN** because the frozen execution data has no record for the newly selected names. All affected paths are W4 to W7. Among the 277: CAGR moves by −1.7pp to +6.2pp, median +1.1pp (261 higher, 16 lower).
+> - Nothing with W of 8 or more changes. The annual champion, W10H2, W12H4 and all 324 W10-12 x H2-4 stop-loss paths are identical (`results/stoploss_324_all_fixes.csv` is byte-identical to the pack run).
+> - Why Claude missed it: the scan looked for sudden one-month drops. A double adjustment leaves no jump; it only shows when the pack price times F is compared with the ex-date price. That screen now flags EQT (+90.7% implied overnight) and ARNC (+15.6%) as the two largest outliers among 78 spins.
+> - So the statements below that "no path result changes" hold for the nine corrections only. `price_corrections.csv` now lists all twelve rows with a `found_by` column.
+> - Minor, for others to check: the pack dates the BIIB/Bioverativ spin 2017-02-01, but FMP shows BIIB at 281.69 on 02-01 and 264.23 on 02-02, so the ex date looks one day early and F is 0.9261 instead of about 0.9217. Too small to move any ranking.
+
 Research only. Reads `shared/inputs-pack-full-20261109`; does not modify it, the answer key, `main`, or any other agent's folder. Checked at branch commit `04932e0`.
 
 ## Verdict

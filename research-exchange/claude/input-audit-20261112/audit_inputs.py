@@ -54,8 +54,10 @@ scan.sort(key=lambda x:(x['month_end'],x['engine_ticker']))
 wr('scan_large_monthly_moves.csv',scan)
 
 # ---- 2/3. corrections and re-rank ------------------------------------------------------------
-FIX=[r for r in csv.DictReader(open(os.path.join(HERE,'price_corrections.csv')))]
-def build(fix):
+ALLFIX=[r for r in csv.DictReader(open(os.path.join(HERE,'price_corrections.csv')))]
+FIX=[r for r in ALLFIX if r['found_by']=='claude']   # the original nine
+def build(fix,FIX=None):
+    FIX=FIX if FIX is not None else globals()['FIX']
     px=dict(px0); el={S:list(v) for S,v in elig.items()}
     if fix:
         for f in FIX:
@@ -145,3 +147,16 @@ open(os.path.join(HERE,'audit_stdout.txt'),'w').write('\n'.join(lines)+'\n'); pr
 
 # ---- 6. dump the corrected rankings so the executor and stop test can be rerun on them (file is not committed) ----
 pickle.dump({k:dict(bad=v[0],top=v[1][:5],n=len(v[0])+len(v[1])) for k,v in fixed.items()},open(os.path.join(HERE,'rank_corrected.pkl'),'wb'))
+
+# ---- 7. all known corrections: the nine plus the double spin adjustments Queen found (ARNC, HWM, EQT) ----
+allfix=build(True,ALLFIX)
+rows=[]
+for k in sorted(base):
+    b=base[k][1]; f=allfix[k][1]
+    rows.append(dict(signal_date=k[0],W=k[1],status='UNKNOWN' if base[k][0] else 'RANKED',pack_top5='|'.join(x[0] for x in b[:5]),allfix_top5='|'.join(x[0] for x in f[:5]),
+        top1_changed=b[0][0]!=f[0][0],top2_changed=[x[0] for x in b[:2]]!=[x[0] for x in f[:2]],top3_changed=[x[0] for x in b[:3]]!=[x[0] for x in f[:3]],
+        top5_changed=[x[0] for x in b[:5]]!=[x[0] for x in f[:5]],top10_changed=[x[0] for x in b[:10]]!=[x[0] for x in f[:10]]))
+wr('top5_pack_vs_all_fixes_1584.csv',rows)
+msg='ALL FIXES (nine + ARNC/HWM/EQT): tables with Top1 changed %d, Top2 %d, Top3 %d, Top5 %d, Top10 %d; Top3 tables: %s'%tuple([sum(r[c] for r in rows) for c in ('top1_changed','top2_changed','top3_changed','top5_changed','top10_changed')]+[[(r['signal_date'],r['W'],r['pack_top5'].split('|')[:3],r['allfix_top5'].split('|')[:3]) for r in rows if r['top3_changed']]])
+open(os.path.join(HERE,'audit_stdout.txt'),'a').write(msg+'\n'); print(msg)
+pickle.dump({k:dict(bad=v[0],top=v[1][:5],n=len(v[0])+len(v[1])) for k,v in allfix.items()},open(os.path.join(HERE,'rank_corrected_all.pkl'),'wb'))
