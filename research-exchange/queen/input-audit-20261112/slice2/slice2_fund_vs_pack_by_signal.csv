@@ -1,0 +1,13 @@
+fund_period,pack_signal,form,accession,fund_equity_lines,pack_members,pack_eligible_final,matched_one_to_one,fund_only,fund_only_names,pack_only,pack_only_names,top1_check,runner_up_check
+2014-12-31,2014-12-31,N-Q,0001193125-15-065725,502,499,483,499,3,Tyco International PLC; ACE Ltd.; Actavis PLC,0,,"LUV: fund@S=Y, fund@S-1y=n/a, pack_eligible=True","EA: fund@S=Y, fund@S-1y=n/a, pack_eligible=True"
+2015-12-31,2015-12-31,N-Q,0001193125-16-480933,504,502,474,502,2,Tyco International PLC; ACE Ltd.,0,,"NFLX: fund@S=Y, fund@S-1y=Y, pack_eligible=True","AMZN: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2016-12-31,2016-12-30,N-Q,0001193125-17-065125,505,506,476,505,0,,1,CPRI,"NVDA: fund@S=Y, fund@S-1y=Y, pack_eligible=True","OKE: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2017-12-31,2017-12-29,N-Q,0001193125-18-063612,504,505,477,504,0,,1,CPRI,"NRG: fund@S=Y, fund@S-1y=Y, pack_eligible=True","VRTX: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2018-12-31,2018-12-31,N-Q,0001193125-19-059323,506,505,481,505,1,First Republic Bank/CA,0,,"AMD: fund@S=Y, fund@S-1y=Y, pack_eligible=True","AAP: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2019-12-31,2019-12-31,NPORT-P,0001752724-20-038725,505,505,477,505,0,,0,,"AMD: fund@S=Y, fund@S-1y=Y, pack_eligible=True","LRCX: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2020-12-31,2020-12-31,NPORT-P,0001752724-21-040719,505,505,486,505,0,,0,,"NVDA: fund@S=Y, fund@S-1y=Y, pack_eligible=True","PYPL: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2021-12-31,2021-12-31,NPORT-P,0001752724-22-046281,505,505,485,505,0,,0,,"DVN: fund@S=Y, fund@S-1y=Y, pack_eligible=True","MRO: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2022-12-31,2022-12-30,NPORT-P,0001752724-23-039243,503,503,486,503,0,,0,,"OXY: fund@S=Y, fund@S-1y=Y, pack_eligible=True","HES: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2023-12-31,2023-12-29,NPORT-P,0001752724-24-043113,503,503,488,503,0,,0,,"NVDA: fund@S=Y, fund@S-1y=Y, pack_eligible=True","META: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2024-12-31,2024-12-31,NPORT-P,0001752724-25-043800,503,503,487,503,0,,0,,"NVDA: fund@S=Y, fund@S-1y=Y, pack_eligible=True","UAL: fund@S=Y, fund@S-1y=Y, pack_eligible=True"
+2025-12-31,2025-11-28,NPORT-P,0002071691-26-004238,503,503,483,499,4,"Ares Management Corp.; Carvana Co.; Comfort Systems USA, Inc.; CRH plc",4,K; LKQ; MHK; SOLS,,

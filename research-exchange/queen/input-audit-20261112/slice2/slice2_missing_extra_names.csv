@@ -1,0 +1,16 @@
+fund_period,pack_signal,side,fund_name,ticker,classification_and_evidence,eligibility_if_added
+2014-12-31,2014-12-31,fund_only,Tyco International PLC,TYC,"REAL GAP: long-time member (added 2010-08-26; held in 2013-12-31 IVV N-Q) absent from pack. Reconstruction folded Tyco into JCI ticker at 2016-09 merger (Wikipedia logs TYC ""removed"" 2016-09-06).",would be eligible (seasoned)
+2014-12-31,2014-12-31,fund_only,ACE Ltd.,ACE,REAL GAP: member (held 2013-12-31) absent from pack; ACE acquired Chubb 2016-01 and took CB ticker; reconstruction kept old Chubb Corp as CB and dropped ACE.,would be eligible (seasoned)
+2014-12-31,2014-12-31,fund_only,Actavis PLC,ACT,REAL GAP: member (held 2013-12-31) absent; pack AGN engine = old Allergan Inc until 2015-03-17 then routes to Actavis/Allergan plc (override). Actavis missing for signals 2014-12-31..2015-02-27.,would be eligible (seasoned)
+2015-12-31,2015-12-31,fund_only,Tyco International PLC,TYC,REAL GAP (same root cause; gap spans signals 2014-12-31..2016-08-31),would be eligible
+2015-12-31,2015-12-31,fund_only,ACE Ltd.,ACE,REAL GAP (same root cause; gap spans signals 2014-12-31..2015-12-31),would be eligible
+2016-12-31,2016-12-30,pack_only,(none in fund under this key),CPRI (ticker_at_signal KORS),"DUAL-KEY, not a false member: pack carries the same company under engine KORS and CPRI; fund holds one Michael Kors line matched to KORS. v18 dedupe ranks it once. CPRI not 365d-eligible here, so KORS ranks.",no rank effect
+2017-12-31,2017-12-29,pack_only,(none in fund under this key),CPRI (ticker_at_signal KORS),"DUAL-KEY as above; at this date KORS removed by dedupe and CPRI ranks. One company, one ranking line.",no rank effect
+2018-12-31,2018-12-31,fund_only,First Republic Bank/CA,FRC,FUND LAG / pre-positioning: FRC joined S&P 500 effective 2019-01-02 (replacing SCG); fund held it at 12/31. Pack correctly non-member at 2018-12-31.,not eligible (not a member)
+2021-12-31,2021-12-31,name_only,Meta Platforms Inc,FB,NAME/TICKER LAG: same CUSIP 30303M102; pack engine FB (renamed META 2022-06-09). Matched; not a discrepancy.,eligible in pack
+2025-12-31,2025-11-28,fund_only,Ares Management Corp.,ARES,"INDEX CHANGE after pack date: added 2025-12-11 (replaced K). New add, not 365d-seasoned at 2025-12-31.",ineligible
+2025-12-31,2025-11-28,fund_only,Carvana Co.,CVNA,INDEX CHANGE: added 2025-12-22 (replaced SOLS). Not seasoned.,ineligible
+2025-12-31,2025-11-28,fund_only,"Comfort Systems USA, Inc.",FIX,INDEX CHANGE: added 2025-12-22 (replaced MHK). Not seasoned.,ineligible
+2025-12-31,2025-11-28,fund_only,CRH plc,CRH,INDEX CHANGE: added 2025-12-22 (replaced LKQ). Not seasoned.,ineligible
+2025-12-31,2025-11-28,pack_only,-,"K, LKQ, MHK, SOLS",Removed in Dec-2025 changes; non-members at 2025-12-31.,n/a
+2025-12-31,2025-11-28,seasoning,Apollo / Lennox / Workday,"APO, LII, WDAY",Added 2024-12-23; ineligible at pack 2025-11-28 (<365d) but seasoned by 2025-12-31 (373d). 2025 returns -12.4% / -20.3% / -16.8%.,eligible at 2025-12-31; no threat

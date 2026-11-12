@@ -1,0 +1,9 @@
+Frozen pack membership inventory (inputs-pack-full-20261109/membership_intervals.csv)
+- Rows (intervals): 778; distinct engine tickers: 765; earliest start 1996-01-02; latest end 2026-08-18 (open intervals blank).
+- Source as stated by the pack: "sp500_hist_upd.csv (public reconstruction)" = github fja05680/sp500 "Updated" CSV (per /workspace/prior-quarter-winner-check-2026-10-20/REPORT.md line 7), last snapshot 2026-08-18.
+  This is a community reconstruction largely built from Wikipedia's "Historical components of the S&P 500" changes table. It is NOT an S&P DJI file.
+- 774 rows carry the reconstruction source only; 4 rows carry v14 official-date patches (GMCR removal 2016-03-07, CEG add 2022-02-03, ARNC/HWM 2020-04-01 parent rename).
+- v18 dedupe note on 2 rows (KORS, CPRI; same company CIK 1530721). The reconstruction carries KORS 2013-11-13..2018-09-19 AND CPRI 2016-01-04..2020-05-12 overlapping (source artifact); dedupe removes the double count.
+- Prior evidence (v14): membership_official_evidence_11.csv = 11 transitions (10 grade A, 1 grade B: FMC 2009 re-entry); rename_review_15.csv = 15 pure renames graded "A issuer text; vendor price evidence conditional".
+- Pack's own label: membership effective dates and CA evidence remain PROVISIONAL (README item 6).
+- Sanity: members per signal in pack range 499-506 (member_counts_by_signal.csv), consistent with ~500-505 index securities incl. dual classes.

@@ -1,0 +1,15 @@
+SLICE 2 VERDICT (IVV SEC holdings vs. frozen pack membership), 2026-11-12 Asia/Taipei
+1. No missing or false member changes any annual Top1 or the 60.5383% annual-champion headline.
+2. Source: iShares Core S&P 500 ETF (S000004310). Dec-31 N-Q for 2013-2018 and NPORT-P for 2019-2025, 13 filings, accessions cited.
+3. 2016-12-30, 2017-12-29 and 2019-2024: fund and pack match one-to-one. Residuals are only CPRI/KORS (dual key, deduped) and Meta=FB (same CUSIP).
+4. REAL GAP: the reconstruction omits the acquirers in ticker-retaining mergers. Tyco is missing for signals 2014-12..2016-08, ACE for 2014-12..2015-12, Actavis for 2014-12..2015-02. All three were seasoned members.
+5. Annual impact: none. 2014: ACT +53.2%, ACE +11.0%, TYC +6.9% vs LUV +124.6%. 2015: ACE +1.7%, TYC -27.3% vs NFLX +134.4%.
+6. Monthly impact, W1-W12 across all gap months (444 checks): 0 Top1 and 0 Top3 entries. Closest gap is 17.2pp, so no K1-K3 path moves.
+7. Fund lag: FRC was held at 2018-12-31 ahead of its 2019-01-02 index add. The pack is correct.
+8. Seasoning: the pack's 365-day exclusions agree with the prior-year fund snapshots. All 10 annual Top1s and runners-up were in the fund at S and S-1y.
+9. 2025 supplement: the Dec-2025 adds (ARES, CRH, CVNA, FIX) are unseasoned. APO, LII and WDAY are seasoned but negative in 2025. WDC (spin-adj) still beats MU.
+10. CMG vs BLL (2019-07 W12): on a total-return basis BLL (+84.58%) beats CMG (+83.45%) and the Top1 flips. The spec is price-return, so this is a sensitivity only.
+11. Low-impact note: the Tyco/JCI merger has no JCI cash-leg/identity entry. JCI is never near Top1.
+12. Unverifiable or single-source: TYC prices are Massive only (FMP empty). N-Q matching is name-based, validated by exact 1:1 counts.
+13. Not done: optional item 2 (UNKNOWN patch-list draft and path counts).
+14. Nothing in the pack, engine or repo was modified.

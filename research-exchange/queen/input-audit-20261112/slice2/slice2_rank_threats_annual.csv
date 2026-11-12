@@ -1,0 +1,9 @@
+signal,candidate,close_start,close_end,price_source,ret12_price,pack_top1,top1_ret12,pack_runner_up,runner_up_ret12,gap_to_top1_pp,flips_top1,would_be_rank2
+2014-12-31,ACT,168.0,257.41,massive_grouped_close ACT 2013-12-31 / 2014-12-31,0.532202,LUV,1.246285,EA,1.049477,71.41,False,False
+2014-12-31,ACE,103.53,114.88,massive_grouped_close ACE (FMP CB lineage agrees 103.53/114.88),0.10963,LUV,1.246285,EA,1.049477,113.67,False,False
+2014-12-31,TYC,42.9738,45.9267,massive_grouped_close TYC (adjusted),0.068714,LUV,1.246285,EA,1.049477,117.76,False,False
+2015-12-31,ACE,114.88,116.85,massive_grouped_close ACE (FMP CB lineage agrees),0.017148,NFLX,1.343804,AMZN,1.177831,132.67,False,False
+2015-12-31,TYC,45.9267,33.3927,massive_grouped_close TYC (adjusted),-0.272913,NFLX,1.343804,AMZN,1.177831,161.67,False,False
+"2025-12-31 (supplement, outside window)",APO,165.16,144.76,massive_grouped_close,-0.123517,WDC (spin-adj) / MU,2.8231,MU,2.3913,294.66,False,False
+"2025-12-31 (supplement, outside window)",LII,609.3,485.58,massive_grouped_close,-0.203053,WDC (spin-adj) / MU,2.8231,MU,2.3913,302.62,False,False
+"2025-12-31 (supplement, outside window)",WDAY,258.03,214.78,massive_grouped_close,-0.167616,WDC (spin-adj) / MU,2.8231,MU,2.3913,299.07,False,False

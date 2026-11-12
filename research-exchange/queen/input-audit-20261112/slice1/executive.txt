@@ -1,0 +1,15 @@
+Momentum 432 inputs: external truth audit, slice 1 (2026-11-12, research only, pack unchanged)
+VERDICT: No external contradiction changes any Top1 pick or headline number (annual champion 60.5383% CAGR / -36.6137% MDD, W10H2 45.24%, W12H4 43.03%). Membership overall stays PROVISIONAL.
+1. Membership source = fja05680/sp500 community reconstruction (Wikipedia-based) plus 4 v14 official patches. Not an S&P file, and agreement with Wikipedia is circular.
+2. 48 pick names (all W10H2, W12H4 and annual Top1s, plus WDC/MU 2026): 23 officially confirmed to the effective day (S&P DJI releases or v14 grade A), 0 contradicted, 25 weak (long-tenure names with years of seasoning slack).
+3. Tightest 365-day seasoning margins (PLTR 7 days, AVGO 21, CEG 25, GEV 28, ALGN 42) are all officially confirmed.
+4. Annual picks LUV, NFLX, NVDA, NRG, AMD, AMD, NVDA, DVN, OXY, NVDA (+ NVDA 2025, WDC 2026): all seasoned members. Smallest margin is 5.4pp (NVDA over PYPL, 2020), confirmed by FMP.
+5. 2026: WDC +282-284% (spin-adjusted, both vendors) vs MU +239% -> WDC is Top1. Unadjusted WDC +189% would wrongly pick MU. SNDK ratio 1:3 and both closes confirmed.
+6. Prices: 256/258 Top1 lookbacks match FMP (median diff 0, 0 rank flips). 362/378 K1 holding legs match Massive (max 1.2pp, NVDA split rounding). 20 tight margins rechecked, 0 flips. Knife-edge: CMG over BLL by 0.02pp (2019-07 W12).
+7. UNKNOWN 466 = 11 unique events + DD/Qnity ranker block. All event facts confirmed externally. None touch the W10H2/W12H4/W12H12 K1 anchors.
+8. 417 pick_not_tradable (ANDV, SCG, TWTR) are genuinely unbuyable on the trade date. Fixing them is a rule choice, not data.
+9. 24 corporate_action_unresolved paths (VIAC and SYMC pure renames; CELG, STJ, CTLT deals) are resolvable pack gaps, not errors. SIVB, WBA and FOXA are justified UNKNOWNs.
+10. One real contradiction: FOXA/FOX silently switch from old 21CF to new Fox Corp on 2019-03-19 (fake -27%, and the new issuer is treated as seasoned). No pick is affected: no FOX/FOXA pick 2019-03..2020-03, and the held paths are already UNKNOWN.
+11. Anchor grade-C spins confirmed: PFE->VTRS (0.124079, VTRS 16.34) and PPL->TLN ratio (0.124906 vs pack 0.1249). TLN close unverified.
+RESIDUAL RISK: members missing from the pack (a real member absent from the reconstruction) not audited name by name; FMP and Massive likely share a tape; price-only basis; HSP has no 2nd vendor; out-of-sample untested.
+NEXT SLICE: rebuild eligible sets at the 10 annual signals from independent holdings snapshots (S&P 500 index-fund N-Q/N-PORT) and diff against the pack. Then a drafted (not applied) patch list for the resolvable UNKNOWNs and FOXA, plus a total-return check on CMG/BLL.

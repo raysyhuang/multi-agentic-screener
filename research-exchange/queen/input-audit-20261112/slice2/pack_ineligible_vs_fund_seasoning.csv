@@ -1,0 +1,260 @@
+fund_period,pack_signal,engine,fund_name,held_prior_dec31
+2014-12-31,2014-12-31,AMG,Affiliated Managers Group Inc.,
+2014-12-31,2014-12-31,MLM,Martin Marietta Materials Inc.,
+2014-12-31,2014-12-31,NAVI,Navient Corp.,
+2014-12-31,2014-12-31,LVLT,Level 3 Communications Inc.,
+2014-12-31,2014-12-31,GMCR,Keurig Green Mountain Inc.,
+2014-12-31,2014-12-31,UHS,Universal Health Services Inc. Class B,
+2014-12-31,2014-12-31,RCL,Royal Caribbean Cruises Ltd.,
+2014-12-31,2014-12-31,GOOG,Google Inc. Class C,
+2014-12-31,2014-12-31,DISCK,Discovery Communications Inc. Series C NVS,
+2014-12-31,2014-12-31,XEC,Cimarex Energy Co.,
+2014-12-31,2014-12-31,MNK,Mallinckrodt PLC,
+2014-12-31,2014-12-31,ESS,Essex Property Trust Inc.,
+2014-12-31,2014-12-31,AVGO,Avago Technologies Ltd.,
+2014-12-31,2014-12-31,TSCO,Tractor Supply Co.,
+2014-12-31,2014-12-31,UAA,Under Armour Inc. Class A,
+2014-12-31,2014-12-31,URI,United Rentals Inc.,
+2015-12-31,2015-12-31,AAL,American Airlines Group Inc.,False
+2015-12-31,2015-12-31,UAL,United ContinentalHoldings Inc.,False
+2015-12-31,2015-12-31,BXLT,Baxalta Inc.,False
+2015-12-31,2015-12-31,SYF,Synchrony Financiala,False
+2015-12-31,2015-12-31,WRK,WestRock Co.,False
+2015-12-31,2015-12-31,KHC,Kraft Heinz Co. (The),False
+2015-12-31,2015-12-31,HCA,HCA Holdings Inc.,False
+2015-12-31,2015-12-31,HSIC,Henry Schein Inc.,False
+2015-12-31,2015-12-31,CHD,Church & Dwight Co. Inc.,False
+2015-12-31,2015-12-31,CSRA,CSRA Inc.,False
+2015-12-31,2015-12-31,PYPL,PayPal Holdings Inc.,False
+2015-12-31,2015-12-31,ILMN,Illumina Inc.,False
+2015-12-31,2015-12-31,NWS,News Corp. Class B,False
+2015-12-31,2015-12-31,FOX,Twenty-First Century Fox Inc. Class B,False
+2015-12-31,2015-12-31,CPGX,Columbia Pipeline Group Inc.,False
+2015-12-31,2015-12-31,ENDP,Endo International PLC,False
+2015-12-31,2015-12-31,VRSK,Verisk Analytics Inc. Class A,False
+2015-12-31,2015-12-31,EQIX,Equinix Inc.,False
+2015-12-31,2015-12-31,O,Realty Income Corp.,False
+2015-12-31,2015-12-31,SLG,SL Green Realty Corp.,False
+2015-12-31,2015-12-31,JBHT,JB Hunt Transport Services Inc.,False
+2015-12-31,2015-12-31,QRVO,Qorvo Inc.,False
+2015-12-31,2015-12-31,SWKS,Skyworks Solutions Inc.,False
+2015-12-31,2015-12-31,ATVI,Activision Blizzard Inc.,False
+2015-12-31,2015-12-31,AAP,Advance Auto Parts Inc.,False
+2015-12-31,2015-12-31,SIG,Signet Jewelers Ltd.,False
+2015-12-31,2015-12-31,HPE,Hewlett Packard Enterprise Co.,False
+2015-12-31,2015-12-31,HBI,Hanesbrands Inc.,False
+2016-12-31,2016-12-30,TDG,TransDigm Group Inc.,False
+2016-12-31,2016-12-30,ALK,Alaska Air Group Inc.,False
+2016-12-31,2016-12-30,CFG,Citizens Financial Group Inc.,False
+2016-12-31,2016-12-30,FBHS,Fortune Brands Home & Security Inc.,False
+2016-12-31,2016-12-30,ALB,Albemarle Corp.,False
+2016-12-31,2016-12-30,LKQ,LKQ Corp.,False
+2016-12-31,2016-12-30,LNT,Alliant Energy Corp.,False
+2016-12-31,2016-12-30,AYI,Acuity Brands Inc.,False
+2016-12-31,2016-12-30,DLR,Digital Realty Trust Inc.,False
+2016-12-31,2016-12-30,EXR,Extra Space Storage Inc.,False
+2016-12-31,2016-12-30,FRT,Federal Realty Investment Trustc,False
+2016-12-31,2016-12-30,MAA,Mid-America Apartment Communities Inc.,False
+2016-12-31,2016-12-30,UDR,UDR Inc.,False
+2016-12-31,2016-12-30,COO,Cooper Companies Inc. (The),False
+2016-12-31,2016-12-30,HOLX,Hologic Inc.,False
+2016-12-31,2016-12-30,CNC,Centene Corp.,False
+2016-12-31,2016-12-30,EVHC,Envision Healthcare Corp.,False
+2016-12-31,2016-12-30,AJG,Arthur J Gallagher & Co.,False
+2016-12-31,2016-12-30,WLTW,Willis Towers Watson PLC,False
+2016-12-31,2016-12-30,GPN,Global Payments Inc.,False
+2016-12-31,2016-12-30,MTD,Mettler-Toledo International Inc.,False
+2016-12-31,2016-12-30,FTV,Fortive Corp.,False
+2016-12-31,2016-12-30,CHTR,Charter Communications Inc. Class A,False
+2016-12-31,2016-12-30,CXO,Concho Resources Inc.,False
+2016-12-31,2016-12-30,COTY,Coty Inc. Class A,False
+2016-12-31,2016-12-30,FL,Foot Locker Inc.,False
+2016-12-31,2016-12-30,ULTA,Ulta Salon Cosmetics & Fragrance Inc.,False
+2016-12-31,2016-12-30,UA,Under Armour Inc. Class C,False
+2016-12-31,2016-12-30,AWK,American Water Works Co. Inc.,False
+2017-12-31,2017-12-29,INCY,Incyte Corp.,False
+2017-12-31,2017-12-29,AOS,AO Smith Corp.,False
+2017-12-31,2017-12-29,CBOE,Cboe Global Markets Inc.,False
+2017-12-31,2017-12-29,RJF,Raymond James Financial Inc.,False
+2017-12-31,2017-12-29,DWDP,DowDuPont Inc.,False
+2017-12-31,2017-12-29,PKG,Packaging Corp. of America,False
+2017-12-31,2017-12-29,ARE,Alexandria Real Estate Equities Inc.,False
+2017-12-31,2017-12-29,DRE,Duke Realty Corp.,False
+2017-12-31,2017-12-29,REG,Regency Centers Corp.,False
+2017-12-31,2017-12-29,SBAC,SBA Communications Corp.,False
+2017-12-31,2017-12-29,ALGN,Align Technology Inc.,False
+2017-12-31,2017-12-29,IDXX,IDEXX Laboratories Inc.,False
+2017-12-31,2017-12-29,RMD,ResMed Inc.,False
+2017-12-31,2017-12-29,HLT,Hilton Worldwide Holdings Inc.,False
+2017-12-31,2017-12-29,MGM,MGM Resorts International,False
+2017-12-31,2017-12-29,NCLH,Norwegian Cruise Line Holdings Ltd.,False
+2017-12-31,2017-12-29,BHF,Brighthouse Financial Inc.,False
+2017-12-31,2017-12-29,RE,Everest Re Group Ltd.,False
+2017-12-31,2017-12-29,DXC,DXC Technology Co.,False
+2017-12-31,2017-12-29,IT,Gartner Inc.,False
+2017-12-31,2017-12-29,IQV,IQVIA Holdings Inc.,False
+2017-12-31,2017-12-29,DISH,DISH Network Corp. Class A,False
+2017-12-31,2017-12-29,INFO,IHS Markit Ltd.,False
+2017-12-31,2017-12-29,AMD,Advanced Micro Devices Inc.,False
+2017-12-31,2017-12-29,ANSS,ANSYS Inc.,False
+2017-12-31,2017-12-29,CDNS,Cadence Design Systems Inc.,False
+2017-12-31,2017-12-29,SNPS,Synopsys Inc.,False
+2017-12-31,2017-12-29,KORS,Michael Kors Holdings Ltd.,True
+2018-12-31,2018-12-31,HII,Huntington Ingalls Industries Inc.,False
+2018-12-31,2018-12-31,SIVB,SVB Financial Group,False
+2018-12-31,2018-12-31,MSCI,MSCI Inc.,False
+2018-12-31,2018-12-31,CE,Celanese Corp.,False
+2018-12-31,2018-12-31,LIN,Linde PLC,False
+2018-12-31,2018-12-31,CPRT,Copart Inc.,False
+2018-12-31,2018-12-31,ROL,Rollins Inc.,False
+2018-12-31,2018-12-31,ANET,Arista Networks Inc.,False
+2018-12-31,2018-12-31,EVRG,Evergy Inc.,False
+2018-12-31,2018-12-31,IPGP,IPG Photonics Corp.,False
+2018-12-31,2018-12-31,KEYS,Keysight Technologies Inc.,False
+2018-12-31,2018-12-31,TTWO,Take-Two Interactive Software Inc.,False
+2018-12-31,2018-12-31,LW,Lamb Weston Holdings Inc.,False
+2018-12-31,2018-12-31,ABMD,ABIOMED Inc.,False
+2018-12-31,2018-12-31,WCG,WellCare Health Plans Inc.,False
+2018-12-31,2018-12-31,TWTR,Twitter Inc.,False
+2018-12-31,2018-12-31,BR,Broadridge Financial Solutions Inc.,False
+2018-12-31,2018-12-31,FLT,FleetCor Technologies Inc.,False
+2018-12-31,2018-12-31,JKHY,Jack Henry & Associates Inc.,False
+2018-12-31,2018-12-31,FANG,Diamondback Energy Inc.,False
+2018-12-31,2018-12-31,HFC,HollyFrontier Corp.,False
+2018-12-31,2018-12-31,NKTR,Nektar Therapeutics,False
+2018-12-31,2018-12-31,MXIM,Maxim Integrated Products Inc.,False
+2018-12-31,2018-12-31,FTNT,Fortinet Inc.,False
+2019-12-31,2019-12-31,LVS,Las Vegas Sands Corp,False
+2019-12-31,2019-12-31,DD,DuPont de Nemours Inc,False
+2019-12-31,2019-12-31,NOW,ServiceNow Inc,False
+2019-12-31,2019-12-31,ATO,Atmos Energy Corp,False
+2019-12-31,2019-12-31,LDOS,Leidos Holdings Inc,False
+2019-12-31,2019-12-31,CTVA,Corteva Inc,False
+2019-12-31,2019-12-31,TFX,Teleflex Inc,False
+2019-12-31,2019-12-31,FRC,First Republic Bank/CA,False
+2019-12-31,2019-12-31,LYV,Live Nation Entertainment Inc,False
+2019-12-31,2019-12-31,DOW,DOW INC W/I,False
+2019-12-31,2019-12-31,TFC,Truist Financial Corp,False
+2019-12-31,2019-12-31,IEX,IDEX Corp,False
+2019-12-31,2019-12-31,NVR,NVR Inc,False
+2019-12-31,2019-12-31,BKR,Baker Hughes Co,False
+2019-12-31,2019-12-31,MKTX,MarketAxess Holdings Inc,False
+2019-12-31,2019-12-31,J,Jacobs Engineering Group Inc,False
+2019-12-31,2019-12-31,LHX,L3Harris Technologies Inc,False
+2019-12-31,2019-12-31,WAB,Westinghouse Air Brake Technologies Corp,False
+2019-12-31,2019-12-31,AMCR,AMCOR PLC,False
+2019-12-31,2019-12-31,TMUS,T-Mobile US Inc,False
+2019-12-31,2019-12-31,WRB,WR Berkley Corp,False
+2019-12-31,2019-12-31,STE,STERIS PLC,False
+2019-12-31,2019-12-31,GL,Globe Life Inc,False
+2019-12-31,2019-12-31,CDW,CDW Corp/DE,False
+2019-12-31,2019-12-31,ODFL,Old Dominion Freight Line Inc,False
+2019-12-31,2019-12-31,ZBRA,Zebra Technologies Corp,False
+2019-12-31,2019-12-31,VIAC,ViacomCBS Inc,False
+2019-12-31,2019-12-31,NLOK,NortonLifeLock Inc,False
+2020-12-31,2020-12-31,TDY,Teledyne Technologies Inc,False
+2020-12-31,2020-12-31,VTRS,Viatris Inc,False
+2020-12-31,2020-12-31,POOL,Pool Corp,False
+2020-12-31,2020-12-31,LUMN,CenturyLink Inc,False
+2020-12-31,2020-12-31,TER,Teradyne Inc,False
+2020-12-31,2020-12-31,PAYC,Paycom Software Inc,False
+2020-12-31,2020-12-31,VNT,Vontier Corp,False
+2020-12-31,2020-12-31,TYL,Tyler Technologies Inc,False
+2020-12-31,2020-12-31,TT,Trane Technologies PLC,False
+2020-12-31,2020-12-31,ETSY,Etsy Inc,False
+2020-12-31,2020-12-31,TSLA,Tesla Inc,False
+2020-12-31,2020-12-31,DPZ,Domino's Pizza Inc,False
+2020-12-31,2020-12-31,DXCM,DexCom Inc,False
+2020-12-31,2020-12-31,RTX,Raytheon Technologies Corp,False
+2020-12-31,2020-12-31,CARR,Carrier Global Corp,False
+2020-12-31,2020-12-31,BIO,Bio-Rad Laboratories Inc,False
+2020-12-31,2020-12-31,OTIS,Otis Worldwide Corp,False
+2020-12-31,2020-12-31,WST,West Pharmaceutical Services Inc,False
+2020-12-31,2020-12-31,CTLT,Catalent Inc,False
+2021-12-31,2021-12-31,CRL,Charles River Laboratories International Inc,False
+2021-12-31,2021-12-31,EPAM,EPAM Systems Inc,False
+2021-12-31,2021-12-31,PENN,Penn National Gaming Inc,False
+2021-12-31,2021-12-31,CZR,Caesars Entertainment Inc,False
+2021-12-31,2021-12-31,ENPH,Enphase Energy Inc,False
+2021-12-31,2021-12-31,CTRA,Coterra Energy Inc,False
+2021-12-31,2021-12-31,NXPI,NXP Semiconductors NV,False
+2021-12-31,2021-12-31,GNRC,Generac Holdings Inc,False
+2021-12-31,2021-12-31,MRNA,Moderna Inc,False
+2021-12-31,2021-12-31,TRMB,Trimble Inc,False
+2021-12-31,2021-12-31,CDAY,Ceridian HCM Holding Inc,False
+2021-12-31,2021-12-31,SEDG,SolarEdge Technologies Inc,False
+2021-12-31,2021-12-31,OGN,Organon & Co,False
+2021-12-31,2021-12-31,MTCH,Match Group Inc,False
+2021-12-31,2021-12-31,FDS,FactSet Research Systems Inc,False
+2021-12-31,2021-12-31,TECH,Bio-Techne Corp,False
+2021-12-31,2021-12-31,BRO,Brown & Brown Inc,False
+2021-12-31,2021-12-31,PTC,PTC Inc,False
+2021-12-31,2021-12-31,MPWR,Monolithic Power Systems Inc,False
+2021-12-31,2021-12-31,SBNY,Signature Bank/New York NY,False
+2022-12-31,2022-12-30,CSGP,"CoStar Group, Inc.",False
+2022-12-31,2022-12-30,PCG,PG&E Corp.,False
+2022-12-31,2022-12-30,CPT,Camden Property Trust,False
+2022-12-31,2022-12-30,STLD,"Steel Dynamics, Inc.",False
+2022-12-31,2022-12-30,MOH,"Molina Healthcare, Inc.",False
+2022-12-31,2022-12-30,WBD,"Warner Bros Discovery, Inc.",False
+2022-12-31,2022-12-30,FSLR,"First Solar, Inc.",False
+2022-12-31,2022-12-30,KDP,"Keurig Dr Pepper, Inc.",False
+2022-12-31,2022-12-30,INVH,"Invitation Homes, Inc.",False
+2022-12-31,2022-12-30,ACGL,Arch Capital Group Ltd.,False
+2022-12-31,2022-12-30,CEG,Constellation Energy Corp.,False
+2022-12-31,2022-12-30,EQT,EQT Corp.,False
+2022-12-31,2022-12-30,PARA,Paramount Global,False
+2022-12-31,2022-12-30,VICI,"VICI Properties, Inc.",False
+2022-12-31,2022-12-30,NDSN,Nordson Corp.,False
+2022-12-31,2022-12-30,ON,ON Semiconductor Corp.,False
+2022-12-31,2022-12-30,TRGP,Targa Resources Corp.,False
+2023-12-31,2023-12-29,JBL,"Jabil, Inc.",False
+2023-12-31,2023-12-29,GEHC,"GE HealthCare Technologies, Inc.",False
+2023-12-31,2023-12-29,FICO,Fair Isaac Corp.,False
+2023-12-31,2023-12-29,VLTO,Veralto Corp.,False
+2023-12-31,2023-12-29,UBER,"Uber Technologies, Inc.",False
+2023-12-31,2023-12-29,LULU,"Lululemon Athletica, Inc.",False
+2023-12-31,2023-12-29,BLDR,"Builders FirstSource, Inc.",False
+2023-12-31,2023-12-29,ABNB,"Airbnb, Inc.",False
+2023-12-31,2023-12-29,AXON,"Axon Enterprise, Inc.",False
+2023-12-31,2023-12-29,BX,"Blackstone, Inc.",False
+2023-12-31,2023-12-29,PODD,Insulet Corp.,False
+2023-12-31,2023-12-29,BG,Bunge Global SA,False
+2023-12-31,2023-12-29,KVUE,"Kenvue, Inc.",False
+2023-12-31,2023-12-29,HUBB,"Hubbell, Inc.",False
+2023-12-31,2023-12-29,PANW,"Palo Alto Networks, Inc.",False
+2024-12-31,2024-12-31,CRWD,"Crowdstrike Holdings, Inc.",False
+2024-12-31,2024-12-31,DECK,Deckers Outdoor Corp.,False
+2024-12-31,2024-12-31,GEV,"GE Vernova, Inc.",False
+2024-12-31,2024-12-31,TPL,Texas Pacific Land Corp.,False
+2024-12-31,2024-12-31,KKR,"KKR & Co., Inc.",False
+2024-12-31,2024-12-31,SOLV,Solventum Corp.,False
+2024-12-31,2024-12-31,LII,"Lennox International, Inc.",False
+2024-12-31,2024-12-31,PLTR,"Palantir Technologies, Inc.",False
+2024-12-31,2024-12-31,GDDY,"GoDaddy, Inc.",False
+2024-12-31,2024-12-31,APO,"Apollo Global Management, Inc.",False
+2024-12-31,2024-12-31,ERIE,Erie Indemnity Co.,False
+2024-12-31,2024-12-31,VST,Vistra Corp.,False
+2024-12-31,2024-12-31,SMCI,"Super Micro Computer, Inc.",False
+2024-12-31,2024-12-31,DELL,"Dell Technologies, Inc.",False
+2024-12-31,2024-12-31,WDAY,"Workday, Inc.",False
+2024-12-31,2024-12-31,SW,Smurfit WestRock plc,False
+2025-12-31,2025-11-28,APO,"Apollo Global Management, Inc.",True
+2025-12-31,2025-11-28,APP,AppLovin Corp.,False
+2025-12-31,2025-11-28,EXE,Expand Energy Corp.,False
+2025-12-31,2025-11-28,COIN,"Coinbase Global, Inc.",False
+2025-12-31,2025-11-28,DDOG,"Datadog, Inc.",False
+2025-12-31,2025-11-28,DASH,"DoorDash, Inc.",False
+2025-12-31,2025-11-28,EME,"EMCOR Group, Inc.",False
+2025-12-31,2025-11-28,FISV,"Fiserv, Inc.",False
+2025-12-31,2025-11-28,IBKR,"Interactive Brokers Group, Inc.",False
+2025-12-31,2025-11-28,LII,"Lennox International, Inc.",True
+2025-12-31,2025-11-28,PSKY,Paramount Skydance Corp.,False
+2025-12-31,2025-11-28,Q,"Qnity Electronics, Inc.",False
+2025-12-31,2025-11-28,HOOD,"Robinhood Markets, Inc.",False
+2025-12-31,2025-11-28,SNDK,Sandisk Corp.,False
+2025-12-31,2025-11-28,XYZ,"Block, Inc.",False
+2025-12-31,2025-11-28,TKO,"TKO Group Holdings, Inc.",False
+2025-12-31,2025-11-28,TTD,"Trade Desk, Inc. (The)",False
+2025-12-31,2025-11-28,WSM,"Williams-Sonoma, Inc.",False
+2025-12-31,2025-11-28,WDAY,"Workday, Inc.",True
