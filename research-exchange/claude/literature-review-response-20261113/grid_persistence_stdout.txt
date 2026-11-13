@@ -1,0 +1,8 @@
+cells compared 144 ; cells with >=6 exact K1 paths for validation 142
+phases per cell 2015-25: {12}  2005-15: {10}
+VALIDATION proxy vs Queen exact, 2015-2025 K1 cell medians: Spearman 0.921; mean abs diff 2.79 pp; W10H2 proxy 44.7% exact 45.2%; W12H4 proxy 43.3% exact 43.0%
+2005-2015 proxy: W10H2 -2.1% (Queen exact -4.8%), W12H4 -10.7% (Queen exact -10.4%)
+CROSS-DECADE Spearman of cell medians (2005-15 vs 2015-25): 0.024
+top-decile cells of 2015-25 and their rank (of 144) in 2005-15: [((10, 2), 87), ((12, 4), 140), ((12, 3), 129), ((10, 4), 85), ((11, 8), 109), ((12, 7), 115), ((11, 6), 95), ((10, 6), 50), ((12, 2), 94), ((11, 4), 135), ((10, 3), 117), ((11, 5), 61), ((12, 8), 114), ((11, 2), 133)]
+2005-15: cells with positive median CAGR 66 of 144; best (9, 1) 13.4%; median cell -0.4%; W>=10 cells median -3.3%, W<=3 cells median -4.1%
+2015-25: W>=10 cells median 38.5%, W<=3 cells median 3.6%

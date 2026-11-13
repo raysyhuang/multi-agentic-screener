@@ -1,0 +1,42 @@
+W10H2K1 holding periods 720 paths 12
+  entered 2005:  42 periods, avg log return per path +0.042 (40% of periods lost)
+  entered 2006:  72 periods, avg log return per path +0.006 (58% of periods lost)
+  entered 2007:  72 periods, avg log return per path +0.132 (33% of periods lost)
+  entered 2008:  72 periods, avg log return per path -1.386 (75% of periods lost)
+  entered 2009:  72 periods, avg log return per path -0.217 (42% of periods lost)
+  entered 2010:  72 periods, avg log return per path -0.096 (50% of periods lost)
+  entered 2011:  72 periods, avg log return per path -0.127 (58% of periods lost)
+  entered 2012:  72 periods, avg log return per path +0.484 (25% of periods lost)
+  entered 2013:  72 periods, avg log return per path +0.479 (33% of periods lost)
+  entered 2014:  72 periods, avg log return per path +0.256 (25% of periods lost)
+  entered 2015:  30 periods, avg log return per path -0.084 (77% of periods lost)
+  worst names (avg log per path): [('CNX', -0.51), ('BIG', -0.39), ('APOL', -0.27), ('THC', -0.26), ('AMD', -0.24), ('AMZN', -0.24)]
+  best names: [('NFLX', 0.57), ('PHM', 0.47), ('ATI', 0.25), ('GNW', 0.17)]
+  total avg log per path -0.51; entries in 2007-2008 contribute -1.25; everything else 0.74
+W12H4K1 holding periods 348 paths 12
+  entered 2005:  24 periods, avg log return per path +0.180 (21% of periods lost)
+  entered 2006:  36 periods, avg log return per path -0.026 (58% of periods lost)
+  entered 2007:  36 periods, avg log return per path -0.165 (58% of periods lost)
+  entered 2008:  36 periods, avg log return per path -1.384 (67% of periods lost)
+  entered 2009:  36 periods, avg log return per path +0.403 (33% of periods lost)
+  entered 2010:  36 periods, avg log return per path -0.384 (75% of periods lost)
+  entered 2011:  36 periods, avg log return per path -0.144 (58% of periods lost)
+  entered 2012:  36 periods, avg log return per path +0.201 (25% of periods lost)
+  entered 2013:  36 periods, avg log return per path +0.365 (25% of periods lost)
+  entered 2014:  27 periods, avg log return per path +0.272 (22% of periods lost)
+  entered 2015:   9 periods, avg log return per path -0.036 (56% of periods lost)
+  worst names (avg log per path): [('THC', -0.78), ('CNX', -0.3), ('GT', -0.14), ('HES', -0.11), ('MON', -0.11), ('CIEN', -0.1)]
+  best names: [('NFLX', 0.35), ('MU', 0.32), ('ATI', 0.26), ('PHM', 0.2)]
+  total avg log per path -0.72; entries in 2007-2008 contribute -1.55; everything else 0.83
+2005-2015 W10H2K1 phases 12 | median phase CAGR -4.74% MDD -89.50% | 12-tranche composite, common window 2005-12-01..2015-01-02: CAGR -1.48% MDD -87.31%
+2005-2015 W12H4K1 phases 9 | median phase CAGR -10.43% MDD -92.98% | 12-tranche composite, common window 2005-12-01..2015-01-02: CAGR -6.67% MDD -78.79%
+2015-2025 W10H2K1 phases 12 | median phase CAGR 45.28% MDD -51.78% | 12-tranche composite, common window 2015-12-01..2025-01-02: CAGR 47.61% MDD -48.78%
+2015-2025 W12H4K1 phases 12 | median phase CAGR 43.06% MDD -52.00% | 12-tranche composite, common window 2015-12-01..2025-01-02: CAGR 48.16% MDD -43.63%
+2005-2015 W10H2K1 UP ( n=557 mean +2.6% median +2.3% positive 56% worst -24%
+2005-2015 W10H2K1 DOWN n=163 mean -6.0% median -1.3% positive 48% worst -45%
+2005-2015 W12H4K1 UP ( n=267 mean +4.6% median +3.3% positive 56% worst -34%
+2005-2015 W12H4K1 DOWN n=81 mean -8.6% median -1.7% positive 48% worst -79%
+2015-2025 W10H2K1 UP ( n=517 mean +8.4% median +7.0% positive 65% worst -30%
+2015-2025 W10H2K1 DOWN n=203 mean +7.3% median +4.6% positive 65% worst -28%
+2015-2025 W12H4K1 UP ( n=258 mean +16.4% median +11.8% positive 79% worst -33%
+2015-2025 W12H4K1 DOWN n=102 mean +11.7% median +7.3% positive 62% worst -20%
