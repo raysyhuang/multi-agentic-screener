@@ -1,0 +1,98 @@
+window,variant,K,stop,universe,basis,start,end,cagr_pct,mdd_pct,end_value,nvda_logshare_pct,n_stops,n_cashouts
+W2015_2025,K1|nostop|all|PX,1,none,all,price only,2015-01-02,2025-01-02,13.3917,-74.438,3.5147,105.9,0,0
+W2015_2025,K1|nostop|all|TR,1,none,all,total return,2015-01-02,2025-01-02,14.6114,-73.9971,3.9117,97.9,0,0
+W2015_2025,K1|nostop|exNVDA|PX,1,none,ex-NVDA,price only,2015-01-02,2025-01-02,-0.6065,-75.6499,0.941,-0.0,0,0
+W2015_2025,K1|nostop|exNVDA|TR,1,none,ex-NVDA,total return,2015-01-02,2025-01-02,0.4727,-74.4549,1.0483,0.0,0,0
+W2015_2025,K1|stop30|all|PX,1,30% trail->cash,all,price only,2015-01-02,2025-01-02,16.2804,-55.2887,4.5202,88.2,3,0
+W2015_2025,K1|stop30|all|TR,1,30% trail->cash,all,total return,2015-01-02,2025-01-02,16.7765,-55.1676,4.7168,86.1,3,0
+W2015_2025,K1|stop30|exNVDA|PX,1,30% trail->cash,ex-NVDA,price only,2015-01-02,2025-01-02,1.9255,-57.4084,1.2102,0.0,3,0
+W2015_2025,K1|stop30|exNVDA|TR,1,30% trail->cash,ex-NVDA,total return,2015-01-02,2025-01-02,2.3707,-55.9569,1.2641,0.0,3,0
+W2015_2025,K2|nostop|all|PX,2,none,all,price only,2015-01-02,2025-01-02,10.9875,-63.3331,2.8366,92.4,0,0
+W2015_2025,K2|nostop|all|TR,2,none,all,total return,2015-01-02,2025-01-02,12.2914,-60.1148,3.1881,83.5,0,0
+W2015_2025,K2|nostop|exNVDA|PX,2,none,ex-NVDA,price only,2015-01-02,2025-01-02,4.7221,-64.3963,1.5864,0.0,0,0
+W2015_2025,K2|nostop|exNVDA|TR,2,none,ex-NVDA,total return,2015-01-02,2025-01-02,6.1453,-61.2715,1.8157,0.0,0,0
+W2015_2025,K2|stop30|all|PX,2,30% trail->cash,all,price only,2015-01-02,2025-01-02,8.6915,-67.602,2.3015,115.5,9,0
+W2015_2025,K2|stop30|all|TR,2,30% trail->cash,all,total return,2015-01-02,2025-01-02,10.5661,-62.7699,2.7307,96.3,8,0
+W2015_2025,K2|stop30|exNVDA|PX,2,30% trail->cash,ex-NVDA,price only,2015-01-02,2025-01-02,2.5557,-68.5414,1.2871,0.0,9,0
+W2015_2025,K2|stop30|exNVDA|TR,2,30% trail->cash,ex-NVDA,total return,2015-01-02,2025-01-02,4.5143,-63.8496,1.5552,0.0,8,0
+W2015_2025,K3|nostop|all|PX,3,none,all,price only,2015-01-02,2025-01-02,15.1325,-46.6448,4.0932,65.4,0,0
+W2015_2025,K3|nostop|all|TR,3,none,all,total return,2015-01-02,2025-01-02,16.7676,-44.0669,4.7132,59.6,0,0
+W2015_2025,K3|nostop|exNVDA|PX,3,none,ex-NVDA,price only,2015-01-02,2025-01-02,7.2893,-49.6634,2.0212,0.0,0,0
+W2015_2025,K3|nostop|exNVDA|TR,3,none,ex-NVDA,total return,2015-01-02,2025-01-02,8.9001,-47.2225,2.346,0.0,0,0
+W2015_2025,K3|stop30|all|PX,3,30% trail->cash,all,price only,2015-01-02,2025-01-02,11.4142,-58.8494,2.9476,85.2,12,0
+W2015_2025,K3|stop30|all|TR,3,30% trail->cash,all,total return,2015-01-02,2025-01-02,13.3911,-55.1979,3.5145,73.5,11,0
+W2015_2025,K3|stop30|exNVDA|PX,3,30% trail->cash,ex-NVDA,price only,2015-01-02,2025-01-02,3.8243,-61.1776,1.4555,0.0,12,0
+W2015_2025,K3|stop30|exNVDA|TR,3,30% trail->cash,ex-NVDA,total return,2015-01-02,2025-01-02,5.7511,-57.7255,1.7494,0.0,11,0
+W2005_2015,K1|nostop|all|PX,1,none,all,price only,2005-01-03,2015-01-02,-10.9531,-87.6753,0.3136,-0.0,0,0
+W2005_2015,K1|nostop|exNVDA|PX,1,none,ex-NVDA,price only,2005-01-03,2015-01-02,-10.9531,-87.6753,0.3136,-0.0,0,0
+W2005_2015,K1|stop30|all|PX,1,30% trail->cash,all,price only,2005-01-03,2015-01-02,-10.3504,-86.8156,0.3355,-0.0,6,0
+W2005_2015,K1|stop30|exNVDA|PX,1,30% trail->cash,ex-NVDA,price only,2005-01-03,2015-01-02,-10.3504,-86.8156,0.3355,-0.0,6,0
+W2005_2015,K2|nostop|all|PX,2,none,all,price only,2005-01-03,2015-01-02,-2.704,-67.2696,0.7603,-0.0,0,1
+W2005_2015,K2|nostop|exNVDA|PX,2,none,ex-NVDA,price only,2005-01-03,2015-01-02,-2.704,-67.2696,0.7603,-0.0,0,1
+W2005_2015,K2|stop30|all|PX,2,30% trail->cash,all,price only,2005-01-03,2015-01-02,-3.7409,-67.2852,0.6831,-0.0,11,1
+W2005_2015,K2|stop30|exNVDA|PX,2,30% trail->cash,ex-NVDA,price only,2005-01-03,2015-01-02,-3.7409,-67.2852,0.6831,-0.0,11,1
+W2005_2015,K3|nostop|all|PX,3,none,all,price only,2005-01-03,2015-01-02,3.2812,-59.6636,1.3809,0.0,0,1
+W2005_2015,K3|nostop|exNVDA|PX,3,none,ex-NVDA,price only,2005-01-03,2015-01-02,3.2812,-59.6636,1.3809,0.0,0,1
+W2005_2015,K3|stop30|all|PX,3,30% trail->cash,all,price only,2005-01-03,2015-01-02,2.0739,-53.9542,1.2277,0.0,17,1
+W2005_2015,K3|stop30|exNVDA|PX,3,30% trail->cash,ex-NVDA,price only,2005-01-03,2015-01-02,2.0739,-53.9542,1.2277,0.0,17,1
+W2015_2026x,K1|nostop|all|PX,1,none,all,price only,2015-01-02,2026-11-12,12.2621,-74.438,3.9426,97.0,0,0
+W2015_2026x,K1|nostop|all|TR,1,none,all,total return,2015-01-02,2026-11-12,13.3014,-73.9971,4.398,90.1,0,0
+W2015_2026x,K1|nostop|exNVDA|PX,1,none,ex-NVDA,price only,2015-01-02,2026-11-12,0.4567,-75.6499,1.0555,0.0,0,0
+W2015_2026x,K1|nostop|exNVDA|TR,1,none,ex-NVDA,total return,2015-01-02,2026-11-12,1.3954,-74.4549,1.1786,0.0,0,0
+W2015_2026x,K1|stop30|all|PX,1,30% trail->cash,all,price only,2015-01-02,2026-11-12,18.575,-55.2887,7.5437,65.9,7,0
+W2015_2026x,K1|stop30|all|TR,1,30% trail->cash,all,total return,2015-01-02,2026-11-12,19.0046,-55.1676,7.8744,64.7,7,0
+W2015_2026x,K1|stop30|exNVDA|PX,1,30% trail->cash,ex-NVDA,price only,2015-01-02,2026-11-12,6.1057,-57.4084,2.0196,0.0,7,0
+W2015_2026x,K1|stop30|exNVDA|TR,1,30% trail->cash,ex-NVDA,total return,2015-01-02,2026-11-12,6.4993,-55.9569,2.1103,0.0,7,0
+W2015_2026x,K2|nostop|all|PX,2,none,all,price only,2015-01-02,2026-11-12,14.406,-63.3331,4.9343,60.3,0,0
+W2015_2026x,K2|nostop|all|TR,2,none,all,total return,2015-01-02,2026-11-12,15.5973,-60.155,5.5794,56.3,0,0
+W2015_2026x,K2|nostop|exNVDA|PX,2,none,ex-NVDA,price only,2015-01-02,2026-11-12,8.9352,-64.3963,2.7595,0.0,0,0
+W2015_2026x,K2|nostop|exNVDA|TR,2,none,ex-NVDA,total return,2015-01-02,2026-11-12,10.2386,-61.2715,3.1775,0.0,0,0
+W2015_2026x,K2|stop30|all|PX,2,30% trail->cash,all,price only,2015-01-02,2026-11-12,12.1691,-67.602,3.9041,70.7,15,0
+W2015_2026x,K2|stop30|all|TR,2,30% trail->cash,all,total return,2015-01-02,2026-11-12,13.8468,-62.7699,4.6557,62.9,14,0
+W2015_2026x,K2|stop30|exNVDA|PX,2,30% trail->cash,ex-NVDA,price only,2015-01-02,2026-11-12,6.8054,-68.5414,2.1834,0.0,15,0
+W2015_2026x,K2|stop30|exNVDA|TR,2,30% trail->cash,ex-NVDA,total return,2015-01-02,2026-11-12,8.5692,-63.8496,2.6515,0.0,14,0
+W2015_2026x,K3|nostop|all|PX,3,none,all,price only,2015-01-02,2026-11-12,18.9927,-57.6793,7.865,44.7,0,0
+W2015_2026x,K3|nostop|all|TR,3,none,all,total return,2015-01-02,2026-11-12,20.5,-57.659,9.1314,41.8,0,0
+W2015_2026x,K3|nostop|exNVDA|PX,3,none,ex-NVDA,price only,2015-01-02,2026-11-12,12.1196,-57.6793,3.8837,0.0,0,0
+W2015_2026x,K3|nostop|exNVDA|TR,3,none,ex-NVDA,total return,2015-01-02,2026-11-12,13.6164,-57.659,4.5452,0.0,0,0
+W2015_2026x,K3|stop30|all|PX,3,30% trail->cash,all,price only,2015-01-02,2026-11-12,15.2163,-58.8494,5.3651,54.8,21,0
+W2015_2026x,K3|stop30|all|TR,3,30% trail->cash,all,total return,2015-01-02,2026-11-12,17.0119,-55.1979,6.4452,49.6,20,0
+W2015_2026x,K3|stop30|exNVDA|PX,3,30% trail->cash,ex-NVDA,price only,2015-01-02,2026-11-12,8.5614,-61.1776,2.6492,0.0,21,0
+W2015_2026x,K3|stop30|exNVDA|TR,3,30% trail->cash,ex-NVDA,total return,2015-01-02,2026-11-12,10.3276,-57.7255,3.2081,0.0,20,0
+W2025_2026x,K1|nostop|all|PX,1,none,all,price only,2025-01-02,2026-11-12,6.0896,-73.5137,1.1162,0.0,0,0
+W2025_2026x,K1|nostop|all|TR,1,none,all,total return,2025-01-02,2026-11-12,6.2204,-73.5052,1.1187,0.0,0,0
+W2025_2026x,K1|nostop|exNVDA|PX,1,none,ex-NVDA,price only,2025-01-02,2026-11-12,6.0896,-73.5137,1.1162,0.0,0,0
+W2025_2026x,K1|nostop|exNVDA|TR,1,none,ex-NVDA,total return,2025-01-02,2026-11-12,6.2204,-73.5052,1.1187,0.0,0,0
+W2025_2026x,K1|stop30|all|PX,1,30% trail->cash,all,price only,2025-01-02,2026-11-12,31.3661,-50.4422,1.6606,0.0,4,0
+W2025_2026x,K1|stop30|all|TR,1,30% trail->cash,all,total return,2025-01-02,2026-11-12,31.3882,-50.4417,1.6611,0.0,4,0
+W2025_2026x,K1|stop30|exNVDA|PX,1,30% trail->cash,ex-NVDA,price only,2025-01-02,2026-11-12,31.3661,-50.4422,1.6606,0.0,4,0
+W2025_2026x,K1|stop30|exNVDA|TR,1,30% trail->cash,ex-NVDA,total return,2025-01-02,2026-11-12,31.3882,-50.4417,1.6611,0.0,4,0
+W2025_2026x,K2|nostop|all|PX,2,none,all,price only,2025-01-02,2026-11-12,34.404,-60.1678,1.7327,0.0,0,0
+W2025_2026x,K2|nostop|all|TR,2,none,all,total return,2025-01-02,2026-11-12,34.8401,-60.155,1.7431,0.0,0,0
+W2025_2026x,K2|nostop|exNVDA|PX,2,none,ex-NVDA,price only,2025-01-02,2026-11-12,34.404,-60.1678,1.7327,0.0,0,0
+W2025_2026x,K2|nostop|exNVDA|TR,2,none,ex-NVDA,total return,2025-01-02,2026-11-12,34.8401,-60.155,1.7431,0.0,0,0
+W2025_2026x,K2|stop30|all|PX,2,30% trail->cash,all,price only,2025-01-02,2026-11-12,32.6088,-52.2899,1.6899,0.0,6,0
+W2025_2026x,K2|stop30|all|TR,2,30% trail->cash,all,total return,2025-01-02,2026-11-12,32.9712,-52.2822,1.6985,0.0,6,0
+W2025_2026x,K2|stop30|exNVDA|PX,2,30% trail->cash,ex-NVDA,price only,2025-01-02,2026-11-12,32.6088,-52.2899,1.6899,0.0,6,0
+W2025_2026x,K2|stop30|exNVDA|TR,2,30% trail->cash,ex-NVDA,total return,2025-01-02,2026-11-12,32.9712,-52.2822,1.6985,0.0,6,0
+W2025_2026x,K3|nostop|all|PX,3,none,all,price only,2025-01-02,2026-11-12,41.4392,-57.6793,1.9051,0.0,0,0
+W2025_2026x,K3|nostop|all|TR,3,none,all,total return,2025-01-02,2026-11-12,42.0683,-57.659,1.9208,0.0,0,0
+W2025_2026x,K3|nostop|exNVDA|PX,3,none,ex-NVDA,price only,2025-01-02,2026-11-12,41.4392,-57.6793,1.9051,0.0,0,0
+W2025_2026x,K3|nostop|exNVDA|TR,3,none,ex-NVDA,total return,2025-01-02,2026-11-12,42.0683,-57.659,1.9208,0.0,0,0
+W2025_2026x,K3|stop30|all|PX,3,30% trail->cash,all,price only,2025-01-02,2026-11-12,37.3807,-51.6293,1.8047,0.0,9,0
+W2025_2026x,K3|stop30|all|TR,3,30% trail->cash,all,total return,2025-01-02,2026-11-12,37.9415,-51.6135,1.8184,0.0,9,0
+W2025_2026x,K3|stop30|exNVDA|PX,3,30% trail->cash,ex-NVDA,price only,2025-01-02,2026-11-12,37.3807,-51.6293,1.8047,0.0,9,0
+W2025_2026x,K3|stop30|exNVDA|TR,3,30% trail->cash,ex-NVDA,total return,2025-01-02,2026-11-12,37.9415,-51.6135,1.8184,0.0,9,0
+W2015_2025,SPY buy&hold,,,,price only,2015-01-02,2025-01-02,11.0238,-34.1047,2.8459,,,
+W2015_2025,SPMO buy&hold,,,,price only,2015-10-12,2025-01-02,15.5457,-31.3136,3.7932,,,
+W2015_2025,SPY buy&hold,,,,total return,2015-01-02,2025-01-02,12.9737,-33.7158,3.3873,,,
+W2015_2025,SPMO buy&hold,,,,total return,2015-10-12,2025-01-02,17.0485,-30.9365,4.2735,,,
+W2005_2015,SPY buy&hold,,,,price only,2005-01-03,2015-01-02,5.4992,-56.4737,1.7076,,,
+W2015_2026x,SPY buy&hold,,,,price only,2015-01-02,2026-11-12,11.6257,-34.1047,3.6855,,,
+W2015_2026x,SPMO buy&hold,,,,price only,2015-10-12,2026-11-12,16.3068,-31.3136,5.3366,,,
+W2015_2026x,SPY buy&hold,,,,total return,2015-01-02,2026-11-12,13.4628,-33.7158,4.4729,,,
+W2015_2026x,SPMO buy&hold,,,,total return,2015-10-12,2026-11-12,17.712,-30.9365,6.0966,,,
+W2025_2026x,SPY buy&hold,,,,price only,2025-01-02,2026-11-12,14.9201,-18.9989,1.295,,,
+W2025_2026x,SPMO buy&hold,,,,price only,2025-01-02,2026-11-12,20.1588,-24.2546,1.4069,,,
+W2025_2026x,SPY buy&hold,,,,total return,2025-01-02,2026-11-12,16.1308,-18.7553,1.3205,,,
+W2025_2026x,SPMO buy&hold,,,,total return,2025-01-02,2026-11-12,21.0613,-24.1326,1.4266,,,

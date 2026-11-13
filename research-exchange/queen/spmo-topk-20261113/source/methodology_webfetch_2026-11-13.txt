@@ -1,0 +1,917 @@
+## S&P Momentum Indices Methodology
+
+##### November 2026 S&P Dow Jones Indices: Index Methodology
+
+### Table of Contents
+
+Introduction 3 
+Index Objective and Highlights 3 
+Index Family 3 
+Supporting Documents 4 
+Eligibility Criteria 5 
+Index Universe 5 
+Eligibility Factors 5 
+Index Specific Eligibility Factors 6 
+Index Construction 7 
+Constituent Selection 7 
+Constituent Weightings 8 
+S&P/ASX 200 Momentum and S&P China A-Share Short Term Momentum 8 
+S&P Momentum Saudi Arabia and S&P Momentum Saudi Arabia Shariah 8 
+S&P Momentum GCC Composite and S&P Momentum GCC Composite Shariah 8 
+S&P Momentum Pan Arab Composite LargeMidCap and S&P Momentum Pan Arab 
+Composite LargeMidCap Shariah 9 
+Index Calculations 9 
+Index Maintenance 10 
+Rebalancing 10 
+Additions and Deletions 11 
+Spin-Offs and Corporate Actions 11 
+Other Adjustments 11 
+Currency of Calculation and Additional Index Return Series 11 
+Base Dates and History Availability 11 
+Index Data 13 
+Calculation Return Types 13 
+Index Governance 14 
+Index Committee 14 
+Index Policy 15 
+Announcements 15 
+Pro-forma Files 15 
+Holiday Schedule 15 
+S&P Dow Jones Indices: S&P Momentum Indices Methodology 1 
+Rebalancing 15 
+Unexpected Exchange Closures 15 
+Recalculation Policy 15 
+Contact Information 15 
+Index Dissemination 16 
+Tickers 16 
+Index Data 17 
+Web site 17 
+Appendix A 18 
+Momentum Value Calculation 18 
+Appendix B 19 
+Z-Score & Momentum Score Computation 19 
+Appendix C 20 
+Liquidity Weight Computation 20 
+Appendix D 21 
+Methodology Changes 21 
+Disclaimer 23 
+Performance Disclosure/Back-Tested Data 23 
+Intellectual Property Notices/Disclaimer 24 
+ESG Indices Disclaimer 26 
+S&P Dow Jones Indices: S&P Momentum Indices Methodology 2 
+
+Introduction 
+Index Objective and Highlights 
+The S&P Momentum Indices measure the performance of securities which were among the best 
+performing quintile or rank on the basis of risk-adjusted price performance during the specified 
+measurement period. Index constituents are weighted by the product of float-adjusted market 
+capitalization (FMC) and momentum score, subject to the constraints defined in Constituent Weightings. 
+The S&P Momentum Indices are constructed from the constituents of the S&P Global BMI or other 
+headline universe index. 
+For more information on the S&P Global BMI or other headline universe indices, please refer to the 
+respective Index Methodology document at www.spglobal.com/spdji. 
+Index Family 
+The S&P Momentum Indices currently consist of the following: 
+• S&P Momentum Global LargeMidCap 
+• S&P Momentum Developed LargeMidCap 
+• S&P Momentum Developed Ex. U.S. LargeMidCap 
+• S&P World Ex-U.S. Momentum Index 
+• S&P Momentum Emerging LargeMidCap 
+• S&P Momentum Emerging Plus 
+• S&P Momentum Europe LargeMidCap 
+• S&P Momentum Japan LargeMidCap 
+• S&P Momentum United States LargeMidCap 
+• S&P Momentum South Africa 
+• S&P 500 Momentum 
+• S&P Europe 350 Momentum 
+• S&P/ASX 200 Momentum 
+• S&P MidCap 400 Momentum 
+• S&P SmallCap 600 Momentum 
+• S&P China A-Share Short Term Momentum 
+• S&P Momentum GCC Composite 
+• S&P Momentum Saudi Arabia 
+• S&P Momentum Saudi Arabia Shariah 
+• S&P Momentum Pan Arab Composite LargeMidCap 
+• S&P Momentum GCC Composite Shariah 
+• S&P Momentum Pan Arab Composite LargeMidCap Shariah S&P Dow Jones Indices: S&P Momentum Indices Methodology 3 
+The size-based S&P Momentum Indices follow the size classifications of the S&P Global BMI. 
+Supporting Documents 
+This methodology is meant to be read in conjunction with supporting documents providing greater detail 
+with respect to the policies, procedures and calculations described herein. References throughout the 
+methodology direct the reader to the relevant supporting document for further information on a specific 
+topic. The list of the main supplemental documents for this methodology and the hyperlinks to those 
+documents is as follows: 
+
+This methodology was created by S&P Dow Jones Indices to achieve the aforementioned objective of measuring the underlying interest of each index governed by this methodology document. Any changes to or deviations from this methodology are made in the sole judgment and discretion of S&P Dow Jones Indices so that the index continues to achieve its objective.
+
+Supporting Document URL S&P Dow Jones Indices’ Equity Indices Policies & Practices Methodology Equity Indices Policies & Practices S&P Dow Jones Indices’ Index Mathematics Methodology Index Mathematics Methodology S&P Dow Jones Indices’ Float Adjustment Methodology Float Adjustment Methodology S&P Dow Jones Indices’ Global Industry Classification Standard (GICS) Methodology GICS Methodology
+
+### Eligibility Criteria
+
+#### Index Universe
+
+##### At each rebalancing, each index universe is all constituents of the underlying index as of the rebalance reference date:
+
+Subject to S&P Dow Jones Indices’ compliance with the applicable law (including, without limitation, sanctions law), S&P China A-Share Short Term Momentum is maintained from a China based investor perspective 1 and may include securities that would not be eligible for inclusion if maintained from a U.S./U.K./EU investor perspective.
+
+#### Eligibility Factors
+
+##### As of each rebalancing reference date, stocks in the index universe must satisfy the following criteria to be eligible for index inclusion:
+
+• Momentum Score: have a momentum score. For information on the momentum score calculation, please refer to Appendix B. 
+• Trading History. Except for the S&P Momentum GCC Composite, S&P Momentum Saudi Arabia, S&P Momentum Saudi Arabia Shariah, S&P Momentum Pan Arab Composite LargeMidCap, S&P Momentum GCC Composite Shariah, and S&P Momentum Pan Arab 
+
+1. The investor perspective is the viewpoint of the investor relative to the index and component securities.
+
+Index Underlying Index
+
+Measurement 
+Period (months) 
+S&P Momentum Global LargeMidCap S&P Global LargeMidCap 12 
+S&P Momentum Developed LargeMidCap S&P Developed LargeMidCap 12 
+S&P Momentum Developed Ex. U.S. 
+LargeMidCap S&P Developed Ex. U.S. LargeMidCap 12 
+S&P World Ex-U.S. Momentum Index S&P World Ex-U.S. Index 12 
+S&P Momentum Emerging LargeMidCap S&P Emerging LargeMidCap 12 
+S&P Momentum Emerging Plus S&P Emerging Plus LargeMidCap 12 
+S&P Momentum Europe LargeMidCap S&P Europe LargeMidCap 12 
+S&P Momentum Japan LargeMidCap S&P Japan LargeMidCap 12 
+S&P Momentum United States LargeMidCap S&P United States LargeMidCap 12 
+S&P Momentum South Africa S&P South Africa Composite 12 
+S&P 500 Momentum S&P 500 12 
+S&P Europe 350 Momentum S&P Europe 350 12 
+S&P/ASX 200 Momentum S&P/ASX 200 12 
+S&P MidCap 400 Momentum S&P MidCap 400 12 
+S&P SmallCap 600 Momentum S&P SmallCap 600 12 
+S&P China A-Share Short Term Momentum S&P China A Domestic LargeMidCap 6 
+S&P Momentum GCC Composite S&P GCC Composite 12 
+S&P Momentum Saudi Arabia S&P Saudi Arabia 12 
+S&P Momentum Saudi Arabia Shariah S&P Saudi Arabia Shariah 12 
+S&P Momentum Pan Arab Composite 
+LargeMidCap S&P Pan Arab Composite LargeMidCap 12 
+S&P Momentum GCC Composite Shariah S&P GCC Composite Shariah 12 
+S&P Momentum Pan Arab Composite 
+LargeMidCap Shariah S&P Pan Arab Composite LargeMidCap Shariah 12 
+S&P Dow Jones Indices: S&P Momentum Indices Methodology 5 
+
+##### Composite LargeMidCap Shariah indices, for the S&P Momentum Indices with 12-month measurement periods, stocks must have traded at least 150 days during the period.
+
+• Multiple Share Classes. All publicly listed multiple share class lines are eligible for index inclusion, subject to meeting the eligibility criteria. For more information regarding the treatment of multiple share classes, please refer to Approach A within the Multiple Share Classes section of the S&P Dow Jones Indices’ Equity Indices Policies & Practices Methodology. Index Specific Eligibility Factors In addition to the requirements above, as of the rebalancing reference date, stocks in the index universe must satisfy the following criteria to be eligible for index inclusion: S&P World Ex-U.S. Momentum Index and S&P Momentum Emerging Plus: 
+• Liquidity. have a minimum three-month average daily value traded (ADVT) of US$ 3 million. S&P Momentum GCC Composite, S&P Momentum Saudi Arabia, S&P Momentum Saudi Arabia Shariah, S&P Momentum Pan Arab Composite LargeMidCap, S&P Momentum GCC Composite Shariah, and S&P Momentum Pan Arab Composite LargeMidCap Shariah: 
+• Trading History: have traded for at least 60% of the days of the most traded stock within the 12month measurement period before the rebalancing reference date. 
+• Liquidity: have a minimum six-month median daily value traded (MDVT) of US$ 1 million (current constituents US$ 500,000). S&P China A-Share Short Term Momentum: 
+• Trading History: be listed at least four months before the rebalancing reference date. 
+• Liquidity: have a minimum three-month ADVT of RMB 20 million (RMB 18 million for current constituents). 
+• Listing History: not be designated as Special Treatment (ST or *ST) by the Shanghai or Shenzhen Stock Exchanges. 
+• Market Capitalization: have an FMC of at least RMB 1 billion (RMB 900 million for current constituents). S&P Momentum Global LargeMidCap and S&P Momentum Emerging LargeMidCap: 
+• China A-Shares: not be a China A-Share. 
+
+### Index Construction
+
+Constituent Selection 
+At each rebalancing a momentum score is calculated for each eligible stock. 
+Except for the indices listed below, securities are first ranked in descending order by momentum score 
+into five quintiles. Securities with the highest scores (the first quintile) are then selected for index 
+inclusion. The number of companies selected is rounded to the nearest integer based on the size of the 
+index universe. 
+S&P China A-Share Short Term Momentum. The top 100 securities with the highest momentum scores 
+are selected. 
+S&P Momentum Saudi Arabia and S&P Momentum Saudi Arabia Shariah. The target stock count is 
+determined as the maximum of the following: 
+• 30 
+• 20% of the number of constituents in the universe 
+• the number of stocks (top ranked by momentum score) such that the sum of their FMC is at least 50% of the FMC of the underlying universe If a target of 50% of the FMC of the eligible universe has not been reached, remaining stocks are selected by order of rank until this target has been reached. S&P Momentum GCC Composite, S&P Momentum Pan Arab Composite LargeMidCap, S&P Momentum GCC Composite Shariah, and S&P Momentum Pan Arab Composite LargeMidCap Shariah. The target stock count is determined as the maximum of the following: 
+• 30 
+• 20% of the number of constituents in the universe 
+• the sum of the FMC of the selected stocks in each country must make up 50% of the FMC of the underlying universe within the country If the target stock count results in a fractional company amount, the number of companies selected is rounded to the nearest integer. In order to reduce turnover, a 20% buffer rule based on the winsorized z-score is applied to the security selection at each rebalancing. To perform the selection, all securities ranked within the top 80% of the target stock count are automatically selected for the index. Next, any current constituents remaining within the top 120% of the target stock count are re-selected for the index, in order by rank, until the target stock count has been reached. Then, if the target stock count still has not been reached, any non-current constituents remaining and ranked from 80% to 100% of the target stock count are selected for inclusion until the target stock count is reached. If a target of 50% of the FMC of the eligible universe has not been reached, remaining stocks are selected by order of rank until this target has been reached. 
+
+Constituent Weightings 
+Except for the indices listed below, the S&P Momentum Indices employ the following weighting process, 
+applied at each rebalancing: 
+
+Float Adjustment. Investable Weight Factors (IWFs), which define the available float for each stock, are reviewed annually. The float-adjusted shares are used in the calculation of each stock’s momentum weight.
+
+##### Please refer to the S&P Dow Jones’ Float Adjustment Methodology for a detailed description of float adjustment and Investable Weight Factor (IWF).
+
+#### S&P/ASX 200 Momentum and S&P China A-Share Short Term Momentum
+
+##### Where the optimization procedure fails for a given period, the constraints are then relaxed in the following order: the maximum weight of the security, then the maximum weight of the sector.
+
+#### S&P Momentum Saudi Arabia and S&P Momentum Saudi Arabia Shariah
+
+#### S&P Momentum GCC Composite and S&P Momentum GCC Composite Shariah
+
+Weighting Method Maximum Weight Constraint Product of the securities market capitalization in the eligible index universe and the momentum score, subject to any applicable security constraints.
+
+Lower of 9% at the company level and three times the security’s market capitalization weight in the index.
+
+##### Weighting Method Optimization Procedure
+
+Maximum Security Weight Constraint
+
+Maximum GICS Sector Weight Constraint
+
+Floored Stock Weight
+
+Product of the security’s market capitalization in the eligible index universe and the momentum score, subject to security and sector constraints.
+
+If any weighting constraint is violated, final weights are chosen in a way as to minimize the sum of the squared differences of capped weight and uncapped weight, divided by uncapped weight for each stock.
+
+Lower of 5% and 20 times its market capitalization.
+
+40% 0.05%
+
+##### Weighting Method
+
+Maximum Security Weight Constraint
+
+Maximum GICS Sector Weight Constraint Weight Cap
+
+Floored Stock Weight
+
+Product of the security’s market capitalization in the eligible index universe and the momentum score, subject to security constraints.
+
+8% or the stocks weight in the universe whichever is greater. Maximum weight should not exceed a multiple of four times its liquidity weight
+
+40%
+
+20 times the market capitalization weight of the security in the underlying index universe.
+
+0.05%
+
+##### Weighting Method
+
+Maximum Security Weight Constraint
+
+Maximum GICS Sector Weight Constraint
+
+Maximum Country Weight Constraint Weight Cap
+
+Floored Stock Weight
+
+Product of the security’s market capitalization in the eligible index universe and the momentum score, subject to security and sector constraints.
+
+5% or the stocks weight in the universe whichever is greater. Maximum weight should not exceed a multiple of four times its liquidity weight.
+
+40% 60%
+
+20 times the market capitalization weight of the security in the underlying index universe.
+
+0.05%
+
+#### S&P Momentum Pan Arab Composite LargeMidCap and S&P Momentum Pan Arab Composite LargeMidCap Shariah
+
+Where the optimization procedure fails for a given period, the constraints are then relaxed in the following 
+order (as applicable): 
+1. Relax the maximum weight of the security in steps of 1% 
+2. Relax the maximum weight of the sector in steps of 1% 
+3. Relax the maximum weight of the country in steps of 1% 
+4. Relax the 20 times its market capitalization weight in steps of 1 
+5. Relax the four times its liquidity weight in steps of 1 
+Index Calculations 
+
+##### The indices are calculated using the divisor methodology used in all S&P Dow Jones Indices’ equity indices.
+
+##### Please refer to the Non-Market Capitalization Weighted Indices section of S&P Dow Jones Indices’ Index Mathematics Methodology for further details.
+
+##### Weighting Method
+
+Maximum Security Weight Constraint
+
+Maximum GICS Sector Weight Constraint
+
+Maximum Country Weight Constraint Weight Cap
+
+Floored Stock Weight
+
+Product of the security’s market capitalization in the eligible index universe and the momentum score, subject to security, sector, and country constraints.
+
+5% or the stock’s weight in the universe, whichever is greater. Maximum weight should not exceed a multiple of four times its liquidity weight.
+
+50% 60%
+
+20 times the weight of the security in the underlying index universe.
+
+0.05%
+
+Index Maintenance 
+Rebalancing 
+The following indices rebalance semi-annually, effective after the close on the third Friday of March and 
+September, with a reference date of the last business day of February and August, respectively: 
+• S&P Momentum Global LargeMidCap 
+• S&P Momentum Developed LargeMidCap 
+• S&P Momentum Developed Ex. U.S. LargeMidCap 
+• S&P World Ex-U.S. Momentum Index 
+• S&P Momentum Emerging LargeMidCap 
+• S&P Momentum Emerging Plus 
+• S&P Momentum Europe LargeMidCap 
+• S&P Momentum Japan LargeMidCap 
+• S&P Momentum United States LargeMidCap 
+• S&P Momentum South Africa 
+• S&P 500 Momentum 
+• S&P Europe 350 Momentum 
+• S&P MidCap 400 Momentum 
+• S&P SmallCap 600 Momentum The following indices rebalance semi-annually, effective after the close on the third Friday of June and December, with a reference date of the last business day of May and November, respectively: 
+• S&P/ASX 200 Momentum 
+• S&P China A-Share Short Term Momentum The following indices rebalance semi-annually, after the close on Sunday following the third Friday of June and December, with a reference date of the last business day of May and November, respectively: 
+• S&P Momentum GCC Composite 
+• S&P Momentum Saudi Arabia 
+• S&P Momentum Saudi Arabia Shariah 
+• S&P Momentum Pan Arab Composite LargeMidCap 
+• S&P Momentum GCC Composite Shariah 
+• S&P Momentum Pan Arab Composite LargeMidCap Shariah Weights calculated as a result of the reference date data are implemented in the indices using closing prices as of the rebalancing reference date. 
+
+Additions and Deletions 
+The majority of additions and deletions occur as part of index rebalancings. Since some of these indices 
+do not have a fixed number of constituents, additions to and deletions from an index may not be the same 
+number. 
+If a stock is deleted from a given index universe, it will be deleted from the corresponding S&P Momentum 
+Index simultaneously. 
+Spin-Offs and Corporate Actions 
+A spin-off company is added to all the indices of which the parent is a constituent, at a zero price at the 
+market close of the day before the ex-date (with no divisor adjustment). The spin-off company is removed 
+after at least one day of regular way trading (with a divisor adjustment). 
+For more information on spin-offs, and corporate actions in general, please refer to the Non-Market 
+Capitalization Weighted Indices section of S&P Dow Jones Indices’ Equity Indices Policies & Practices 
+Methodology. 
+Other Adjustments 
+In cases where there is no achievable market price for a stock being deleted, it can be removed at a zero 
+or minimal price at the Index Committee’s discretion, in recognition of the constraints faced by investors in 
+trading bankrupt or suspended stocks. 
+Currency of Calculation and Additional Index Return Series 
+WMR foreign exchange rates are taken daily at 4:00 PM London Time and used in the calculation of the 
+indices. These mid-market fixings are calculated by WMR based on LSEG data and appear on LSEG 
+pages. 
+In addition to the indices detailed in this methodology, additional return series versions of the indices may 
+be available, including, but not limited to the following: currency, currency hedged, decrement, fair value, 
+inverse, leveraged, and risk control versions. For a list of available indices, please refer to the S&P DJI 
+Methodology & Regulatory Status Database. 
+For information on the calculation of different types of indices, please refer to S&P Dow Jones Indices’ 
+Index Mathematics Methodology. 
+For the inputs necessary to calculate certain types of indices, including decrement, dynamic hedged, fair 
+value, and risk control indices, please refer to the Parameters documents available at 
+www.spglobal.com/spdji. 
+Base Dates and History Availability 
+Index history availability, base dates, and base values are shown in the table below. 
+
+Index Launch Date
+
+First Value Date Base Date
+
+Base Value S&P Momentum Global LargeMidCap 11/18/2014 12/30/1994 12/30/1994 100 S&P Momentum Developed LargeMidCap 11/18/2014 12/30/1994 12/30/1994 100 S&P Momentum Developed Ex. U.S. LargeMidCap 11/18/2014 12/30/1994 12/30/1994 100 S&P World Ex-U.S. Momentum Index 02/16/2016 12/30/1994 12/30/1994 100 S&P Momentum Emerging LargeMidCap 11/18/2014 12/31/1997 12/31/1997 100 S&P Momentum Emerging Plus 02/16/2016 12/31/1997 12/31/1997 100 S&P Momentum Europe LargeMidCap 11/18/2014 12/30/1994 12/30/1994 100 S&P Momentum Japan LargeMidCap 11/18/2014 12/30/1994 12/30/1994 100 S&P Momentum United States LargeMidCap 11/18/2014 12/30/1994 12/30/1994 100
+
+Index Launch Date
+
+First Value Date Base Date
+
+Base 
+Value 
+S&P Momentum South Africa 11/18/2014 09/19/2003 09/19/2003 100 
+S&P 500 Momentum 11/18/2014 09/16/1994 09/16/1994 100 
+S&P 500 Momentum CAD Hedged 07/27/2020 11/29/2002 11/29/2002 100 
+S&P Europe 350 Momentum 11/18/2014 03/16/2001 03/16/2001 100 
+S&P/ASX 200 Momentum 07/31/2017 06/16/2000 06/16/2000 100 
+S&P MidCap 400 Momentum 11/13/2017 09/20/1991 09/20/1991 100 
+S&P SmallCap 600 Momentum 01/04/2018 03/17/1995 03/17/1995 100 
+S&P China A-Share Short Term Momentum 07/11/2018 06/16/2006 06/16/2006 1000 
+S&P Momentum GCC Composite 01/07/2019 12/21/2008 12/21/2008 100 
+S&P Momentum Saudi Arabia 01/07/2019 12/21/2008 12/21/2008 100 
+S&P Momentum Saudi Arabia Shariah 01/07/2019 12/21/2008 12/21/2008 100 
+S&P Momentum Pan Arab Composite LargeMidCap 06/29/2020 12/21/2008 12/21/2008 1000 
+S&P Momentum GCC Composite Shariah Index 05/26/2021 12/21/2008 12/21/2008 100 
+S&P Momentum Pan Arab Composite LargeMidCap Shariah 05/31/2021 12/21/2008 12/21/2008 1000 
+
+### Index Data
+
+Calculation Return Types S&P Dow Jones Indices calculates multiple return types which vary based on the treatment of regular cash dividends. The classification of regular cash dividends is determined by S&P Dow Jones Indices.
+
+• Price Return (PR) versions are calculated without adjustments for regular cash dividends. 
+• Gross Total Return (TR) versions reinvest regular cash dividends at the close on the ex-date without consideration for withholding taxes. 
+• Net Total Return (NTR) versions, if available, reinvest regular cash dividends at the close on the ex-date after the deduction of applicable withholding taxes. In the event there are no regular cash dividends on the ex-date, the daily performance of all three indices will be identical. For a complete list of indices available, please refer to the daily index levels file (“.SDL”). For more information on the classification of regular versus special cash dividends as well as the tax rates used in the calculation of net return, please refer to S&P Dow Jones Indices’ Equity Indices Policies & Practices Methodology. For more information on the calculation of return types, please refer to S&P Dow Jones Indices’ Index Mathematics Methodology. 
+
+### Index Governance
+
+Index Committee 
+An Index Committee maintains the indices. All committee members are full-time professional members of 
+S&P Dow Jones Indices’ staff. The committee meets regularly. At each meeting, the Index Committee 
+may review pending corporate actions that may affect index constituents, statistics comparing the 
+composition of the indices to the market, companies that are being considered as candidates for addition 
+to an index, and any significant market events. In addition, the Index Committee may revise index policy 
+covering rules for selecting companies, treatment of dividends, share counts or other matters. 
+S&P Dow Jones Indices considers information about changes to its indices and related matters to be 
+potentially market moving and material. Therefore, all Index Committee discussions are confidential. 
+S&P Dow Jones Indices’ Index Committees reserve the right to make exceptions when applying the 
+methodology if the need arises. In any scenario where the treatment differs from the general rules stated 
+in this document or supplemental documents, clients will receive sufficient notice, whenever possible. 
+In addition to the daily governance of indices and maintenance of index methodologies, at least once 
+within any 12-month period, the Index Committee reviews the methodology to ensure the indices continue 
+to achieve the stated objectives, and that the data and methodology remain effective. In certain instances, 
+S&P Dow Jones Indices may publish a consultation inviting comments from external parties. 
+For information on Quality Assurance and Internal Reviews of Methodology, please refer to S&P Dow 
+Jones Indices’ Equity Indices Policies & Practices Methodology. 
+
+### Index Policy
+
+Announcements 
+All index constituents are evaluated daily for data needed to calculate index levels and returns. All events 
+affecting the daily index calculation are typically announced in advance via the Index Corporate Events 
+report (.SDE), delivered daily to all clients. Any unusual treatment of a corporate action or short notice of 
+an event may be communicated via email to clients. 
+For more information, please refer to the Announcements section of S&P Dow Jones Indices’ Equity 
+Indices Policies & Practices Methodology. 
+Pro-forma Files 
+In addition to the corporate events file (.SDE), S&P Dow Jones Indices provides constituent pro-forma 
+files each time the indices rebalance. The pro-forma file is typically provided daily in advance of the 
+rebalancing date and contains all constituents as well as their corresponding weights and index shares 
+effective for the upcoming rebalancing. Since index shares are assigned based on prices prior to the 
+rebalancing, the actual weight of each stock at the rebalancing differs from these weights due to market 
+movements. 
+Please visit www.spglobal.com/spdji for a complete schedule of rebalancing timelines and pro-forma 
+delivery times. 
+Holiday Schedule 
+Each S&P Momentum Index is calculated on all days when the index making up its index universe is also 
+calculated. 
+A complete holiday schedule for the year is available at www.spglobal.com/spdji. 
+Rebalancing 
+The Index Committee may change the date of a given rebalancing for reasons including market holidays 
+occurring on or around the scheduled rebalancing date. Any such change will be announced with proper 
+advance notice where possible. 
+Unexpected Exchange Closures 
+For information on Unexpected Exchange Closures, please refer to S&P Dow Jones Indices’ Equity 
+Indices Policies & Practices Methodology. 
+Recalculation Policy 
+For information on the recalculation policy, please refer to S&P Dow Jones Indices’ Equity Indices Policies 
+& Practices Methodology. 
+For information on Calculations and Pricing Disruptions, Expert Judgment and Data Hierarchy, please 
+refer to S&P Dow Jones Indices’ Equity Indices Policies & Practices Methodology. 
+Contact Information 
+For questions regarding an index, please contact: index_services@spglobal.com. 
+
+### Index Dissemination
+
+Index levels are available through S&P Dow Jones Indices’ Web site at www.spglobal.com/spdji, major quote vendors (see codes below), numerous investment-oriented Web sites, and various print and electronic media.
+
+#### Tickers
+
+The table below lists headline indices covered by this document. All versions of the below indices that may exist are also covered by this document. Please refer to the S&P DJI Methodology & Regulatory Status Database for a complete list of indices covered by this document.
+
+| Index (Currency) | Return Type | BBG | RIC |
+| --- | --- | --- | --- |
+| | Price Return | SPGLMUP | — |
+| S&P Momentum Global LargeMidCap (USD) | Total Return | SPGLMUT | — |
+| | Net Total Return | SPGLMUN | — |
+| | Price Return | SPDMUP | — |
+| S&P Momentum Developed LargeMidCap (USD) | Total Return | SPDMUT | — |
+| | Net Total Return | SPDMUN | — |
+| | Price Return | SPDUSUP | — |
+| S&P Momentum Developed Ex. U.S. LargeMidCap (USD) | Total Return | SPDUSUT | — |
+| | Net Total Return | SPDUSUN | — |
+| | Price Return | SPDUKMUP | — |
+| S&P World Ex-U.S. Momentum Index (USD) | Total Return | SPDUKMUT | — |
+| | Net Total Return | SPDUKMUN | — |
+| | Price Return | SPEMMUP | — |
+| S&P Momentum Emerging LargeMidCap (USD) | Total Return | SPEMMUT | — |
+| | Net Total Return | SPEMMUN | — |
+| | Price Return | SPEMPMUP | — |
+| S&P Momentum Emerging Plus (USD) | Total Return | SPEMPMUT | — |
+| | Net Total Return | SPEMPMUN | — |
+| | Price Return | SPEUMUP | — |
+| S&P Momentum Europe LargeMidCap (USD) | Total Return | SPEUMUT | — |
+| | Net Total Return | SPEUMUN | — |
+| | Price Return | SPEUMEP | — |
+| S&P Momentum Europe LargeMidCap (EUR) | Total Return | SPEUMET | — |
+| | Net Total Return | SPEUMEN | — |
+| | Price Return | SPJMUP | — |
+| S&P Momentum Japan LargeMidCap (USD) | Total Return | SPJMUT | — |
+| | Net Total Return | SPJMUN | — |
+| | Price Return | SPJMJP | — |
+| S&P Momentum Japan LargeMidCap (JPY) | Total Return | SPJMJT | — |
+| | Net Total Return | SPJMJN | — |
+| | Price Return | SPUSMUP | — |
+| S&P Momentum United States LargeMidCap (USD) | Total Return | SPUSMUT | — |
+| | Net Total Return | SPUSMUN | — |
+| | Price Return | SPSAMUP | — |
+| S&P Momentum South Africa (USD) | Total Return | SPSAMUT | — |
+| | Net Total Return | SPSAMUN | — |
+| | Price Return | SPSAMZP | — |
+| S&P Momentum South Africa (ZAR) | Total Return | SPSAMZT | — |
+| | Net Total Return | SPSAMZN | — |
+| S&P 500 Momentum (USD) | Price Return | SP500MUP | — |
+| | Total Return | SP500MUT | — |
+
+Index (Currency) Return Type BBG RIC
+
+| | Net Total Return | SP500MUN | — |
+| --- | --- | --- | --- |
+| | Price Return | SP500MCP | — |
+| S&P 500 Momentum (CAD) | Total Return | SP500MCT | — |
+| | Net Total Return | SP500MCN | — |
+| | Price Return | SPXMHCP | — |
+| S&P 500 Momentum CAD Hedged | Total Return | SPXMHCT | — |
+| | Net Total Return | SPXMHCN | — |
+| | Price Return | SP350MUP | — |
+| S&P Europe 350 Momentum (USD) | Total Return | SP350MUT | — |
+| | Net Total Return | SP350MUN | — |
+| | Price Return | SP350MEP | — |
+| S&P Europe 350 Momentum (EUR) | Total Return | SP350MET | — |
+| | Net Total Return | SP350MEN | — |
+| | Price Return | SPASXMUP | — |
+| S&P/ASX 200 Momentum (USD) | Total Return | SPASXMUT | — |
+| | Net Total Return | SPASXMUN | — |
+| | Price Return | SPASXMAP | — |
+| S&P/ASX 200 Momentum (AUD) | Total Return | SPASXMAT | — |
+| | Net Total Return | SPASXMAN | — |
+| | Price Return | SPMMUP | — |
+| S&P MidCap 400 Momentum (USD) | Total Return | SPMMUPT | — |
+| | Net Total Return | — | — |
+| | Price Return | SP6MUP | .SP6MUP |
+| S&P SmallCap 600 Momentum (USD) | Total Return | SP6MUT | .SP6MUT |
+| | Net Total Return | — | — |
+| | Price Return | SPCASMCP | — |
+| S&P China A-Share Short Term Momentum (CNY) | Total Return | SPCASMCT | — |
+| | Net Total Return | SPCASMCN | — |
+| | Price Return | — | — |
+| S&P Momentum GCC Composite (USD) | Total Return | SPMOGCUT | — |
+| | Net Total Return | — | — |
+| | Price Return | — | — |
+| S&P Momentum Saudi Arabia (SAR) | Total Return | SPMOSDST | — |
+| | Net Total Return | — | — |
+| | Price Return | — | — |
+| S&P Momentum Saudi Arabia Shariah (SAR) | Total Return | SPMOSSST | — |
+| | Net Total Return | — | — |
+| | Price Return | SPMPALUP | — |
+| S&P Momentum Pan Arab Composite LargeMidCap Index (USD) | Total Return | SPMPALUT | — |
+| | Net Total Return | SPMPALUN | — |
+| | Price Return | SPMOGSUP | — |
+| S&P Momentum GCC Composite Shariah Index (USD) | Total Return | SPMOGSUT | — |
+| | Net Total Return | SPMOGSUN | — |
+| | Price Return | SPPSMOUP | — |
+| S&P Momentum Pan Arab Composite LargeMidCap Shariah Index | | | |
+| | Total Return | SPPSMOUT | — |
+| (USD) | | | |
+| | Net Total Return | SPPSMOUN | — |
+
+Index Data 
+Daily constituent and index level data are available via subscription. 
+For product information, please contact S&P Dow Jones Indices, www.spglobal.com/spdji/en/contact-us. 
+
+##### Web site For further information, please refer to S&P Dow Jones Indices’ Web site at www.spglobal.com/spdji.
+
+### Appendix A
+
+Momentum Value Calculation 
+Momentum value is calculated for each of the securities in the index universe on each of the rebalancing 
+reference dates. The momentum value is determined as follows: 
+1. S&P Momentum Indices. The momentum value is computed as the 12-month price change, 
+excluding the most recent month of the security in local currency. If 12 months of price history is 
+not available, momentum value is calculated from nine months of price history. The effective 
+rebalancing month is stated as month (M). 
+a. Momentum Value 
+b. Or, Momentum Value if 12 months of price history is not 
+available. 
+S&P Short Term Momentum Indices. The momentum value is computed as the six-month price 
+change, excluding the most recent month of the security in local currency. If six months of price 
+history is not available, momentum value is calculated from three months of price history. The 
+effective rebalancing month is stated as month (M). 
+a. Momentum Value 
+b. Or, Momentum Value if 12 months of price history is not 
+available. 
+NOTE 1: For example, if the effective rebalancing date is on 03/24/2014, the reference date is 
+02/28/2014, and the momentum value will be calculated based on the prices from 01/31/2014 
+(priceM-2) and 01/31/2013 (priceM-14). 
+NOTE 2: If there is no price available on day M-2 or day M-14, the price from the day prior will be 
+used. If there is no price available on any of the ten days prior, the momentum value will be 
+calculated using formula (b) above. If the same condition exists for formula (b), the stock is excluded 
+from the S&P Momentum Indices. 
+NOTE 3: For a stock to be included in the S&P Momentum Indices with 12-month measurement 
+periods, it must be trading for at least ten months prior to the rebalancing reference date. 
+2. The momentum value is further adjusted by the security’s volatility. For a given positive price 
+change over the evaluation period, lower volatility improves the adjusted momentum value. For a 
+given negative price change over the evaluation period, higher volatility improves the adjusted 
+momentum value. When many securities within a given index universe experience negative price 
+changes over a relevant evaluation period, the volatility adjustment may cause the selection of 
+constituents with higher negative price changes. 
+Risk-Adjusted Momentum Value = 
+where: 
+= Standard deviation of daily price returns for the same date period used in Step 1 above. 
+
+### Appendix B
+
+Z-Score & Momentum Score Computation 
+Z-Score Computation. Computing a z-score is a widely adopted method of standardizing a variable. The 
+z-score for risk-adjusted momentum value for each security is calculated using the mean and standard 
+deviation of the relevant variable within each of the index universes. 
+The z-score is calculated as follows: 
+where: 
+= Z-score for a given security 
+= Observed value for a given security 
+= Arithmetic mean of the variable in a given index universe, excluding any missing values 
+= Standard deviation of the variable in a given index universe 
+Winsorization reduces the impact of outliers on a data set by limiting them to a designated value or score. 
+For the S&P Momentum Indices, the winsorized z-score of a security is capped at ± 3. 
+Momentum Score Computation. Using the winsorized z-scores, a momentum score is computed for 
+each of the securities. For a given security, if its winsorized z-score is above 0, then its momentum score 
+will be the addition of 1 and the z-score. On the other hand, if its winsorized z-score is below 0, then its 
+momentum score will be the result of the inverse of 1 subtracted by its z-score. 
+If Z > 0, Momentum Score = 1 + Z 
+If Z < 0, Momentum Score = (1 / (1 – Z)) 
+If Z = 0, Momentum Score = 1 
+
+### Appendix C
+
+##### Liquidity Weight Computation The liquidity weight of a given stock is defined as:
+
+where: 
+N = Number of selected stocks 
+Capped stock liquidity 
+To maintain optimization stability the liquidity of a given stock is capped as follows: 
+
+##### where: Stock liquidity = Minimum liquidity of selected stocks calculated based on six-month MDVT
+
+### Appendix D
+
+##### Methodology Changes Methodology changes since January 1, 2015, are as follows:
+
+Effective Date Methodology Change (After Close) Previous Updated Constituent Weightings: Index Name: S&P 500 Momentum Index, S&P Europe 350 Momentum Index, S&P MidCap 400 Momentum Index, S&P Momentum Developed ex US LargeMidCap Index, S&P Momentum Developed LargeMidCap Index, S&P Momentum Emerging LargeMidCap Index, S&P Momentum Emerging Plus Index, S&P Momentum Europe LargeMidCap Index, S&P Momentum Global LargeMidCap Index, S&P Momentum Japan LargeMidCap Index, S&P Momentum South Africa Index, S&P Momentum United States LargeMidCap Index, S&P SmallCap 600 Momentum Index, S&P World Ex-U.S.
+
+09/18/2026
+
+Maximum Security Weight Constraint: Lower of 9% and three times its market capitalization.
+
+Maximum Weight Constraint: Lower of 9% at the Company level and three times the security’s market capitalization weight in the index.
+
+1. The investor perspective is the viewpoint of the investor relative to the index and component securities.
+
+Effective Date Methodology Change (After Close) Previous Updated Momentum Index Index Name change: S&P Momentum Emerging Plus Index
+
+03/02/2026
+
+The index name is: 
+S&P Momentum Emerging Plus 
+LargeMidCap Index 
+
+The index name is: S&P Momentum Emerging Plus Index
+
+Index Universe: 
+S&P China A 
+Share 
+Short-Term 
+Momentum 
+Index 
+
+06/20/2025 The index universe is S&P China A Domestic BMI.
+
+The index universe is S&P China A Domestic LargeMidCap.
+
+Index Name 
+change: 
+S&P Momentum 
+Developed ex 
+US & South 
+Korea 
+LargeMidCap 
+Index 
+
+05/31/2024
+
+The index name is S&P Momentum Developed ex US & South Korea LargeMidCap Index.
+
+The index name is S&P World Ex-U.S. 
+Momentum Index. 
+Investor 
+Perspective： 
+S&P China A 
+Share 
+Short-Term 
+Momentum 
+Index 
+
+06/18/2021 —
+
+Subject to S&P Dow Jones Indices’ compliance with the applicable law (including, without limitation, sanctions law), the index is maintained from a China based investor perspective 1 and may include securities that would not be eligible for inclusion if maintained from a U.S./U.K./EU investor perspective.
+
+Index Universe: 
+S&P China A 
+Share 
+Short-Term 
+Momentum 
+Index 
+
+09/18/2020
+
+For the S&P China A-Share Short-Term Momentum Index, the stock must be a member of the S&P China A Domestic BMI or S&P China A Venture Enterprises Index.
+
+For the S&P China A-Share Short-Term Momentum Index, the stock must be a member of the S&P China A Domestic BMI.
+
+Corporate Actions: Spin-offs
+
+09/30/2015
+
+Spin-offs are ineligible for inclusion in the indices. Any price adjustments that occur due to a spin-off are accompanied by a AWF increase on the parent stock in the index to neutralize the event.
+
+Spin-offs are ineligible for inclusion in the indices. When the price of the spin-off is not known, the spun-off company is added to the index at a zero price. Once it trades, it is dropped from the index. For further information, please refer to the Treatment of Spin-offs in S&P Dow Jones Indices’ Equity Indices Policies & Practices document.
+
+### Disclaimer
+
+Performance Disclosure/Back-Tested Data 
+Where applicable, S&P Dow Jones Indices and its index-related affiliates (“S&P DJI”) defines various 
+dates to assist our clients by providing transparency. The First Value Date is the first day for which there is 
+a calculated value (either live or back-tested) for a given index. The Base Date is the date at which the 
+index is set to a fixed value for calculation purposes. The Launch Date designates the date when the 
+values of an index are first considered live: index values provided for any date or time period prior to the 
+index’s Launch Date are considered back-tested. S&P DJI defines the Launch Date as the date by which 
+the values of an index are known to have been released to the public, for example via the company’s 
+public website or its data feed to external parties. For Dow Jones-branded indices introduced prior to May 
+31, 2013, the Launch Date (which prior to May 31, 2013, was termed “Date of introduction”) is set at a 
+date upon which no further changes were permitted to be made to the index methodology, but that may 
+have been prior to the Index’s public release date. 
+Please refer to the methodology for the Index for more details about the index, including the manner in 
+which it is rebalanced, the timing of such rebalancing, criteria for additions and deletions, as well as all 
+index calculations. 
+Information presented prior to an index’s launch date is hypothetical back-tested performance, not actual 
+performance, and is based on the index methodology in effect on the launch date. However, when 
+creating back-tested history for periods of market anomalies or other periods that do not reflect the 
+general current market environment, index methodology rules may be relaxed to capture a large enough 
+universe of securities to simulate the target market the index is designed to measure or strategy the index 
+is designed to capture. For example, market capitalization and liquidity thresholds may be reduced. In 
+addition, forks have not been factored into the back-test data with respect to the S&P Cryptocurrency 
+Indices. For the S&P Cryptocurrency Top 5 & 10 Equal Weight Indices, the custody element of the 
+methodology was not considered; the back-test history is based on the index constituents that meet the 
+custody element as of the Launch Date. Also, the treatment of corporate actions in back-tested 
+performance may differ from treatment for live indices due to limitations in replicating index management 
+decisions. Back-tested performance reflects application of an index methodology and selection of index 
+constituents with the benefit of hindsight and knowledge of factors that may have positively affected its 
+performance, cannot account for all financial risk that may affect results and may be considered to reflect 
+survivor/look ahead bias. Actual returns may differ significantly from, and be lower than, back-tested 
+returns. Past performance is not an indication or guarantee of future results. 
+Typically, when S&P DJI creates back-tested index data, S&P DJI uses actual historical constituent-level 
+data (e.g., historical price, market capitalization, and corporate action data) in its calculations. As ESG 
+investing is still in early stages of development, certain datapoints used to calculate certain ESG indices 
+may not be available for the entire desired period of back-tested history. The same data availability issue 
+could be true for other indices as well. In cases when actual data is not available for all relevant historical 
+periods, S&P DJI may employ a process of using “Backward Data Assumption” (or pulling back) of ESG 
+data for the calculation of back-tested historical performance. “Backward Data Assumption” is a process 
+that applies the earliest actual live data point available for an index constituent company to all prior 
+historical instances in the index performance. For example, Backward Data Assumption inherently 
+assumes that companies currently not involved in a specific business activity (also known as “product 
+involvement”) were never involved historically and similarly also assumes that companies currently 
+involved in a specific business activity were involved historically too. The Backward Data Assumption 
+allows the hypothetical back-test to be extended over more historical years than would be feasible using 
+only actual data. For more information on “Backward Data Assumption” please refer to the FAQ. The 
+methodology and factsheets of any index that employs backward assumption in the back-tested history 
+will explicitly state so. The methodology will include an Appendix with a table setting forth the specific data 
+points and relevant time period for which backward projected data was used. Index returns shown do not 
+
+represent the results of actual trading of investable assets/securities. S&P DJI maintains the index and 
+calculates the index levels and performance shown or discussed but does not manage any assets. 
+Index returns do not reflect payment of any sales charges or fees an investor may pay to purchase the 
+securities underlying the Index or investment funds that are intended to track the performance of the 
+Index. The imposition of these fees and charges would cause actual and back-tested performance of the 
+securities/fund to be lower than the Index performance shown. As a simple example, if an index returned 
+10% on a US $100,000 investment for a 12-month period (or US $10,000) and an actual asset-based fee 
+of 1.5% was imposed at the end of the period on the investment plus accrued interest (or US $1,650), the 
+net return would be 8.35% (or US $8,350) for the year. Over a three-year period, an annual 1.5% fee 
+taken at year end with an assumed 10% return per year would result in a cumulative gross return of 
+33.10%, a total fee of US $5,375, and a cumulative net return of 27.2% (or US $27,200). 
+Intellectual Property Notices/Disclaimer 
+© 2026 S&P Dow Jones Indices. All rights reserved. S&P, S&P 500, SPX, SPY, The 500, US500 , US 30, 
+S&P 100, S&P COMPOSITE 1500, S&P 400, S&P MIDCAP 400, S&P 600, S&P SMALLCAP 600, S&P 
+GIVI, GLOBAL TITANS, DIVIDEND ARISTOCRATS, Select Sector, S&P MAESTRO, S&P PRISM, S&P 
+STRIDE, GICS, SPIVA, SPDR, INDEXOLOGY, iTraxx, iBoxx, ABX, ADBI, CDX, CMBX, MBX, MCDX, 
+PRIMEX, HHPI, and SOVX are registered trademarks of S&P Global, Inc. (“S&P Global”) or its affiliates. 
+DOW JONES, DJIA, THE DOW and DOW JONES INDUSTRIAL AVERAGE are trademarks of Dow Jones 
+Trademark Holdings LLC (“Dow Jones”). These trademarks together with others have been licensed to 
+S&P Dow Jones Indices LLC. Redistribution or reproduction in whole or in part are prohibited without 
+written permission of S&P Dow Jones Indices LLC. This document does not constitute an offer of services 
+in jurisdictions where S&P DJI does not have the necessary licenses. Except for certain custom index 
+calculation services, all information provided by S&P DJI is impersonal and not tailored to the needs of 
+any person, entity, or group of persons. S&P DJI receives compensation in connection with licensing its 
+indices to third parties and providing custom calculation services. Past performance of an index is not an 
+indication or guarantee of future results. 
+It is not possible to invest directly in an index. Exposure to an asset class represented by an index may be 
+available through investable instruments based on that index. S&P DJI does not sponsor, endorse, sell, 
+promote or manage any investment fund or other investment vehicle that is offered by third parties and 
+that seeks to provide an investment return based on the performance of any index. S&P DJI makes no 
+assurance that investment products based on the index will accurately track index performance or provide 
+positive investment returns. S&P DJI is not an investment advisor, commodity trading advisor, fiduciary, 
+“promoter” (as defined in the Investment Company Act of 1940, as amended) or “expert” as enumerated 
+within 15 U.S.C. § 77k(a), and S&P DJI makes no representation regarding the advisability of investing in 
+any such investment fund or other investment vehicle. A decision to invest in any such investment fund or 
+other investment vehicle should not be made in reliance on any of the statements set forth in this 
+document. S&P DJI is not a tax advisor. Inclusion of a security, commodity, crypto currency, or other asset 
+within an index is not a recommendation by S&P DJI to buy, sell, or hold such security, commodity, crypto 
+currency, or other asset, nor is it considered to be investment or trading advice. 
+These materials have been prepared solely for informational purposes based upon information generally 
+available to the public and from sources believed to be reliable. No content contained in these materials 
+(including index data, ratings, credit-related analyses and data, research, valuations, model, software or 
+other application or output therefrom) or any part thereof (“Content”) may be modified, reverse 
+engineered, reproduced, or distributed in any form or by any means, or stored in a database or retrieval 
+system, without the prior written permission of S&P DJI. The Content shall not be used for any unlawful or 
+unauthorized purposes. S&P DJI and its third-party data providers and licensors (collectively “S&P Dow 
+Jones Indices Parties”) do not guarantee the accuracy, completeness, timeliness, or availability of the 
+Content. S&P Dow Jones Indices Parties are not responsible for any errors or omissions, regardless of 
+the cause, for the results obtained from the use of the Content. THE CONTENT IS PROVIDED ON AN 
+“AS IS” “WHERE IS” BASIS. S&P DOW JONES INDICES PARTIES DISCLAIMS ANY AND ALL 
+EXPRESS OR IMPLIED WARRANTIES, INCLUDING, BUT NOT LIMITED TO, ANY WARRANTIES OF 
+
+MERCHANTABILITY OR FITNESS FOR A PARTICULAR PURPOSE OR USE, FREEDOM FROM BUGS, 
+SOFTWARE ERRORS OR DEFECTS, THAT THE CONTENT’S FUNCTIONING WILL BE 
+UNINTERRUPTED OR THAT THE CONTENT WILL OPERATE WITH ANY SOFTWARE OR 
+HARDWARE CONFIGURATION. In no event shall S&P Dow Jones Indices Parties be liable to any party 
+for any direct, indirect, incidental, exemplary, compensatory, punitive, special, or consequential damages, 
+costs, expenses, legal fees, or losses (including, without limitation, lost income or lost profits and 
+opportunity costs) in connection with any use of the Content even if advised of the possibility of such 
+damages. 
+Credit-related information and other analyses, including ratings, research and valuations are generally 
+provided by licensors and/or affiliates of S&P Dow Jones Indices, including but not limited to S&P Global’s 
+other divisions such as S&P Global Market Intelligence. Any credit-related information and other related 
+analyses and statements in the Content are statements of opinion as of the date they are expressed and 
+not statements of fact. Any opinion, analyses and rating acknowledgement decisions are not 
+recommendations to purchase, hold, or sell any securities or to make any investment decisions, and do 
+not address the suitability of any security. S&P Dow Jones Indices does not assume any obligation to 
+update the Content following publication in any form or format. The Content should not be relied on and is 
+not a substitute for the skill, judgment and experience of the user, its management, employees, advisors 
+and/or clients when making investment and other business decisions. S&P DJI does not act as a fiduciary 
+or an investment advisor. While S&P DJI has obtained information from sources it believes to be reliable, 
+S&P DJI does not perform an audit or undertake independent verification of any information it receives. 
+S&P DJI reserves the right to vary or discontinue any index at any time for regulatory or other reasons. 
+Various factors, including external factors beyond S&P DJI’s control might necessitate material changes 
+to indices. 
+To the extent that regulatory authorities allow a rating agency to acknowledge in one jurisdiction a rating 
+issued in another jurisdiction for certain regulatory purposes, S&P Global Ratings reserves the right to 
+assign, withdraw or suspend such acknowledgement at any time and in its sole discretion. S&P Dow 
+Jones Indices, including S&P Global Ratings, disclaim any duty whatsoever arising out of the assignment, 
+withdrawal, or suspension of an acknowledgement as well as any liability for any damage alleged to have 
+been suffered on account thereof. Affiliates of S&P Dow Jones Indices LLC, including S&P Global 
+Ratings, may receive compensation for its ratings and certain credit-related analyses, normally from 
+issuers or underwriters of securities or from obligors. Such affiliates of S&P Dow Jones Indices LLC, 
+including S&P Global Ratings, reserve the right to disseminate its opinions and analyses. Public ratings 
+and analyses from S&P Global Ratings are made available on its Web sites, www.standardandpoors.com 
+(free of charge), and www.ratingsdirect.com and www.globalcreditportal.com (subscription), and may be 
+distributed through other means, including via S&P Global Ratings publications and third-party 
+redistributors. Additional information about our ratings fees is available at 
+www.standardandpoors.com/usratingsfees. 
+S&P Global keeps certain activities of its various divisions and business units separate from each other to 
+preserve the independence and objectivity of their respective activities. As a result, certain divisions and 
+business units of S&P Global may have information that is not available to other business units. S&P 
+Global has established policies and procedures to maintain the confidentiality of certain nonpublic 
+information received in connection with each analytical process. 
+In addition, S&P Dow Jones Indices provides a wide range of services to, or relating to, many 
+organizations, including issuers of securities, investment advisers, broker-dealers, investment banks, 
+other financial institutions, and financial intermediaries, and accordingly may receive fees or other 
+economic benefits from those organizations, including organizations whose securities or services they 
+may recommend, rate, include in model portfolios, evaluate, or otherwise address. 
+Some indices use the Global Industry Classification Standard (GICS ®), which was developed by, and is 
+the exclusive property and a trademark of, S&P Global and MSCI. Neither MSCI, S&P DJI nor any other 
+party involved in making or compiling any GICS classifications makes any express or implied warranties 
+or representations with respect to such standard or classification (or the results to be obtained by the use 
+
+thereof), and all such parties hereby expressly disclaim all warranties of originality, accuracy, 
+completeness, merchantability, or fitness for a particular purpose with respect to any of such standard or 
+classification. Without limiting any of the foregoing, in no event shall MSCI, S&P DJI, any of their affiliates 
+or any third party involved in making or compiling any GICS classifications have any liability for any direct, 
+indirect, special, punitive, consequential or any other damages (including lost profits) even if notified of 
+the possibility of such damages. 
+S&P Dow Jones Indices products are governed by the terms and conditions of the agreements under 
+which they may be provided. A license is required from S&P Dow Jones Indices to display, create 
+derivative works of and/or distribute any product or service that uses, is based upon and/or refers to any 
+S&P Dow Jones Indices and/or index data. 
+The Content may have been created with the assistance of an artificial intelligence (AI) tool. While the AI 
+tool may provide suggestions and insights, the final Content was composed, reviewed, edited, and 
+approved by a human(s) at S&P Dow Jones Indices. As such, S&P Dow Jones Indices claims full 
+copyright ownership of this AI-assisted Content, in accordance with applicable laws and regulations. 
+ESG Indices Disclaimer 
+S&P DJI provides indices that seek to select, exclude, and/or weight index constituents based on, but not 
+limited to, certain environmental, social or governance (ESG) indicators, or a combination of those 
+indicators, including the following: environmental indicators (including the efficient use of natural 
+resources, the production of waste, greenhouse gas emissions, or impact on biodiversity); social 
+indicators (such as, inequality and investment in human capital); governance indictors (such as sound 
+management structures, employee relations, remuneration of staff, tax compliance, respect for human 
+rights, anti-corruption and anti-bribery matters), specific sustainability or values-related company 
+involvement indicators (for example, production/distribution of controversial weapons, tobacco products, 
+or thermal coal), or controversies monitoring (including research of media outlets to identify companies 
+involved in ESG-related incidents). 
+S&P DJI ESG indices use ESG metrics and scores in the selection and/or weighting of index constituents. 
+ESG scores or ratings seek to measure or evaluate a company’s, or an asset’s, performance with respect 
+to environmental, social and corporate governance issues. 
+The ESG scores, ratings, and other data used in S&P DJI ESG indices is supplied directly or indirectly by 
+third parties (note these parties can be independent affiliates of S&P Global or unaffiliated entities) so an 
+S&P DJI ESG index’s ability to reflect ESG factors depends on these third parties’ data accuracy and 
+availability. 
+ESG scores, ratings, and other data may be reported (meaning that the data is provided as disclosed by 
+companies, or an asset, or as made publicly available), modelled (meaning that the data is derived using 
+a proprietary modelling process with only proxies used in the creation of the data), or reported and 
+modelled (meaning that the data is either a mix of reported and modelled data or is derived from the 
+vendor using reported data /information in a proprietary scoring or determination process). 
+ESG scores, ratings, and other data, whether from an external and/or internal source, is based on a 
+qualitative and judgmental assessment, especially in the absence of well-defined market standards, and 
+due to the existence of multiple approaches and methodologies to assess ESG factors and 
+considerations. An element of subjectivity and discretion is therefore inherent in any ESG score, rating, or 
+other data and different ESG scoring, rating, and/or data sources may use different ESG assessment or 
+estimation methodologies. Different persons (including ESG data ratings, or scoring providers, index 
+administrators or users) may arrive at different conclusions regarding the sustainability or impact of a 
+particular company, asset, or index. 
+Where an index uses ESG scores, ratings or other data supplied directly or indirectly by third parties, S&P 
+DJI does not accept responsibility for the accuracy of completeness of such ESG scores, ratings, or data. 
+
+No single clear, definitive test or framework (legal, regulatory, or otherwise) exists to determine ‘ESG’, ‘sustainable’, ‘good governance’, ‘no adverse environmental, social and/or other impacts’, or other equivalently labelled objectives. In the absence of well-defined market standards and due to the existence of multitude approaches, the exercise of judgment is necessary. Accordingly, different persons may classify the same investment, product and/or strategy differently regarding ‘ESG’, ‘sustainable’, ‘good governance’, ‘no adverse environmental, social and/or other impacts’, or other equivalently labelled objectives. Furthermore, the legal and/or market position on what constitutes an ‘ESG’, ‘sustainable’, ‘good governance’, ‘no adverse environmental, social and/or other impacts’, or other equivalently labelled objectives may change over time, especially as further regulatory or industry rules and guidance are issued and the ESG sustainable finance framework becomes more sophisticated. Prospective users of an S&P DJI ESG Index are encouraged to read the relevant index methodology and related disclosures carefully to determine whether the index is suitable for their potential use case or investment objective.
+
