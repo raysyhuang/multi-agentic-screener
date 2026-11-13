@@ -1,0 +1,22 @@
+symbol   3M     1Y     5Y    10Y   10Y annualized
+SPMO   -12.0%  +14.2%   +106%  +408%  17.6%/yr
+XMMO   -16.1%   +2.2%    +43%  +344%  16.1%/yr
+MTUM   -12.2%  +12.9%    +47%  +274%  14.1%/yr
+SPY     -2.7%  +12.7%    +62%  +250%  13.3%/yr
+MMTM    -5.6%   +2.6%    +45%  +225%  12.5%/yr
+PDP     -7.6%  +15.7%    +32%  +217%  12.2%/yr
+QMOM   -11.1%   +8.7%    +24%  +185%  11.1%/yr
+DWAS   -11.2%  +15.8%     +7%  +170%  10.5%/yr
+IMTM    -7.4%   +3.6%    +24%  +109%  7.7%/yr
+FFTY   -22.5%  -15.1%    -42%  +27%  2.4%/yr
+FDMO    -8.0%   +8.3%    +65%  under 10y
+JMOM    -7.1%  +17.7%    +63%  under 10y
+VFMO    -9.4%  +16.2%    +53%  under 10y
+beat SPY over 3M: 0 of 12 []
+beat SPY over 1Y: 6 of 12 ['MTUM', 'SPMO', 'PDP', 'JMOM', 'VFMO', 'DWAS']
+beat SPY over 3Y: 5 of 12 ['MTUM', 'SPMO', 'FDMO', 'JMOM', 'VFMO']
+beat SPY over 5Y: 3 of 12 ['SPMO', 'FDMO', 'JMOM']
+beat SPY over 10Y: 3 of 9 ['MTUM', 'SPMO', 'XMMO']
+2015-01-02 -> 2025-01-02, dividends included: {'XMMO': '15.4%/yr', 'MTUM': '13.4%/yr', 'SPY': '13.0%/yr', 'PDP': '10.5%/yr', 'DWAS': '9.6%/yr'}
+2008: {'PDP': '-46.2%', 'SPY': '-36.8%'}
+2022: {'MTUM': '-18.3%', 'SPMO': '-10.4%', 'SPY': '-18.2%'}
