@@ -1,0 +1,463 @@
+[
+  {
+    "id": "jt93",
+    "cite": "Jegadeesh & Titman（1993）",
+    "title": "Returns to Buying Winners and Selling Losers: Implications for Stock Market Efficiency",
+    "venue": "Journal of Finance 48(1)",
+    "groups": [
+      "canon",
+      "wh",
+      "cal"
+    ],
+    "rel": "高度相關",
+    "finding": "1965–1989 美股，買進過去 3–12 個月的贏家、放空輸家，持有 3–12 個月有顯著正報酬；部分超額報酬在之後兩年回吐，且 1 月份的動量報酬為負。",
+    "relation": "你們的 W1–12 × H1–12 就是它 J×K（3/6/9/12）網格的全格延伸。差別在它用十分位多空、等權，並以每月新建、重疊持有的組合計算，所以天生把所有換倉相位平均掉。",
+    "help": "支持：W、H 落在 3–12 個月是文獻主流區間。挑戰：它的重疊組合法本身就是「相位平均」，論文化時應把你們的 12 相位等權合成版與它對照，而不只是報 12 相位中位數。",
+    "short": "W×H 網格的原型；重疊組合等於相位平均",
+    "href": "https://doi.org/10.1111/j.1540-6261.1993.tb04702.x"
+  },
+  {
+    "id": "jt01",
+    "cite": "Jegadeesh & Titman（2001）",
+    "title": "Profitability of Momentum Strategies: An Evaluation of Alternative Explanations",
+    "venue": "Journal of Finance 56(2)",
+    "groups": [
+      "canon",
+      "oos"
+    ],
+    "rel": "高度相關",
+    "finding": "用 1993 年論文之後的 1990–1998 資料做樣本外檢驗，動量依然存在；持有期之後第 13–60 個月出現反轉，作者認為較符合行為面解釋。",
+    "relation": "這是「原規則凍結，拿新資料再測」的標準範本，正好對應你們 2015–2025 官方視窗與 2005–2015 同規則對照。",
+    "help": "論文化時，2005–2015 的結果應以同等地位呈現，而不是附錄；2026 起的資料若規則已凍結，可視為真正的樣本外。",
+    "short": "發表後樣本外檢驗的範本",
+    "href": "https://doi.org/10.1111/0022-1082.00342"
+  },
+  {
+    "id": "dbt85",
+    "cite": "De Bondt & Thaler（1985）",
+    "title": "Does the Stock Market Overreact?",
+    "venue": "Journal of Finance 40(3)",
+    "groups": [
+      "canon",
+      "wh"
+    ],
+    "rel": "對照",
+    "finding": "過去 3–5 年的輸家在之後數年表現勝過過去的贏家，即長期反轉。",
+    "relation": "說明 W 拉到數年以上會進入反轉區，也呼應 JT 2001 發現的 13–60 個月反轉。",
+    "help": "替網格上限 W、H ≤ 12 提供文獻理由；也提醒 H 長、且持有前一輪大贏家時，持有後段可能碰到反轉。",
+    "short": "長期反轉：W、H 上限的理由",
+    "href": "https://doi.org/10.1111/j.1540-6261.1985.tb05004.x"
+  },
+  {
+    "id": "jeg90",
+    "cite": "Jegadeesh（1990）",
+    "title": "Evidence of Predictable Behavior of Security Returns",
+    "venue": "Journal of Finance 45(3)",
+    "groups": [
+      "canon",
+      "wh"
+    ],
+    "rel": "高度相關",
+    "finding": "個股月報酬有顯著的一個月負自相關（短期反轉）。",
+    "relation": "這是學界標準動量（12-1：看過去 12 個月、跳過最近 1 個月）跳月的理由。你們的 W 包含最近一個月，月末排名第一的股票往往剛大漲，最容易撞上短期反轉。",
+    "help": "下一步該加的對照：同一格 W 改成「跳過最近一個月」，看 W10H2、W12H4 的結果是否依賴最後一個月。",
+    "short": "短期反轉；跳月慣例的來源",
+    "href": "https://doi.org/10.1111/j.1540-6261.1990.tb05110.x"
+  },
+  {
+    "id": "carhart",
+    "cite": "Carhart（1997）",
+    "title": "On Persistence in Mutual Fund Performance",
+    "venue": "Journal of Finance 52(1)",
+    "groups": [
+      "canon"
+    ],
+    "rel": "相關",
+    "finding": "在 Fama-French 三因子外加入一年動量因子，基金績效的持續性大多可由動量曝險與費用解釋。",
+    "relation": "四因子模型是今天評估任何動量型組合的基準工具。",
+    "help": "若寫成論文，Top1–3 的月報酬應對市場與動量因子做迴歸，回答「這是動量因子的集中版，還是另有東西」。",
+    "short": "四因子：評估超額報酬的基準",
+    "href": "https://doi.org/10.1111/j.1540-6261.1997.tb03808.x"
+  },
+  {
+    "id": "mg99",
+    "cite": "Moskowitz & Grinblatt（1999）",
+    "title": "Do Industries Explain Momentum?",
+    "venue": "Journal of Finance 54(4)",
+    "groups": [
+      "canon",
+      "k"
+    ],
+    "rel": "相關",
+    "finding": "產業動量能解釋很大一部分個股動量。",
+    "relation": "Top1 每輪只拿一檔，很容易連續幾輪集中在同一個熱門產業。",
+    "help": "應記錄每輪第一名的產業，並和「買最強產業」的對照組比較，判斷結果有多少是產業輪動。",
+    "short": "Top1 可能是產業動量的代理",
+    "href": "https://doi.org/10.1111/0022-1082.00146"
+  },
+  {
+    "id": "amp13",
+    "cite": "Asness, Moskowitz & Pedersen（2013）",
+    "title": "Value and Momentum Everywhere",
+    "venue": "Journal of Finance 68(3)",
+    "groups": [
+      "canon"
+    ],
+    "rel": "相關",
+    "finding": "價值與動量在多國股市與多種資產類別都存在，兩者彼此負相關，並有共同的因子結構。",
+    "relation": "動量不是美股或某個十年的特例，這是你們研究的背景前提。",
+    "help": "支持「動量現象存在」，但不支持任何特定 W/H 格或 Top1 的報酬水準。",
+    "short": "動量普遍存在的證據",
+    "href": "https://doi.org/10.1111/jofi.12021"
+  },
+  {
+    "id": "mop12",
+    "cite": "Moskowitz, Ooi & Pedersen（2012）",
+    "title": "Time Series Momentum",
+    "venue": "Journal of Financial Economics 104(2)",
+    "groups": [
+      "canon",
+      "crash"
+    ],
+    "rel": "對照",
+    "finding": "在 58 種流動期貨與遠期合約中，資產自身過去 12 個月的報酬能預測未來報酬，持續約一年後部分反轉。",
+    "relation": "你們是截面排名、永遠滿倉，不是時間序列動量；只有 30% 自持倉後高點的停損帶有一點「看自身走勢」的味道。",
+    "help": "寫作時要明確區分兩者，避免引用時序動量的證據支持截面 Top1 設計。",
+    "short": "時序動量；用來劃清界線",
+    "href": "https://doi.org/10.1016/j.jfineco.2011.11.003"
+  },
+  {
+    "id": "nm12",
+    "cite": "Novy-Marx（2012）",
+    "title": "Is Momentum Really Momentum?",
+    "venue": "Journal of Financial Economics 103(3)",
+    "groups": [
+      "wh"
+    ],
+    "rel": "高度相關",
+    "finding": "動量主要來自形成期前 12 到 7 個月的表現，而不是最近 6 到 2 個月；在大型、流動性高的股票中尤其明顯。",
+    "relation": "W10、W12 都包含 12–7 個月這一段，且你們只看 S&P 500 大型股，正是這篇說效果最清楚的範圍。",
+    "help": "可以把 W 拆成「遠段」與「近段」分別排名，檢查 W10/W12 勝過短 W 是不是同一現象。這是讓網格結果有文獻機制支撐的最直接一步。",
+    "short": "中期（12–7 月）動量；支持長 W",
+    "href": "https://doi.org/10.1016/j.jfineco.2011.05.003"
+  },
+  {
+    "id": "gh04",
+    "cite": "George & Hwang（2004）",
+    "title": "The 52-Week High and Momentum Investing",
+    "venue": "Journal of Finance 59(5)",
+    "groups": [
+      "wh",
+      "crash"
+    ],
+    "rel": "相關",
+    "finding": "股價接近 52 週高點的程度，比過去報酬更能預測未來報酬，且這個效果長期不反轉。",
+    "relation": "是另一種排名統計（距高點遠近，而不是區間漲幅），也和你們「自持倉後高點回撤 30%」的停損概念相鄰。",
+    "help": "可作為排名統計的穩健性對照：若改用距 52 週高點排名，第一名與報酬差多少。",
+    "short": "另一種排名統計：距 52 週高點",
+    "href": "https://doi.org/10.1111/j.1540-6261.2004.00695.x"
+  },
+  {
+    "id": "im13",
+    "cite": "Israel & Moskowitz（2013）",
+    "title": "The Role of Shorting, Firm Size, and Time on Market Anomalies",
+    "venue": "Journal of Financial Economics 108(2)",
+    "groups": [
+      "k"
+    ],
+    "rel": "高度相關",
+    "finding": "1926–2011 美股中，動量利潤約一半來自多頭端；動量與公司規模沒有可靠關係；只做多的動量組合對市場仍有顯著正 alpha。",
+    "relation": "直接回應你們兩個設計選擇：只做多、只看大型股（S&P 500）。",
+    "help": "支持：只做多、大型股並不會讓動量消失。限制：它的只做多組合仍是分散的分位組合，不能拿來支持單一股票 Top1 的報酬水準。",
+    "short": "只做多、大型股仍有動量",
+    "href": "https://doi.org/10.1016/j.jfineco.2012.11.005"
+  },
+  {
+    "id": "hls00",
+    "cite": "Hong, Lim & Stein（2000）",
+    "title": "Bad News Travels Slowly: Size, Analyst Coverage, and the Profitability of Momentum Strategies",
+    "venue": "Journal of Finance 55(1)",
+    "groups": [
+      "k"
+    ],
+    "rel": "相關",
+    "finding": "動量在小型、分析師覆蓋少的股票較強，且主要來自輸家端。",
+    "relation": "若成立，S&P 500 只做多應是動量較弱的環境。Israel & Moskowitz（2013）認為這個規模效果是樣本特定、全期不穩健。",
+    "help": "論文中應同時引用這兩篇，說明大型股只做多是文獻有爭議的區域，而不是已知的最佳區域。",
+    "short": "規模與動量：有爭議的證據",
+    "href": "https://doi.org/10.1111/0022-1082.00206"
+  },
+  {
+    "id": "hs08",
+    "cite": "Heston & Sadka（2008）",
+    "title": "Seasonality in the Cross-Section of Stock Returns",
+    "venue": "Journal of Financial Economics 87(2)",
+    "groups": [
+      "cal"
+    ],
+    "rel": "高度相關",
+    "finding": "個股在某個日曆月份的相對報酬，會在之後各年的同一月份重現，最長可達 20 年。",
+    "relation": "W12 的回看窗口剛好包含去年同月；不同相位在不同月份換倉，報酬差異可能部分來自這種月份季節性，而不只是運氣。",
+    "help": "可測：同一格只排除去年同月（或比較 W11 與 W12），看相位差異與 W12 的優勢是否縮小。",
+    "short": "同月季節性；可能影響相位與 W12",
+    "href": "https://doi.org/10.1016/j.jfineco.2007.02.003"
+  },
+  {
+    "id": "gm04",
+    "cite": "Grinblatt & Moskowitz（2004）",
+    "title": "Predicting Stock Price Movements from Past Returns: The Role of Consistency and Tax-Loss Selling",
+    "venue": "Journal of Financial Economics 71(3)",
+    "groups": [
+      "cal",
+      "wh"
+    ],
+    "rel": "相關",
+    "finding": "過去報酬的「一致性」（多數月份上漲）與節稅賣出都影響動量的預測力，動量報酬在年末與 1 月有明顯季節性。",
+    "relation": "你們的年冠是 1 月相位；1 月換倉剛好落在文獻記錄的節稅與 1 月效應時點。",
+    "help": "論文中不宜只展示 1 月相位，應說明 1 月是季節性最強的月份之一，並以 12 相位分佈為主。",
+    "short": "節稅與 1 月效應；1 月相位的背景",
+    "href": "https://doi.org/10.1016/S0304-405X(03)00176-4"
+  },
+  {
+    "id": "hfb20",
+    "cite": "Hoffstein, Faber & Braun（2020）",
+    "title": "Rebalance Timing Luck: The (Dumb) Luck of Smart Beta",
+    "venue": "SSRN 工作論文（Newfound Research）",
+    "groups": [
+      "cal",
+      "k"
+    ],
+    "rel": "高度相關",
+    "finding": "只改變換倉日程的美股只做多因子指數（含動量），換倉時點運氣常超過每年 100 個基點，且隨換倉頻率、持股集中度與策略性質而變。",
+    "relation": "這幾乎就是你們 12 相位測試在量的東西；而 Top1、H 長、換手大，都是它指出會放大時點運氣的條件。",
+    "help": "建議把 12 相位的分散度明確稱為換倉時點運氣，並報告 12 相位等權分批（tranche）合成組合。年冠只看 1 月相位，在這個框架下是單一相位結果。這篇是業界工作論文，非同儕審查期刊。",
+    "short": "換倉時點運氣：12 相位的直接文獻",
+    "href": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=3673910"
+  },
+  {
+    "id": "shumway",
+    "cite": "Shumway（1997）",
+    "title": "The Delisting Bias in CRSP Data",
+    "venue": "Journal of Finance 52(1)",
+    "groups": [
+      "data"
+    ],
+    "rel": "相關",
+    "finding": "CRSP 資料常缺少下市股票的最後報酬，忽略它會讓回測結果偏高。",
+    "relation": "你們的成分名單仍是暫定；被移出指數、被併購或下市的股票如何處理，是存活偏差的核心。",
+    "help": "論文化前應交代歷史成分名單的來源是否為時點正確（point-in-time），以及移出或下市股票在持有期內如何計價。",
+    "short": "下市與存活偏差",
+    "href": "https://doi.org/10.1111/j.1540-6261.1997.tb03818.x"
+  },
+  {
+    "id": "lsz04",
+    "cite": "Lesmond, Schill & Zhou（2004）",
+    "title": "The Illusory Nature of Momentum Profits",
+    "venue": "Journal of Financial Economics 71(2)",
+    "groups": [
+      "cost"
+    ],
+    "rel": "相關",
+    "finding": "動量策略集中在交易成本高的股票，扣除成本後的利潤大幅縮水。",
+    "relation": "S&P 500 大型股成本遠低於全市場分位組合，25 個基點單邊在這個宇宙算保守。",
+    "help": "支持：大型股宇宙能避開這篇的主要批評。但論文仍應報告不同成本假設（例如單邊 10/25/50 基點）下的結果。",
+    "short": "成本批評；大型股宇宙較能避開",
+    "href": "https://doi.org/10.1016/S0304-405X(03)00206-X"
+  },
+  {
+    "id": "ks04",
+    "cite": "Korajczyk & Sadka（2004）",
+    "title": "Are Momentum Profits Robust to Trading Costs?",
+    "venue": "Journal of Finance 59(3)",
+    "groups": [
+      "cost"
+    ],
+    "rel": "相關",
+    "finding": "考慮價格衝擊後，動量策略有容量上限；流動性加權的版本容量較大。",
+    "relation": "Top1 把全部資金放進一檔股票，容量與衝擊成本的問題比分散組合更集中。",
+    "help": "對個人規模影響不大，但若論文主張可擴大規模，需要討論單一名稱的容量。",
+    "short": "容量與價格衝擊",
+    "href": "https://doi.org/10.1111/j.1540-6261.2004.00656.x"
+  },
+  {
+    "id": "nmv16",
+    "cite": "Novy-Marx & Velikov（2016）",
+    "title": "A Taxonomy of Anomalies and Their Trading Costs",
+    "venue": "Review of Financial Studies 29(1)",
+    "groups": [
+      "cost"
+    ],
+    "rel": "相關",
+    "finding": "依換手率將異常分類並估算扣成本後的淨報酬；高換手策略最受成本侵蝕，並檢驗降低成本的做法（例如進出緩衝區）。",
+    "relation": "H 越短換手越高；W10H2 每兩個月換一次、W12H4 每四個月換一次，成本侵蝕程度不同。",
+    "help": "可引用作為成本敏感度與「緩衝區規則」（第一名小幅變動時不換）的依據。",
+    "short": "換手率分類與降成本方法",
+    "href": "https://doi.org/10.1093/rfs/hhv063"
+  },
+  {
+    "id": "fim",
+    "cite": "Frazzini, Israel & Moskowitz（2012）",
+    "title": "Trading Costs of Asset Pricing Anomalies",
+    "venue": "SSRN 工作論文（AQR）",
+    "groups": [
+      "cost"
+    ],
+    "rel": "相關",
+    "finding": "以約 1 兆美元的實際交易資料（1998–2011，19 個已開發市場）估算，實際交易成本低於多數學術估計，規模、價值、動量在相當大的資金規模下仍可執行。",
+    "relation": "為 25 個基點單邊的假設提供實盤數據背景。",
+    "help": "支持你們的成本假設不算樂觀；注意它的對象是分散的大型機構組合，不是單一股票。",
+    "short": "實盤成本資料",
+    "href": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2294498"
+  },
+  {
+    "id": "dm16",
+    "cite": "Daniel & Moskowitz（2016）",
+    "title": "Momentum Crashes",
+    "venue": "Journal of Financial Economics 122(2)",
+    "groups": [
+      "crash"
+    ],
+    "rel": "高度相關",
+    "finding": "動量崩盤部分可預測：多發生在市場下跌、波動升高後的「恐慌狀態」，並與市場反彈同時出現；預測條件均值與變異的動態策略，約可讓 alpha 與 Sharpe 翻倍。",
+    "relation": "2005–2015 包含 2008–2009 與 2009 年反彈，正是動量崩盤的典型時段，可以解釋為何同規則在那十年表現很差。",
+    "help": "論文中可用它來解釋兩個十年的差異，但要注意：它的崩盤主要來自放空輸家，你們只做多，所以要另外檢查只做多 Top1 在那段期間的虧損來源。",
+    "short": "動量崩盤；解釋 2005–2015",
+    "href": "https://doi.org/10.1016/j.jfineco.2015.12.002"
+  },
+  {
+    "id": "bsc15",
+    "cite": "Barroso & Santa-Clara（2015）",
+    "title": "Momentum Has Its Moments",
+    "venue": "Journal of Financial Economics 116(1)",
+    "groups": [
+      "crash"
+    ],
+    "rel": "相關",
+    "finding": "動量的風險可預測；依過去波動度調整曝險，大幅降低崩盤，Sharpe 約翻倍。",
+    "relation": "是「事前規則化」的風險控制，和你們的 30% 停損屬於同一類問題，但機制不同（縮放部位，而不是全出）。",
+    "help": "如要測風險控制，應事先寫好規則再測，避免看完 2005–2015 才挑方法。",
+    "short": "波動度縮放的風險控制",
+    "href": "https://doi.org/10.1016/j.jfineco.2014.11.010"
+  },
+  {
+    "id": "cgh04",
+    "cite": "Cooper, Gutierrez & Hameed（2004）",
+    "title": "Market States and Momentum",
+    "venue": "Journal of Finance 59(3)",
+    "groups": [
+      "crash"
+    ],
+    "rel": "高度相關",
+    "finding": "動量利潤只出現在市場過去處於上漲狀態之後；市場下跌狀態之後，動量平均為負。",
+    "relation": "2015–2025 大部分時間是多頭狀態，2005–2015 含大型空頭，這篇直接預測了兩個十年會差很多。",
+    "help": "可把兩個十年依市場狀態切開，檢查 Top1 的報酬是否集中在上漲狀態之後。這比「好十年接壞十年」的敘述更有解釋力。",
+    "short": "市場狀態決定動量；對應兩個十年",
+    "href": "https://doi.org/10.1111/j.1540-6261.2004.00665.x"
+  },
+  {
+    "id": "gs16",
+    "cite": "Geczy & Samonov（2016）",
+    "title": "Two Centuries of Price-Return Momentum",
+    "venue": "Financial Analysts Journal 72(5)",
+    "groups": [
+      "crash",
+      "oos"
+    ],
+    "rel": "相關",
+    "finding": "建立 1801–1926 的美股月度價格資料做樣本外檢驗，動量利潤仍為正且顯著；在市場狀態轉折初期，動量的 beta 與新方向相反，造成損失。",
+    "relation": "兩百年的資料仍顯示動量存在，但轉折點的損失是結構性的，和你們兩個十年的差異一致。",
+    "help": "可引用作為長期樣本外證據，以及「轉折點損失」的機制；不支持任何特定十年的 CAGR 水準。",
+    "short": "兩百年樣本外；轉折點損失",
+    "href": "https://doi.org/10.2469/faj.v72.n5.1"
+  },
+  {
+    "id": "hzz14",
+    "cite": "Han, Zhou & Zhu（2014）",
+    "title": "Taming Momentum Crashes: A Simple Stop-Loss Strategy",
+    "venue": "SSRN 工作論文",
+    "groups": [
+      "crash"
+    ],
+    "rel": "高度相關",
+    "finding": "1926–2013 美股，對動量組合加上 10% 停損（以月初價計），等權動量的最大單月虧損由 −49.79% 降到 −11.36%，Sharpe 超過翻倍。",
+    "relation": "這是最接近你們停損規則的文獻，但設計不同：它是十分位多空、每月換倉、以月初價為基準；你們是只做多 Top1、持有 H 個月、以持倉後高點回撤 30% 計。",
+    "help": "你們的 30% 停損在互補組合上沒有改善中位 CAGR 或 MDD，和這篇不矛盾，因為它的效果有很大部分來自放空端與每月重設基準。引用時要把差異寫清楚。",
+    "short": "停損文獻；設計與我們不同",
+    "href": "https://papers.ssrn.com/sol3/papers.cfm?abstract_id=2407199"
+  },
+  {
+    "id": "mp16",
+    "cite": "McLean & Pontiff（2016）",
+    "title": "Does Academic Research Destroy Stock Return Predictability?",
+    "venue": "Journal of Finance 71(1)",
+    "groups": [
+      "oos"
+    ],
+    "rel": "高度相關",
+    "finding": "97 個預測變數的組合報酬在樣本外低 26%、發表後低 58%；樣本內報酬越高，發表後衰減越多。",
+    "relation": "你們是在 2015–2025 看完結果後才聚焦 W10H2、W12H4，類似「樣本內」；這篇給出了樣本外應預期多少衰減的參考。",
+    "help": "論文不應以 2015–2025 的中位 CAGR 作為預期報酬；樣本內越亮眼，越應預期衰減。",
+    "short": "樣本外與發表後衰減",
+    "href": "https://doi.org/10.1111/jofi.12365"
+  },
+  {
+    "id": "hlz16",
+    "cite": "Harvey, Liu & Zhu（2016）",
+    "title": "… and the Cross-Section of Expected Returns",
+    "venue": "Review of Financial Studies 29(1)",
+    "groups": [
+      "oos"
+    ],
+    "rel": "高度相關",
+    "finding": "整理數百個已發表的報酬因子，指出多重檢定下傳統 t > 2 的門檻太低，新發現應採用約 t > 3.0 的門檻。",
+    "relation": "432 組配置 × 12 相位共 5,184 條路徑，再從中挑出最佳格，正是多重檢定問題。",
+    "help": "論文中應報告選擇前的整體分佈，並以多重檢定調整後的門檻評估被挑出的格。",
+    "short": "多重檢定門檻",
+    "href": "https://doi.org/10.1093/rfs/hhv059"
+  },
+  {
+    "id": "white00",
+    "cite": "White（2000）",
+    "title": "A Reality Check for Data Snooping",
+    "venue": "Econometrica 68(5)",
+    "groups": [
+      "oos"
+    ],
+    "rel": "高度相關",
+    "finding": "提出以自助法檢驗「從許多規則中挑出的最佳規則」是否真的勝過基準，修正資料窺探。",
+    "relation": "你們的問題正是「432 組配置中最好的那幾組，是否只是運氣」。",
+    "help": "可直接套用：以 432 組配置的報酬序列做 Reality Check，檢驗 W10H2、W12H4、年冠格是否顯著優於基準（例如 S&P 500 或等權成分）。",
+    "short": "最佳規則的資料窺探檢定",
+    "href": "https://doi.org/10.1111/1468-0262.00152"
+  },
+  {
+    "id": "dsr14",
+    "cite": "Bailey & López de Prado（2014）",
+    "title": "The Deflated Sharpe Ratio: Correcting for Selection Bias, Backtest Overfitting, and Non-Normality",
+    "venue": "Journal of Portfolio Management 40(5)",
+    "groups": [
+      "oos"
+    ],
+    "rel": "高度相關",
+    "finding": "依試驗次數、報酬偏態與峰態，對挑選出來的最佳 Sharpe 比率做折減。",
+    "relation": "Top1 報酬高度偏態、試驗次數多，正是折減幅度最大的情況。",
+    "help": "論文中可報告挑選格的折減後 Sharpe，作為可信度指標，比只報 CAGR 更能說服審稿人。",
+    "short": "依試驗次數折減 Sharpe",
+    "href": "https://doi.org/10.3905/jpm.2014.40.5.094"
+  },
+  {
+    "id": "pbo",
+    "cite": "Bailey, Borwein, López de Prado & Zhu（2016）",
+    "title": "The Probability of Backtest Overfitting",
+    "venue": "Journal of Computational Finance",
+    "groups": [
+      "oos"
+    ],
+    "rel": "高度相關",
+    "finding": "提出組合對稱交叉驗證（CSCV），估計「樣本內最佳配置在樣本外表現低於中位數」的機率。",
+    "relation": "可以把 2015–2025 切成多段，檢驗樣本內最佳的 W/H/K 在其他段落是否仍排前段。",
+    "help": "這是把「看完網格才挑格」轉成可量化數字的最直接方法；配合 2005–2015 視窗會更有說服力。",
+    "short": "回測過度擬合機率",
+    "href": "https://doi.org/10.21314/JCF.2016.322"
+  }
+]
