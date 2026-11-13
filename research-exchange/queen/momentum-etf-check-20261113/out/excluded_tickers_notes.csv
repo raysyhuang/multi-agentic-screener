@@ -1,0 +1,7 @@
+group,tickers
+International equity momentum (out of US-large-cap scope),"IMTM, IMOM, IDMO, EEMO, PIZ, XUSM, UIVM, UEVM"
+Sector Dorsey Wright momentum,"PTF, PRN, PXI, PEZ, PSL, PUI, PTH, PFI, PYZ"
+Value-with-momentum blends,"SPVM, XMVM, XSVM, ULVM, USVM"
+Leveraged / ETN,MTUL (2x MSCI US Momentum ETN)
+"Multi-asset, tactical, or not a single equity-momentum book","GMOM, VAMO, VMOT, EZMO, SAMM, DDIV, DVOL, DVLU, MPIM"
+Included with a methodology caveat,"JOET (quality + momentum); QQQA (Nasdaq-100 subset); MMTM (S&P 1500 tilt, not a concentrated momentum sleeve); XMMO/XSMO (growth until 2019-06-21, momentum thereafter)"

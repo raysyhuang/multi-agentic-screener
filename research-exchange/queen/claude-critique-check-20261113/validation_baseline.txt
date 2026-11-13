@@ -1,0 +1,2 @@
+2015-2025 K1 paths checked 1728 mismatches 0 8.3 s
+2005-2015 packet paths checked 25 mismatches 0

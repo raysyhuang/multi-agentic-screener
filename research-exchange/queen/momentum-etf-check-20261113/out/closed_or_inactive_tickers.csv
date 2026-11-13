@@ -1,0 +1,7 @@
+ticker,name,ipoDate,status,reason
+AMOM,QRAFT AI-Enhanced U.S. Large Cap Momentum ETF,2019-05-21,FMP isActivelyTrading=false; not included in returns,Appears closed or no longer actively trading
+OMOM,Invesco Russell 1000 Momentum Factor ETF,2017-11-08,FMP isActivelyTrading=false; not included in returns,"Appears liquidated / not actively trading (tiny stale marketCap, no website/ISIN in FMP)"
+DWAQ,Invesco DWA NASDAQ Momentum ETF,2004-01-02,FMP isActivelyTrading=false; not included in returns,Appears liquidated / not actively trading
+PMOM,Principal Sustainable Momentum Index ETF,2017-10-18,FMP isActivelyTrading=false; not included in returns,Appears liquidated / not actively trading
+MOM,AGFiQ U.S. Market Neutral Momentum Fund,2011-09-07,FMP isActivelyTrading=false; excluded even if it were live,"Market-neutral long/short, not a long-only equity momentum ETF; also not actively trading"
+BEMO,Aptus Behavioral Momentum ETF,2008-06-10,FMP isActivelyTrading=false; not included in returns,Appears liquidated / not actively trading
