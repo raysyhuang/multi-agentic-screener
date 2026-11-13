@@ -1,0 +1,25 @@
+2015 era (SPEC-only selection), NVDA excluded=no: Top3 identical to Queen at 21 of 21 rebalances; differences: []
+  2015 Top1 no stop            CAGR  13.3917% (Queen  13.3917%)  MDD -74.4380% (Queen -74.4380%) stops 0
+  2015 Top1 30% trailing stop  CAGR  16.2804% (Queen  16.2804%)  MDD -55.2887% (Queen -55.2887%) stops 3
+  2015 Top2 no stop            CAGR  10.9875% (Queen  10.9875%)  MDD -63.3331% (Queen -63.3331%) stops 0
+  2015 Top2 30% trailing stop  CAGR   8.6915% (Queen   8.6915%)  MDD -67.6020% (Queen -67.6020%) stops 9
+  2015 Top3 no stop            CAGR  15.1325% (Queen  15.1325%)  MDD -46.6448% (Queen -46.6448%) stops 0
+  2015 Top3 30% trailing stop  CAGR  11.4142% (Queen  11.4142%)  MDD -58.8494% (Queen -58.8494%) stops 12
+  same dates as SPMO (2015-10-12 -> 2025-01-02) Top1: CAGR 14.61% (Queen 14.61%), MDD -74.4%
+  same dates as SPMO (2015-10-12 -> 2025-01-02) Top2: CAGR 13.79% (Queen 13.79%), MDD -63.3%
+  same dates as SPMO (2015-10-12 -> 2025-01-02) Top3: CAGR 18.48% (Queen 18.48%), MDD -46.6%
+2015 era (SPEC-only selection), NVDA excluded=yes: Top3 identical to Queen at 21 of 21 rebalances; differences: []
+  2015 Top1 no NVDA            CAGR  -0.6065% (Queen  -0.6065%)  MDD -75.6499% (Queen -75.6499%) stops 0
+  2015 Top2 no NVDA            CAGR   4.7221% (Queen   4.7221%)  MDD -64.3963% (Queen -64.3963%) stops 0
+  2015 Top3 no NVDA            CAGR   7.2893% (Queen   7.2893%)  MDD -49.6634% (Queen -49.6634%) stops 0
+2005 era (selection with Queen's code fallbacks), NVDA excluded=no: Top3 identical to Queen at 7 of 21 rebalances; differences: [('2005-09', ['KBH', 'TXU', 'AYE'], ['KBH', 'TXU', 'HUM']), ('2006-03', ['BR', 'ESRX', 'AMD'], ['ESRX', 'AMD', 'GLW']), ('2006-09', ['Q', 'PD', 'RAI'], ['Q', 'RAI', 'ATI']), ('2007-03', ['DTV', 'OMX', 'CMCSA'], ['DTV', 'CMCSA', 'BXP']), ('2007-09', ['GT', 'AMZN', 'HLT'], ['GT', 'AMZN', 'EMC']), ('2008-09', ['CF', 'BTUUQ', 'MON'], ['CF', 'MON', 'SWN']), ('2009-03', ['FDO', 'AMGN', 'GIS'], ['FDO', 'AMGN', 'BF.B']), ('2010-03', ['F', 'WYND', 'CBRE'], ['F', 'THC', 'XL']), ('2010-09', ['LXK', 'LB', 'CRM'], ['LXK', 'CRM', 'AKAM']), ('2011-03', ['NFLX', 'VIAV', 'AZO'], ['NFLX', 'AZO', 'CMI']), ('2013-03', ['ANDV', 'PHM', 'S'], ['PHM', 'S', 'MPC']), ('2013-09', ['GME', 'ANDV', 'CI'], ['GME', 'CI', 'NFLX']), ('2014-03', ['HAR', 'MU', 'NOC'], ['MU', 'NOC', 'RTN']), ('2014-09', ['LUV', 'HAR', 'ARNC'], ['LUV', 'ARNC', 'MU'])]
+  2005 Top1 no stop            CAGR -10.9531% (Queen -10.9531%)  MDD -87.6753% (Queen -87.6753%) stops 0
+  2005 Top1 30% trailing stop  CAGR -10.3504% (Queen -10.3504%)  MDD -86.8156% (Queen -86.8156%) stops 6
+  2005 Top2 no stop            CAGR  -2.7040% (Queen  -2.7040%)  MDD -67.2696% (Queen -67.2696%) stops 0
+  2005 Top2 30% trailing stop  CAGR  -3.7409% (Queen  -3.7409%)  MDD -67.2852% (Queen -67.2852%) stops 11
+  2005 Top3 no stop            CAGR   2.4577% (Queen   3.2812%)  MDD -59.6636% (Queen -59.6636%) stops 0
+  2005 Top3 30% trailing stop  CAGR   1.7529% (Queen   2.0739%)  MDD -55.3812% (Queen -53.9542%) stops 17
+  2005 era first leg 2005-01-03 -> 2005-03-18 from the shared daily closes: {'BMS': '+7.8%', 'ADSK': '-20.7%', 'MWW': '+51.3%', 'VLO': '+61.4%', 'JWN': '+14.0%'}
+  if BMS and MWW are dropped from the Sep-2004 selection (ADSK, VLO, JWN move up): Top1 CAGR -10.95% -> about -13.65% (first-leg approximation)
+  if BMS and MWW are dropped from the Sep-2004 selection (ADSK, VLO, JWN move up): Top2 CAGR -2.70% -> about -0.22% (first-leg approximation)
+  if BMS and MWW are dropped from the Sep-2004 selection (ADSK, VLO, JWN move up): Top3 CAGR 3.28% -> about 3.77% (first-leg approximation)
