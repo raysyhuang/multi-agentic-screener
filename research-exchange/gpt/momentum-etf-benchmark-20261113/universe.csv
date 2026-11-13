@@ -1,0 +1,23 @@
+ticker,scope,status,purity,benchmark,note
+SPMO,US large,live,pure,SPY,S&P 500 momentum
+MTUM,US large-mid,live,pure,SPY,MSCI USA momentum factor
+JMOM,US large,live,pure,SPY,JPMorgan momentum factor
+FDMO,US large,live,pure,SPY,Fidelity momentum factor
+VFMO,US all-cap,live,pure,VTI,Vanguard active momentum factor
+MMTM,US broad,live,tilt,VTI,S&P 1500 momentum tilt
+PDP,US large-mid,live,pure,VTI,Dorsey Wright relative strength
+QMOM,US broad,live,concentrated,VTI,Alpha Architect quantitative momentum
+ONEO,US large,live,focus,SPY,Russell 1000 momentum focus
+XMMO,US mid-cap,live,pure,IJH,S&P MidCap 400 momentum
+XSMO,US small-cap,live,pure,IJR,S&P SmallCap 600 momentum
+DWAS,US small-cap,live,pure,IJR,Dorsey Wright small-cap relative strength
+SEIM,US large,live,young,SPY,SEI active momentum
+FMTM,US large,live,young,SPY,MarketDesk 6-month momentum
+IMTM,developed ex-US,live,pure,EFA,MSCI international momentum
+IDMO,developed ex-US,live,pure,EFA,S&P developed ex-US momentum
+PIZ,developed ex-US,live,pure,EFA,Dorsey Wright developed markets
+IMOM,developed ex-US,live,concentrated,EFA,Alpha Architect international quantitative momentum
+EEMO,emerging markets,live,pure,EEM,S&P emerging markets momentum
+PIE,emerging markets,live,pure,EEM,Dorsey Wright emerging markets
+DWAQ,Nasdaq,liquidated,pure,QQQ,Cash liquidation 2020-02-26
+DWUS,US factor rotation,live,tactical,VTI,Reference only; excluded from pure momentum count
