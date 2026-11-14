@@ -1,0 +1,7 @@
+ticker,date,field,queen,massive,fmp_eod,fmp_quote,match_queen_massive,match_queen_fmp,note
+MRNA,2026-10-30,close,221.72,221.72,221.72,,Y,Y,month-end signal close
+MRNA,2026-11-13,close,223.37,223.37,223.37,223.37,Y,Y,latest close; FMP quote timestamp 2026-11-13 16:00 ET
+CRWD,2026-10-30,close,250.43,250.43,250.43,,Y,Y,month-end signal close
+CRWD,2026-11-13,close,226.61,226.61,226.61,226.61,Y,Y,latest close; FMP quote timestamp 2026-11-13 16:00 ET
+MU,2026-10-30,close,884.74,884.74,884.74,,Y,Y,month-end signal close
+MU,2026-11-13,close,778.31,778.31,778.31,778.31,Y,Y,latest close; FMP quote timestamp 2026-11-13 16:00 ET

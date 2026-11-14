@@ -1,0 +1,19 @@
+{
+  "signal": "2026-10-30",
+  "signal_weekday": "Friday",
+  "october_31_2026": "Saturday",
+  "latest": "2026-11-13",
+  "latest_weekday": "Friday",
+  "last_engine_day": "2026-11-13",
+  "last_me": "2026-11-13",
+  "n_members_signal": 101,
+  "n_ranked_mean6_signal": 99,
+  "n_members_prior": 101,
+  "n_ranked_mean6_prior": 99,
+  "basket_ew_ret_signal_to_latest": -0.06932326975303522,
+  "qqq_price_ret_signal_to_latest": -0.015351417109588872,
+  "qqq_total_ret_signal_to_latest": -0.015351417109589094,
+  "qqq_price_latest": 679.89,
+  "qqq_price_signal": 690.49,
+  "next_session_after_signal": "2026-11-02"
+}

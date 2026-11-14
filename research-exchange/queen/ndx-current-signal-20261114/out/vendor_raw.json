@@ -1,0 +1,89 @@
+{
+  "pulled_at_asia_taipei": "2026-11-14 (Saturday); latest US session 2026-11-13",
+  "massive_daily_bars": {
+    "path": "/v2/aggs/ticker/{T}/range/1/day/2026-10-01/2026-11-13",
+    "params": {
+      "adjusted": true,
+      "sort": "asc",
+      "limit": 50000
+    },
+    "closes": {
+      "MRNA": {
+        "2026-10-30": 221.72,
+        "2026-11-13": 223.37
+      },
+      "CRWD": {
+        "2026-10-30": 250.43,
+        "2026-11-13": 226.61
+      },
+      "MU": {
+        "2026-10-30": 884.74,
+        "2026-11-13": 778.31
+      }
+    },
+    "nov13_high": {
+      "MRNA": 231.35,
+      "CRWD": 236.17,
+      "MU": 796.18
+    }
+  },
+  "fmp_eod_historical-price-eod/full": {
+    "MRNA": {
+      "2026-10-30": {
+        "close": 221.72,
+        "high": 227.81
+      },
+      "2026-11-13": {
+        "close": 223.37,
+        "high": 231.35
+      }
+    },
+    "CRWD": {
+      "2026-10-30": {
+        "close": 250.43,
+        "high": 264.9
+      },
+      "2026-11-13": {
+        "close": 226.61,
+        "high": 236.17
+      }
+    },
+    "MU": {
+      "2026-10-30": {
+        "close": 884.74,
+        "high": 906.54
+      },
+      "2026-11-13": {
+        "close": 778.31,
+        "high": 796.18
+      }
+    }
+  },
+  "fmp_quote": {
+    "timestamp_unix": 1794603601,
+    "timestamp_et": "2026-11-13 16:00 ET (regular-session close, not a live Saturday quote)",
+    "MRNA": {
+      "price": 223.37,
+      "yearHigh": 280.8,
+      "priceAvg50": 200.1761,
+      "priceAvg200": 95.52915,
+      "previousClose": 231.35
+    },
+    "CRWD": {
+      "price": 226.61,
+      "yearHigh": 286.99,
+      "priceAvg50": 244.688,
+      "priceAvg200": 172.46892,
+      "previousClose": 229.87,
+      "dayHigh_quote": 235.855,
+      "note": "quote dayHigh 235.855 differs from Massive/FMP EOD high 236.17; closes agree"
+    },
+    "MU": {
+      "price": 778.31,
+      "yearHigh": 1255,
+      "priceAvg50": 943.7766,
+      "priceAvg200": 765.60645,
+      "previousClose": 798.44
+    }
+  }
+}

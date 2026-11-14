@@ -1,0 +1,4 @@
+ticker,fmp_yearHigh,fmp_priceAvg50,fmp_priceAvg200,queen_hi52,queen_hi52_date,queen_sma50_incl_1113,queen_sma50_thru_1112,queen_sma200_incl_1113,queen_sma200_thru_1112,ma_note
+MRNA,280.8,200.1761,95.52915,280.8,2026-11-09,201.6661,200.1761,96.4117,95.52915,FMP quote SMA matches Queen SMA ending 2026-11-12 (excludes 11-13)
+CRWD,286.99,244.688,172.46892,286.9899,2026-10-06,244.9208,244.688,173.046201,172.468926,FMP yearHigh rounded 286.99 vs Queen/Massive high 286.9899 on 2026-10-06; SMA matches Queen ending 2026-11-12
+MU,1255,943.7766,765.60645,1255.0,2026-06-25,943.7766,947.3736,765.606425,763.893825,"FMP quote SMA matches Queen SMA ending 2026-11-13 (includes today), unlike MRNA/CRWD"
