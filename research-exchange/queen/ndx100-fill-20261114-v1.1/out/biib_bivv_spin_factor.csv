@@ -1,0 +1,12 @@
+item,value,note
+nasdaq_ex_date,2017-02-02,BIIB traded ex-distribution; BIVV first regular-way close this day
+pack_listed_ex_date,2017-02-01,shared pack corporate_actions_applied.csv; this is the last cum session
+ratio,0.5,0.5 BIVV per 1 BIIB (issuer 8-K; pack)
+BIIB_close_2017-02-01_cum,281.69,Massive adjusted=true and FMP historical-price-eod agree
+BIIB_close_2017-02-02_ex,264.23,Massive and FMP unadjusted close; FMP dividend-adjusted series is identical (no spin adj)
+BIVV_first_close_2017-02-02,44.98,Massive /v2/aggs BIVV; FMP historical-price-eod BIVV returned empty (delisted)
+F_v1.1,0.9215611049107143,P_ex/(P_ex+ratio*P_child)=264.23/(264.23+0.5*44.98); same formula as pack EXC 2022-02-02
+F_pack,0.9260635150239990,pack used cum close: 281.69/(281.69+0.5*44.98)=0.926063515023999
+BIIB_month_ret_2017-01-31_to_2017-02-28_unadjusted,0.040975,v1.0 Queen; audit vs pack flagged -8.31pp
+BIIB_month_ret_v1.1,0.129578,after applying F to prices before 2017-02-02
+BIIB_month_ret_if_pack_F,0.124086,pack_ret in v1.0 audit was 0.1241

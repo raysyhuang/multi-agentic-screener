@@ -1,0 +1,5 @@
+month-end rows 28394 missing member-months (all 2006-12..2026-10): 28
+Counter({'MNST': 23, 'NTLI': 4, 'QVCA': 1})
+daily rows 73681
+2006-12 2014-11-30 queen cov 99.72% claude cov 89.60%
+2014-12 2024-11-30 queen cov 99.99% claude cov 84.32%
