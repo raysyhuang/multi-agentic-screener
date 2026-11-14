@@ -15,6 +15,7 @@ SUCC={'FB':'META','PCLN':'BKNG','CTRP':'TCOM','SYMC':'NLOK','ERTS':'EA','WFMI':'
 # lookback for renamed tickers: Queen's export gives a successor only part of its predecessor history (e.g. MNST starts 2012-01, HANS ends 2012-01).
 # Where both symbols have a price on a common month-end, extend the successor backwards with the predecessor scaled at the latest common date.
 STITCHED=[]
+ORIG={t:set(v) for t,v in px.items()}  # dates Queen's file really has for each symbol; stitched predecessor history is for lookback only
 for p_,s_ in list(SUCC.items()):
     common=sorted(set(px[p_])&set(px[s_]))
     if common:
@@ -29,7 +30,7 @@ class Run:
     def __init__(s,C=0.0025,excl=(),mask=None):
         s.C=C; s.excl=set(excl); s.mask=mask; s.cache={}
     def univ(s,i):
-        d=ME[i]; return [t for t in MEM[d] if d in px[t] and t not in s.excl and (s.mask is None or t in s.mask.get(d,()))]
+        d=ME[i]; return [t for t in MEM[d] if d in ORIG.get(t,()) and t not in s.excl and (s.mask is None or t in s.mask.get(d,()))]
     def rank(s,i,sig):
         k=(i,sig)
         if k in s.cache: return s.cache[k]
