@@ -1,0 +1,38 @@
+== all names: covered members per month avg 84% | EW covered Nasdaq-100 members: CAGR 12.9% / MDD -27%
+   post rule (mean of 6 monthly returns)  Top1 : CAGR  54.7% / MDD  -60% / worst yr  -44% | vs EW +43.0 pp/yr t=+2.99 | worst month -44%
+   post rule (mean of 6 monthly returns)  Top3 : CAGR  38.6% / MDD  -30% / worst yr  -12% | vs EW +23.7 pp/yr t=+3.28 | worst month -22%
+      yearly 2015..2024: +40% +65% +30% -6% +47% +145% +70% -12% +60% +8% | EW: +2% +8% +25% -4% +35% +34% +25% -21% +34% +7%
+      most-held (months of 120): [('NVDA', 51), ('TSLA', 30), ('NFLX', 17), ('MRNA', 17), ('MU', 14), ('ALGN', 14), ('AMD', 14), ('AMAT', 11), ('AMZN', 10), ('CEG', 10), ('ATVI', 9), ('VRTX', 9)]
+      extreme month: 2019-12-31 TSLA +56%
+      extreme month: 2020-03-31 TSLA +49%
+      extreme month: 2020-07-31 TSLA +74%
+      extreme month: 2020-10-30 TSLA +46%
+      extreme month: 2020-12-31 MRNA +66%
+      extreme month: 2021-06-30 MRNA +50%
+   post rule (mean of 6 monthly returns)  Top5 : CAGR  26.7% / MDD  -34% / worst yr  -21% | vs EW +13.3 pp/yr t=+2.30 | worst month -15%
+   post rule (mean of 6 monthly returns)  Top10: CAGR  20.3% / MDD  -35% / worst yr  -25% | vs EW  +7.4 pp/yr t=+1.71 | worst month -16%
+   12-month return                        Top1 : CAGR  42.4% / MDD  -75% / worst yr  -62% | vs EW +37.2 pp/yr t=+2.38 | worst month -43%
+   12-month return                        Top3 : CAGR  32.4% / MDD  -55% / worst yr  -40% | vs EW +21.4 pp/yr t=+2.28 | worst month -28%
+   12-month return                        Top5 : CAGR  25.4% / MDD  -45% / worst yr  -36% | vs EW +13.5 pp/yr t=+2.05 | worst month -22%
+   12-month return                        Top10: CAGR  18.9% / MDD  -33% / worst yr  -27% | vs EW  +6.2 pp/yr t=+1.54 | worst month -14%
+== no NVDA: covered members per month avg 84% | EW covered Nasdaq-100 members: CAGR 12.2% / MDD -26%
+   post rule (mean of 6 monthly returns)  Top1 : CAGR  35.6% / MDD  -60% / worst yr  -44% | vs EW +30.5 pp/yr t=+2.07 | worst month -44%
+   post rule (mean of 6 monthly returns)  Top3 : CAGR  27.3% / MDD  -37% / worst yr  -15% | vs EW +15.6 pp/yr t=+2.15 | worst month -22%
+      yearly 2015..2024: +39% +11% +38% -6% +48% +157% +42% -13% +40% -15% | EW: +1% +6% +24% -4% +35% +33% +24% -21% +33% +6%
+   post rule (mean of 6 monthly returns)  Top5 : CAGR  19.0% / MDD  -31% / worst yr  -15% | vs EW  +7.4 pp/yr t=+1.33 | worst month -16%
+   post rule (mean of 6 monthly returns)  Top10: CAGR  14.6% / MDD  -32% / worst yr  -22% | vs EW  +2.9 pp/yr t=+0.70 | worst month -16%
+   12-month return                        Top1 : CAGR   9.5% / MDD  -85% / worst yr  -50% | vs EW +11.8 pp/yr t=+0.73 | worst month -43%
+   12-month return                        Top3 : CAGR  21.3% / MDD  -51% / worst yr  -36% | vs EW +12.6 pp/yr t=+1.39 | worst month -28%
+   12-month return                        Top5 : CAGR  19.2% / MDD  -44% / worst yr  -33% | vs EW  +8.7 pp/yr t=+1.37 | worst month -22%
+   12-month return                        Top10: CAGR  14.7% / MDD  -34% / worst yr  -25% | vs EW  +3.0 pp/yr t=+0.80 | worst month -14%
+== all names, zero cost: covered members per month avg 84% | EW covered Nasdaq-100 members: CAGR 13.2% / MDD -27%
+   post rule (mean of 6 monthly returns)  Top1 : CAGR  58.9% / MDD  -59% / worst yr  -41% | vs EW +45.5 pp/yr t=+3.17 | worst month -43%
+   post rule (mean of 6 monthly returns)  Top3 : CAGR  42.0% / MDD  -29% / worst yr  -10% | vs EW +25.9 pp/yr t=+3.59 | worst month -22%
+      yearly 2015..2024: +43% +68% +34% -3% +51% +151% +73% -10% +64% +11% | EW: +2% +8% +25% -4% +35% +34% +25% -21% +35% +7%
+   post rule (mean of 6 monthly returns)  Top5 : CAGR  29.8% / MDD  -33% / worst yr  -19% | vs EW +15.6 pp/yr t=+2.69 | worst month -15%
+   post rule (mean of 6 monthly returns)  Top10: CAGR  23.0% / MDD  -33% / worst yr  -23% | vs EW  +9.4 pp/yr t=+2.18 | worst month -16%
+   12-month return                        Top1 : CAGR  45.5% / MDD  -74% / worst yr  -60% | vs EW +39.2 pp/yr t=+2.51 | worst month -43%
+   12-month return                        Top3 : CAGR  34.7% / MDD  -54% / worst yr  -39% | vs EW +22.9 pp/yr t=+2.45 | worst month -28%
+   12-month return                        Top5 : CAGR  27.7% / MDD  -43% / worst yr  -35% | vs EW +15.2 pp/yr t=+2.31 | worst month -21%
+   12-month return                        Top10: CAGR  20.9% / MDD  -33% / worst yr  -25% | vs EW  +7.7 pp/yr t=+1.91 | worst month -14%
+members with no price (2015-2024): 49 tickers, 1937 member-months

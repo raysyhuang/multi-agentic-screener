@@ -1,18 +1,18 @@
 MAIN RULE: W10-12 blend, hold 12 months, 12 staggered tranches, equal weight.  (CAGR / month-end max drawdown / worst calendar year / range across the 12 tranches)
-  2015-2025 all names: EW universe   7.9% /  -27% /  -12%
-     Top1    40.0% /  -30% /   -7% / tranches  15.0%.. 59.2% | vs EW +30.3 pp/yr (t=+3.38), beat EW in 9/10 years, turnover 87%/yr
-     Top3    28.2% /  -29% /   -7% / tranches  15.1%.. 45.8% | vs EW +19.6 pp/yr (t=+3.10), beat EW in 9/10 years, turnover 87%/yr
-     Top5    23.8% /  -25% /   -5% / tranches  15.6%.. 32.1% | vs EW +15.4 pp/yr (t=+2.95), beat EW in 9/10 years, turnover 87%/yr
-     Top10   17.2% /  -23% /   -8% / tranches   8.0%.. 25.0% | vs EW  +9.1 pp/yr (t=+2.36), beat EW in 6/10 years, turnover 89%/yr
-     Top20   12.6% /  -25% /   -7% / tranches   7.3%.. 17.3% | vs EW  +4.6 pp/yr (t=+1.52), beat EW in 6/10 years, turnover 88%/yr
-     Top50    9.8% /  -21% /  -10% / tranches   6.9%.. 12.7% | vs EW  +1.8 pp/yr (t=+0.76), beat EW in 5/10 years, turnover 84%/yr
-  2015-2025 no NVDA: EW universe   7.7% /  -27% /  -12%
-     Top1    24.0% /  -29% /   -6% / tranches  -2.0%.. 41.8% | vs EW +17.4 pp/yr (t=+2.13), beat EW in 8/10 years, turnover 95%/yr
-     Top3    18.4% /  -25% /   -7% / tranches   9.1%.. 32.8% | vs EW +11.2 pp/yr (t=+2.02), beat EW in 7/10 years, turnover 92%/yr
-     Top5    18.3% /  -24% /   -5% / tranches   7.3%.. 25.8% | vs EW +10.6 pp/yr (t=+2.20), beat EW in 7/10 years, turnover 91%/yr
-     Top10   13.1% /  -22% /   -7% / tranches   4.4%.. 20.8% | vs EW  +5.5 pp/yr (t=+1.51), beat EW in 6/10 years, turnover 91%/yr
-     Top20   10.4% /  -24% /   -7% / tranches   5.4%.. 14.3% | vs EW  +2.8 pp/yr (t=+0.94), beat EW in 6/10 years, turnover 90%/yr
-     Top50    8.8% /  -21% /  -10% / tranches   5.9%.. 11.6% | vs EW  +1.0 pp/yr (t=+0.43), beat EW in 5/10 years, turnover 84%/yr
+  2015-2025 all names: EW universe   8.1% /  -27% /  -12%
+     Top1    40.3% /  -31% /   -7% / tranches  15.0%.. 59.2% | vs EW +30.3 pp/yr (t=+3.39), beat EW in 9/10 years, turnover 85%/yr
+     Top3    28.5% /  -29% /   -7% / tranches  17.6%.. 45.1% | vs EW +19.6 pp/yr (t=+3.11), beat EW in 9/10 years, turnover 84%/yr
+     Top5    24.3% /  -25% /   -5% / tranches  16.5%.. 32.2% | vs EW +15.5 pp/yr (t=+2.99), beat EW in 9/10 years, turnover 85%/yr
+     Top10   17.5% /  -23% /   -8% / tranches   9.2%.. 25.2% | vs EW  +9.2 pp/yr (t=+2.39), beat EW in 6/10 years, turnover 87%/yr
+     Top20   12.9% /  -24% /   -7% / tranches   7.5%.. 18.0% | vs EW  +4.7 pp/yr (t=+1.56), beat EW in 6/10 years, turnover 87%/yr
+     Top50   10.1% /  -21% /   -9% / tranches   7.2%.. 13.1% | vs EW  +1.9 pp/yr (t=+0.82), beat EW in 5/10 years, turnover 82%/yr
+  2015-2025 no NVDA: EW universe   7.9% /  -27% /  -12%
+     Top1    24.3% /  -30% /   -7% / tranches  -2.0%.. 41.8% | vs EW +17.4 pp/yr (t=+2.14), beat EW in 7/10 years, turnover 92%/yr
+     Top3    18.9% /  -24% /   -7% / tranches  10.2%.. 31.0% | vs EW +11.4 pp/yr (t=+2.03), beat EW in 7/10 years, turnover 89%/yr
+     Top5    18.8% /  -24% /   -5% / tranches   8.1%.. 25.9% | vs EW +10.8 pp/yr (t=+2.24), beat EW in 7/10 years, turnover 88%/yr
+     Top10   13.4% /  -22% /   -7% / tranches   5.5%.. 21.2% | vs EW  +5.6 pp/yr (t=+1.53), beat EW in 6/10 years, turnover 89%/yr
+     Top20   10.8% /  -23% /   -6% / tranches   5.4%.. 15.1% | vs EW  +2.9 pp/yr (t=+0.98), beat EW in 6/10 years, turnover 88%/yr
+     Top50    9.1% /  -20% /   -9% / tranches   6.1%.. 11.9% | vs EW  +1.1 pp/yr (t=+0.48), beat EW in 5/10 years, turnover 83%/yr
   2005-2015 all names: EW universe   7.4% /  -54% /  -38%
      Top1    -0.4% /  -71% /  -58% / tranches -19.9%..  9.3% | vs EW  -5.3 pp/yr (t=-0.81), beat EW in 4/10 years, turnover 98%/yr
      Top3     4.1% /  -63% /  -56% / tranches  -6.0%.. 17.1% | vs EW  -1.6 pp/yr (t=-0.32), beat EW in 4/10 years, turnover 92%/yr
@@ -23,11 +23,11 @@ MAIN RULE: W10-12 blend, hold 12 months, 12 staggered tranches, equal weight.  (
 
 SIGNAL x HOLD, Top20, CAGR minus EW universe (pp per year), [t-stat]:
   2015-2025
-    W12     H1   +1.0 [+0.3]  H3   +2.3 [+0.7]  H6   +4.5 [+1.4]  H12  +5.0 [+1.6]
-    W10-12  H1   +3.3 [+0.9]  H3   +2.7 [+0.8]  H6   +4.3 [+1.3]  H12  +4.6 [+1.5]
-    12-1    H1   +0.4 [+0.1]  H3   +2.7 [+0.8]  H6   +4.6 [+1.4]  H12  +4.4 [+1.5]
-    W6      H1   +0.1 [+0.0]  H3   +1.6 [+0.5]  H6   +2.6 [+0.9]  H12  +3.3 [+1.3]
-    W1      H1   -9.8 [-2.4]  H3   -3.2 [-1.2]  H6   -0.4 [-0.2]  H12  +0.3 [+0.2]
+    W12     H1   +1.5 [+0.4]  H3   +2.7 [+0.8]  H6   +4.9 [+1.5]  H12  +5.1 [+1.7]
+    W10-12  H1   +3.3 [+0.9]  H3   +3.1 [+0.9]  H6   +4.6 [+1.4]  H12  +4.7 [+1.6]
+    12-1    H1   +1.1 [+0.3]  H3   +3.0 [+0.9]  H6   +4.9 [+1.5]  H12  +4.6 [+1.5]
+    W6      H1   +1.3 [+0.3]  H3   +2.7 [+0.8]  H6   +3.6 [+1.2]  H12  +3.8 [+1.5]
+    W1      H1   -9.2 [-2.3]  H3   -3.2 [-1.2]  H6   -0.3 [-0.2]  H12  +0.4 [+0.2]
   2005-2015
     W12     H1   -2.2 [-0.5]  H3   -3.9 [-0.9]  H6   -4.5 [-1.1]  H12  -2.1 [-0.7]
     W10-12  H1   -1.2 [-0.3]  H3   -2.2 [-0.5]  H6   -3.4 [-0.9]  H12  -2.1 [-0.7]
@@ -36,9 +36,9 @@ SIGNAL x HOLD, Top20, CAGR minus EW universe (pp per year), [t-stat]:
     W1      H1   -1.7 [-0.4]  H3   -0.2 [-0.1]  H6   +0.1 [+0.1]  H12  +0.4 [+0.2]
 
 POOLED 20 YEARS (240 months), main rule, monthly return minus EW universe:
-   Top1   mean +12.5 pp/yr, t=+2.20, months ahead 55%
-   Top3   mean  +9.0 pp/yr, t=+2.20, months ahead 55%
-   Top5   mean  +7.1 pp/yr, t=+2.08, months ahead 56%
-   Top10  mean  +3.2 pp/yr, t=+1.21, months ahead 55%
-   Top20  mean  +1.2 pp/yr, t=+0.57, months ahead 52%
-   Top50  mean  +0.2 pp/yr, t=+0.15, months ahead 55%
+   Top1   mean +12.5 pp/yr, t=+2.21, months ahead 55%
+   Top3   mean  +9.0 pp/yr, t=+2.20, months ahead 54%
+   Top5   mean  +7.2 pp/yr, t=+2.10, months ahead 55%
+   Top10  mean  +3.3 pp/yr, t=+1.23, months ahead 55%
+   Top20  mean  +1.3 pp/yr, t=+0.60, months ahead 52%
+   Top50  mean  +0.3 pp/yr, t=+0.18, months ahead 55%

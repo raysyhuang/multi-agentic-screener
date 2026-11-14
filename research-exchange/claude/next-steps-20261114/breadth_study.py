@@ -38,6 +38,9 @@ def load(P,fix):
     ca=collections.defaultdict(list)
     for r in rd('corporate_actions_applied.csv'):
         if r['kind'] in('spin','special_div') and r['factor_F']: ca[r['engine_ticker']].append((r['ex_date'],float(r['factor_F'])))
+        # takeover legs: after the deal date the pack's rank price is only the stock leg of the deal (cash leg not included), so a month-end engine
+        # that keeps holding would book a fake loss. End the series before the deal date -> the position is cashed out at its last pre-deal month-end price.
+        if r['kind'].startswith('deal') and r['ex_date']: px[r['engine_ticker']]={d:v for d,v in px[r['engine_ticker']].items() if d<r['ex_date']}
     return px,el,ca,sorted({d for v in px.values() for d in v})
 class Era:
     def __init__(s,P,first,fix,excl=()):
