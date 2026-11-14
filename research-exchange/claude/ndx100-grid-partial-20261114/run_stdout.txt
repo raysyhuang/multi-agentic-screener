@@ -1,0 +1,114 @@
+===== ALL COVERED NAMES =====  EW covered members, monthly rebalance: median CAGR 13.6% (12 phases)
+  best single path: {'W': 4, 'H': 7, 'K': 1, 'phase': 11, 'final_multiple': 442.4823, 'CAGR': 0.839033, 'monthend_MDD': -0.6009}
+  K=1: median of all 144 cells 39.8% | cells beating 17.3% (QQQ price) 129/144 | paths losing money 44/1728
+     W4  H2  median  61.6%  range  47.6.. 82.8%  worst MDD  -51%  picks NVDA:138 TSLA:90 MRNA:48 NFLX:36 ALGN:30
+     W4  H3  median  61.3%  range  38.4.. 73.7%  worst MDD  -51%  picks NVDA:92 TSLA:60 MRNA:32 NFLX:24 ALGN:20
+     W6  H2  median  59.9%  range  46.1.. 81.7%  worst MDD  -49%  picks NVDA:168 TSLA:114 NFLX:51 MRNA:48 VRTX:30
+     W5  H2  median  59.6%  range  37.4.. 83.3%  worst MDD  -48%  picks NVDA:150 TSLA:102 MRNA:48 NFLX:45 VRTX:30
+     W4  H4  median  59.2%  range  22.6.. 69.5%  worst MDD  -61%  picks NVDA:69 TSLA:45 MRNA:24 NFLX:19 ALGN:15
+     worst cell: W1 H1 median 2.0%
+  K=2: median of all 144 cells 36.4% | cells beating 17.3% (QQQ price) 138/144 | paths losing money 13/1728
+     W6  H3  median  47.6%  range  42.8.. 53.6%  worst MDD  -40%  picks NVDA:164 TSLA:91 NFLX:54 MRNA:52 ATVI:32
+     W6  H2  median  47.4%  range  41.1.. 55.3%  worst MDD  -40%  picks NVDA:246 TSLA:137 NFLX:80 MRNA:78 ATVI:48
+     W11 H4  median  47.1%  range  30.3.. 59.2%  worst MDD  -65%  picks NVDA:141 NFLX:57 TSLA:57 MRNA:51 AMD:36
+     W11 H7  median  45.0%  range  34.9.. 55.0%  worst MDD  -65%  picks NVDA:82 NFLX:34 TSLA:31 MRNA:28 AMD:20
+     W9  H7  median  44.8%  range  28.4.. 52.9%  worst MDD  -71%  picks NVDA:82 TSLA:34 NFLX:30 MRNA:27 AMAT:17
+     worst cell: W1 H5 median 14.8%
+  K=3: median of all 144 cells 30.8% | cells beating 17.3% (QQQ price) 138/144 | paths losing money 8/1728
+     W7  H1  median  37.7%  range  33.2.. 40.6%  worst MDD  -34%  picks NVDA:639 TSLA:297 NFLX:249 MRNA:204 CEG:160
+     W7  H2  median  37.6%  range  32.3.. 43.9%  worst MDD  -41%  picks NVDA:319 TSLA:148 NFLX:125 MRNA:102 CEG:80
+     W12 H7  median  37.4%  range  26.0.. 44.4%  worst MDD  -63%  picks NVDA:106 NFLX:39 TSLA:35 ALGN:31 MRNA:30
+     W6  H3  median  37.0%  range  33.6.. 39.7%  worst MDD  -44%  picks NVDA:189 TSLA:106 NFLX:64 MRNA:60 AMD:58
+     W6  H2  median  36.6%  range  29.2.. 42.8%  worst MDD  -40%  picks NVDA:284 TSLA:160 NFLX:95 MRNA:90 AMD:87
+     worst cell: W1 H1 median 13.8%
+  K=4: median of all 144 cells 26.7% | cells beating 17.3% (QQQ price) 139/144 | paths losing money 6/1728
+     W8  H1  median  36.7%  range  31.7.. 40.9%  worst MDD  -36%  picks NVDA:768 TSLA:333 NFLX:267 MU:234 AMD:229
+     W5  H3  median  34.6%  range  23.9.. 39.2%  worst MDD  -31%  picks NVDA:202 TSLA:124 NFLX:74 MU:73 ALGN:68
+     W7  H1  median  32.9%  range  29.7.. 35.0%  worst MDD  -28%  picks NVDA:710 TSLA:357 NFLX:261 MU:219 MRNA:204
+     W6  H3  median  32.2%  range  27.8.. 37.2%  worst MDD  -38%  picks NVDA:217 TSLA:130 MU:81 NFLX:78 AMD:78
+     W6  H2  median  32.0%  range  24.1.. 36.8%  worst MDD  -39%  picks NVDA:326 TSLA:195 MU:123 AMD:117 NFLX:116
+     worst cell: W1 H1 median 11.8%
+  K=1 median CAGR %, rows W1..W12, cols H1..H12
+    W1     2   10   15   11    8   19   12   15   12   23   15   14
+    W2    14   22   20   24   16   21   15   19   17   22   18   16
+    W3    30   33   25   21   25   25   29   28   32   31   20   21
+    W4    41   62   61   59   43   41   37   39   41   39   26   36
+    W5    51   60   45   48   41   35   38   40   35   40   30   29
+    W6    53   60   54   48   42   36   38   38   36   33   34   36
+    W7    45   47   42   41   39   34   31   35   36   36   35   38
+    W8    58   55   45   50   37   38   43   38   40   36   43   39
+    W9    46   39   51   38   40   43   48   40   44   42   44   46
+    W10   55   56   57   56   48   52   51   52   50   43   41   42
+    W11   40   44   39   51   43   46   52   48   49   52   45   39
+    W12   52   49   48   47   39   48   50   47   49   45   40   33
+  K=3 median CAGR %, rows W1..W12, cols H1..H12
+    W1    14   16   16   19   17   22   19   20   17   20   21   16
+    W2    25   25   22   19   23   22   23   24   19   21   20   21
+    W3    24   25   25   25   21   19   18   21   21   25   20   19
+    W4    27   31   33   32   24   24   25   24   26   29   22   22
+    W5    28   35   36   33   29   29   29   28   26   29   26   26
+    W6    31   37   37   33   32   36   32   33   27   32   31   31
+    W7    38   38   35   32   36   34   32   30   32   31   33   32
+    W8    36   31   31   33   28   29   32   30   32   31   29   30
+    W9    28   29   31   32   32   35   36   32   33   33   30   31
+    W10   35   33   32   36   29   32   35   35   34   35   34   34
+    W11   34   34   36   35   32   33   36   35   34   35   33   33
+    W12   32   32   35   35   30   36   37   32   35   35   32   33
+  bands (median of paths): K1: W10-12xH2-4 50.0%, W5-7xH1 49.6%, W1-3xH1-3 20.2%, W10-12xH10-12 43.2% | K2: W10-12xH2-4 41.9%, W5-7xH1 37.4%, W1-3xH1-3 24.5%, W10-12xH10-12 38.8% | K3: W10-12xH2-4 34.5%, W5-7xH1 31.0%, W1-3xH1-3 22.6%, W10-12xH10-12 33.9% | K4: W10-12xH2-4 28.1%, W5-7xH1 29.1%, W1-3xH1-3 19.4%, W10-12xH10-12 27.9%
+===== WITHOUT NVDA =====  EW covered members, monthly rebalance: median CAGR 12.9% (12 phases)
+  best single path: {'W': 4, 'H': 7, 'K': 1, 'phase': 11, 'final_multiple': 156.403, 'CAGR': 0.657389, 'monthend_MDD': -0.6009}
+  K=1: median of all 144 cells 23.3% | cells beating 17.3% (QQQ price) 107/144 | paths losing money 107/1728
+     W4  H4  median  45.5%  range  13.3.. 54.9%  worst MDD  -62%  picks TSLA:51 MRNA:24 NFLX:22 CEG:18 META:18
+     W4  H3  median  45.4%  range  24.9.. 61.9%  worst MDD  -51%  picks TSLA:68 MRNA:32 NFLX:28 CEG:24 META:24
+     W4  H2  median  42.5%  range  32.4.. 54.2%  worst MDD  -51%  picks TSLA:102 MRNA:48 NFLX:42 CEG:36 META:36
+     W6  H2  median  41.1%  range  32.9.. 55.6%  worst MDD  -51%  picks TSLA:114 NFLX:57 MRNA:54 CEG:36 CRWD:36
+     W6  H3  median  38.7%  range  25.7.. 49.1%  worst MDD  -67%  picks TSLA:76 NFLX:39 MRNA:36 CEG:24 CRWD:24
+     worst cell: W1 H1 median -5.3%
+  K=2: median of all 144 cells 22.4% | cells beating 17.3% (QQQ price) 114/144 | paths losing money 30/1728
+     W11 H4  median  34.6%  range  15.7.. 45.1%  worst MDD  -65%  picks NFLX:66 TSLA:57 MRNA:51 AMD:39 MU:33
+     W12 H7  median  33.4%  range  21.7.. 45.8%  worst MDD  -70%  picks TSLA:34 NFLX:32 MRNA:30 ALGN:23 MU:22
+     W11 H7  median  33.0%  range  25.9.. 43.7%  worst MDD  -65%  picks NFLX:40 TSLA:31 MRNA:28 AMD:21 MU:19
+     W11 H6  median  32.6%  range  21.6.. 41.1%  worst MDD  -64%  picks NFLX:44 TSLA:38 MRNA:34 AMD:26 MU:22
+     W10 H10 median  32.5%  range  16.1.. 37.5%  worst MDD  -69%  picks NFLX:27 TSLA:24 MRNA:20 AMD:16 AMAT:15
+     worst cell: W1 H1 median 6.4%
+  K=3: median of all 144 cells 20.1% | cells beating 17.3% (QQQ price) 103/144 | paths losing money 10/1728
+     W5  H3  median  28.2%  range  22.7.. 35.3%  worst MDD  -37%  picks TSLA:120 NFLX:68 MU:65 MRNA:60 AMD:58
+     W5  H2  median  28.1%  range  20.3.. 33.5%  worst MDD  -38%  picks TSLA:181 NFLX:101 MU:99 MRNA:90 AMD:87
+     W6  H3  median  26.7%  range  18.0.. 29.5%  worst MDD  -51%  picks TSLA:122 NFLX:68 MU:68 AMD:66 MRNA:60
+     W6  H2  median  26.4%  range  17.7.. 33.7%  worst MDD  -39%  picks TSLA:184 MU:103 NFLX:101 AMD:99 MRNA:90
+     W11 H7  median  25.9%  range  20.3.. 29.0%  worst MDD  -64%  picks NFLX:51 AMD:42 TSLA:39 MU:30 ALGN:30
+     worst cell: W1 H1 median 10.0%
+  K=4: median of all 144 cells 18.2% | cells beating 17.3% (QQQ price) 89/144 | paths losing money 7/1728
+     W5  H2  median  22.7%  range  19.6.. 26.0%  worst MDD  -40%  picks TSLA:193 MU:135 NFLX:128 AMD:117 ALGN:102
+     W11 H7  median  22.2%  range  17.3.. 25.5%  worst MDD  -61%  picks NFLX:56 AMD:47 TSLA:46 AVGO:39 ALGN:35
+     W6  H2  median  21.9%  range  14.2.. 27.3%  worst MDD  -41%  picks TSLA:195 AMD:135 NFLX:128 MU:123 ALGN:102
+     W11 H10 median  21.8%  range  13.4.. 31.9%  worst MDD  -60%  picks NFLX:35 AMD:33 TSLA:30 AVGO:28 AMAT:25
+     W9  H7  median  21.8%  range  11.8.. 26.8%  worst MDD  -62%  picks NFLX:48 TSLA:45 AMD:43 MU:40 ALGN:34
+     worst cell: W1 H1 median 8.3%
+  K=1 median CAGR %, rows W1..W12, cols H1..H12
+    W1    -5    5   10    4    4   14    6   12    8   12   10    4
+    W2     7   18   19   20    9   15    7   12   17   14   12    8
+    W3    23   24   17   15   11   18   17   13   15   19    9    9
+    W4    27   42   45   46   34   28   26   26   28   24   17   21
+    W5    23   35   28   32   19   18   25   22   25   25   17   19
+    W6    32   41   39   29   19   19   24   27   24   23   22   18
+    W7    24   28   25   26   23   19   18   19   27   26   22   20
+    W8    27   31   22   24   23   20   19   19   24   23   27   27
+    W9    16   15   20   26   20   25   23   29   28   24   32   27
+    W10   11   18   21   34   25   29   23   28   28   31   26   29
+    W11   13   16   17   33   27   30   37   32   28   34   32   29
+    W12   17   24   22   27   25   29   35   33   30   33   28   25
+  K=3 median CAGR %, rows W1..W12, cols H1..H12
+    W1    10   13   14   14   15   15   16   17   13   17   15   15
+    W2    19   21   17   14   17   17   17   20   15   17   15   13
+    W3    14   17   19   19   16   14   11   16   12   15   12   12
+    W4    14   19   24   20   15   16   16   16   18   19   14   13
+    W5    23   28   28   24   20   21   20   20   18   21   18   17
+    W6    23   26   27   22   19   23   22   21   22   22   19   21
+    W7    25   23   18   17   21   21   19   19   20   20   20   21
+    W8    25   17   18   21   17   20   22   20   22   20   21   20
+    W9    17   16   20   19   20   23   24   21   24   24   22   23
+    W10   18   18   20   25   18   20   22   23   22   24   23   24
+    W11   24   24   25   23   25   23   26   24   23   25   22   21
+    W12   21   20   24   24   22   26   24   24   24   25   23   23
+  bands (median of paths): K1: W10-12xH2-4 22.8%, W5-7xH1 26.1%, W1-3xH1-3 14.6%, W10-12xH10-12 28.9% | K2: W10-12xH2-4 30.4%, W5-7xH1 23.1%, W1-3xH1-3 16.8%, W10-12xH10-12 30.2% | K3: W10-12xH2-4 23.0%, W5-7xH1 23.2%, W1-3xH1-3 15.8%, W10-12xH10-12 23.4% | K4: W10-12xH2-4 18.5%, W5-7xH1 20.1%, W1-3xH1-3 15.7%, W10-12xH10-12 20.0%
