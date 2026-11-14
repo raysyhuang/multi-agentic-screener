@@ -1,0 +1,6 @@
+SPX Top3 cells 138 median of cell medians 0.1887
+NDX Top3 cells 144 median of cell medians 0.2534
+{'source': 'SPX_v18_answer_key', 'file': 'momentum432-answer-key-full-20261109/cells_12phase_medians.csv', 'median_CAGR': '0.24162891258827224', 'min_CAGR': '0.1801460983361438', 'max_CAGR': '0.42881921529856215', 'worst_MDD': '-0.6334250169317435', 'n_known': '11'}
+{'source': 'SPX_v18_noNVDA', 'file': 'no-nvda-grid-20261114/cells_12phase_medians_no_nvda.csv', 'median_CAGR': '0.17946962269655597', 'min_CAGR': '0.11034817946998632', 'max_CAGR': '0.28217423653879026', 'worst_MDD': '-0.6757332379729863', 'n_known': '11'}
+{'source': 'NDX_v1.1_full_2015', 'file': 'ndx100-fill-20261114-v1.1/out/grid/cells_full_2015.csv', 'median_CAGR': '0.280724', 'min_CAGR': '0.188207', 'max_CAGR': '0.337195', 'worst_MDD': '-0.6567', 'n_known': '12'}
+{'source': 'NDX_v1.1_full_2015_noNVDA', 'file': 'ndx100-fill-20261114-v1.1/out/grid/cells_full_2015_noNVDA.csv', 'median_CAGR': '0.217373', 'min_CAGR': '0.129381', 'max_CAGR': '0.244779', 'worst_MDD': '-0.6356', 'n_known': '12'}
