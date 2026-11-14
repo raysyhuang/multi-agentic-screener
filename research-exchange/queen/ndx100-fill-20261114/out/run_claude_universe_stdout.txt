@@ -1,0 +1,42 @@
+claude_partial_universe Top1 54.7% MDDm -60% | +42% +110% +7% -44% +91% +320% +64% -8% +87% +92%
+claude_partial_universe Top3 38.2% MDDm -30% | +40% +65% +30% -9% +47% +145% +70% -12% +60% +8%
+claude_partial_universe Top5 26.6% MDDm -34% | +31% +39% +26% -8% +27% +126% +53% -21% +44% -0%
+claude_partial_universe Top10 20.2% MDDm -35% | +23% +19% +40% -3% +30% +75% +31% -25% +28% +11%
+claude_partial_universe Top3_noNVDA 26.9% MDDm -37% | +39% +11% +38% -9% +48% +157% +42% -12% +40% -15%
+claude_partial_universe Top3_zero_cost 41.5% MDDm -29% | +43% +68% +34% -6% +51% +151% +73% -10% +64% +11%
+claude_partial_universe EW 13.2% +3% +8% +25% -4% +36% +34% +25% -21% +35% +7%
+full_universe Top1 25.3% MDDm -65% | +42% +110% +7% -51% +68% +122% +64% -45% +82% -1%
+full_universe Top3 27.7% MDDm -44% | +31% +59% +16% -19% +50% +185% +26% -25% +57% -8%
+full_universe Top5 23.3% MDDm -43% | +23% +44% +22% -13% +42% +194% +23% -28% +48% -21%
+full_universe Top10 18.3% MDDm -39% | +13% +26% +36% -7% +35% +106% +32% -32% +30% -8%
+full_universe Top3_noNVDA 18.4% MDDm -46% | +31% +21% +29% -19% +50% +198% +9% -25% +30% -31%
+full_universe Top3_zero_cost 31.1% MDDm -42% | +35% +63% +20% -17% +55% +192% +29% -23% +61% -5%
+full_universe EW 11.4% +2% +6% +25% -6% +35% +37% +18% -25% +34% +6%
+months differing 64 of 120
+sum of monthly net diff -0.7380642230267166
+BIDU 4 -0.217
+PDD 10 -0.144
+LCID 2 -0.119
+MELI 14 -0.102
+PTON 2 -0.094
+JD 1 -0.093
+SGEN 7 -0.089
+DOCU 2 -0.082
+DASH 1 -0.075
+VIP 1 -0.058
+WBA 1 -0.056
+AZN 1 -0.045
+APP 1 -0.042
+TEAM 4 -0.041
+NTES 3 -0.037
+...best
+ZM 8 +0.183
+WDAY 4 +0.093
+ZS 3 +0.074
+DDOG 2 -0.002
+CTRP 2 -0.006
+ASML 1 -0.013
+ARM 3 -0.031
+TTD 1 -0.031
+NTES 3 -0.037
+TEAM 4 -0.041

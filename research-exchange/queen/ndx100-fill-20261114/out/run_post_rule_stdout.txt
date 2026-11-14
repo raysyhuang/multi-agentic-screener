@@ -1,0 +1,60 @@
+2007-2014              Top1               CAGR    7.9%  MDDm   -70%  MDDd   -73%  worst   -30% 2011-10-31  TO  6.6x
+2007-2014              Top3               CAGR    9.1%  MDDm   -42%  MDDd   -54%  worst   -22% 2008-01-31  TO  6.0x
+2007-2014              Top5               CAGR   15.2%  MDDm   -54%  MDDd   -64%  worst   -22% 2008-01-31  TO  4.9x
+2007-2014              Top10              CAGR   10.7%  MDDm   -62%  MDDd   -65%  worst   -19% 2008-10-31  TO  4.5x
+2007-2014              Top3_noNVDA        CAGR   10.8%  MDDm   -42%  MDDd   -54%  worst   -22% 2008-01-31  TO  6.2x
+2007-2014              Top1_noNVDA        CAGR   10.9%  MDDm   -70%  MDDd   -73%  worst   -30% 2011-10-31  TO  6.7x
+2007-2014              Top5_noNVDA        CAGR   16.4%  MDDm   -54%  MDDd   -64%  worst   -22% 2008-01-31  TO  5.0x
+2007-2014              Top10_noNVDA       CAGR   12.1%  MDDm   -61%  MDDd   -64%  worst   -19% 2008-10-31  TO  4.5x
+2007-2014              Top3_zero_cost     CAGR   12.5%  MDDm   -40%  MDDd   -52%  worst   -22% 2008-01-31  TO  6.0x
+2007-2014              EW_members         CAGR   10.0%  MDDm   -53%  MDDd   -58%  worst   -22% 2008-10-31  TO  0.0x
+2007-2014              EW_members_noNVDA  CAGR   10.0%  MDDm   -53%  MDDd   -58%  worst   -22% 2008-10-31  TO  0.0x
+2007-2014              QQQ_price          CAGR   11.4%  MDDm   -50%  MDDd   -54%  worst   -16% 2008-10-31  TO  0.0x
+2007-2014              QQQ_total_return   CAGR   12.4%  MDDm   -50%  MDDd   -53%  worst   -16% 2008-10-31  TO  0.0x
+2015-2024              Top1               CAGR   25.3%  MDDm   -65%  MDDd   -71%  worst   -44% 2018-10-31  TO  6.3x
+2015-2024              Top3               CAGR   27.7%  MDDm   -44%  MDDd   -50%  worst   -22% 2018-10-31  TO  5.3x
+2015-2024              Top5               CAGR   23.3%  MDDm   -43%  MDDd   -46%  worst   -16% 2022-01-31  TO  5.0x
+2015-2024              Top10              CAGR   18.3%  MDDm   -39%  MDDd   -42%  worst   -15% 2022-01-31  TO  4.6x
+2015-2024              Top3_noNVDA        CAGR   18.4%  MDDm   -46%  MDDd   -52%  worst   -22% 2018-10-31  TO  5.6x
+2015-2024              Top1_noNVDA        CAGR    1.0%  MDDm   -76%  MDDd   -82%  worst   -44% 2018-10-31  TO  7.0x
+2015-2024              Top5_noNVDA        CAGR   17.6%  MDDm   -43%  MDDd   -47%  worst   -17% 2024-07-31  TO  5.4x
+2015-2024              Top10_noNVDA       CAGR   12.3%  MDDm   -37%  MDDd   -41%  worst   -15% 2022-01-31  TO  4.8x
+2015-2024              Top3_zero_cost     CAGR   31.1%  MDDm   -42%  MDDd   -48%  worst   -22% 2018-10-31  TO  5.3x
+2015-2024              EW_members         CAGR   11.4%  MDDm   -29%  MDDd   -32%  worst   -11% 2020-03-31  TO  0.0x
+2015-2024              EW_members_noNVDA  CAGR   10.8%  MDDm   -29%  MDDd   -32%  worst   -11% 2020-03-31  TO  0.0x
+2015-2024              QQQ_price          CAGR   17.3%  MDDm   -33%  MDDd   -36%  worst   -14% 2022-04-29  TO  0.0x
+2015-2024              QQQ_total_return   CAGR   18.3%  MDDm   -33%  MDDd   -35%  worst   -14% 2022-04-29  TO  0.0x
+2007-2024              Top1               CAGR   17.2%  MDDm   -70%  MDDd   -73%  worst   -44% 2018-10-31  TO  6.5x
+2007-2024              Top3               CAGR   19.1%  MDDm   -44%  MDDd   -54%  worst   -22% 2008-01-31  TO  5.7x
+2007-2024              Top5               CAGR   19.6%  MDDm   -54%  MDDd   -64%  worst   -22% 2008-01-31  TO  5.0x
+2007-2024              Top10              CAGR   14.8%  MDDm   -62%  MDDd   -65%  worst   -19% 2008-10-31  TO  4.6x
+2007-2024              Top3_noNVDA        CAGR   15.0%  MDDm   -46%  MDDd   -54%  worst   -22% 2008-01-31  TO  5.9x
+2007-2024              Top1_noNVDA        CAGR    5.3%  MDDm   -76%  MDDd   -82%  worst   -44% 2018-10-31  TO  6.9x
+2007-2024              Top5_noNVDA        CAGR   17.0%  MDDm   -54%  MDDd   -64%  worst   -22% 2008-01-31  TO  5.2x
+2007-2024              Top10_noNVDA       CAGR   12.2%  MDDm   -61%  MDDd   -64%  worst   -19% 2008-10-31  TO  4.6x
+2007-2024              Top3_zero_cost     CAGR   22.5%  MDDm   -42%  MDDd   -52%  worst   -22% 2008-01-31  TO  5.7x
+2007-2024              EW_members         CAGR   10.8%  MDDm   -53%  MDDd   -58%  worst   -22% 2008-10-31  TO  0.0x
+2007-2024              EW_members_noNVDA  CAGR   10.5%  MDDm   -53%  MDDd   -58%  worst   -22% 2008-10-31  TO  0.0x
+2007-2024              QQQ_price          CAGR   14.7%  MDDm   -50%  MDDd   -54%  worst   -16% 2008-10-31  TO  0.0x
+2007-2024              QQQ_total_return   CAGR   15.6%  MDDm   -50%  MDDd   -53%  worst   -16% 2008-10-31  TO  0.0x
+2025-01_to_2026-11-13  Top1               CAGR   73.5%  MDDm   -56%  MDDd   -58%  worst   -47% 2026-07-31  TO  5.0x
+2025-01_to_2026-11-13  Top3               CAGR  104.7%  MDDm   -46%  MDDd   -48%  worst   -37% 2026-07-31  TO  4.5x
+2025-01_to_2026-11-13  Top5               CAGR   77.8%  MDDm   -40%  MDDd   -46%  worst   -28% 2026-10-30  TO  4.3x
+2025-01_to_2026-11-13  Top10              CAGR   32.3%  MDDm   -41%  MDDd   -47%  worst   -29% 2026-07-31  TO  4.1x
+2025-01_to_2026-11-13  Top3_noNVDA        CAGR  104.5%  MDDm   -46%  MDDd   -48%  worst   -37% 2026-07-31  TO  4.4x
+2025-01_to_2026-11-13  Top1_noNVDA        CAGR   73.5%  MDDm   -56%  MDDd   -58%  worst   -47% 2026-07-31  TO  5.0x
+2025-01_to_2026-11-13  Top5_noNVDA        CAGR   77.8%  MDDm   -40%  MDDd   -46%  worst   -28% 2026-10-30  TO  4.3x
+2025-01_to_2026-11-13  Top10_noNVDA       CAGR   34.2%  MDDm   -41%  MDDd   -47%  worst   -29% 2026-07-31  TO  4.1x
+2025-01_to_2026-11-13  Top3_zero_cost     CAGR  109.3%  MDDm   -45%  MDDd   -48%  worst   -37% 2026-07-31  TO  4.5x
+2025-01_to_2026-11-13  EW_members         CAGR   14.8%  MDDm    -8%  MDDd   -22%  worst    -6% 2025-03-31  TO  0.0x
+2025-01_to_2026-11-13  EW_members_noNVDA  CAGR   14.8%  MDDm    -8%  MDDd   -21%  worst    -6% 2025-03-31  TO  0.0x
+2025-01_to_2026-11-13  QQQ_price          CAGR   16.0%  MDDm   -10%  MDDd   -23%  worst    -8% 2025-03-31  TO  0.0x
+2025-01_to_2026-11-13  QQQ_total_return   CAGR   16.5%  MDDm   -10%  MDDd   -23%  worst    -8% 2025-03-31  TO  0.0x
+{'period': '2007-2014', 'variant': 'Top3', 'top_contributors': 'MU:+0.26(13m) STX:+0.21(8m) PCLN:+0.17(10m) AMZN:+0.14(7m) ORLY:+0.10(6m) FWLT:+0.10(4m) RIMM:+0.09(9m) EXPE:+0.09(11m) MICC:+0.09(4m) JAVA:+0.08(4m)', 'worst': 'VRTX:-0.18 NVDA:-0.18 SHLD:-0.12 ISRG:-0.10 LEAP:-0.08'}
+{'period': '2007-2014', 'variant': 'Top3_noNVDA', 'top_contributors': 'MU:+0.26(13m) STX:+0.21(8m) PCLN:+0.17(10m) AMZN:+0.14(7m) ORLY:+0.10(6m) FWLT:+0.10(4m) RIMM:+0.09(9m) EXPE:+0.09(11m) MICC:+0.09(4m) JAVA:+0.08(4m)', 'worst': 'VRTX:-0.19 SHLD:-0.12 ISRG:-0.10 LEAP:-0.08 LVLT:-0.07'}
+{'period': '2015-2024', 'variant': 'Top3', 'top_contributors': 'NVDA:+1.12(45m) TSLA:+0.67(25m) ZM:+0.40(8m) NFLX:+0.30(16m) MRNA:+0.24(17m) CRWD:+0.19(6m) MELI:+0.19(14m) META:+0.13(7m) STX:+0.11(8m) ZS:+0.11(3m)', 'worst': 'ALGN:-0.10 ARM:-0.08 SGEN:-0.08 PDD:-0.08 PTON:-0.07'}
+{'period': '2015-2024', 'variant': 'Top3_noNVDA', 'top_contributors': 'TSLA:+0.64(28m) ZM:+0.40(8m) NFLX:+0.31(17m) MRNA:+0.24(17m) CRWD:+0.22(7m) MELI:+0.18(15m) AMAT:+0.14(10m) META:+0.13(7m) STX:+0.11(8m) ZS:+0.11(3m)', 'worst': 'SMCI:-0.13 ALGN:-0.10 SGEN:-0.09 ARM:-0.08 PTON:-0.07'}
+{'period': '2007-2024', 'variant': 'Top3', 'top_contributors': 'NVDA:+0.95(51m) TSLA:+0.70(31m) ZM:+0.40(8m) NFLX:+0.38(20m) STX:+0.32(16m) MU:+0.30(22m) MRNA:+0.24(17m) AMZN:+0.21(16m) CRWD:+0.19(6m) MELI:+0.19(14m)', 'worst': 'SHLD:-0.12 ALGN:-0.10 ISRG:-0.10 VRTX:-0.09 LEAP:-0.08'}
+{'period': '2007-2024', 'variant': 'Top3_noNVDA', 'top_contributors': 'TSLA:+0.68(34m) ZM:+0.40(8m) NFLX:+0.38(22m) MU:+0.36(28m) STX:+0.32(16m) MRNA:+0.24(17m) CRWD:+0.22(7m) AMZN:+0.21(16m) MELI:+0.18(15m) PCLN:+0.17(10m)', 'worst': 'SMCI:-0.13 SHLD:-0.12 VRTX:-0.10 ISRG:-0.10 ALGN:-0.10'}
+{'period': '2025-01_to_2026-11-13', 'variant': 'Top3', 'top_contributors': 'WDC:+0.46(5m) PLTR:+0.36(10m) SNDK:+0.27(5m) STX:+0.24(2m) APP:+0.23(7m) MU:+0.22(10m) MRVL:+0.13(2m) WBD:+0.12(5m) MSTR:+0.11(5m) AVGO:+0.05(1m)', 'worst': 'INTC:-0.13 AMD:-0.08 ALAB:-0.04 ZS:-0.03 NVDA:-0.01'}
+{'period': '2025-01_to_2026-11-13', 'variant': 'Top3_noNVDA', 'top_contributors': 'WDC:+0.46(5m) PLTR:+0.36(10m) SNDK:+0.27(5m) STX:+0.24(2m) APP:+0.23(7m) MU:+0.22(10m) MRVL:+0.13(2m) WBD:+0.12(5m) MSTR:+0.11(5m) AVGO:+0.05(1m)', 'worst': 'INTC:-0.13 AMD:-0.08 ALAB:-0.04 ZS:-0.04 CRWD:-0.00'}

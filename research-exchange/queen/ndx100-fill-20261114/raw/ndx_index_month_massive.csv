@@ -1,0 +1,9 @@
+month,close,source
+2026-04,27452.11973665787,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-05,30333.17966581892,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-06,30276.34817586902,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-07,28274.19506644267,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-08,29456.97325299668,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-09,30408.50229600086,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-10,28384.84517953135,massive /v2/aggs/ticker/I:NDX/range/1/month
+2026-11,27943.73559001413,massive /v2/aggs/ticker/I:NDX/range/1/month (partial month to 2026-11-13)

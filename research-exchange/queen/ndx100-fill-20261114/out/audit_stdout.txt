@@ -1,0 +1,6 @@
+compared member-months: {'inputs-pack-full-20261109': 12445, 'pack': 7010} flags >3pp: 5
+{'pack': 'inputs-pack-full-20261109', 'ticker': 'GOOG', 'start': '2014-03-31', 'end': '2014-04-30', 'queen_ret': -0.0585, 'pack_ret': -0.5275, 'diff': 0.4689}
+{'pack': 'inputs-pack-full-20261109', 'ticker': 'DISCA', 'start': '2014-07-31', 'end': '2014-08-29', 'queen_ret': 0.0396, 'pack_ret': -0.4869, 'diff': 0.5265}
+{'pack': 'inputs-pack-full-20261109', 'ticker': 'BIIB', 'start': '2017-01-31', 'end': '2017-02-28', 'queen_ret': 0.041, 'pack_ret': 0.1241, 'diff': -0.0831}
+{'pack': 'inputs-pack-full-20261109', 'ticker': 'FOX', 'start': '2019-02-28', 'end': '2019-03-29', 'queen_ret': -0.0769, 'pack_ret': -0.2847, 'diff': 0.2078}
+{'pack': 'inputs-pack-full-20261109', 'ticker': 'FOXA', 'start': '2019-02-28', 'end': '2019-03-29', 'queen_ret': -0.0732, 'pack_ret': -0.2721, 'diff': 0.1989}
