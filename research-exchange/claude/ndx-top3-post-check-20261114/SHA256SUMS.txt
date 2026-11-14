@@ -1,0 +1,4 @@
+e9ec7e151f44409f9ebd8044caebb1845ce26d3fcc2ce8a5316d0ab9460989b8  ./README.md
+23701d5365e8f22d7a14ce771f84a14ee47aea8f75cedaa74314c19d6631aa4e  ./fmp_spot_check.csv
+5c72f99c9e3db7cbee203671179eabc8c103b98c742eb66e80925d7b9a67b817  ./sp500_analog.py
+ace72d14a321b50e0ceffea8469ac9333d24c24abc596685a558c9dfead4f1b6  ./sp500_analog_stdout.txt

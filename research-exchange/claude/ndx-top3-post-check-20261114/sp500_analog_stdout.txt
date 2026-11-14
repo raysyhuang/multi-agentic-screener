@@ -1,0 +1,18 @@
+2015-2025 all names: EW universe 7.8% / MDD -27%
+   Top1  monthly: CAGR   7.8% / MDD  -59% / worst yr  -34% best   88% | vs EW  +8.7 pp/yr t=+0.68 | best month +33% worst -41% | turnover 669%/yr
+   Top3  monthly: CAGR  13.9% / MDD  -39% / worst yr  -28% best   66% | vs EW  +8.9 pp/yr t=+1.12 | best month +20% worst -37% | turnover 630%/yr
+      yearly: +13% +17% +15% -28% +12% +21% +43% -10% +66% +17%
+   Top5  monthly: CAGR  10.6% / MDD  -30% / worst yr  -20% best   30% | vs EW  +4.6 pp/yr t=+0.72 | best month +19% worst -25% | turnover 569%/yr
+   Top10 monthly: CAGR  12.2% / MDD  -30% / worst yr   -4% best   30% | vs EW  +5.3 pp/yr t=+1.02 | best month +18% worst -21% | turnover 555%/yr
+2015-2025 no NVDA: EW universe 7.6% / MDD -28%
+   Top1  monthly: CAGR  -7.3% / MDD  -72% / worst yr  -44% best   67% | vs EW  -6.7 pp/yr t=-0.55 | best month +33% worst -41% | turnover 749%/yr
+   Top3  monthly: CAGR   4.1% / MDD  -39% / worst yr  -28% best   26% | vs EW  -0.0 pp/yr t=-0.00 | best month +20% worst -37% | turnover 649%/yr
+      yearly: +11% +6% +10% -28% +12% +14% +26% -10% +15% -3%
+   Top5  monthly: CAGR   5.0% / MDD  -36% / worst yr  -20% best   24% | vs EW  -0.5 pp/yr t=-0.09 | best month +19% worst -25% | turnover 604%/yr
+   Top10 monthly: CAGR   6.5% / MDD  -35% / worst yr  -14% best   21% | vs EW  +0.2 pp/yr t=+0.04 | best month +18% worst -21% | turnover 574%/yr
+2005-2015 all names: EW universe 7.6% / MDD -54%
+   Top1  monthly: CAGR  -6.7% / MDD  -93% / worst yr  -78% best  115% | vs EW  -3.7 pp/yr t=-0.28 | best month +53% worst -42% | turnover 629%/yr
+   Top3  monthly: CAGR   0.4% / MDD  -74% / worst yr  -50% best   69% | vs EW  -3.8 pp/yr t=-0.49 | best month +28% worst -29% | turnover 597%/yr
+      yearly: +1% +19% +31% -50% +20% -32% -26% +34% +69% -4%
+   Top5  monthly: CAGR  10.0% / MDD  -62% / worst yr  -38% best   66% | vs EW  +4.3 pp/yr t=+0.65 | best month +21% worst -25% | turnover 552%/yr
+   Top10 monthly: CAGR   7.3% / MDD  -59% / worst yr  -36% best   53% | vs EW  +0.8 pp/yr t=+0.17 | best month +16% worst -17% | turnover 502%/yr
