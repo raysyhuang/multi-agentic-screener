@@ -1,0 +1,122 @@
+predecessor lookback stitched: [('FB', 'META', '2022-06-30', 1.0, 109), ('PCLN', 'BKNG', '2018-02-28', 0.04, 100), ('CTRP', 'TCOM', '2019-11-29', 1.0, 107), ('SYMC', 'NLOK', '2019-11-29', 1.0, 149), ('ERTS', 'EA', '2011-12-30', 1.0, 54), ('WFMI', 'WFM', '2011-05-31', 0.5, 47), ('HANS', 'MNST', '2012-01-31', 0.0419, 61), ('LINTA', 'QVCA', '2014-10-31', 1.0, 88), ('QVCA', 'QRTEA', '2018-04-30', 0.8756, 130), ('SUNW', 'JAVA', '2007-08-31', 0.5863, 2), ('KFT', 'MDLZ', '2012-10-31', 0.6587, 3), ('NWSA', 'FOXA', '2013-07-31', 0.7088, 43)]
+== 1. 帖子规则 (M6 均值, 月度调仓, 25bp, 只算价格; 回撤为月末口径)
+  一致   2015起 Top1 年化: Claude 25.3% | Queen 25.3% | 差 -0.01pp
+  一致   2015起 Top1 月末最大回撤: Claude -64.9% | Queen -64.9% | 差 -0.01pp
+  一致   2015起 Top3 年化: Claude 28.1% | Queen 27.7% | 差 +0.37pp
+  一致   2015起 Top3 月末最大回撤: Claude -43.8% | Queen -43.8% | 差 +0.05pp
+  一致   2015起 Top5 年化: Claude 23.4% | Queen 23.3% | 差 +0.14pp
+  一致   2015起 Top5 月末最大回撤: Claude -42.9% | Queen -42.9% | 差 -0.04pp
+  一致   2015起 Top10 年化: Claude 18.3% | Queen 18.3% | 差 +0.02pp
+  一致   2015起 Top10 月末最大回撤: Claude -39.1% | Queen -39.1% | 差 +0.01pp
+  一致   2015起 Top3 去掉NVDA 年化: Claude 18.8% | Queen 18.4% | 差 +0.37pp
+     成分股等权(我扣成本): 11.1%  | Queen 不扣成本 11.4%
+  一致   2015起 成分股等权(不计成本): Claude 11.4% | Queen 11.4% | 差 +0.00pp
+  一致   2007起 Top1 年化: Claude 7.9% | Queen 7.9% | 差 -0.03pp
+  一致   2007起 Top1 月末最大回撤: Claude -69.7% | Queen -69.7% | 差 -0.01pp
+  一致   2007起 Top3 年化: Claude 9.1% | Queen 9.1% | 差 +0.00pp
+  一致   2007起 Top3 月末最大回撤: Claude -42.0% | Queen -42.0% | 差 -0.03pp
+  一致   2007起 Top5 年化: Claude 15.1% | Queen 15.2% | 差 -0.08pp
+  一致   2007起 Top5 月末最大回撤: Claude -53.5% | Queen -53.5% | 差 +0.00pp
+  一致   2007起 Top10 年化: Claude 10.2% | Queen 10.7% | 差 -0.48pp
+  不一致 2007起 Top10 月末最大回撤: Claude -63.0% | Queen -61.5% | 差 -1.49pp
+  一致   2007起 Top3 去掉NVDA 年化: Claude 10.8% | Queen 10.8% | 差 -0.01pp
+     成分股等权(我扣成本): 9.7%  | Queen 不扣成本 10.0%
+  一致   2007起 成分股等权(不计成本): Claude 10.1% | Queen 10.0% | 差 +0.05pp
+  一致   2015起 Top3 不计成本: Claude 31.6% | Queen 31.1% | 差 +0.46pp
+  一致   2007-2024 全期 Top1: Claude 17.2% | Queen 17.2% | 差 +0.03pp
+  一致   2007-2024 全期 Top3: Claude 19.3% | Queen 19.1% | 差 +0.18pp
+  一致   2007-2024 全期 Top5: Claude 19.7% | Queen 19.6% | 差 +0.09pp
+  一致   2007-2024 全期 Top10: Claude 14.7% | Queen 14.8% | 差 -0.13pp
+  一致   QQQ 只算价格 2015-2024 (FMP 103.25→511.23): Claude 17.3% | Queen 17.3% | 差 +0.05pp
+  一致   QQQ 只算价格 2007-2014 (FMP 43.16→103.25): Claude 11.5% | Queen 11.4% | 差 +0.12pp
+     Top3 最差月: 2018-09-28 -21.9% {'ALGN': -0.435, 'ILMN': -0.152, 'TTWO': -0.066}
+     Top3 2015-2024 持有月数: [('NVDA', 45), ('TSLA', 25), ('MRNA', 17), ('NFLX', 16), ('MELI', 14), ('AMD', 11), ('PDD', 10), ('AMZN', 9)]
+     Top3 逐月持仓 vs Queen picks_by_month: 比较 216 个月, 不同 0 个月 []
+== 1b. 84% 股票池 → 完整股票池
+  一致   我的84%股票池 + Queen价格 Top3: Claude 38.6% | Queen 38.2% | 差 +0.41pp
+     (我原来用数据包价格: 38.6%)  覆盖率 84.3%
+     Top3 持仓变化的月份: 64/120 (Queen: 64)
+     拖累最大: [('BIDU', '-13pp', 4), ('MELI', '-12pp', 14), ('LCID', '-12pp', 2), ('PTON', '-9pp', 2), ('DASH', '-8pp', 1), ('SGEN', '-6pp', 7), ('VIP', '-6pp', 1), ('WBA', '-6pp', 1), ('JD', '-5pp', 1)]
+     帮忙最大: [('DDOG', '-0pp', 2), ('WDAY', '+3pp', 4), ('ZS', '+6pp', 3), ('ZM', '+20pp', 8)]
+  不一致 归因 BIDU: Claude -13.3% | Queen -22.0% | 差 +8.75pp
+  不一致 归因 PDD: Claude -3.8% | Queen -14.0% | 差 +10.19pp
+  一致   归因 LCID: Claude -12.0% | Queen -12.0% | 差 -0.02pp
+  一致   归因 MELI: Claude -12.3% | Queen -10.0% | 差 -2.32pp
+  一致   归因 PTON: Claude -9.3% | Queen -9.0% | 差 -0.35pp
+  一致   归因 ZM: Claude 20.3% | Queen 18.0% | 差 +2.28pp
+     逐年(毛收益) 84%池: +40% +65% +30% -6% +47% +145% +70% -12% +60% +8%
+     逐年(毛收益) 完整池: +31% +59% +16% -17% +50% +185% +26% -25% +57% -8%
+== 2. 网格 6,912 条路径
+  一致   full2015 Top1 144格中位数: Claude 29.4% | Queen 29.2% | 差 +0.24pp
+  一致   full2015 Top1 W4-12 中位数: Claude 31.6% | Queen 32.2% | 差 -0.61pp
+  不一致 full2015 Top1 W1-3 中位数: Claude 11.8% | Queen 9.5% | 差 +2.28pp
+     高于17.3%的格数: Claude 111 | Queen 111 | 最好格 W12/H8 48.7% | 亏钱路径 113
+  一致   full2015 Top2 144格中位数: Claude 26.9% | Queen 27.1% | 差 -0.16pp
+  一致   full2015 Top2 W4-12 中位数: Claude 29.1% | Queen 29.2% | 差 -0.14pp
+  一致   full2015 Top2 W1-3 中位数: Claude 15.7% | Queen 15.2% | 差 +0.48pp
+     高于17.3%的格数: Claude 121 | Queen 121 | 最好格 W12/H7 39.9% | 亏钱路径 35
+  一致   full2015 Top3 144格中位数: Claude 25.3% | Queen 25.3% | 差 +0.04pp
+  一致   full2015 Top3 W4-12 中位数: Claude 27.0% | Queen 26.8% | 差 +0.22pp
+  一致   full2015 Top3 W1-3 中位数: Claude 15.5% | Queen 15.7% | 差 -0.21pp
+     高于17.3%的格数: Claude 111 | Queen 112 | 最好格 W6/H2 36.6% | 亏钱路径 18
+  一致   full2015 Top4 144格中位数: Claude 22.5% | Queen 22.4% | 差 +0.14pp
+  一致   full2015 Top4 W4-12 中位数: Claude 23.7% | Queen 23.5% | 差 +0.22pp
+  一致   full2015 Top4 W1-3 中位数: Claude 14.9% | Queen 15.3% | 差 -0.44pp
+     高于17.3%的格数: Claude 112 | Queen 112 | 最好格 W7/H1 31.6% | 亏钱路径 8
+  一致   full2015_noNVDA Top1 144格中位数: Claude 12.2% | Queen 12.2% | 差 +0.04pp
+  一致   full2015_noNVDA Top1 W4-12 中位数: Claude 14.5% | Queen 14.0% | 差 +0.46pp
+  一致   full2015_noNVDA Top1 W1-3 中位数: Claude 5.2% | Queen 5.9% | 差 -0.74pp
+     高于17.3%的格数: Claude 43 | Queen 43 | 最好格 W11/H11 32.0% | 亏钱路径 312
+  一致   full2015_noNVDA Top2 144格中位数: Claude 16.0% | Queen 16.1% | 差 -0.13pp
+  一致   full2015_noNVDA Top2 W4-12 中位数: Claude 17.6% | Queen 18.1% | 差 -0.51pp
+  一致   full2015_noNVDA Top2 W1-3 中位数: Claude 9.2% | Queen 8.6% | 差 +0.60pp
+     高于17.3%的格数: Claude 59 | Queen 58 | 最好格 W12/H8 28.1% | 亏钱路径 97
+  一致   full2015_noNVDA Top3 144格中位数: Claude 15.4% | Queen 15.3% | 差 +0.12pp
+  一致   full2015_noNVDA Top3 W4-12 中位数: Claude 17.0% | Queen 17.3% | 差 -0.25pp
+  一致   full2015_noNVDA Top3 W1-3 中位数: Claude 11.1% | Queen 11.0% | 差 +0.13pp
+     高于17.3%的格数: Claude 50 | Queen 51 | 最好格 W11/H10 25.2% | 亏钱路径 36
+  一致   full2015_noNVDA Top4 144格中位数: Claude 14.6% | Queen 14.6% | 差 +0.03pp
+  一致   full2015_noNVDA Top4 W4-12 中位数: Claude 15.9% | Queen 15.7% | 差 +0.23pp
+  一致   full2015_noNVDA Top4 W1-3 中位数: Claude 11.6% | Queen 11.5% | 差 +0.11pp
+     高于17.3%的格数: Claude 31 | Queen 32 | 最好格 W7/H1 23.6% | 亏钱路径 15
+  一致   oos2008 Top1 144格中位数: Claude 1.3% | Queen 1.2% | 差 +0.05pp
+  一致   oos2008 Top1 W4-12 中位数: Claude -1.1% | Queen -0.8% | 差 -0.27pp
+  一致   oos2008 Top1 W1-3 中位数: Claude 5.0% | Queen 4.9% | 差 +0.15pp
+     高于13.2%的格数: Claude 8 | Queen 9 | 最好格 W1/H8 33.5% | 亏钱路径 858
+  一致   oos2008 Top2 144格中位数: Claude 9.6% | Queen 9.7% | 差 -0.06pp
+  一致   oos2008 Top2 W4-12 中位数: Claude 8.6% | Queen 8.5% | 差 +0.06pp
+  一致   oos2008 Top2 W1-3 中位数: Claude 14.0% | Queen 13.6% | 差 +0.37pp
+     高于13.2%的格数: Claude 33 | Queen 33 | 最好格 W1/H5 25.7% | 亏钱路径 304
+  一致   oos2008 Top3 144格中位数: Claude 11.6% | Queen 11.7% | 差 -0.11pp
+  一致   oos2008 Top3 W4-12 中位数: Claude 10.2% | Queen 10.6% | 差 -0.41pp
+  一致   oos2008 Top3 W1-3 中位数: Claude 17.2% | Queen 17.5% | 差 -0.34pp
+     高于13.2%的格数: Claude 48 | Queen 51 | 最好格 W2/H6 24.8% | 亏钱路径 142
+  一致   oos2008 Top4 144格中位数: Claude 12.2% | Queen 12.3% | 差 -0.11pp
+  一致   oos2008 Top4 W4-12 中位数: Claude 11.2% | Queen 11.5% | 差 -0.26pp
+  一致   oos2008 Top4 W1-3 中位数: Claude 17.1% | Queen 17.1% | 差 +0.02pp
+     高于13.2%的格数: Claude 54 | Queen 55 | 最好格 W3/H1 26.8% | 亏钱路径 67
+     Top1: 两段 144 格中位数的秩相关 = -0.56
+     Top2: 两段 144 格中位数的秩相关 = -0.62
+     Top3: 两段 144 格中位数的秩相关 = -0.60
+     Top4: 两段 144 格中位数的秩相关 = -0.52
+== 3. 2026 年帖子数字与实际表现
+     2026-05-29 前十: [('SNDK', 47.75), ('MU', 31.37), ('INTC', 24.55), ('STX', 24.37), ('WDC', 23.68), ('ARM', 20.62), ('LITE', 20.33), ('AMD', 19.17), ('MRVL', 17.26), ('LRCX', 13.62)]
+     与帖子截图逐项相同(名次与数值±0.01): True
+     2026-04-30 前四: [('SNDK', 40.65), ('WDC', 21.43), ('INTC', 21.22), ('STX', 20.63)]
+     2026-04-30→2026-05-29 SNDK +54.6% WDC +22.3% INTC +21.4% | 组合 +32.74%
+     2026-05-29→2026-06-30 SNDK +34.1% MU +18.9% INTC +21.8% | 组合 +24.93%
+     2026-06-30→2026-07-31 SNDK -46.6% MU -28.7% INTC -35.4% | 组合 -36.89%
+     2026-07-31→2026-08-31 ALAB -4.6% SNDK +29.0% MRVL +12.8% | 组合 +12.41%
+     2026-08-31→2026-09-30 ALAB +19.9% SNDK +11.1% MRVL +24.8% | 组合 +18.58%
+     2026-09-30→2026-10-30 ALAB -27.3% MU -16.9% INTC -45.3% | 组合 -29.85%
+     2026-10-30→2026-11-13 MRNA +0.7% CRWD -9.5% MU -12.0% | 组合 -6.93%
+  一致   5月组合 (不计成本): Claude 32.74% | Queen 32.74% | 差 -0.00pp
+  一致   2026-04-30→11-13 不计成本: Claude -8.9% | Queen -8.9% | 差 -0.03pp
+  一致   2026-04-30→11-13 单边25bp (期末不平仓): Claude -10.3% | Queen -10.3% | 差 +0.02pp
+     (若期末平仓再扣25bp: -10.5%)
+  一致   QQQ 2026-04-30→11-13 (FMP 667.74→679.89): Claude 1.8% | Queen 1.8% | 差 +0.02pp
+合计 74 项: 一致 70, 不一致 4
+  不一致: 2007起 Top10 月末最大回撤 -1.49pp
+  不一致: 归因 BIDU +8.75pp
+  不一致: 归因 PDD +10.19pp
+  不一致: full2015 Top1 W1-3 中位数 +2.28pp
