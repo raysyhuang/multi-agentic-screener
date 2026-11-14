@@ -1,0 +1,28 @@
+2015-01_to_2026-11-13    Top1            0bp m143 CAGR  36.16% total  3958.8% MDDm  -64.0% MDDd  -69.9%
+2015-01_to_2026-11-13    Top1           25bp m143 CAGR  32.07% total  2752.6% MDDm  -64.9% MDDd  -71.1%
+2015-01_to_2026-11-13    Top3            0bp m143 CAGR  41.37% total  6188.4% MDDm  -45.1% MDDd  -48.3%
+2015-01_to_2026-11-13    Top3           25bp m143 CAGR  37.72% total  4532.1% MDDm  -45.7% MDDd  -49.7%
+2015-01_to_2026-11-13    Top5            0bp m143 CAGR  34.03% total  3279.1% MDDm  -41.5% MDDd  -45.5%
+2015-01_to_2026-11-13    Top5           25bp m143 CAGR  30.77% total  2445.1% MDDm  -42.9% MDDd  -46.4%
+2015-01_to_2026-11-13    Top10           0bp m143 CAGR  23.17% total  1197.7% MDDm  -40.5% MDDd  -47.1%
+2015-01_to_2026-11-13    Top10          25bp m143 CAGR  20.41% total   914.9% MDDm  -40.9% MDDd  -47.4%
+2015-01_to_2026-11-13    Top3_noNVDA     0bp m143 CAGR  32.80% total  2937.9% MDDm  -45.1% MDDd  -49.6%
+2015-01_to_2026-11-13    Top3_noNVDA    25bp m143 CAGR  29.25% total  2127.7% MDDm  -46.3% MDDd  -54.4%
+2015-01_to_2026-11-13    Top5_noNVDA     0bp m143 CAGR  28.96% total  2072.0% MDDm  -39.9% MDDd  -47.1%
+2015-01_to_2026-11-13    Top5_noNVDA    25bp m143 CAGR  25.64% total  1517.5% MDDm  -45.3% MDDd  -52.1%
+2015-01_to_2026-11-13    QQQ_price       0bp m143 CAGR  17.14% total   658.5% MDDm  -33.1% MDDd  -35.6%
+2015-01_to_2026-11-13    QQQ_total_return    0bp m143 CAGR  18.00% total   718.7% MDDm  -32.6% MDDd  -35.1%
+2025-01_to_2026-11-13    Top1            0bp m 23 CAGR  77.86% total   301.5% MDDm  -55.6% MDDd  -57.8%
+2025-01_to_2026-11-13    Top1           25bp m 23 CAGR  73.50% total   287.5% MDDm  -55.8% MDDd  -58.0%
+2025-01_to_2026-11-13    Top3            0bp m 23 CAGR 109.34% total   412.1% MDDm  -45.1% MDDd  -47.9%
+2025-01_to_2026-11-13    Top3           25bp m 23 CAGR 104.65% total   394.6% MDDm  -45.7% MDDd  -48.5%
+2025-01_to_2026-11-13    Top5            0bp m 23 CAGR  81.68% total   314.1% MDDm  -39.9% MDDd  -45.5%
+2025-01_to_2026-11-13    Top5           25bp m 23 CAGR  77.80% total   301.3% MDDm  -40.5% MDDd  -46.1%
+2025-01_to_2026-11-13    Top10           0bp m 23 CAGR  34.99% total   177.7% MDDm  -40.5% MDDd  -47.1%
+2025-01_to_2026-11-13    Top10          25bp m 23 CAGR  32.25% total   170.9% MDDm  -40.9% MDDd  -47.4%
+2025-01_to_2026-11-13    Top3_noNVDA     0bp m 23 CAGR 109.00% total   410.8% MDDm  -45.1% MDDd  -47.9%
+2025-01_to_2026-11-13    Top3_noNVDA    25bp m 23 CAGR 104.47% total   393.9% MDDm  -45.7% MDDd  -48.5%
+2025-01_to_2026-11-13    Top5_noNVDA     0bp m 23 CAGR  81.70% total   314.1% MDDm  -39.9% MDDd  -45.5%
+2025-01_to_2026-11-13    Top5_noNVDA    25bp m 23 CAGR  77.82% total   301.4% MDDm  -40.5% MDDd  -46.1%
+2025-01_to_2026-11-13    QQQ_price       0bp m 23 CAGR  16.04% total   133.0% MDDm  -10.2% MDDd  -22.9%
+2025-01_to_2026-11-13    QQQ_total_return    0bp m 23 CAGR  16.55% total   134.1% MDDm  -10.1% MDDd  -22.8%
