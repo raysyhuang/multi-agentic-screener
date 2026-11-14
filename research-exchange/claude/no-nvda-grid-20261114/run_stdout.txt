@@ -1,0 +1,31 @@
+paths by K and status: {(1, 'KNOWN'): 1656, (1, 'UNKNOWN'): 72, (2, 'KNOWN'): 1559, (2, 'UNKNOWN'): 169, (3, 'KNOWN'): 244, (3, 'UNKNOWN'): 1484}
+fail reasons: {'NOT_IN_PACK': 1436, 'corporate_action_unresolved': 28, 'pick_not_tradable': 257, 'daily_gap': 4}
+proxy validation Top1 (cells with all 12 exact paths, n=120): Spearman 0.939, mean abs diff 2.12 pp
+proxy validation Top2 (cells with all 12 exact paths, n=90): Spearman 0.981, mean abs diff 0.95 pp
+--- Top1 (exact engine): cells ranked 138 of 144; median of cell medians 6.4%; cells whose median beats 13%: 33
+   W12H12  median 23.2%  range 6.4%..32.4%  median MDD -55% worst -75%  known 12/12 | with NVDA median 36.4% | proxy 21.8% | 2005-15 Top1 proxy -4.0%
+   W11H10  median 22.9%  range 6.4%..42.7%  median MDD -55% worst -78%  known 12/12 | with NVDA median 41.9% | proxy 22.6% | 2005-15 Top1 proxy -1.4%
+   W10H7  median 22.8%  range 0.5%..30.1%  median MDD -64% worst -75%  known 12/12 | with NVDA median 35.1% | proxy 22.2% | 2005-15 Top1 proxy -6.3%
+   W12H9  median 22.6%  range 5.2%..35.2%  median MDD -54% worst -66%  known 12/12 | with NVDA median 34.9% | proxy 20.0% | 2005-15 Top1 proxy -4.3%
+   W10H12  median 22.5%  range -2.9%..43.6%  median MDD -53% worst -80%  known 12/12 | with NVDA median 31.6% | proxy 21.8% | 2005-15 Top1 proxy 3.9%
+   W12H10  median 22.4%  range 11.6%..30.5%  median MDD -53% worst -81%  known 12/12 | with NVDA median 36.1% | proxy 19.1% | 2005-15 Top1 proxy -4.1%
+   best single path: W11H9K1P9 CAGR 62.8% MDD -42% | all 1656 known paths: median 6.9%, share below 0: 25%, share above 13%: 31%
+--- Top2 (exact engine): cells ranked 131 of 144; median of cell medians 10.2%; cells whose median beats 13%: 41
+   W11H12  median 22.4%  range 2.8%..27.7%  median MDD -48% worst -67%  known 12/12 | with NVDA median 27.7% | proxy 22.4%
+   W12H12  median 21.7%  range 7.2%..37.4%  median MDD -47% worst -74%  known 11/12 | with NVDA median 29.2% | proxy 19.1%
+   W10H6  median 20.4%  range -3.4%..24.1%  median MDD -50% worst -64%  known 12/12 | with NVDA median 34.3% | proxy 20.9%
+   W12H9  median 20.3%  range 2.5%..37.0%  median MDD -49% worst -57%  known 12/12 | with NVDA median 29.5% | proxy 19.1%
+   W12H10  median 19.8%  range 9.6%..42.2%  median MDD -52% worst -64%  known 12/12 | with NVDA median 29.9% | proxy 19.7%
+   W12H8  median 19.3%  range 14.7%..27.8%  median MDD -45% worst -52%  known 12/12 | with NVDA median 31.0% | proxy 18.0%
+   best single path: W11H9K2P9 CAGR 45.4% MDD -42% | all 1559 known paths: median 9.9%, share below 0: 14%, share above 13%: 37%
+--- Top3 (month-end PROXY (exact engine can price only 244 of 1,728 Top3 paths)): cells ranked 144 of 144; median of cell medians 8.6%; cells whose median beats 13%: 42
+   W10H6  proxy median 19.9%  range -1.5%..26.9%  month-end MDD median -35% | with NVDA exact median 28.5%
+   W10H10  proxy median 19.6%  range 6.5%..27.9%  month-end MDD median -36% | with NVDA exact median 28.2%
+   W12H10  proxy median 18.9%  range 6.0%..33.0%  month-end MDD median -36% | with NVDA exact median 28.2%
+   W8H11  proxy median 17.8%  range 7.2%..24.9%  month-end MDD median -39% | with NVDA exact median 25.9%
+   W9H9  proxy median 17.8%  range 2.5%..25.1%  month-end MDD median -38% | with NVDA exact median 24.9%
+   W12H11  proxy median 17.8%  range 0.8%..40.6%  month-end MDD median -42% | with NVDA exact median 25.8%
+   all 1728 proxy paths: median 8.9%, share below 0: 15%, share above 13%: 31%, best 40.6%
+anchor W12H12K1: no-NVDA median 23.2% (known 12, rank 1 of 138) vs with NVDA 36.4%; January path 28.2% MDD -42%
+anchor W10H2K1: no-NVDA median 12.4% (known 12, rank 36 of 138) vs with NVDA 45.2%; January path 9.2% MDD -67%
+anchor W12H4K1: no-NVDA median 18.4% (known 12, rank 13 of 138) vs with NVDA 43.0%; January path 13.3% MDD -47%

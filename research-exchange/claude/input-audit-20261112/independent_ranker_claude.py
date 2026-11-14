@@ -9,7 +9,7 @@ ME=[d for i,d in enumerate(sess) if i+1==len(sess) or sess[i+1][:7]!=d[:7]]
 mei={d:i for i,d in enumerate(ME)}
 elig=collections.defaultdict(list)
 for r in rd('eligibility_by_signal.csv.gz'):
-    if r['eligible_final']=='True': elig[r['signal_date']].append(r['engine_ticker'])
+    if r['eligible_final']=='True' and r['engine_ticker'] not in set(filter(None,os.environ.get('EXCLUDE_TICKERS','').split(','))): elig[r['signal_date']].append(r['engine_ticker'])   # EXCLUDE_TICKERS=NVDA removes a name before ranking
 px={(r['engine_ticker'],r['month_end']):float(r['rank_price']) for r in rd('rank_prices_month_end.csv.gz') if r['rank_price']!=''}
 ov=collections.defaultdict(list)
 for r in rd('rank_price_overrides.csv'): ov[(r['engine_ticker'],r['month_end'])].append((r['signal_from'],r['signal_to'],float(r['rank_price'])))
@@ -38,5 +38,5 @@ for S in sorted(elig):
             else: rows.append((-(p1/(p0*F)-1),t))
         rows.sort()
         out[(S,W)]=dict(bad=bad,top=[(t,-r) for r,t in rows[:5]],n=len(elig[S]))
-pickle.dump(out,open(HERE+'/rank3.pkl','wb'))
+pickle.dump(out,open(os.environ.get('RANK_OUT',HERE+'/rank3.pkl'),'wb'))
 print(len(out),'tables;',sum(1 for v in out.values() if v['bad']),'UNKNOWN', sorted({k[0] for k,v in out.items() if v['bad']}))
