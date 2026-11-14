@@ -1,0 +1,66 @@
+label,event_id,kind,ex_date,child_sym,ratio,cash,note
+ABT,SPIN_ABT_HSP,spin,2004-05-03,HSP,0.1,0,Hospira 1 per 10 ABT
+MSI,SPIN_MOT_FSL,spin,2004-12-03,FSL.B,0.110415,0,Freescale class B 0.110415 per MOT
+MSFT,SPDIV_MSFT_2004,special_div,2004-11-15,,0,3.0,Microsoft $3 special dividend
+CAR,SPIN_CD_PHH,spin,2005-01-31,PHH,0.05,0,PHH 1 per 20 CD
+DF,SPIN_DF_THS,spin,2005-06-28,THS,0.2,0,TreeHouse 1 per 5 DF
+ASH,SPIN_ASH_MRO,spin,2005-07-01,MRO,0.2364,0,Ashland/MAP transaction: 0.2364 MRO per ASH share (plus 1 new ASH)
+IAC,SPIN_IACI_EXPE,spin,2005-08-09,EXPE,1,0,Expedia 1 per IACI with IAC 1:2 reverse (check units)
+AXP,SPIN_AXP_AMP,spin,2005-10-03,AMP,0.2,0,Ameriprise 1 per 5 AXP
+CBS,SPLIT_VIA_CBS,spin,2006-01-03,VIA.B,1,0,Viacom split: old VIA.B -> 0.5 CBS + 0.5 new VIAB = per new CBS share 1 new VIAB (plus 1:2 unit conversion)
+KMG,SPIN_KMG_TRX,spin,2006-03-31,TRX.B,0.20,0,Tronox class B per KMG (check ratio)
+CVC,SPDIV_CVC_2006,special_div,2006-04-24,,0,10.0,Cablevision $10 special dividend
+S,SPIN_S_EQ,spin,2006-05-18,EQ,0.05,0,Embarq 1 per 20 S
+AT,SPIN_AT_WIN,spin,2006-07-18,WIN,1.0339,0,Windstream 1.0339 per Alltel
+CAR,SPIN_CD_H_WYN,spin,2006-08-01,H|WYN,0.25|0.2,0,Realogy 1 per 4 CD + Wyndham 1 per 5 CD
+HSH,SPIN_SLE_HBI,spin,2006-09-05,HBI,0.125,0,Hanesbrands 1 per 8 SLE
+WEN,SPIN_WEN_THI,spin,2006-10-02,THI,1.3542,0,Tim Hortons 1.3542 per WEN (distribution 2006-09-29)
+FDC,SPIN_FDC_WU,spin,2006-10-02,WU,1,0,Western Union 1 per FDC
+A,SPIN_A_VRGY,spin,2006-11-01,VRGY,0.122435,0,Verigy 0.122435 per A (distributed 2006-10-31)
+ACV,SPIN_ACV_SBH,spin,2006-11-17,SBH,1,25.0,Alberto-Culver: 1 new ACV + 1 Sally + $25 cash
+VZ,SPIN_VZ_IAR,spin,2006-11-20,IAR,0.05,0,Idearc 1 per 20 VZ
+DUK,SPIN_DUK_SE,spin,2007-01-03,SE,0.5,0,Spectra 1 per 2 DUK
+MO,SPIN_MO_KFT,spin,2007-04-02,KFT,0.692024,0,Kraft 0.692024 per MO
+ADP,SPIN_ADP_BR,spin,2007-04-02,BR,0.25,0,Broadridge 1 per 4 ADP
+MS,SPIN_MS_DFS,spin,2007-07-02,DFS,0.5,0,Discover 1 per 2 MS
+TT,SPIN_ASD_WBC,spin,2007-08-01,WBC,0.333333,0,WABCO 1 per 3 ASD
+NCR,SPIN_NCR_TDC,spin,2007-10-01,TDC,1,0,Teradata 1 per NCR
+BTUUQ,SPIN_BTU_PCX,spin,2007-11-01,PCX,0.1,0,Patriot Coal 1 per 10 BTU
+TIN,SPIN_TIN_GFG_FOR,spin,2007-12-31,GFG|FOR,0.333333|0.333333,0,Guaranty Financial + Forestar 1 each per 3 TIN
+SNV,SPIN_SNV_TSS,spin,2008-01-02,TSS,0.483921,0,TSYS 0.483921 per SNV
+MO,SPIN_MO_PM,spin,2008-03-31,PM,1,0,Philip Morris Intl 1 per MO
+VZ,SPIN_VZ_FRP,spin,2008-03-31,FRP,0.0533,0,FairPoint 0.0533 per VZ (spinco merger)
+FIS,SPIN_FIS_LPS,spin,2008-07-03,LPS,0.5,0,LPS 1 per 2 FIS
+TWX,SPIN_TWX_TWC,spin,2009-03-30,TWC,0.25101,0,TWC 0.083670 per pre-reverse TWX = 0.25101 per post 1:3 reverse share
+CAH,SPIN_CAH_CFN,spin,2009-09-01,CFN,0.5,0,CareFusion 1 per 2 CAH
+TWX,SPIN_TWX_AOL,spin,2009-12-10,AOL,0.090909,0,AOL 1 per 11 TWX
+CVC,SPIN_CVC_MSG,spin,2010-02-10,MSG,0.25,0,MSG 1 per 4 CVC
+STR,SPIN_STR_QEP,spin,2010-07-01,QEP,1,0,QEP 1 per STR
+VZ,SPIN_VZ_FTR,spin,2010-07-01,FTR,0.479037,0,Frontier 0.479037 per VZ (spinco merger)
+CCE,SPDIV_CCE_2010,special_div,2010-10-04,,0,10.0,Coca-Cola Enterprises: $10 cash + 1 new CCE (old CCE NA ops sold to KO)
+MSI,SPIN_MOT_MMI,spin,2011-01-04,MMI,0.875,0,Motorola Mobility 1 per 8 pre-reverse MOT = 0.875 per post 1:7 reverse MSI share
+AIG,SPIN_AIG_WS,spin,2011-01-20,AIG.WS,0.533933,0,AIG warrants 0.533933 per share (check symbol)
+NOC,SPIN_NOC_HII,spin,2011-04-01,HII,0.166667,0,HII 1 per 6 NOC
+MRO,SPIN_MRO_MPC,spin,2011-07-01,MPC,0.5,0,MPC 1 per 2 MRO
+CVC,SPIN_CVC_AMCX,spin,2011-07-01,AMCX,0.25,0,AMC Networks 1 per 4 CVC
+BEAM,SPIN_FO_FBHS,spin,2011-10-04,FBHS,1,0,FBHS 1 per FO
+MAR,SPIN_MAR_VAC,spin,2011-11-22,VAC,0.1,0,VAC 1 per 10 MAR
+EXPE,SPIN_EXPE_TRIP,spin,2011-12-21,TRIP,1,0,TripAdvisor 1 per post 1:2 reverse EXPE share
+WMB,SPIN_WMB_WPX,spin,2012-01-03,WPX,0.333333,0,WPX 1 per 3 WMB
+COP,SPIN_COP_PSX,spin,2012-05-01,PSX,0.5,0,Phillips 66 1 per 2 COP
+LLL,SPIN_LLL_EGL,spin,2012-07-18,EGL,0.166667,0,Engility 1 per 6 LLL
+MDLZ,SPIN_KFT_KRFT,spin,2012-10-02,KRFT,0.333333,0,Kraft Foods Group 1 per 3 KFT
+ABT,SPIN_ABT_ABBV,spin,2013-01-02,ABBV,1,0,AbbVie 1 per ABT
+VLO,SPIN_VLO_CST,spin,2013-05-02,CST,0.111111,0,CST Brands 1 per 9 VLO
+FOXA,SPIN_FOXA_NWSA,spin,2013-07-01,NWSA,0.25,0,new News Corp 1 per 4 old News Corp (21CF)
+COV,SPIN_COV_MNK,spin,2013-07-01,MNK,0.125,0,Mallinckrodt 1 per 8 COV
+MUR,SPIN_MUR_MUSA,spin,2013-08-30,MUSA,0.25,0,Murphy USA 1 per 4 MUR
+VNO,SPIN_VNO_UE,spin,2015-01-15,UE,0.5,0,Urban Edge 1 per 2 VNO
+CCU,SPIN_CCU_LYV,spin,2005-12-21,LYV,0.125,0,Live Nation 1 per 8 CCU
+MI,SPIN_MI_MV,spin,2007-11-01,MV,0.333333,0,Metavante 1 per 3 old M&I (plus 1 new M&I)
+HRS,SPIN_HRS_HSTX,spin,2009-05-28,HSTX,0.2471,0,Harris distributed its Harris Stratex class B stake (approx 0.2471 HSTX per HRS)
+SUN,SPIN_SUN_SXC,spin,2012-01-18,SXC,0.53046,0,SunCoke Energy 0.53046 per SUN
+IR,SPIN_IR_ALLE,spin,2013-12-02,ALLE,0.333333,0,Allegion 1 per 3 IR (frozen pack event; F computed here)
+SWY,SPIN_SWY_BHN,spin,2014-04-15,BHNB|BHN,0.164291,0,Blackhawk class B approx 0.164291 per SWY (child priced with class A BHN if class B absent)
+NE,SPIN_NE_PGN,spin,2014-08-04,PGN,0.333333,0,Paragon Offshore 1 per 3 NE
+IP,SPIN_IP_VRTV,spin,2014-07-02,VRTV,0.029744,0,Veritiv 1 per 33.62 IP

@@ -1,0 +1,10 @@
+path_id,W,H,K,phase,entry,end,status,fail_reason,fail_ticker,fail_date,final_multiple,CAGR,daily_MDD,grade_C_events
+W4H6K3P2,4,6,3,2,2015-02-02,2025-02-03,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H6K3P8,4,6,3,8,2015-08-03,2025-08-01,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H7K3P6,4,7,3,6,2015-06-01,2025-06-02,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H8K3P4,4,8,3,4,2015-04-01,2025-04-01,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H9K3P2,4,9,3,2,2015-02-02,2025-02-03,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H9K3P11,4,9,3,11,2015-11-02,2025-11-03,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H10K3P10,4,10,3,10,2015-10-01,2025-10-01,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H11K3P9,4,11,3,9,2015-09-01,2025-09-02,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,
+W4H12K3P8,4,12,3,8,2015-08-03,2025-08-01,UNKNOWN,corporate_action_unresolved,STJ,2017-01-05,,,,

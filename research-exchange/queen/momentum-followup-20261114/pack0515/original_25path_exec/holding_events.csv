@@ -1,0 +1,7 @@
+execution_key,price_series,event_id,type,ex_date,process_date,ratio,cash_per_share,child_first_close,child_or_acquirer,evidence_grade,acquirer_series,acquirer_verified,action,reason
+MMI,massive_aggs_raw:MMI#2012-05-01,MMI_GOOG_CASH,cash,2012-05-22,2012-05-22,0,40.0,,,A,,False,apply,cash deal $40.00 (Motorola Mobility 8-K 0000903423-12-000298)
+UST,massive_aggs_raw:UST#2008-12-01,UST_MO_CASH,cash,2009-01-06,2009-01-06,0,69.5,,,A,,False,apply,cash deal $69.50 (Altria 8-K 0001193125-09-001739)
+ROH,massive_aggs_raw:ROH#2008-11-03,ROH_DOW_CASH,cash,2009-04-01,2009-04-01,0,78.97,,,A,,False,apply,cash deal $78.00 + $0.97 ticking fee = $78.97 (Dow 8-K 0000947871-09-000288)
+FRX,massive_aggs_raw:FRX#2014-03-03,FRX_ACT_STOCK,stock,2014-07-01,2014-07-01,0.3306,26.04,,ACT,A,acq:ACT,True,apply,standard/no-election consideration $26.04 + 0.3306 ACT (Forest 8-K 0001193125-14-259565); follow acq:ACT (Massive raw ACT)
+S,massive_aggs_raw:S#2012-12-03,S_SOFTBANK_STOCK,stock,2013-07-11,2013-07-11,0.261744048,5.647658,,S,B,acq:S_SPRINTCORP_2013,True,apply,SoftBank merger closed 2013-07-10; no-election (deemed cash) holders got $5.647658 + 0.261744048 new Sprint Corp (Sprint 8-K EX-99.2 0001193125-13-287538); old S last close 2013-07-10 = 7.18 = 5.647658+0.261744*5.85(S.WD); new series = Massive S.WD 2013-07-11 then S from 2013-07-12
+AIG,massive_aggs_raw:AIG#2011-01-03,SPIN_AIG_WS,spin,2011-01-20,2011-01-20,0.533933,0,15.77,AIG.WS,C,,False,apply,AIG warrants 0.533933 per share; child first close 15.77 (Massive AIG.WS 2011-01-20); fee c on child value

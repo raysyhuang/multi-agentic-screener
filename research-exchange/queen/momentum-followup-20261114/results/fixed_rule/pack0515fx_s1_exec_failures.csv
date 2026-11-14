@@ -1,0 +1,103 @@
+execution_key,from,to,candidates_tried
+APCC,2006-11-01,2007-11-01,"[[""massive_aggs_raw:APCC"", false, 0.0, 180], [""massive_aggs_raw:APCC"", false, 0.0, 180]]"
+APCC,2007-01-03,2008-01-02,"[[""massive_aggs_raw:APCC"", false, 0.0, 221], [""massive_aggs_raw:APCC"", false, 0.0, 221]]"
+APCC,2007-02-01,2008-02-01,"[[""massive_aggs_raw:APCC"", false, 0.0, 242], [""massive_aggs_raw:APCC"", false, 0.0, 242]]"
+ASH,2005-04-01,2006-04-03,"[[""fmp:ASH"", false, 0.218135826355345, 0], [""fmp_x_splitf:ASH"", false, 0.218135826355345, 0]]"
+ASH,2005-05-02,2006-05-01,"[[""fmp:ASH"", false, 0.218135826355345, 0], [""fmp_x_splitf:ASH"", false, 0.218135826355345, 0]]"
+BMET,2007-07-02,2008-07-01,[]
+BR,2005-01-03,2007-04-02,"[[""massive_aggs_raw:BR"", false, 0.0, 250], [""massive_aggs_raw:BR"", false, 0.0, 250], [""fmp:BR"", false, null, 557], [""fmp_x_splitf:BR"", false, null, 557]]"
+BR,2006-04-03,2007-04-02,"[[""massive_aggs_raw:BR"", false, 0.0, 250], [""massive_aggs_raw:BR"", false, 0.0, 250], [""fmp:BR"", false, null, 243], [""fmp_x_splitf:BR"", false, null, 243]]"
+BSC,2006-07-03,2007-07-02,[]
+BSC,2006-08-01,2007-08-01,[]
+BUD,2008-10-01,2009-10-01,"[[""massive_aggs_raw:BUD"", false, 0.0, 207], [""massive_aggs_raw:BUD"", false, 0.0, 207], [""fmp:BUD"", false, 0.0, 188], [""fmp_x_splitf:BUD"", false, 0.0, 188]]"
+BUD,2008-11-03,2009-11-02,"[[""massive_aggs_raw:BUD"", false, 0.0, 207], [""massive_aggs_raw:BUD"", false, 0.0, 207], [""fmp:BUD"", false, 0.0, 165], [""fmp_x_splitf:BUD"", false, 0.0, 165]]"
+CBE,2006-07-03,2007-07-02,[]
+CBE,2006-08-01,2007-08-01,[]
+CBSS,2007-03-01,2008-03-03,[]
+CMVT,2005-04-01,2006-04-03,[]
+COG,2012-01-03,2014-01-02,"[[""fmp:COG"", false, 1.0, 0], [""fmp_x_splitf:COG"", false, 1.0, 0]]"
+DD,2010-10-01,2011-10-03,"[[""fmp:DD"", false, 0.28498586360731504, 0], [""fmp_x_splitf:DD"", false, 0.28498586360731504, 0]]"
+DD,2011-01-03,2012-01-03,"[[""fmp:DD"", false, 0.28498586360731504, 0], [""fmp_x_splitf:DD"", false, 0.28498586360731504, 0]]"
+DD,2011-02-01,2012-02-01,"[[""fmp:DD"", false, 0.28498586360731504, 0], [""fmp_x_splitf:DD"", false, 0.28498586360731504, 0]]"
+DD,2011-03-01,2012-03-01,"[[""fmp:DD"", false, 0.28498586360731504, 0], [""fmp_x_splitf:DD"", false, 0.28498586360731504, 0]]"
+EQ,2007-06-01,2008-06-02,[]
+EQ,2007-07-02,2008-07-01,[]
+EQ,2009-03-02,2010-03-01,[]
+EQ,2009-04-01,2010-04-01,[]
+FDC,2007-08-01,2008-08-01,[]
+FDC,2007-09-04,2008-09-02,[]
+FOXA,2012-08-01,2013-08-01,"[[""massive_aggs_raw:FOXA"", false, 0.0, 228], [""massive_aggs_raw:NWSA"", false, 0.8757062146892656, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 228], [""fmp:NWSA"", false, 0.13898084139838018, 220], [""fmp_x_splitf:NWSA"", false, 0.13898084139838018, 220]]"
+FOXA,2012-09-04,2013-09-03,"[[""massive_aggs_raw:FOXA"", false, 0.0, 205], [""massive_aggs_raw:NWSA"", false, 0.9955414012738855, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 205], [""fmp:NWSA"", false, 0.13898084139838018, 197], [""fmp_x_splitf:NWSA"", false, 0.13898084139838018, 197]]"
+FOXA,2012-09-04,2014-09-02,"[[""massive_aggs_raw:FOXA"", false, 0.0, 205], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 205], [""fmp:NWSA"", false, 0.19063291008194105, 197], [""fmp_x_splitf:NWSA"", false, 0.19063291008194105, 197]]"
+FOXA,2012-10-01,2013-10-01,"[[""massive_aggs_raw:FOXA"", false, 0.0, 186], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 186], [""fmp:NWSA"", false, 0.13898084139838018, 178], [""fmp_x_splitf:NWSA"", false, 0.13898084139838018, 178]]"
+FOXA,2012-10-01,2014-10-01,"[[""massive_aggs_raw:FOXA"", false, 0.0, 186], [""massive_aggs_raw:NWSA"", false, 1.097247706422018, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 186], [""fmp:NWSA"", false, 0.19063291008194105, 178], [""fmp_x_splitf:NWSA"", false, 0.19063291008194105, 178]]"
+FOXA,2012-11-01,2013-11-01,"[[""massive_aggs_raw:FOXA"", false, 0.0, 165], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 165], [""fmp:NWSA"", false, 0.13898084139838018, 157], [""fmp_x_splitf:NWSA"", false, 0.13898084139838018, 157]]"
+FOXA,2012-12-03,2013-12-02,"[[""massive_aggs_raw:FOXA"", false, 0.0, 144], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 144], [""fmp:NWSA"", false, 0.14570397818776337, 136], [""fmp_x_splitf:NWSA"", false, 0.14570397818776337, 136]]"
+FOXA,2013-01-02,2014-01-02,"[[""massive_aggs_raw:FOXA"", false, 0.0, 124], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 124], [""fmp:NWSA"", false, 0.14570397818776337, 116], [""fmp_x_splitf:NWSA"", false, 0.14570397818776337, 116]]"
+FOXA,2013-02-01,2014-02-03,"[[""massive_aggs_raw:FOXA"", false, 0.0, 103], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 103], [""fmp:NWSA"", false, 0.14570397818776337, 95], [""fmp_x_splitf:NWSA"", false, 0.14570397818776337, 95]]"
+FOXA,2013-03-01,2014-03-03,"[[""massive_aggs_raw:FOXA"", false, 0.0, 84], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 84], [""fmp:NWSA"", false, 0.16756385817765906, 76], [""fmp_x_splitf:NWSA"", false, 0.16756385817765906, 76]]"
+FOXA,2013-04-01,2014-04-01,"[[""massive_aggs_raw:FOXA"", false, 0.0, 64], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 64], [""fmp:NWSA"", false, 0.16756385817765906, 56], [""fmp_x_splitf:NWSA"", false, 0.16756385817765906, 56]]"
+FOXA,2013-05-01,2014-05-01,"[[""massive_aggs_raw:FOXA"", false, 0.0, 42], [""massive_aggs_raw:NWSA"", false, 1.0865504358655045, 0], [""massive_aggs_raw:FOXA"", false, 0.0, 42], [""fmp:NWSA"", false, 0.16756385817765906, 34], [""fmp_x_splitf:NWSA"", false, 0.16756385817765906, 34]]"
+FSH,2006-11-01,2007-11-01,[]
+G,2005-02-01,2006-02-01,"[[""fmp:G"", false, null, 253], [""fmp_x_splitf:G"", false, null, 253]]"
+GAS,2011-10-03,2012-10-01,"[[""massive_aggs_raw:GAS"", false, 0.0, 4], [""massive_aggs_raw:GAS"", false, 0.0, 4]]"
+HET,2005-06-01,2006-06-01,[]
+HET,2005-07-01,2006-07-03,[]
+HET,2005-08-01,2006-08-01,[]
+HNZ,2008-10-01,2009-10-01,[]
+HNZ,2008-11-03,2009-11-02,[]
+HNZ,2013-03-01,2014-03-03,[]
+HRS,2014-02-03,2015-01-02,[]
+HRS,2014-03-03,2015-01-02,[]
+HRS,2014-04-01,2015-01-02,[]
+HRS,2014-05-01,2015-01-02,[]
+HRS,2014-06-02,2015-01-02,[]
+KMI,2005-09-01,2006-09-01,"[[""fmp:KMI"", false, null, 253], [""fmp_x_splitf:KMI"", false, null, 253]]"
+KMI,2005-10-03,2006-10-02,"[[""fmp:KMI"", false, null, 252], [""fmp_x_splitf:KMI"", false, null, 252]]"
+LLL,2007-12-03,2008-12-01,[]
+LLL,2008-02-01,2009-02-02,[]
+LLL,2008-03-03,2009-03-02,[]
+LLL,2008-04-01,2009-04-01,[]
+MAR,2010-12-01,2011-12-01,"[[""fmp:MAR"", false, 0.061051256937642906, 0], [""fmp_x_splitf:MAR"", false, 0.061051256937642906, 0]]"
+MAR,2011-01-03,2012-01-03,"[[""fmp:MAR"", false, 0.061051256937642906, 0], [""fmp_x_splitf:MAR"", false, 0.061051256937642906, 0]]"
+MDLZ,2012-02-01,2013-02-01,"[[""fmp:MDLZ"", false, 0.5286506469500922, 0], [""fmp_x_splitf:MDLZ"", false, 0.5286506469500922, 0]]"
+MS,2006-10-02,2007-10-01,"[[""fmp:MS"", false, 0.17653703404873333, 0], [""fmp_x_splitf:MS"", false, 0.17653703404873333, 0]]"
+MS,2006-11-01,2007-11-01,"[[""fmp:MS"", false, 0.17653569452130613, 0], [""fmp_x_splitf:MS"", false, 0.17653569452130613, 0]]"
+MS,2007-01-03,2008-01-02,"[[""fmp:MS"", false, 0.17653569452130613, 0], [""fmp_x_splitf:MS"", false, 0.17653569452130613, 0]]"
+MS,2007-02-01,2008-02-01,"[[""fmp:MS"", false, 0.17653569452130613, 0], [""fmp_x_splitf:MS"", false, 0.17653569452130613, 0]]"
+MYG,2006-04-03,2007-04-02,"[[""massive_aggs_raw:MYG"", false, 0.0, 251], [""massive_aggs_raw:MYG"", false, 0.0, 251]]"
+NSM,2011-05-02,2012-05-01,"[[""massive_aggs_raw:NSM"", false, 0.0, 113], [""massive_aggs_raw:NSM"", false, 0.0, 113], [""fmp:NSM"", false, 0.0, 216], [""fmp_x_splitf:NSM"", false, 0.0, 216]]"
+NSM,2011-06-01,2012-06-01,"[[""massive_aggs_raw:NSM"", false, 0.0, 113], [""massive_aggs_raw:NSM"", false, 0.0, 113], [""fmp:NSM"", false, 0.0, 195], [""fmp_x_splitf:NSM"", false, 0.0, 195]]"
+NSM,2011-07-01,2012-07-02,"[[""massive_aggs_raw:NSM"", false, 0.0, 113], [""massive_aggs_raw:NSM"", false, 0.0, 113], [""fmp:NSM"", false, 0.0, 173], [""fmp_x_splitf:NSM"", false, 0.0, 173]]"
+NSM,2011-08-01,2012-08-01,"[[""massive_aggs_raw:NSM"", false, 0.0, 113], [""massive_aggs_raw:NSM"", false, 0.0, 113], [""fmp:NSM"", false, 0.0, 153], [""fmp_x_splitf:NSM"", false, 0.0, 153]]"
+NSM,2011-09-01,2012-09-04,"[[""massive_aggs_raw:NSM"", false, 0.0, 113], [""massive_aggs_raw:NSM"", false, 0.0, 113], [""fmp:NSM"", false, 0.0, 130], [""fmp_x_splitf:NSM"", false, 0.0, 130]]"
+PCL,2008-08-01,2009-08-03,[]
+PCL,2008-10-01,2009-10-01,[]
+PGN,2009-02-02,2010-02-01,[]
+PGN,2009-03-02,2010-03-01,[]
+PGN,2009-04-01,2010-04-01,[]
+PGN,2012-01-03,2013-01-02,[]
+S,2005-01-03,2005-02-01,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 0]]"
+S,2005-01-03,2005-03-01,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 0]]"
+S,2005-01-03,2005-04-01,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 5]]"
+S,2005-01-03,2005-05-02,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 26]]"
+S,2005-01-03,2005-06-01,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 47]]"
+S,2005-01-03,2005-07-01,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 69]]"
+S,2005-01-03,2005-08-01,"[[""massive_aggs_raw:S"", false, 0.026863810703042557, 89]]"
+S,2005-01-03,2005-09-01,"[[""massive_aggs_raw:S"", false, 1.1086865295845576, 98], [""massive_aggs_raw:S"", false, 1.1086865295845576, 98]]"
+S,2005-01-03,2005-10-03,"[[""massive_aggs_raw:S"", false, 1.1086865295845576, 98], [""massive_aggs_raw:S"", false, 1.1086865295845576, 98]]"
+S,2005-01-03,2005-11-01,"[[""massive_aggs_raw:S"", false, 1.1086865295845576, 98], [""massive_aggs_raw:S"", false, 1.1086865295845576, 98]]"
+S,2005-01-03,2005-12-01,"[[""massive_aggs_raw:S"", false, 1.1086865295845576, 98], [""massive_aggs_raw:S"", false, 1.1086865295845576, 98]]"
+S,2005-01-03,2006-01-03,"[[""massive_aggs_raw:S"", false, 1.1086865295845576, 98], [""massive_aggs_raw:S"", false, 1.1086865295845576, 98]]"
+SDS,2005-08-01,2006-08-01,"[[""massive_aggs_raw:SDS"", false, 0.0, 230], [""massive_aggs_raw:SDS"", false, 0.0, 230], [""fmp:SDS"", false, 0.0, 239], [""fmp_x_splitf:SDS"", false, 0.0, 239]]"
+SPG,2007-02-01,2008-02-01,"[[""fmp:SPG"", false, 0.020347924060114098, 0], [""fmp_x_splitf:SPG"", false, 0.020347924060114098, 0]]"
+SPG,2007-03-01,2008-03-03,"[[""fmp:SPG"", false, 0.02033643649504291, 0], [""fmp_x_splitf:SPG"", false, 0.02033643649504291, 0]]"
+SPG,2007-04-02,2008-04-01,"[[""fmp:SPG"", false, 0.02033041465488772, 0], [""fmp_x_splitf:SPG"", false, 0.02033041465488772, 0]]"
+SPG,2007-05-01,2008-05-01,"[[""fmp:SPG"", false, 0.020348988215793007, 0], [""fmp_x_splitf:SPG"", false, 0.020348988215793007, 0]]"
+STR,2008-03-03,2009-03-02,[]
+STR,2008-04-01,2009-04-01,[]
+STR,2008-05-01,2009-05-01,[]
+STR,2008-06-02,2009-06-01,[]
+STR,2008-07-01,2009-07-01,[]
+TT,2007-07-02,2008-07-01,"[[""massive_aggs_raw:TT"", false, 0.0, 122], [""massive_aggs_raw:TT"", false, 0.0, 122], [""fmp:TT"", false, 0.7281192321619414, 0], [""fmp_x_splitf:TT"", false, 0.7281192321619414, 0]]"
+VIAB,2011-09-01,2012-09-04,"[[""fmp:VIAB"", false, 0.0, 63], [""fmp_x_splitf:VIAB"", false, 0.0, 63]]"

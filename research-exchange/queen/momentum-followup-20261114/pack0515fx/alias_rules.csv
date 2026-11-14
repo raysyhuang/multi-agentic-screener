@@ -1,0 +1,99 @@
+label,symbol,me_from,me_to,basis
+AABA,YHOO,2003-01-01,2015-12-31,Yahoo! Inc traded as YHOO until 2017 rename to Altaba (AABA); hist file labels whole lineage AABA (frozen pack same: YHOO before 2017)
+ABKFQ,ABK,2003-01-01,2015-12-31,Ambac Financial traded as ABK until 2010 bankruptcy (ABKFQ)
+ADCT,ADCTD,2005-05-31,2005-05-31,ADC Telecommunications 1-for-7 reverse split May 2005; Massive shows temporary D-suffix symbol ADCTD on 2005-05-31 (same security)
+AGN,ACT,2015-03-31,2015-05-29,Actavis plc acquired Allergan Inc 2015-03-17 and traded as ACT until renaming to Allergan plc/AGN 2015-06-15 (frozen pack issuer routing AGN_PLC); applied only for signals >= 2015-03-17 (see agn_routing)
+ANDV,TSO,2003-01-01,2015-12-31,Tesoro (TSO) renamed Andeavor (ANDV) 2017 (frozen pack same)
+ANRZQ,ANR,2003-01-01,2015-12-31,Alpha Natural Resources traded as ANR until 2015 bankruptcy (ANRZQ)
+ANTM,ATH,2003-01-01,2004-11-30,Anthem Inc traded as ATH until its 2004-11-30 merger with WellPoint Health Networks (Anthem was legal acquirer and renamed WellPoint Inc)
+ANTM,WLP,2004-12-01,2014-11-30,WellPoint Inc (ex-Anthem) traded as WLP 2004-12 to 2014-12 rename to Anthem/ANTM (frozen pack same); pre-2004-12 WLP is WellPoint Health Networks (different issuer) and is NOT used
+AON,AOC,2003-01-01,2009-11-30,Aon Corp traded as AOC on NYSE until 2009-12 (Massive AON bars start 2009-12)
+APTV,DLPH,2003-01-01,2015-12-31,Delphi Automotive (DLPH) renamed Aptiv (APTV) 2017 (frozen pack same)
+ARNC,AA,2003-01-01,2015-12-31,Alcoa Inc traded as AA until 2016-11 rename to Arconic (frozen pack same)
+ATGE,DV,2003-01-01,2015-12-31,DeVry Inc traded as DV until 2017 rename to Adtalem (ATGE)
+BEAM,FO,2003-01-01,2011-09-30,Fortune Brands traded as FO until 2011-10-04 rename to Beam Inc (after Fortune Brands Home & Security spin)
+BHGE,BHI,2003-01-01,2015-12-31,Baker Hughes Inc traded as BHI (frozen pack same)
+BIG,BLI,2003-01-01,2006-07-31,Big Lots traded as BLI until 2006-08 switch to BIG
+BKNG,PCLN,2003-01-01,2015-12-31,Priceline traded as PCLN until 2018 rename to Booking (frozen pack same)
+BTUUQ,BTU,2003-01-01,2015-12-31,Peabody Energy traded as BTU until 2016 bankruptcy (BTUUQ)
+CAR,CD,2003-01-01,2006-08-31,Cendant Corp traded as CD; renamed Avis Budget Group (CAR) 2006-09-01 with 1:10 reverse split 2006-09-05
+CBRE,CBG,2003-01-01,2015-12-31,CB Richard Ellis traded as CBG until 2018 (frozen pack same)
+CBS,VIA.B,2003-01-01,2005-12-30,Old Viacom Inc class B traded as VIA.B; renamed CBS Corp 2005-12-31 and distributed new Viacom
+CCTYQ,CC,2003-01-01,2015-12-31,Circuit City Stores traded as CC until 2008 bankruptcy (CCTYQ)
+CIEN,CIEND,2006-09-29,2006-09-29,Ciena 1-for-7 reverse split 2006-09-22; Massive temporary D-suffix symbol CIEND on 2006-09-29 (same security)
+CITGQ,CIT,2003-01-01,2015-12-31,CIT Group traded as CIT until 2009-11 bankruptcy (CITGQ)
+CPNLQ,CPN,2003-01-01,2015-12-31,Calpine traded as CPN until 2005-12 bankruptcy (CPNLQ)
+DALRQ,DAL,2003-01-01,2005-12-31,Delta Air Lines (old) traded as DAL until 2005-09 bankruptcy (DALRQ)
+DCNAQ,DCN,2003-01-01,2015-12-31,Dana Corp traded as DCN until 2006 bankruptcy (DCNAQ)
+DPHIQ,DPH,2003-01-01,2015-12-31,Delphi Corp traded as DPH until 2005 bankruptcy (DPHIQ)
+DXC,CSC,2003-01-01,2015-12-31,Computer Sciences traded as CSC (frozen pack same)
+EA,ERTS,2003-01-01,2011-11-30,Electronic Arts traded as ERTS on Nasdaq until 2011-12 switch to EA
+EKDKQ,EK,2003-01-01,2015-12-31,Eastman Kodak traded as EK until 2012 bankruptcy (EKDKQ)
+ES,NU,2003-01-01,2015-01-31,Northeast Utilities traded as NU until 2015-02 rename to Eversource (ES); Massive ES bars before 2015 are EnergySolutions (different issuer CIK 1393744) and are NOT used
+ETFC,ET,2003-01-01,2006-11-30,E*TRADE Financial traded as ET on NYSE until 2006-12 move to Nasdaq as ETFC; later ET symbol reused by Energy Transfer (raw prices used; no Energy Transfer splits applied)
+FHN,FTN,2003-01-01,2004-03-31,First Tennessee National traded as FTN until 2004-04 rename to First Horizon (FHN)
+FMCC,FRE,2003-01-01,2015-12-31,Freddie Mac traded as FRE until 2010 NYSE delisting
+FNMA,FNM,2003-01-01,2015-12-31,Fannie Mae traded as FNM until 2010 NYSE delisting
+FOXA,NWS.A,2003-01-01,2008-11-30,News Corp class A (non-voting) traded as NWS.A in Massive until 2008-11; renamed Twenty-First Century Fox (FOXA) 2013-07-01
+FOXA,NWSA,2008-12-01,2013-06-28,News Corp class A traded as NWSA 2008-12 to 2013-06-28 (old News Corp; post-2013-07 NWSA is the new News Corp and is NOT used for FOXA)
+FTR,CZN,2003-01-01,2008-06-30,Citizens Communications traded as CZN until 2008-07 rename to Frontier (FTR)
+GHC,WPO,2003-01-01,2013-11-15,Washington Post Co traded as WPO until 2013-11-18 rename to Graham Holdings (GHC); Massive GHC bars 2007-2011 belong to Global Consumer Acquisition (CIK 1406251) and are NOT used
+GOOGL,GOOG,2003-01-01,2014-03-31,Google class A traded as GOOG until 2014-04-03 (frozen pack same)
+HES,AHC,2003-01-01,2006-04-30,Amerada Hess traded as AHC until 2006-05 rename to Hess (HES)
+HOG,HDI,2003-01-01,2006-07-31,Harley-Davidson traded as HDI until 2006-08 switch to HOG
+HSH,SLE,2003-01-01,2012-05-31,Sara Lee traded as SLE until 2012-06-28 rename to Hillshire Brands (HSH)
+IAC,IACI,2003-01-01,2008-07-31,IAC/InterActiveCorp traded as IACI until 2008-08
+JAVA,SUNW,2003-01-01,2007-07-31,Sun Microsystems traded as SUNW until 2007-08-27 switch to JAVA
+JEF,LUK,2003-01-01,2015-12-31,Hist label JEF (member from 2007-08-27) is the Leucadia National lineage (traded LUK until 2018 rename to Jefferies Financial; frozen pack same); Massive JEF bars before 2013 are Jefferies Group (not an S&P 500 member) and are NOT used
+JOY,JOYG,2003-01-01,2011-11-30,Joy Global traded as JOYG on Nasdaq until 2011-12 move to NYSE as JOY
+KATE,LIZ,2003-01-01,2012-04-30,Liz Claiborne traded as LIZ until 2012-05 rename to Fifth & Pacific
+KDP,DPS,2003-01-01,2015-12-31,Dr Pepper Snapple traded as DPS (frozen pack same)
+L,LTR,2003-01-01,2008-05-31,Loews Corp traded as LTR until 2008 switch to L; Massive L bars 2003-2006 are Liberty Media (CIK 1082114) and are NOT used
+LB,LTD,2003-01-01,2013-11-29,Limited Brands traded as LTD (rename to L Brands/LB 2013-03-22; Massive keeps LTD bars to 2013-11); Massive LB bars 2009-2010 are La Barge Inc (CIK 57139) and are NOT used
+LDOS,SAI,2003-01-01,2013-08-31,SAIC Inc traded as SAI until 2013-09-27 rename to Leidos (LDOS)
+LEHMQ,LEH,2003-01-01,2015-12-31,Lehman Brothers traded as LEH until 2008-09 bankruptcy
+M,FD,2003-01-01,2007-05-31,Federated Department Stores traded as FD until 2007-06 rename to Macy's (M)
+MDLZ,KFT,2003-01-01,2012-09-30,Kraft Foods Inc traded as KFT until 2012-10-01 rename to Mondelez (MDLZ)
+MERQ,MERQE,2005-08-31,2005-12-31,Mercury Interactive traded with delinquency suffix MERQE Aug-Dec 2005 (same security)
+MOLX,MOLXE,2004-11-30,2005-02-28,Molex traded with delinquency suffix MOLXE Nov 2004-Feb 2005 (same security)
+MS,MWD,2003-01-01,2005-12-31,Morgan Stanley traded as MWD until 2006-02 switch to MS; Massive MS bars before 2006 are a different low-priced security and are NOT used
+MSI,MOT,2003-01-01,2010-12-31,Motorola Inc traded as MOT until 2011-01-04 rename to Motorola Solutions (MSI) with 1:7 reverse split and Motorola Mobility spin
+MTLQQ,GM,2003-01-01,2009-06-30,General Motors Corp (old GM) traded as GM until 2009-06 bankruptcy (MTLQQ); post-2010 GM is a different issuer and is NOT used
+MWW,MNST,2003-01-01,2008-10-31,Monster Worldwide traded as MNST on Nasdaq until 2008-11 move to NYSE as MWW (raw prices used; later Monster Beverage MNST splits are NOT applied)
+NEE,FPL,2003-01-01,2010-05-31,FPL Group traded as FPL until 2010-06 rename to NextEra (NEE)
+OMX,BCC,2003-01-01,2004-10-31,Boise Cascade Corp traded as BCC until 2004-11 rename to OfficeMax (OMX)
+RAI,RJR,2003-01-01,2004-07-30,R.J. Reynolds Tobacco Holdings traded as RJR until 2004-07-30 combination into Reynolds American (RAI)
+RRD,DNY,2003-01-01,2004-02-29,R.R. Donnelley traded as DNY until 2004-02 acquisition of Moore Wallace and switch to RRD
+RSHCQ,RSH,2003-01-01,2015-12-31,RadioShack traded as RSH until 2015 bankruptcy (RSHCQ)
+S,FON,2003-01-01,2005-07-31,Sprint Corp FON group traded as FON until 2005-08-12 Sprint Nextel (S); Massive S bars before 2005-03 are Sears Roebuck (CIK 319256) and are NOT used
+SAF,SAFC,2003-01-01,2006-10-31,Safeco traded as SAFC on Nasdaq until 2006 move to NYSE as SAF; Massive SAF bars before 2006 are Scudder New Asia Fund (CIK 798738) and are NOT used
+SCHW,SCH,2003-01-01,2005-11-30,Charles Schwab traded as SCH on NYSE until 2005 move to Nasdaq as SCHW
+SPGI,MHP,2003-01-01,2013-04-30,McGraw-Hill traded as MHP until 2013-05 rename to McGraw Hill Financial (MHFI) and later S&P Global (SPGI)
+SPGI,MHFI,2013-05-01,2015-12-31,McGraw Hill Financial traded as MHFI 2013-05 to 2016-04 (frozen pack same)
+SUNEQ,WFR,2003-01-01,2013-05-31,MEMC Electronic Materials traded as WFR until 2013-05-30 rename to SunEdison (SUNE)
+T,SBC,2003-01-01,2005-11-30,SBC Communications traded as SBC until it acquired AT&T Corp and switched to T 2005-12-01; Massive T bars before 2005-11-18 are AT&T Corp (CIK 5907) and are NOT used
+TAP,RKY,2003-01-01,2005-01-31,Adolph Coors traded as RKY until 2005-02-09 Molson Coors (TAP)
+TDC,TDCw,2007-09-28,2007-09-28,Teradata regular-way trading began 2007-10-01; 2007-09-28 rank price is the when-issued close TDCw (same security when issued) - PROVISIONAL
+TGNA,GCI,2003-01-01,2015-05-31,Gannett traded as GCI until 2015-06-29 rename to TEGNA (frozen pack same) | me_to corrected to 2015-05-31: on 2015-06-30 Massive GCI is the new (spun) Gannett; TEGNA traded as TGNA from 2015-06-29
+TMUS,PCS,2003-01-01,2013-04-30,MetroPCS traded as PCS until 2013-05-01 T-Mobile US (TMUS) combination
+TPR,COH,2003-01-01,2015-12-31,Coach traded as COH until 2017 (frozen pack same)
+TRV,SPC,2003-01-01,2004-03-31,St. Paul Companies traded as SPC until 2004-04-01 merger with Travelers Property Casualty (St. Paul legal acquirer)
+TRV,STA,2004-04-01,2007-01-31,St. Paul Travelers traded as STA until 2007-02-27 rename to Travelers (TRV)
+TT,ASD,2003-01-01,2007-10-31,American Standard Companies traded as ASD until 2007-11 rename to Trane (TT); Massive TT bars 2003-2004 are TransTechnology (CIK 99359) and are NOT used
+UAA,UA,2003-01-01,2015-12-31,Under Armour class A traded as UA until 2016 (frozen pack same)
+VIAB,VIA.B,2003-01-01,2011-11-30,New Viacom class B traded as VIA.B in Massive until 2011-12
+VIAV,JDSU,2003-01-01,2015-12-31,JDS Uniphase traded as JDSU (hist VIAV interval ends 2013-12-18)
+VRTS,VRTSE,2004-03-01,2004-05-31,Veritas Software traded with delinquency suffix VRTSE spring 2004 (same security)
+VSTNQ,VC,2003-01-01,2015-12-31,Visteon traded as VC until 2009 bankruptcy (VSTNQ)
+WAMUQ,WM,2003-01-01,2008-09-26,Washington Mutual traded as WM until 2008-09 seizure (WAMUQ)
+WM,WMI,2003-01-01,2009-07-31,Waste Management traded as WMI until switch to WM; Massive WM bars before 2008-10 are Washington Mutual (CIK 933136) and are NOT used
+WBA,WAG,2003-01-01,2014-12-30,Walgreen Co traded as WAG until 2014-12-31 Walgreens Boots Alliance (WBA) (frozen pack same)
+WELL,HCN,2003-01-01,2015-12-31,Health Care REIT traded as HCN (frozen pack same)
+WFM,WFMI,2003-01-01,2011-04-30,Whole Foods traded as WFMI until 2011 switch to WFM
+WYND,WYN,2003-01-01,2015-12-31,Wyndham Worldwide traded as WYN (frozen pack same)
+XYL,XYLw,2011-10-31,2011-10-31,Xylem regular-way trading began 2011-11-01; 2011-10-31 rank price is the when-issued close XYLw (same security when issued) - PROVISIONAL
+ZBH,ZMH,2003-01-01,2015-05-31,Zimmer Holdings traded as ZMH until 2015-06-29 Zimmer Biomet (ZBH) (frozen pack same)
+PTC,PMTC,2003-01-01,2013-01-31,Parametric Technology traded as PMTC on Nasdaq until 2013-01 rename to PTC Inc; Massive PTC bars 2004-2006 are a different low-volume security (2005-06-30 PTC 80.00 vol 24k vs PMTC); hist PTC 2003-2007 = Parametric
+JAVA,JAVAD,2007-11-30,2007-11-30,Sun Microsystems 1-for-4 reverse split 2007-11-12; Massive temporary D-suffix symbol JAVAD on 2007-11-30 (same security)
+PTC,PMTCD,2006-02-28,2006-02-28,Parametric 2-for-5 reverse split 2006-02-28; Massive temporary D-suffix symbol PMTCD (same security)
+VIAV,JDSUD,2006-10-31,2006-10-31,JDS Uniphase 1-for-8 reverse split 2006-10-17; Massive temporary D-suffix symbol JDSUD (same security)

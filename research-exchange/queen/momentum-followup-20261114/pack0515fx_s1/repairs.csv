@@ -1,0 +1,30 @@
+label,kind,symbol,date,date_to,from,to,anchor,grade,note
+MWW,exclude_vendor_split,MNST,*,,,,,B,Massive ticker MNST splits 2006+ belong to Hansen Natural/Monster Beverage (ticker reuse); not Monster Worldwide; raw reconstruction still divides grouped adj by them (contamination removal) but they are not company splits of MWW
+A,exclude_vendor_split,A,2014-11-03,,,,,A,Massive records the Keysight spin as fake forward split 1000:1398 (q=0.7153); spin handled through F instead (frozen pack QADJ_A_2014-11-03)
+EBAY,exclude_vendor_split,EBAY,2015-07-20,,,,,A,Massive records the PayPal spin as fake split 1000:2376 (q=0.4209); F instead (frozen pack QADJ_EBAY_2015-07-20)
+VLO,exclude_vendor_split,VLO,2013-05-02,,,,,C,Massive records the CST Brands spin (1 CST per 9 VLO) as fake split 1000:1094; F instead
+ASH,exclude_vendor_split,ASH,2005-07-01,,,,,C,Massive records the 2005-06-30 Ashland/MAP transaction distribution as fake split 8212:10000; F instead
+AIG,exclude_vendor_split,AIG,2011-01-20,,,,,C,Massive records the 2011-01 AIG warrant distribution (0.533933 warrants per share) as fake split 1:1.533933; F instead
+BK,manual_split,,2007-07-02,,1,0.9434,,A,Bank of New York / Mellon merger: each BNY share became 0.9434 BNY Mellon shares; Massive BK series continues in new-share units without the conversion
+RF,manual_split,,2004-07-01,,1,1.2346,,A,Regions / Union Planters merger: each old Regions share became 1.2346 new Regions shares; Massive RF unadjusted
+PLD,manual_split,,2011-06-03,,1,0.4464,,A,ProLogis / AMB merger: each old ProLogis share became 0.4464 new Prologis (PLD) shares; Massive PLD unadjusted
+DISCA,manual_split,,2014-08-07,,1,2,,B,Discovery class C share dividend (1 DISCK per DISCA) Aug 2014; same treatment as Google class C dividend (GOOGL manual split 2014-04-03); FMP adjusts identically
+GOOGL,manual_split,,2014-04-03,,1,2,,A,Google class C share dividend; Massive GOOG raw pre / GOOGL raw post (frozen pack same)
+CINF,manual_split,,2004-04-20,,1,1.05,,C,Cincinnati Financial 5% stock dividend April 2004 (FMP adjusted; Massive missing); exact ex-date approximate (month-end ranking only)
+CINF,manual_split,,2005-04-20,,1,1.05,,C,Cincinnati Financial 5% stock dividend April 2005 (FMP adjusted; Massive missing); exact ex-date approximate
+GOOGL,point_override_fmp,GOOGL,2008-09-30,,,,2008-10-31,B,Massive GOOG 2008-09-30 close 322.99 is a bad print (same bar: low 212.63 high 483.63 vw 406.56; true close 400.52); FMP GOOGL close used scaled at anchor 2008-10-31
+HUM,point_override_fmp,HUM,2015-05-29,,,,2015-06-30,B,Massive HUM 2015-05-29 close 187.48 is a bad print (vw 208.34 high 219.79; next open 213.15); FMP 214.65 used scaled at anchor 2015-06-30
+FTI,manual_split,,2011-04-01,,1,2,,B,FMC Technologies 2-for-1 split (distributed 2011-03-31); missing in Massive; FMP smooth across
+STJ,manual_split,,2004-11-30,,1,2,,B,St. Jude Medical 2-for-1 split Nov 2004; missing in Massive; FMP smooth across
+TPR,manual_split,,2005-04-05,,1,2,,B,Coach 2-for-1 split April 2005; missing in Massive; FMP smooth across
+HES,segment_fmp,HES,2003-01-01,2006-04-30,,,2006-05-31,B,Amerada Hess AHC Massive bars are contaminated by later AHC (A.H. Belo) adjustments and the HES 3:1 2006-05 split is double counted; FMP HES lineage series (split-adjusted; continuous AHC->HES) used for <=2006-04, scaled at 2006-05-31
+TAP,segment_fmp,TAP,2003-01-01,2005-01-31,,,2005-02-28,B,Adolph Coors RKY Massive raw scale inconsistent with TAP (ratio 3.73 at merger); FMP TAP lineage series (continuous RKY->TAP) used for <=2005-01, scaled at 2005-02-28
+ANTM,manual_split,,2005-06-01,,1,2,,B,WellPoint 2-for-1 split (distributed 2005-05-31); missing in Massive WLP; grouped WLP 2005-05-31 133.00 -> 2005-06-30 69.64
+CTX,manual_split,,2004-03-15,,1,2,,B,Centex 2-for-1 split March 2004; missing in Massive and FMP (both show -49% Feb->Mar 2004); exact ex-date approximate
+SYMC,manual_split,,2004-12-01,,1,2,,B,Symantec 2-for-1 split (distributed 2004-11-30); Massive and FMP both unadjusted
+NE,manual_split,,2007-08-28,,1,2,,B,Noble Corp 2-for-1 split Aug 2007; missing in Massive
+WFT,manual_split,,2005-12-08,,1,2,,B,Weatherford 2-for-1 split Dec 2005; missing in Massive; exact ex-date approximate
+WFT,manual_split,,2008-05-28,,1,2,,B,Weatherford 2-for-1 split May 2008; missing in Massive; exact ex-date approximate
+*,symbol_scale,ET,2003-01-01,2006-11-30,,4,,B,Massive ET bars before 2006-12 are E*TRADE (NYSE: ET) divided by the later Energy Transfer (ET) 2:1 splits of 2014-01 and 2015-07 that Massive keys to the reused ticker (2004-12-31 3.7375 x4 = 14.95 = E*TRADE close); multiply by 4
+*,symbol_scale,GLK,2003-01-01,2004-06-30,,0.1,,C,Massive GLK bars up to 2004-06-30 are 10x price and 1/10 volume versus 2004-07 onward (later reuse of GLK with a 1:10 reverse adjustment); multiply by 0.1 (Great Lakes Chemical traded ~$25-30)
+CBS,manual_split,,2006-01-03,,1,0.5,,A,Viacom separation 2005-12-31: each old Viacom (VIA.B) share became 0.5 CBS class B + 0.5 new Viacom class B; CBS-label prices before 2006-01-03 expressed per new CBS share (x2); the new-Viacom half is the spin SPLIT_VIA_CBS (1 VIAB per CBS share)

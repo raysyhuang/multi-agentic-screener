@@ -1,0 +1,16 @@
+engine_ticker,month_end,signal_from,signal_to,n_signals,rank_price,reason
+AGN,2014-03-31,2015-03-31,2015-03-31,1,205.85,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-04-30,2015-03-31,2015-04-30,2,204.33,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-05-30,2015-03-31,2015-05-29,3,211.54,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-06-30,2015-03-31,2015-06-30,4,223.05,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-07-31,2015-03-31,2015-07-31,5,214.26,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-08-29,2015-03-31,2015-08-31,6,226.98,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-09-30,2015-03-31,2015-09-30,7,241.28,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-10-31,2015-03-31,2015-09-30,7,242.74,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-11-28,2015-03-31,2015-09-30,7,270.61,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2014-12-31,2015-03-31,2015-09-30,7,257.41,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2015-01-30,2015-03-31,2015-09-30,7,266.54,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2015-02-27,2015-03-31,2015-09-30,7,291.36,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2015-03-31,2015-03-31,2015-09-30,7,297.62,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2015-04-30,2015-04-30,2015-09-30,6,282.86,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
+AGN,2015-05-29,2015-05-29,2015-09-30,5,306.81,issuer routing (as frozen pack): AGN = Actavis plc (Massive ACT) for signals >=2015-03-17
