@@ -1,0 +1,6 @@
+S&P 500 universe Top3: 15.3%/yr | Nasdaq-100 universe Top3: 28.1%/yr
+Nasdaq-100 members that are also S&P 500 eligible (avg per month): 77%
+Top3 picks shared between the two universes: 114/360 = 32% | months with identical Top3: 1/120
+Nasdaq Top3 holdings also in S&P 500 that month: 219/360 slots, sum of weight x monthly return = +1.72
+Nasdaq Top3 holdings Nasdaq-100 only: 141/360 slots, sum of weight x monthly return = +1.54
+Nasdaq-only picks: [('TSLA', 19, 0.74), ('ZM', 8, 0.4), ('MRNA', 16, 0.3), ('MELI', 14, 0.19), ('CRWD', 6, 0.19), ('ZS', 3, 0.11), ('DOCU', 2, 0.1), ('WDAY', 4, 0.06), ('CEG', 3, 0.06), ('ALGN', 4, 0.04), ('DXCM', 1, 0.04), ('NTES', 3, 0.03), ('ATVI', 5, 0.02), ('ULTA', 3, 0.02), ('PANW', 1, 0.02), ('AVGO', 1, -0.0), ('INCY', 1, 0.0), ('TTWO', 3, -0.01), ('TEAM', 4, -0.01), ('APP', 1, -0.01), ('CTRP', 2, -0.02), ('JD', 1, -0.02), ('ASML', 1, -0.02), ('DDOG', 2, -0.03), ('NXPI', 1, -0.04), ('TTD', 1, -0.04), ('AZN', 1, -0.04), ('LCID', 2, -0.05), ('DASH', 1, -0.05), ('VIP', 1, -0.06), ('BIDU', 4, -0.06), ('PTON', 2, -0.07), ('SGEN', 7, -0.08), ('PDD', 10, -0.08), ('ARM', 3, -0.08)]
