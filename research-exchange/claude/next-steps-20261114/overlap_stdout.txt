@@ -1,0 +1,20 @@
+== with NVDA | month-end signals 120
+  W10 vs W11: same Top1 on 68% of month-ends; Top3 names shared 66%
+  W11 vs W12: same Top1 on 70% of month-ends; Top3 names shared 71%
+  W10 vs W12: same Top1 on 53% of month-ends; Top3 names shared 61%
+  W6 vs W12: same Top1 on 19% of month-ends; Top3 names shared 31%
+  W3 vs W12: same Top1 on 13% of month-ends; Top3 names shared 17%
+  W1 vs W12: same Top1 on 4% of month-ends; Top3 names shared 7%
+  W10/W11/W12 all pick the same Top1 on 51% of month-ends
+  distinct Top1 names (W10-12): 46; top 5 names take 64% of picks: [('NVDA', '36%'), ('AMD', '11%'), ('DVN', '8%'), ('NFLX', '5%'), ('OXY', '5%'), ('FCX', '3%')]
+  W12 Top1 unchanged from the previous month: 62% of months
+== without NVDA | month-end signals 120
+  W10 vs W11: same Top1 on 64% of month-ends; Top3 names shared 64%
+  W11 vs W12: same Top1 on 65% of month-ends; Top3 names shared 66%
+  W10 vs W12: same Top1 on 48% of month-ends; Top3 names shared 58%
+  W6 vs W12: same Top1 on 12% of month-ends; Top3 names shared 27%
+  W3 vs W12: same Top1 on 10% of month-ends; Top3 names shared 14%
+  W1 vs W12: same Top1 on 4% of month-ends; Top3 names shared 6%
+  W10/W11/W12 all pick the same Top1 on 45% of month-ends
+  distinct Top1 names (W10-12): 57; top 5 names take 38% of picks: [('AMD', '13%'), ('DVN', '8%'), ('NFLX', '6%'), ('MU', '5%'), ('NRG', '5%'), ('NEM', '5%')]
+  W12 Top1 unchanged from the previous month: 51% of months
