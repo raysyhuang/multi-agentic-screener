@@ -5,7 +5,7 @@ Overlays act on the monthly return series with an exposure x in [0,1] decided at
 changing exposure costs 25 bp of the change (approximation).  QQQ month-end closes from Queen's raw Massive daily files (QQQQ before 2011-03-22).
 Usage: python3 dd_overlays.py"""
 import os,csv,datetime as dt,statistics as st,math
-H=os.path.dirname(os.path.abspath(__file__)); RV=os.path.join(H,'..','queen-ndx100-fill-review-20261114'); V=os.path.join(H,'..','..','queen','ndx100-fill-20261114-v1.1')
+HERE=os.path.dirname(os.path.abspath(__file__)); H=HERE; RV=os.path.join(H,'..','queen-ndx100-fill-review-20261114'); V=os.path.join(H,'..','..','queen','ndx100-fill-20261114-v1.1')
 exec(open(os.path.join(RV,'verify_queen_ndx.py')).read().split("P=lambda x:")[0].replace("H=os.path.dirname(os.path.abspath(__file__))","H=RV").replace("Q=os.path.join(H,'..','..','queen','ndx100-fill-20261114')","Q=V"))
 def daily(f):
     o={}
@@ -51,4 +51,4 @@ for lab,i0,n in (('2007-2014',IDX['2006-12-29'],96),('2015-2026',IDX['2014-12-31
     print(f'== {lab} ({n} 个月)   年化 / 月末最大回撤 / 最差月 / 平均仓位 / 年化÷回撤')
     for name,r,x in tests:
         c,m,w,ax=run(r,x,i0); print(f'  {name:34s} {c*100:6.1f}% / {m*100:5.0f}% / {w*100:5.0f}% / {ax*100:4.0f}% / {c/abs(m):.2f}'); rows.append(dict(period=lab,test=name,CAGR=round(c,4),monthend_MDD=round(m,4),worst_month=round(w,4),avg_exposure=round(ax,3)))
-w=csv.DictWriter(open(os.path.join(H,'dd_overlays_results.csv'),'w',newline=''),fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
+w=csv.DictWriter(open(os.path.join(HERE,'dd_overlays_results.csv'),'w',newline=''),fieldnames=list(rows[0])); w.writeheader(); w.writerows(rows)
