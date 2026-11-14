@@ -1,0 +1,2 @@
+mean6 Top3 25bp close-exec: CAGR(months/12) 37.7179%  CAGR(cal days) 37.8965%  MDD_daily -49.6940%  multiple x45.321
+engine.run reference:            CAGR(months/12) 37.7179%  MDD_daily -49.6940%  multiple x45.321

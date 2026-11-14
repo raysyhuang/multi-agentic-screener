@@ -1,0 +1,231 @@
+A_their_2008-01_to_2026-08 next_open       0.15% N0_12-1                CAGR  28.85% vol  40.1% MDDd  -61.4% MDDm  -59.2% Sh 0.803 x111.0
+A_their_2008-01_to_2026-08 next_open       0.15% N0.5_12-1              CAGR  32.61% vol  38.8% MDDd  -62.3% MDDm  -59.6% Sh 0.882 x189.6
+A_their_2008-01_to_2026-08 next_open       0.15% N1_12-1                CAGR  29.23% vol  35.9% MDDd  -61.4% MDDm  -59.2% Sh 0.877 x117.4
+A_their_2008-01_to_2026-08 next_open       0.15% N1.5_12-1              CAGR  24.32% vol  32.0% MDDd  -58.4% MDDm  -54.9% Sh 0.811 x57.1
+A_their_2008-01_to_2026-08 next_open       0.15% N2_12-1                CAGR  14.34% vol  27.2% MDDd  -49.1% MDDm  -45.7% Sh 0.687 x12.1
+A_their_2008-01_to_2026-08 next_open       0.15% N0_6-1                 CAGR  29.36% vol  37.8% MDDd  -56.6% MDDm  -46.0% Sh 0.915 x119.5
+A_their_2008-01_to_2026-08 next_open       0.15% N1_6-1                 CAGR  21.26% vol  33.2% MDDd  -42.5% MDDm  -36.1% Sh 0.818 x35.9
+A_their_2008-01_to_2026-08 next_open       0.15% N0_9-1                 CAGR  32.49% vol  40.0% MDDd  -67.3% MDDm  -62.5% Sh 0.867 x186.3
+A_their_2008-01_to_2026-08 next_open       0.15% N1_9-1                 CAGR  20.09% vol  35.1% MDDd  -48.4% MDDm  -40.7% Sh 0.695 x30.0
+A_their_2008-01_to_2026-08 next_open       0.15% mean6_postrule         CAGR  29.12% vol  38.3% MDDd  -51.3% MDDm  -44.5% Sh 0.902 x115.5
+A_their_2008-01_to_2026-08 next_open       0.15% N0_12-1_noNVDA         CAGR  21.83% vol  39.4% MDDd  -61.4% MDDm  -59.2% Sh 0.667 x39.2
+A_their_2008-01_to_2026-08 next_open       0.15% N1_12-1_noNVDA         CAGR  23.76% vol  35.3% MDDd  -61.4% MDDm  -59.2% Sh 0.763 x52.5
+A_their_2008-01_to_2026-08 next_open       0.15% mean6_postrule_noNVDA  CAGR  24.77% vol  37.7% MDDd  -56.8% MDDm  -47.5% Sh 0.802 x61.1
+A_their_2008-01_to_2026-08 month_end_close 0.15% N0_12-1                CAGR  28.89% vol  41.0% MDDd  -61.6% MDDm  -59.6% Sh 0.818 x111.8
+A_their_2008-01_to_2026-08 month_end_close 0.15% N0.5_12-1              CAGR  32.56% vol  39.6% MDDd  -62.0% MDDm  -59.8% Sh 0.896 x188.1
+A_their_2008-01_to_2026-08 month_end_close 0.15% N1_12-1                CAGR  29.12% vol  36.8% MDDd  -61.4% MDDm  -59.6% Sh 0.872 x115.4
+A_their_2008-01_to_2026-08 month_end_close 0.15% N1.5_12-1              CAGR  24.27% vol  32.9% MDDd  -59.9% MDDm  -57.4% Sh 0.808 x56.7
+A_their_2008-01_to_2026-08 month_end_close 0.15% N2_12-1                CAGR  13.64% vol  27.9% MDDd  -51.5% MDDm  -48.7% Sh 0.652 x10.8
+A_their_2008-01_to_2026-08 month_end_close 0.15% N0_6-1                 CAGR  29.06% vol  38.5% MDDd  -56.2% MDDm  -44.1% Sh 0.917 x114.5
+A_their_2008-01_to_2026-08 month_end_close 0.15% N1_6-1                 CAGR  21.34% vol  34.1% MDDd  -42.5% MDDm  -34.9% Sh 0.818 x36.4
+A_their_2008-01_to_2026-08 month_end_close 0.15% N0_9-1                 CAGR  31.94% vol  40.9% MDDd  -68.3% MDDm  -62.6% Sh 0.881 x172.4
+A_their_2008-01_to_2026-08 month_end_close 0.15% N1_9-1                 CAGR  20.71% vol  36.2% MDDd  -47.7% MDDm  -36.3% Sh 0.728 x33.0
+A_their_2008-01_to_2026-08 month_end_close 0.15% mean6_postrule         CAGR  30.55% vol  39.1% MDDd  -49.1% MDDm  -43.2% Sh 0.929 x141.6
+A_their_2008-01_to_2026-08 month_end_close 0.15% N0_12-1_noNVDA         CAGR  21.63% vol  40.3% MDDd  -61.6% MDDm  -59.6% Sh 0.673 x38.0
+A_their_2008-01_to_2026-08 month_end_close 0.15% N1_12-1_noNVDA         CAGR  23.68% vol  36.2% MDDd  -61.4% MDDm  -59.6% Sh 0.759 x51.9
+A_their_2008-01_to_2026-08 month_end_close 0.15% mean6_postrule_noNVDA  CAGR  25.85% vol  38.4% MDDd  -52.5% MDDm  -45.2% Sh 0.820 x71.7
+A_their_2008-01_to_2026-08 month_end_close 0.25% N0_12-1                CAGR  27.81% vol  41.0% MDDd  -62.0% MDDm  -60.2% Sh 0.797 x95.5
+A_their_2008-01_to_2026-08 month_end_close 0.25% N0.5_12-1              CAGR  31.32% vol  39.6% MDDd  -62.3% MDDm  -60.3% Sh 0.872 x158.1
+A_their_2008-01_to_2026-08 month_end_close 0.25% N1_12-1                CAGR  27.74% vol  36.8% MDDd  -62.5% MDDm  -60.7% Sh 0.842 x94.5
+A_their_2008-01_to_2026-08 month_end_close 0.25% N1.5_12-1              CAGR  22.92% vol  32.9% MDDd  -60.4% MDDm  -57.9% Sh 0.775 x46.3
+A_their_2008-01_to_2026-08 month_end_close 0.25% N2_12-1                CAGR  12.42% vol  27.9% MDDd  -52.0% MDDm  -49.4% Sh 0.607 x8.8
+A_their_2008-01_to_2026-08 month_end_close 0.25% N0_6-1                 CAGR  27.41% vol  38.5% MDDd  -56.5% MDDm  -44.6% Sh 0.880 x90.1
+A_their_2008-01_to_2026-08 month_end_close 0.25% N1_6-1                 CAGR  19.69% vol  34.1% MDDd  -42.6% MDDm  -35.5% Sh 0.770 x28.2
+A_their_2008-01_to_2026-08 month_end_close 0.25% N0_9-1                 CAGR  30.59% vol  40.9% MDDd  -69.2% MDDm  -63.4% Sh 0.855 x142.6
+A_their_2008-01_to_2026-08 month_end_close 0.25% N1_9-1                 CAGR  19.29% vol  36.2% MDDd  -48.8% MDDm  -38.2% Sh 0.691 x26.5
+A_their_2008-01_to_2026-08 month_end_close 0.25% mean6_postrule         CAGR  29.10% vol  39.0% MDDd  -49.7% MDDm  -43.8% Sh 0.897 x115.1
+A_their_2008-01_to_2026-08 month_end_close 0.25% N0_12-1_noNVDA         CAGR  20.55% vol  40.3% MDDd  -62.0% MDDm  -60.2% Sh 0.651 x32.2
+A_their_2008-01_to_2026-08 month_end_close 0.25% N1_12-1_noNVDA         CAGR  22.34% vol  36.2% MDDd  -62.5% MDDm  -60.7% Sh 0.729 x42.4
+A_their_2008-01_to_2026-08 month_end_close 0.25% mean6_postrule_noNVDA  CAGR  24.40% vol  38.4% MDDd  -54.4% MDDm  -46.3% Sh 0.787 x57.8
+A_their_2008-01_to_2026-08 buy_hold_close  0.00% QQQ_price              CAGR  16.01% vol  22.4% MDDd  -49.4% MDDm  -45.0% Sh 0.887 x15.8
+A_their_2008-01_to_2026-08 buy_hold_close  0.00% QQQ_total_return       CAGR  16.95% vol  22.4% MDDd  -49.4% MDDm  -44.9% Sh 0.931 x18.4
+B_2015-01_to_2026-11-13    next_open       0.15% N0_12-1                CAGR  37.69% vol  43.1% MDDd  -58.2% MDDm  -52.4% Sh 0.892 x44.4
+B_2015-01_to_2026-11-13    next_open       0.15% N0.5_12-1              CAGR  41.81% vol  41.5% MDDd  -53.5% MDDm  -47.7% Sh 0.961 x63.0
+B_2015-01_to_2026-11-13    next_open       0.15% N1_12-1                CAGR  34.09% vol  38.9% MDDd  -58.6% MDDm  -48.6% Sh 0.898 x32.5
+B_2015-01_to_2026-11-13    next_open       0.15% N1.5_12-1              CAGR  29.72% vol  34.5% MDDd  -56.9% MDDm  -44.5% Sh 0.855 x21.9
+B_2015-01_to_2026-11-13    next_open       0.15% N2_12-1                CAGR  17.64% vol  28.3% MDDd  -43.1% MDDm  -29.1% Sh 0.748 x6.9
+B_2015-01_to_2026-11-13    next_open       0.15% N0_6-1                 CAGR  39.54% vol  40.5% MDDd  -46.3% MDDm  -37.0% Sh 1.053 x52.1
+B_2015-01_to_2026-11-13    next_open       0.15% N1_6-1                 CAGR  26.86% vol  35.6% MDDd  -42.5% MDDm  -26.9% Sh 0.928 x16.8
+B_2015-01_to_2026-11-13    next_open       0.15% N0_9-1                 CAGR  33.05% vol  43.8% MDDd  -67.3% MDDm  -62.5% Sh 0.802 x29.6
+B_2015-01_to_2026-11-13    next_open       0.15% N1_9-1                 CAGR  24.06% vol  38.1% MDDd  -53.4% MDDm  -43.4% Sh 0.720 x12.9
+B_2015-01_to_2026-11-13    next_open       0.15% mean6_postrule         CAGR  37.56% vol  42.3% MDDd  -51.3% MDDm  -44.5% Sh 0.979 x43.9
+B_2015-01_to_2026-11-13    next_open       0.15% N0_12-1_noNVDA         CAGR  26.13% vol  42.0% MDDd  -60.0% MDDm  -55.4% Sh 0.702 x15.7
+B_2015-01_to_2026-11-13    next_open       0.15% N1_12-1_noNVDA         CAGR  25.31% vol  38.0% MDDd  -58.6% MDDm  -46.1% Sh 0.739 x14.5
+B_2015-01_to_2026-11-13    next_open       0.15% mean6_postrule_noNVDA  CAGR  29.60% vol  41.6% MDDd  -56.8% MDDm  -47.5% Sh 0.829 x21.7
+B_2015-01_to_2026-11-13    month_end_close 0.15% N0_12-1                CAGR  37.18% vol  43.8% MDDd  -58.8% MDDm  -53.1% Sh 0.902 x42.6
+B_2015-01_to_2026-11-13    month_end_close 0.15% N0.5_12-1              CAGR  40.94% vol  42.2% MDDd  -51.3% MDDm  -45.4% Sh 0.967 x58.7
+B_2015-01_to_2026-11-13    month_end_close 0.15% N1_12-1                CAGR  33.10% vol  39.7% MDDd  -58.4% MDDm  -49.2% Sh 0.879 x29.8
+B_2015-01_to_2026-11-13    month_end_close 0.15% N1.5_12-1              CAGR  29.63% vol  35.3% MDDd  -56.1% MDDm  -46.9% Sh 0.854 x21.8
+B_2015-01_to_2026-11-13    month_end_close 0.15% N2_12-1                CAGR  16.97% vol  29.0% MDDd  -43.2% MDDm  -33.4% Sh 0.716 x6.4
+B_2015-01_to_2026-11-13    month_end_close 0.15% N0_6-1                 CAGR  38.52% vol  41.1% MDDd  -46.1% MDDm  -39.3% Sh 1.050 x47.8
+B_2015-01_to_2026-11-13    month_end_close 0.15% N1_6-1                 CAGR  27.35% vol  36.6% MDDd  -42.5% MDDm  -30.9% Sh 0.937 x17.6
+B_2015-01_to_2026-11-13    month_end_close 0.15% N0_9-1                 CAGR  30.93% vol  44.7% MDDd  -68.3% MDDm  -62.6% Sh 0.791 x24.5
+B_2015-01_to_2026-11-13    month_end_close 0.15% N1_9-1                 CAGR  24.56% vol  39.2% MDDd  -54.1% MDDm  -47.8% Sh 0.751 x13.6
+B_2015-01_to_2026-11-13    month_end_close 0.15% mean6_postrule         CAGR  39.35% vol  43.0% MDDd  -49.1% MDDm  -45.4% Sh 1.006 x51.3
+B_2015-01_to_2026-11-13    month_end_close 0.15% N0_12-1_noNVDA         CAGR  25.27% vol  42.7% MDDd  -61.0% MDDm  -56.8% Sh 0.700 x14.5
+B_2015-01_to_2026-11-13    month_end_close 0.15% N1_12-1_noNVDA         CAGR  24.43% vol  38.8% MDDd  -58.4% MDDm  -49.2% Sh 0.721 x13.4
+B_2015-01_to_2026-11-13    month_end_close 0.15% mean6_postrule_noNVDA  CAGR  30.80% vol  42.1% MDDd  -52.5% MDDm  -45.4% Sh 0.844 x24.2
+B_2015-01_to_2026-11-13    month_end_close 0.25% N0_12-1                CAGR  36.08% vol  43.8% MDDd  -59.5% MDDm  -53.8% Sh 0.885 x38.7
+B_2015-01_to_2026-11-13    month_end_close 0.25% N0.5_12-1              CAGR  39.66% vol  42.2% MDDd  -52.3% MDDm  -46.3% Sh 0.947 x52.7
+B_2015-01_to_2026-11-13    month_end_close 0.25% N1_12-1                CAGR  31.74% vol  39.7% MDDd  -58.5% MDDm  -49.3% Sh 0.855 x26.4
+B_2015-01_to_2026-11-13    month_end_close 0.25% N1.5_12-1              CAGR  28.28% vol  35.3% MDDd  -56.2% MDDm  -47.0% Sh 0.827 x19.2
+B_2015-01_to_2026-11-13    month_end_close 0.25% N2_12-1                CAGR  15.67% vol  29.0% MDDd  -43.3% MDDm  -33.6% Sh 0.674 x5.6
+B_2015-01_to_2026-11-13    month_end_close 0.25% N0_6-1                 CAGR  36.75% vol  41.1% MDDd  -46.1% MDDm  -39.7% Sh 1.016 x41.0
+B_2015-01_to_2026-11-13    month_end_close 0.25% N1_6-1                 CAGR  25.67% vol  36.7% MDDd  -42.6% MDDm  -31.2% Sh 0.895 x15.1
+B_2015-01_to_2026-11-13    month_end_close 0.25% N0_9-1                 CAGR  29.67% vol  44.7% MDDd  -69.2% MDDm  -63.4% Sh 0.770 x21.8
+B_2015-01_to_2026-11-13    month_end_close 0.25% N1_9-1                 CAGR  23.11% vol  39.2% MDDd  -54.3% MDDm  -48.0% Sh 0.720 x11.8
+B_2015-01_to_2026-11-13    month_end_close 0.25% mean6_postrule         CAGR  37.90% vol  43.0% MDDd  -49.7% MDDm  -45.7% Sh 0.981 x45.3
+B_2015-01_to_2026-11-13    month_end_close 0.25% N0_12-1_noNVDA         CAGR  24.18% vol  42.7% MDDd  -61.9% MDDm  -57.6% Sh 0.680 x13.1
+B_2015-01_to_2026-11-13    month_end_close 0.25% N1_12-1_noNVDA         CAGR  23.13% vol  38.8% MDDd  -58.5% MDDm  -49.3% Sh 0.696 x11.8
+B_2015-01_to_2026-11-13    month_end_close 0.25% mean6_postrule_noNVDA  CAGR  29.39% vol  42.1% MDDd  -54.4% MDDm  -46.3% Sh 0.818 x21.3
+B_2015-01_to_2026-11-13    buy_hold_close  0.00% QQQ_price              CAGR  17.21% vol  22.0% MDDd  -35.6% MDDm  -33.1% Sh 0.943 x6.6
+B_2015-01_to_2026-11-13    buy_hold_close  0.00% QQQ_total_return       CAGR  18.08% vol  22.0% MDDd  -35.1% MDDm  -32.6% Sh 0.985 x7.2
+C_2008-01_to_2026-11-13    next_open       0.15% N0_12-1                CAGR  26.15% vol  40.6% MDDd  -61.4% MDDm  -59.2% Sh 0.747 x78.5
+C_2008-01_to_2026-11-13    next_open       0.15% N0.5_12-1              CAGR  30.15% vol  39.3% MDDd  -62.3% MDDm  -59.6% Sh 0.831 x141.0
+C_2008-01_to_2026-11-13    next_open       0.15% N1_12-1                CAGR  26.19% vol  36.7% MDDd  -61.4% MDDm  -59.2% Sh 0.802 x79.0
+C_2008-01_to_2026-11-13    next_open       0.15% N1.5_12-1              CAGR  21.63% vol  32.9% MDDd  -58.4% MDDm  -54.9% Sh 0.736 x39.6
+C_2008-01_to_2026-11-13    next_open       0.15% N2_12-1                CAGR  13.44% vol  27.3% MDDd  -49.1% MDDm  -45.7% Sh 0.651 x10.7
+C_2008-01_to_2026-11-13    next_open       0.15% N0_6-1                 CAGR  27.94% vol  38.2% MDDd  -56.6% MDDm  -46.0% Sh 0.869 x102.3
+C_2008-01_to_2026-11-13    next_open       0.15% N1_6-1                 CAGR  20.11% vol  33.5% MDDd  -42.5% MDDm  -36.1% Sh 0.780 x31.2
+C_2008-01_to_2026-11-13    next_open       0.15% N0_9-1                 CAGR  29.53% vol  40.4% MDDd  -67.3% MDDm  -62.5% Sh 0.807 x129.0
+C_2008-01_to_2026-11-13    next_open       0.15% N1_9-1                 CAGR  17.66% vol  35.5% MDDd  -53.4% MDDm  -43.4% Sh 0.629 x21.2
+C_2008-01_to_2026-11-13    next_open       0.15% mean6_postrule         CAGR  27.19% vol  38.8% MDDd  -51.3% MDDm  -44.5% Sh 0.845 x91.6
+C_2008-01_to_2026-11-13    next_open       0.15% N0_12-1_noNVDA         CAGR  19.35% vol  39.9% MDDd  -61.4% MDDm  -59.2% Sh 0.614 x27.7
+C_2008-01_to_2026-11-13    next_open       0.15% N1_12-1_noNVDA         CAGR  20.90% vol  36.1% MDDd  -61.4% MDDm  -59.2% Sh 0.691 x35.3
+C_2008-01_to_2026-11-13    next_open       0.15% mean6_postrule_noNVDA  CAGR  22.95% vol  38.3% MDDd  -56.8% MDDm  -47.5% Sh 0.749 x48.4
+C_2008-01_to_2026-11-13    month_end_close 0.15% N0_12-1                CAGR  26.12% vol  41.5% MDDd  -61.6% MDDm  -59.6% Sh 0.759 x78.2
+C_2008-01_to_2026-11-13    month_end_close 0.15% N0.5_12-1              CAGR  30.12% vol  40.1% MDDd  -62.0% MDDm  -59.8% Sh 0.844 x140.6
+C_2008-01_to_2026-11-13    month_end_close 0.15% N1_12-1                CAGR  25.99% vol  37.6% MDDd  -61.4% MDDm  -59.6% Sh 0.796 x76.7
+C_2008-01_to_2026-11-13    month_end_close 0.15% N1.5_12-1              CAGR  21.60% vol  33.8% MDDd  -59.9% MDDm  -57.4% Sh 0.735 x39.4
+C_2008-01_to_2026-11-13    month_end_close 0.15% N2_12-1                CAGR  12.65% vol  28.0% MDDd  -51.5% MDDm  -48.7% Sh 0.614 x9.4
+C_2008-01_to_2026-11-13    month_end_close 0.15% N0_6-1                 CAGR  27.45% vol  38.9% MDDd  -56.2% MDDm  -44.1% Sh 0.868 x95.2
+C_2008-01_to_2026-11-13    month_end_close 0.15% N1_6-1                 CAGR  20.07% vol  34.5% MDDd  -42.5% MDDm  -34.9% Sh 0.777 x31.0
+C_2008-01_to_2026-11-13    month_end_close 0.15% N0_9-1                 CAGR  28.79% vol  41.3% MDDd  -68.3% MDDm  -62.6% Sh 0.813 x115.9
+C_2008-01_to_2026-11-13    month_end_close 0.15% N1_9-1                 CAGR  18.04% vol  36.6% MDDd  -54.1% MDDm  -47.8% Sh 0.652 x22.5
+C_2008-01_to_2026-11-13    month_end_close 0.15% mean6_postrule         CAGR  28.38% vol  39.6% MDDd  -49.1% MDDm  -45.4% Sh 0.869 x109.2
+C_2008-01_to_2026-11-13    month_end_close 0.15% N0_12-1_noNVDA         CAGR  19.08% vol  40.8% MDDd  -61.6% MDDm  -59.6% Sh 0.617 x26.6
+C_2008-01_to_2026-11-13    month_end_close 0.15% N1_12-1_noNVDA         CAGR  20.74% vol  37.0% MDDd  -61.4% MDDm  -59.6% Sh 0.686 x34.5
+C_2008-01_to_2026-11-13    month_end_close 0.15% mean6_postrule_noNVDA  CAGR  23.81% vol  38.9% MDDd  -52.5% MDDm  -45.4% Sh 0.764 x55.3
+C_2008-01_to_2026-11-13    month_end_close 0.25% N0_12-1                CAGR  25.06% vol  41.5% MDDd  -62.0% MDDm  -60.2% Sh 0.738 x66.7
+C_2008-01_to_2026-11-13    month_end_close 0.25% N0.5_12-1              CAGR  28.91% vol  40.1% MDDd  -62.3% MDDm  -60.3% Sh 0.821 x117.9
+C_2008-01_to_2026-11-13    month_end_close 0.25% N1_12-1                CAGR  24.65% vol  37.7% MDDd  -62.5% MDDm  -60.7% Sh 0.767 x62.7
+C_2008-01_to_2026-11-13    month_end_close 0.25% N1.5_12-1              CAGR  20.28% vol  33.8% MDDd  -60.4% MDDm  -57.9% Sh 0.702 x32.1
+C_2008-01_to_2026-11-13    month_end_close 0.25% N2_12-1                CAGR  11.44% vol  28.0% MDDd  -52.0% MDDm  -49.4% Sh 0.569 x7.7
+C_2008-01_to_2026-11-13    month_end_close 0.25% N0_6-1                 CAGR  25.80% vol  38.9% MDDd  -56.5% MDDm  -44.6% Sh 0.831 x74.5
+C_2008-01_to_2026-11-13    month_end_close 0.25% N1_6-1                 CAGR  18.43% vol  34.5% MDDd  -42.6% MDDm  -35.5% Sh 0.730 x24.0
+C_2008-01_to_2026-11-13    month_end_close 0.25% N0_9-1                 CAGR  27.47% vol  41.3% MDDd  -69.2% MDDm  -63.4% Sh 0.788 x95.6
+C_2008-01_to_2026-11-13    month_end_close 0.25% N1_9-1                 CAGR  16.65% vol  36.6% MDDd  -54.3% MDDm  -48.0% Sh 0.617 x18.0
+C_2008-01_to_2026-11-13    month_end_close 0.25% mean6_postrule         CAGR  26.95% vol  39.6% MDDd  -49.7% MDDm  -45.7% Sh 0.838 x88.5
+C_2008-01_to_2026-11-13    month_end_close 0.25% N0_12-1_noNVDA         CAGR  18.03% vol  40.8% MDDd  -62.0% MDDm  -60.2% Sh 0.596 x22.5
+C_2008-01_to_2026-11-13    month_end_close 0.25% N1_12-1_noNVDA         CAGR  19.44% vol  37.0% MDDd  -62.5% MDDm  -60.7% Sh 0.656 x28.1
+C_2008-01_to_2026-11-13    month_end_close 0.25% mean6_postrule_noNVDA  CAGR  22.38% vol  38.9% MDDd  -54.4% MDDm  -46.3% Sh 0.732 x44.5
+C_2008-01_to_2026-11-13    buy_hold_close  0.00% QQQ_price              CAGR  15.50% vol  22.4% MDDd  -49.4% MDDm  -45.0% Sh 0.862 x15.0
+C_2008-01_to_2026-11-13    buy_hold_close  0.00% QQQ_total_return       CAGR  16.44% vol  22.4% MDDd  -49.4% MDDm  -44.9% Sh 0.906 x17.4
+
+== cost sweep / exec lag ==
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.00% N1_12-1         CAGR  31.33% MDDd  -60.2% Sh 0.921
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.15% N1_12-1         CAGR  29.23% MDDd  -61.4% Sh 0.877
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.25% N1_12-1         CAGR  27.85% MDDd  -62.5% Sh 0.847
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.50% N1_12-1         CAGR  24.45% MDDd  -65.0% Sh 0.773
+exec_lag  A_their_2008-01_to_2026-08 lag0_close  0.15% N1_12-1         CAGR  29.12% MDDd  -61.4% Sh 0.872
+exec_lag  A_their_2008-01_to_2026-08 lag1_open   0.15% N1_12-1         CAGR  29.23% MDDd  -61.4% Sh 0.877
+exec_lag  A_their_2008-01_to_2026-08 lag2_open   0.15% N1_12-1         CAGR  26.18% MDDd  -63.0% Sh 0.799
+exec_lag  A_their_2008-01_to_2026-08 lag5_open   0.15% N1_12-1         CAGR  26.87% MDDd  -55.1% Sh 0.852
+exec_lag  A_their_2008-01_to_2026-08 lag10_open  0.15% N1_12-1         CAGR  22.95% MDDd  -54.7% Sh 0.763
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.00% N0_12-1         CAGR  30.49% MDDd  -60.8% Sh 0.834
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.15% N0_12-1         CAGR  28.85% MDDd  -61.4% Sh 0.803
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.25% N0_12-1         CAGR  27.76% MDDd  -61.8% Sh 0.782
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.50% N0_12-1         CAGR  25.08% MDDd  -63.2% Sh 0.731
+exec_lag  A_their_2008-01_to_2026-08 lag0_close  0.15% N0_12-1         CAGR  28.89% MDDd  -61.6% Sh 0.818
+exec_lag  A_their_2008-01_to_2026-08 lag1_open   0.15% N0_12-1         CAGR  28.85% MDDd  -61.4% Sh 0.803
+exec_lag  A_their_2008-01_to_2026-08 lag2_open   0.15% N0_12-1         CAGR  28.20% MDDd  -61.2% Sh 0.806
+exec_lag  A_their_2008-01_to_2026-08 lag5_open   0.15% N0_12-1         CAGR  30.32% MDDd  -59.3% Sh 0.866
+exec_lag  A_their_2008-01_to_2026-08 lag10_open  0.15% N0_12-1         CAGR  27.05% MDDd  -59.9% Sh 0.808
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.00% mean6_postrule  CAGR  31.30% MDDd  -50.5% Sh 0.950
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.15% mean6_postrule  CAGR  29.12% MDDd  -51.3% Sh 0.902
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.25% mean6_postrule  CAGR  27.69% MDDd  -51.8% Sh 0.870
+cost_sweep A_their_2008-01_to_2026-08 next_open   0.50% mean6_postrule  CAGR  24.16% MDDd  -53.1% Sh 0.790
+exec_lag  A_their_2008-01_to_2026-08 lag0_close  0.15% mean6_postrule  CAGR  30.55% MDDd  -49.1% Sh 0.929
+exec_lag  A_their_2008-01_to_2026-08 lag1_open   0.15% mean6_postrule  CAGR  29.12% MDDd  -51.3% Sh 0.902
+exec_lag  A_their_2008-01_to_2026-08 lag2_open   0.15% mean6_postrule  CAGR  28.48% MDDd  -48.7% Sh 0.858
+exec_lag  A_their_2008-01_to_2026-08 lag5_open   0.15% mean6_postrule  CAGR  27.37% MDDd  -54.2% Sh 0.850
+exec_lag  A_their_2008-01_to_2026-08 lag10_open  0.15% mean6_postrule  CAGR  26.85% MDDd  -55.2% Sh 0.843
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.00% N1_12-1         CAGR  36.17% MDDd  -58.5% Sh 0.935
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.15% N1_12-1         CAGR  34.09% MDDd  -58.6% Sh 0.898
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.25% N1_12-1         CAGR  32.72% MDDd  -58.7% Sh 0.873
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.50% N1_12-1         CAGR  29.36% MDDd  -58.9% Sh 0.811
+exec_lag  B_2015-01_to_2026-11-13    lag0_close  0.15% N1_12-1         CAGR  33.10% MDDd  -58.4% Sh 0.879
+exec_lag  B_2015-01_to_2026-11-13    lag1_open   0.15% N1_12-1         CAGR  34.09% MDDd  -58.6% Sh 0.898
+exec_lag  B_2015-01_to_2026-11-13    lag2_open   0.15% N1_12-1         CAGR  31.02% MDDd  -61.1% Sh 0.829
+exec_lag  B_2015-01_to_2026-11-13    lag5_open   0.15% N1_12-1         CAGR  29.66% MDDd  -62.5% Sh 0.840
+exec_lag  B_2015-01_to_2026-11-13    lag10_open  0.15% N1_12-1         CAGR  28.00% MDDd  -61.0% Sh 0.820
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.00% N0_12-1         CAGR  39.37% MDDd  -57.2% Sh 0.918
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.15% N0_12-1         CAGR  37.69% MDDd  -58.2% Sh 0.892
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.25% N0_12-1         CAGR  36.58% MDDd  -58.9% Sh 0.875
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.50% N0_12-1         CAGR  33.85% MDDd  -60.5% Sh 0.832
+exec_lag  B_2015-01_to_2026-11-13    lag0_close  0.15% N0_12-1         CAGR  37.18% MDDd  -58.8% Sh 0.902
+exec_lag  B_2015-01_to_2026-11-13    lag1_open   0.15% N0_12-1         CAGR  37.69% MDDd  -58.2% Sh 0.892
+exec_lag  B_2015-01_to_2026-11-13    lag2_open   0.15% N0_12-1         CAGR  36.98% MDDd  -58.8% Sh 0.901
+exec_lag  B_2015-01_to_2026-11-13    lag5_open   0.15% N0_12-1         CAGR  34.72% MDDd  -58.9% Sh 0.878
+exec_lag  B_2015-01_to_2026-11-13    lag10_open  0.15% N0_12-1         CAGR  34.63% MDDd  -59.9% Sh 0.892
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.00% mean6_postrule  CAGR  39.74% MDDd  -50.5% Sh 1.018
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.15% mean6_postrule  CAGR  37.56% MDDd  -51.3% Sh 0.979
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.25% mean6_postrule  CAGR  36.12% MDDd  -51.8% Sh 0.954
+cost_sweep B_2015-01_to_2026-11-13    next_open   0.50% mean6_postrule  CAGR  32.58% MDDd  -53.1% Sh 0.889
+exec_lag  B_2015-01_to_2026-11-13    lag0_close  0.15% mean6_postrule  CAGR  39.35% MDDd  -49.1% Sh 1.006
+exec_lag  B_2015-01_to_2026-11-13    lag1_open   0.15% mean6_postrule  CAGR  37.56% MDDd  -51.3% Sh 0.979
+exec_lag  B_2015-01_to_2026-11-13    lag2_open   0.15% mean6_postrule  CAGR  39.36% MDDd  -52.3% Sh 0.971
+exec_lag  B_2015-01_to_2026-11-13    lag5_open   0.15% mean6_postrule  CAGR  35.36% MDDd  -55.6% Sh 0.930
+exec_lag  B_2015-01_to_2026-11-13    lag10_open  0.15% mean6_postrule  CAGR  37.94% MDDd  -55.2% Sh 0.990
+
+== pairwise ==
+{'window': 'A_their_2008-01_to_2026-08', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'N0_12-1', 'months': 223, 'sharpe_a': np.float64(0.8765), 'sharpe_b': np.float64(0.8029), 'sharpe_diff': np.float64(0.0736), 'daily_corr': 0.9001, 'avg_top3_overlap': np.float64(0.6547), 'ci95_lo_block6': np.float64(-0.134), 'ci95_hi_block6': np.float64(0.3057), 'share_le0_block6': 0.2404, 'ci95_lo_block12': np.float64(-0.1106), 'ci95_hi_block12': np.float64(0.3078), 'share_le0_block12': 0.2223}
+{'window': 'A_their_2008-01_to_2026-08', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'mean6_postrule', 'months': 223, 'sharpe_a': np.float64(0.8765), 'sharpe_b': np.float64(0.9023), 'sharpe_diff': np.float64(-0.0258), 'daily_corr': 0.7678, 'avg_top3_overlap': np.float64(0.272), 'ci95_lo_block6': np.float64(-0.4157), 'ci95_hi_block6': np.float64(0.3666), 'share_le0_block6': 0.536, 'ci95_lo_block12': np.float64(-0.4523), 'ci95_hi_block12': np.float64(0.4013), 'share_le0_block12': 0.5439}
+{'window': 'A_their_2008-01_to_2026-08', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'mean6_postrule', 'b': 'N0_12-1', 'months': 223, 'sharpe_a': np.float64(0.9023), 'sharpe_b': np.float64(0.8029), 'sharpe_diff': np.float64(0.0994), 'daily_corr': 0.7917, 'avg_top3_overlap': np.float64(0.3558), 'ci95_lo_block6': np.float64(-0.2552), 'ci95_hi_block6': np.float64(0.4783), 'share_le0_block6': 0.2961, 'ci95_lo_block12': np.float64(-0.2484), 'ci95_hi_block12': np.float64(0.48), 'share_le0_block12': 0.2941}
+{'window': 'A_their_2008-01_to_2026-08', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'N0_12-1', 'months': 223, 'sharpe_a': np.float64(0.8716), 'sharpe_b': np.float64(0.8176), 'sharpe_diff': np.float64(0.0539), 'daily_corr': 0.9014, 'avg_top3_overlap': np.float64(0.6547), 'ci95_lo_block6': np.float64(-0.1519), 'ci95_hi_block6': np.float64(0.2828), 'share_le0_block6': 0.3011, 'ci95_lo_block12': np.float64(-0.1278), 'ci95_hi_block12': np.float64(0.2883), 'share_le0_block12': 0.2942}
+{'window': 'A_their_2008-01_to_2026-08', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'mean6_postrule', 'months': 223, 'sharpe_a': np.float64(0.8716), 'sharpe_b': np.float64(0.9292), 'sharpe_diff': np.float64(-0.0577), 'daily_corr': 0.766, 'avg_top3_overlap': np.float64(0.272), 'ci95_lo_block6': np.float64(-0.4458), 'ci95_hi_block6': np.float64(0.322), 'share_le0_block6': 0.6079, 'ci95_lo_block12': np.float64(-0.4754), 'ci95_hi_block12': np.float64(0.3437), 'share_le0_block12': 0.6117}
+{'window': 'A_their_2008-01_to_2026-08', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'mean6_postrule', 'b': 'N0_12-1', 'months': 223, 'sharpe_a': np.float64(0.9292), 'sharpe_b': np.float64(0.8176), 'sharpe_diff': np.float64(0.1116), 'daily_corr': 0.7907, 'avg_top3_overlap': np.float64(0.3558), 'ci95_lo_block6': np.float64(-0.2448), 'ci95_hi_block6': np.float64(0.4958), 'share_le0_block6': 0.2677, 'ci95_lo_block12': np.float64(-0.2262), 'ci95_hi_block12': np.float64(0.494), 'share_le0_block12': 0.2605}
+{'window': 'B_2015-01_to_2026-11-13', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'N0_12-1', 'months': 143, 'sharpe_a': np.float64(0.8977), 'sharpe_b': np.float64(0.8921), 'sharpe_diff': np.float64(0.0057), 'daily_corr': 0.8963, 'avg_top3_overlap': np.float64(0.6364), 'ci95_lo_block6': np.float64(-0.2135), 'ci95_hi_block6': np.float64(0.2426), 'share_le0_block6': 0.4594, 'ci95_lo_block12': np.float64(-0.1771), 'ci95_hi_block12': np.float64(0.2191), 'share_le0_block12': 0.4436}
+{'window': 'B_2015-01_to_2026-11-13', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'mean6_postrule', 'months': 143, 'sharpe_a': np.float64(0.8977), 'sharpe_b': np.float64(0.9794), 'sharpe_diff': np.float64(-0.0816), 'daily_corr': 0.8134, 'avg_top3_overlap': np.float64(0.324), 'ci95_lo_block6': np.float64(-0.4589), 'ci95_hi_block6': np.float64(0.2698), 'share_le0_block6': 0.6762, 'ci95_lo_block12': np.float64(-0.4527), 'ci95_hi_block12': np.float64(0.2833), 'share_le0_block12': 0.6646}
+{'window': 'B_2015-01_to_2026-11-13', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'mean6_postrule', 'b': 'N0_12-1', 'months': 143, 'sharpe_a': np.float64(0.9794), 'sharpe_b': np.float64(0.8921), 'sharpe_diff': np.float64(0.0873), 'daily_corr': 0.8374, 'avg_top3_overlap': np.float64(0.4172), 'ci95_lo_block6': np.float64(-0.2298), 'ci95_hi_block6': np.float64(0.4475), 'share_le0_block6': 0.2895, 'ci95_lo_block12': np.float64(-0.2539), 'ci95_hi_block12': np.float64(0.4688), 'share_le0_block12': 0.3033}
+{'window': 'B_2015-01_to_2026-11-13', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'N0_12-1', 'months': 143, 'sharpe_a': np.float64(0.8795), 'sharpe_b': np.float64(0.9024), 'sharpe_diff': np.float64(-0.0229), 'daily_corr': 0.8973, 'avg_top3_overlap': np.float64(0.6364), 'ci95_lo_block6': np.float64(-0.2469), 'ci95_hi_block6': np.float64(0.2115), 'share_le0_block6': 0.5667, 'ci95_lo_block12': np.float64(-0.2013), 'ci95_hi_block12': np.float64(0.194), 'share_le0_block12': 0.5701}
+{'window': 'B_2015-01_to_2026-11-13', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'mean6_postrule', 'months': 143, 'sharpe_a': np.float64(0.8795), 'sharpe_b': np.float64(1.0065), 'sharpe_diff': np.float64(-0.127), 'daily_corr': 0.813, 'avg_top3_overlap': np.float64(0.324), 'ci95_lo_block6': np.float64(-0.5086), 'ci95_hi_block6': np.float64(0.2164), 'share_le0_block6': 0.7656, 'ci95_lo_block12': np.float64(-0.5038), 'ci95_hi_block12': np.float64(0.2124), 'share_le0_block12': 0.7679}
+{'window': 'B_2015-01_to_2026-11-13', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'mean6_postrule', 'b': 'N0_12-1', 'months': 143, 'sharpe_a': np.float64(1.0065), 'sharpe_b': np.float64(0.9024), 'sharpe_diff': np.float64(0.1041), 'daily_corr': 0.8382, 'avg_top3_overlap': np.float64(0.4172), 'ci95_lo_block6': np.float64(-0.2046), 'ci95_hi_block6': np.float64(0.4606), 'share_le0_block6': 0.2468, 'ci95_lo_block12': np.float64(-0.2164), 'ci95_hi_block12': np.float64(0.477), 'share_le0_block12': 0.2537}
+{'window': 'C_2008-01_to_2026-11-13', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'N0_12-1', 'months': 226, 'sharpe_a': np.float64(0.8019), 'sharpe_b': np.float64(0.7472), 'sharpe_diff': np.float64(0.0547), 'daily_corr': 0.9017, 'avg_top3_overlap': np.float64(0.6578), 'ci95_lo_block6': np.float64(-0.1446), 'ci95_hi_block6': np.float64(0.2841), 'share_le0_block6': 0.2921, 'ci95_lo_block12': np.float64(-0.1258), 'ci95_hi_block12': np.float64(0.2905), 'share_le0_block12': 0.2778}
+{'window': 'C_2008-01_to_2026-11-13', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'mean6_postrule', 'months': 226, 'sharpe_a': np.float64(0.8019), 'sharpe_b': np.float64(0.8449), 'sharpe_diff': np.float64(-0.043), 'daily_corr': 0.7703, 'avg_top3_overlap': np.float64(0.2729), 'ci95_lo_block6': np.float64(-0.4146), 'ci95_hi_block6': np.float64(0.3292), 'share_le0_block6': 0.5826, 'ci95_lo_block12': np.float64(-0.4611), 'ci95_hi_block12': np.float64(0.3785), 'share_le0_block12': 0.5785}
+{'window': 'C_2008-01_to_2026-11-13', 'execution': 'next_open', 'cost_side': 0.0015, 'a': 'mean6_postrule', 'b': 'N0_12-1', 'months': 226, 'sharpe_a': np.float64(0.8449), 'sharpe_b': np.float64(0.7472), 'sharpe_diff': np.float64(0.0977), 'daily_corr': 0.7958, 'avg_top3_overlap': np.float64(0.3555), 'ci95_lo_block6': np.float64(-0.2421), 'ci95_hi_block6': np.float64(0.4663), 'share_le0_block6': 0.2919, 'ci95_lo_block12': np.float64(-0.2413), 'ci95_hi_block12': np.float64(0.4783), 'share_le0_block12': 0.2867}
+{'window': 'C_2008-01_to_2026-11-13', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'N0_12-1', 'months': 226, 'sharpe_a': np.float64(0.7959), 'sharpe_b': np.float64(0.7588), 'sharpe_diff': np.float64(0.0371), 'daily_corr': 0.903, 'avg_top3_overlap': np.float64(0.6578), 'ci95_lo_block6': np.float64(-0.1587), 'ci95_hi_block6': np.float64(0.2635), 'share_le0_block6': 0.353, 'ci95_lo_block12': np.float64(-0.1404), 'ci95_hi_block12': np.float64(0.27), 'share_le0_block12': 0.3482}
+{'window': 'C_2008-01_to_2026-11-13', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'N1_12-1', 'b': 'mean6_postrule', 'months': 226, 'sharpe_a': np.float64(0.7959), 'sharpe_b': np.float64(0.8687), 'sharpe_diff': np.float64(-0.0728), 'daily_corr': 0.7683, 'avg_top3_overlap': np.float64(0.2729), 'ci95_lo_block6': np.float64(-0.446), 'ci95_hi_block6': np.float64(0.2916), 'share_le0_block6': 0.6485, 'ci95_lo_block12': np.float64(-0.4844), 'ci95_hi_block12': np.float64(0.3266), 'share_le0_block12': 0.642}
+{'window': 'C_2008-01_to_2026-11-13', 'execution': 'month_end_close', 'cost_side': 0.0015, 'a': 'mean6_postrule', 'b': 'N0_12-1', 'months': 226, 'sharpe_a': np.float64(0.8687), 'sharpe_b': np.float64(0.7588), 'sharpe_diff': np.float64(0.1099), 'daily_corr': 0.7947, 'avg_top3_overlap': np.float64(0.3555), 'ci95_lo_block6': np.float64(-0.2301), 'ci95_hi_block6': np.float64(0.4847), 'share_le0_block6': 0.2647, 'ci95_lo_block12': np.float64(-0.2168), 'ci95_hi_block12': np.float64(0.489), 'share_le0_block12': 0.2529}
+
+== drawdown episodes / 2025Q1 (next_open 0.15%) ==
+{'window': 'A_their_2008-01_to_2026-08', 'variant': 'N1_12-1', 'maxdd': -0.6141914884716324, 'maxdd_peak': '2008-05-20', 'maxdd_trough': '2010-07-02', 'longest_recovery_days': 1893, 'longest_peak': '2008-05-20', 'longest_recovered': '2013-07-26', 'q1_2025_ret': -0.03186651283624109, 'q1_2025_mdd': -0.3701633917590077, 'maxdd_recovered': '2013-07-26'}
+{'window': 'A_their_2008-01_to_2026-08', 'variant': 'N0_12-1', 'maxdd': -0.6142928475463627, 'maxdd_peak': '2008-05-20', 'maxdd_trough': '2009-04-23', 'longest_recovery_days': 2072, 'longest_peak': '2008-05-20', 'longest_recovered': '2014-01-21', 'q1_2025_ret': -0.03030462422112723, 'q1_2025_mdd': -0.40754621664943236, 'maxdd_recovered': '2014-01-21'}
+{'window': 'A_their_2008-01_to_2026-08', 'variant': 'mean6_postrule', 'maxdd': -0.5129405739779764, 'maxdd_peak': '2021-11-29', 'maxdd_trough': '2022-10-24', 'longest_recovery_days': 1246, 'longest_peak': '2011-01-18', 'longest_recovered': '2014-06-17', 'q1_2025_ret': -0.049847424279830466, 'q1_2025_mdd': -0.40754621664943236, 'maxdd_recovered': '2024-01-22'}
+{'window': 'A_their_2008-01_to_2026-08', 'variant': 'QQQ_price', 'q1_2025_ret': -0.08276118381159159, 'q1_2025_mdd': -0.13193208778173204, 'maxdd': -0.49436201780415434}
+{'window': 'A_their_2008-01_to_2026-08', 'variant': 'QQQ_total_return', 'q1_2025_ret': -0.08142323697848108, 'q1_2025_mdd': -0.13193208778173215, 'maxdd': -0.49366401979240215}
+{'window': 'C_2008-01_to_2026-11-13', 'variant': 'N1_12-1', 'maxdd': -0.6141914884716324, 'maxdd_peak': '2008-05-20', 'maxdd_trough': '2010-07-02', 'longest_recovery_days': 1893, 'longest_peak': '2008-05-20', 'longest_recovered': '2013-07-26', 'q1_2025_ret': -0.03186651283624109, 'q1_2025_mdd': -0.3701633917590077, 'maxdd_recovered': '2013-07-26'}
+{'window': 'C_2008-01_to_2026-11-13', 'variant': 'N0_12-1', 'maxdd': -0.6142928475463627, 'maxdd_peak': '2008-05-20', 'maxdd_trough': '2009-04-23', 'longest_recovery_days': 2072, 'longest_peak': '2008-05-20', 'longest_recovered': '2014-01-21', 'q1_2025_ret': -0.03030462422112723, 'q1_2025_mdd': -0.40754621664943236, 'maxdd_recovered': '2014-01-21'}
+{'window': 'C_2008-01_to_2026-11-13', 'variant': 'mean6_postrule', 'maxdd': -0.5129405739779764, 'maxdd_peak': '2021-11-29', 'maxdd_trough': '2022-10-24', 'longest_recovery_days': 1246, 'longest_peak': '2011-01-18', 'longest_recovered': '2014-06-17', 'q1_2025_ret': -0.049847424279830466, 'q1_2025_mdd': -0.40754621664943236, 'maxdd_recovered': '2024-01-22'}
+{'window': 'C_2008-01_to_2026-11-13', 'variant': 'QQQ_price', 'q1_2025_ret': -0.08276118381159159, 'q1_2025_mdd': -0.13193208778173204, 'maxdd': -0.49436201780415434}
+{'window': 'C_2008-01_to_2026-11-13', 'variant': 'QQQ_total_return', 'q1_2025_ret': -0.08142323697848108, 'q1_2025_mdd': -0.13193208778173215, 'maxdd': -0.49366401979240215}
+
+== 2026-09-30 signal example ==
+{'adj_rank': 1, 'raw_rank': 1, 'ticker': 'SNDK', 'ret_12_1': 12.963458110516934, 'vol_ann': 1.2051455326914364, 'score_N1': 10.756757386442619}
+{'adj_rank': 2, 'raw_rank': 2, 'ticker': 'MU', 'ret_12_1': 4.729918718622998, 'vol_ann': 0.8490838942840738, 'score_N1': 5.5706141059372545}
+{'adj_rank': 3, 'raw_rank': 3, 'ticker': 'LITE', 'ret_12_1': 4.622026919058447, 'vol_ann': 1.0054622734655068, 'score_N1': 4.596917299669334}
+{'adj_rank': 4, 'raw_rank': 4, 'ticker': 'WDC', 'ret_12_1': 2.7527069798434116, 'vol_ann': 0.8304430652166441, 'score_N1': 3.314744977881526}
+{'adj_rank': 5, 'raw_rank': 5, 'ticker': 'STX', 'ret_12_1': 2.5091925781580953, 'vol_ann': 0.7731069339199935, 'score_N1': 3.245595748877042}
+{'adj_rank': 6, 'raw_rank': 6, 'ticker': 'AMD', 'ret_12_1': 1.9094505222819707, 'vol_ann': 0.7474183365396528, 'score_N1': 2.5547279601437345}
+{'adj_rank': 7, 'raw_rank': 12, 'ticker': 'FTNT', 'ret_12_1': 1.0329448144624167, 'vol_ann': 0.4241703153500013, 'score_N1': 2.435212406625129}
+{'adj_rank': 8, 'raw_rank': 7, 'ticker': 'INTC', 'ret_12_1': 1.66795827123696, 'vol_ann': 0.7798885380509087, 'score_N1': 2.1387136620901086}
+{'adj_rank': 9, 'raw_rank': 11, 'ticker': 'AMAT', 'ret_12_1': 1.238888346195174, 'vol_ann': 0.6119904525029133, 'score_N1': 2.0243589440462335}
+{'adj_rank': 10, 'raw_rank': 8, 'ticker': 'TER', 'ret_12_1': 1.541630340017437, 'vol_ann': 0.7807756489433952, 'score_N1': 1.9744856824155415}
+{'adj_rank': 11, 'raw_rank': 27, 'ticker': 'CSX', 'ret_12_1': 0.4224162207828781, 'vol_ann': 0.21831706250779354, 'score_N1': 1.9348749746383134}
+{'adj_rank': 12, 'raw_rank': 14, 'ticker': 'PANW', 'ret_12_1': 0.8766820548079757, 'vol_ann': 0.4578122447531334, 'score_N1': 1.9149379791724659}
+{'adj_rank': 13, 'raw_rank': 10, 'ticker': 'LRCX', 'ret_12_1': 1.2516056758775207, 'vol_ann': 0.6595804805569292, 'score_N1': 1.8975784044135204}
+{'adj_rank': 14, 'raw_rank': 21, 'ticker': 'AMGN', 'ret_12_1': 0.5233167965981573, 'vol_ann': 0.2793510458659657, 'score_N1': 1.8733303645809432}
+{'adj_rank': 15, 'raw_rank': 9, 'ticker': 'MRVL', 'ret_12_1': 1.5176638515522782, 'vol_ann': 0.8157493174993375, 'score_N1': 1.8604537190477155}
+N=1 top3 2026-09-30: ['SNDK', 'MU', 'LITE']  N=0 top3: ['SNDK', 'MU', 'LITE']  n_ranked 99
+window 12-1 = ME 2025-09-30 -> 2026-08-31
+FALLBACK counts (cumulative over all runs): {'open_missing_used_prev_close': 229, 'monthly_only_close_exec': 93, 'vol_from_monthly': 135}
