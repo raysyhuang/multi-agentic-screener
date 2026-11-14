@@ -1,0 +1,11 @@
+window,a,b,months,corr
+2015-2024,ndx_top3,sp_mean6_top3,120,0.4408
+2015-2024,ndx_top3,sp_W6total_top3,120,0.4244
+2015-2024,ndx_top3,qqq,120,0.61
+2015-2024,sp_mean6_top3,spy,120,0.5575
+2015-2024,ndx_top3,ndx_top3_spx_members_only,120,0.6752
+2015-01..2026-09,ndx_top3,sp_mean6_top3,141,0.5612
+2015-01..2026-09,ndx_top3,sp_W6total_top3,141,0.5455
+2015-01..2026-09,ndx_top3,qqq,141,0.6125
+2015-01..2026-09,sp_mean6_top3,spy,141,0.5211
+2015-01..2026-09,ndx_top3,ndx_top3_spx_members_only,141,0.833

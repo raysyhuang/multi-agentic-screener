@@ -1,0 +1,4 @@
+window,months,ndx_pick_slots,share_in_sp500,share_in_sp_seasoned_universe,share_also_sp_mean6_top3,share_also_sp_W6total_top3,share_in_sp_mean6_top10,months_all3_same_mean6,months_zero_overlap_mean6
+2015-2024,120,360,0.6806,0.6083,0.3167,0.3278,0.5083,1,45
+2025-01..2026-09,22,66,0.7727,0.5,0.303,0.2879,0.4697,2,11
+2015-01..2026-09,142,426,0.6948,0.5915,0.3146,0.3216,0.5023,3,56
