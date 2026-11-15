@@ -90,6 +90,12 @@ li{margin:4px 0}
 </section>
 
 <section>
+  <h2>每一年对比 QQQ</h2>
+  <p class="sub" id="subY"></p>
+  <div class="card"><div class="legend" id="lgY"></div><div id="chY"></div><div class="tip"></div></div>
+</section>
+
+<section>
   <h2>持仓怎么换的</h2>
   <p class="sub">每一行是一只股票，每一格是一个月；有颜色表示当月持有，颜色是它当月的涨跌。只列出持有 4 个月以上的股票，其余并入最后一行。可左右滑动。</p>
   <div class="card"><div class="legend" id="lgD"></div><div class="scroll"><div id="chD"></div></div><div class="tip"></div></div>
@@ -167,6 +173,18 @@ function chartC(){
     tip.show(el.offsetLeft+(m.l+bw*(i+.5))*rc.width/W,el.offsetTop+m.t+24,`<b>${mon(r)}</b> 组合 ${pct(r.pr)}<br>`+r.p.map((t,k)=>t+' '+pct(r.r[k])).join('<br>'))};
   sv.addEventListener('pointermove',mv);sv.addEventListener('pointerdown',mv);sv.addEventListener('pointerleave',()=>tip.hide());
 }
+function chartY(){
+  const Y={};let pn=1,pq=1;R.forEach(r=>{Y[r.e.slice(0,4)]=r});const ys=Object.keys(Y).sort(),V=ys.map(y=>{const r=Y[y],a=[y,(r.nav/pn-1)*100,(r.q/pq-1)*100];pn=r.nav;pq=r.q;return a});
+  const el=$('#chY'),card=el.parentElement,tip=tipFor(card),W=Math.max(300,el.clientWidth),H=240,m={l:40,r:8,t:8,b:22},pw=W-m.l-m.r,ph=H-m.t-m.b,gw=pw/V.length,bw=Math.max(3,(gw-6)/2),lo=-50,hi=200,Yp=v=>m.t+ph*(1-(v-lo)/(hi-lo));
+  legend('#lgY',[['var(--s1)','原规则'],['var(--s3)','QQQ']]);
+  $('#subY').textContent=`${V.length} 年里有 ${V.filter(v=>v[1]>v[2]).length} 年跑赢 QQQ。2026 年只到 11 月 13 日。`;
+  let s=svgEl(W,H);[-50,0,50,100,150,200].forEach(t=>{s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Yp(t)}" y2="${Yp(t)}" stroke="${css(t?'--line':'--axis')}"/><text x="${m.l-6}" y="${Yp(t)+4}" text-anchor="end">${t}%</text>`});
+  V.forEach((v,i)=>{const x0=m.l+gw*i+3;[[v[1],'--s1'],[v[2],'--s3']].forEach(([val,c],k)=>{const y0=Yp(0),y1=Yp(val);s+=`<rect x="${(x0+k*(bw+1)).toFixed(1)}" y="${Math.min(y0,y1).toFixed(1)}" width="${(bw-1).toFixed(1)}" height="${Math.max(1,Math.abs(y1-y0)).toFixed(1)}" fill="${css(c)}" rx="2"/>`});
+    s+=`<text x="${m.l+gw*(i+.5)}" y="${H-6}" text-anchor="middle">${W<520?v[0].slice(2):v[0]}</text>`});
+  s+=`<rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;el.innerHTML=s;const sv=el.firstChild;
+  const mv=e=>{const rc=sv.getBoundingClientRect(),x=(e.clientX-rc.left)*W/rc.width,i=Math.max(0,Math.min(V.length-1,Math.floor((x-m.l)/gw))),v=V[i];tip.show(el.offsetLeft+(m.l+gw*(i+.5))*rc.width/W,el.offsetTop+m.t+24,`<b>${v[0]}</b><br>原规则 ${pct(v[1],0)}<br>QQQ ${pct(v[2],0)}`)};
+  sv.addEventListener('pointermove',mv);sv.addEventListener('pointerdown',mv);sv.addEventListener('pointerleave',()=>tip.hide());
+}
 const BINS=[-20,-10,0,10,20];
 function divColor(v){const neg=css('--neg'),pos=css('--s1'),mid=css('--mid');const k=v<0?(v<-20?100:v<-10?66:36):(v>=20?100:v>=10?66:36);return `color-mix(in srgb, ${v<0?neg:pos} ${k}%, ${mid})`}
 function chartD(){
@@ -201,10 +219,10 @@ function ledger(){
     return `<details ${k===0?'open':''}><summary>${y} 年<span>全年 ${pct(tot*100,0)}${y==='2026'?'（至 11-13）':''}</span></summary><div class="scroll"><table><tr><th>月份</th><th style="text-align:left">持仓 1</th><th style="text-align:left">持仓 2</th><th style="text-align:left">持仓 3</th><th>组合</th></tr>`+
     rs.slice().reverse().map(r=>`<tr><td>${mon(r)}</td>`+r.p.map((t,i)=>`<td class="h"><span class="tk">${t}</span>${r.new.includes(t)?'<span class="new">新</span>':''}<br><span class="${r.r[i]<0?'dn':'up'}">${pct(r.r[i])}</span></td>`).join('')+`<td class="${r.pr<0?'dn':'up'}"><b>${pct(r.pr)}</b></td></tr>`).join('')+'</table></div></details>'}).join('');
 }
-function draw(){tiles();chartA();chartB();chartC();chartD();stopTable();ledger()}
-draw();let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{chartA();chartB();chartC()},150)});
-new MutationObserver(()=>{chartA();chartB();chartC();chartD()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
-matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chartA();chartB();chartC();chartD()});
+function draw(){tiles();chartA();chartB();chartC();chartY();chartD();stopTable();ledger()}
+draw();let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{chartA();chartB();chartC();chartY()},150)});
+new MutationObserver(()=>{chartA();chartB();chartC();chartY();chartD()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chartA();chartB();chartC();chartY();chartD()});
 </script>
 </body>
 </html>
