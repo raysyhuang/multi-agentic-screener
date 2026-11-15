@@ -1,0 +1,210 @@
+<!DOCTYPE html>
+<html lang="zh-Hans">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>纳指前三名逐月持仓</title>
+<style>
+/* layout: one reading column, summary first, then four charts, then the month-by-month ledger */
+:root{
+  --bg:#f6f5f1; --surface:#fcfcfb; --ink:#0b0b0b; --ink2:#52514e; --ink3:#86857f; --line:#e1e0d9; --axis:#c3c2b7;
+  --s1:#2a78d6; --s2:#eb6834; --s3:#1baf7a; --neg:#e34948; --mid:#f0efec; --accent:#1d4f91;
+  --font:-apple-system,BlinkMacSystemFont,"PingFang SC","Hiragino Sans GB","Noto Sans SC","Microsoft YaHei","Segoe UI",sans-serif;
+  --mono:ui-monospace,"SF Mono",Menlo,Consolas,monospace;
+}
+@media (prefers-color-scheme: dark){:root:not([data-theme="light"]){color-scheme:dark;
+  --bg:#121211; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --ink3:#8d8c85; --line:#2c2c2a; --axis:#383835;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --neg:#e66767; --mid:#383835; --accent:#8db8f0;}}
+:root[data-theme="dark"]{color-scheme:dark;
+  --bg:#121211; --surface:#1a1a19; --ink:#f0efec; --ink2:#c3c2b7; --ink3:#8d8c85; --line:#2c2c2a; --axis:#383835;
+  --s1:#3987e5; --s2:#d95926; --s3:#199e70; --neg:#e66767; --mid:#383835; --accent:#8db8f0;}
+*{box-sizing:border-box}
+html,body{margin:0}
+body{background:var(--bg);color:var(--ink);font-family:var(--font);font-size:16px;line-height:1.6;-webkit-text-size-adjust:100%}
+main{max-width:860px;margin:0 auto;padding:28px 16px 64px;display:flex;flex-direction:column;gap:28px}
+h1{font-size:26px;line-height:1.25;margin:0;text-wrap:balance;letter-spacing:.01em}
+h2{font-size:18px;line-height:1.35;margin:0 0 4px;text-wrap:balance}
+p{margin:0;max-width:38em}
+.sub{color:var(--ink2);font-size:14px}
+.note{color:var(--ink3);font-size:13px}
+header{display:flex;flex-direction:column;gap:8px;border-bottom:2px solid var(--ink);padding-bottom:16px}
+.tiles{display:grid;grid-template-columns:repeat(3,1fr);gap:10px}
+.tile{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px;display:flex;flex-direction:column;gap:2px;min-width:0}
+.tile b{font-size:22px;font-variant-numeric:tabular-nums;line-height:1.2}
+.tile .k{font-size:12px;color:var(--ink2);display:flex;align-items:center;gap:6px}
+.tile .d{font-size:12px;color:var(--ink2);font-variant-numeric:tabular-nums}
+.sw{display:inline-block;width:10px;height:10px;border-radius:2px;flex:none}
+section{display:flex;flex-direction:column;gap:10px}
+.card{background:var(--surface);border:1px solid var(--line);border-radius:8px;padding:12px 10px 8px;position:relative}
+.legend{display:flex;flex-wrap:wrap;gap:4px 14px;font-size:12px;color:var(--ink2);padding:0 4px 6px}
+.legend span{display:inline-flex;align-items:center;gap:6px}
+svg{display:block;width:100%;height:auto;touch-action:pan-y}
+svg text{font-family:var(--font);fill:var(--ink2);font-size:11px;font-variant-numeric:tabular-nums}
+.tip{position:absolute;pointer-events:none;background:var(--ink);color:var(--bg);font-size:12px;line-height:1.45;padding:6px 8px;border-radius:6px;white-space:nowrap;z-index:5;display:none;font-variant-numeric:tabular-nums}
+.scroll{overflow-x:auto;-webkit-overflow-scrolling:touch}
+table{border-collapse:collapse;width:100%;font-size:13px;font-variant-numeric:tabular-nums}
+th,td{padding:6px 8px;border-bottom:1px solid var(--line);text-align:right;white-space:nowrap}
+th{font-weight:600;color:var(--ink2);font-size:12px}
+th:first-child,td:first-child{text-align:left}
+td.h{text-align:left}
+.tk{font-family:var(--mono);font-weight:600}
+.new{display:inline-block;font-size:10px;line-height:1;padding:2px 3px;border-radius:3px;border:1px solid var(--axis);color:var(--ink2);margin-left:3px;vertical-align:1px}
+.up{color:var(--ink)} .dn{color:var(--neg)}
+details{background:var(--surface);border:1px solid var(--line);border-radius:8px}
+details+details{margin-top:8px}
+summary{cursor:pointer;padding:10px 12px;display:flex;justify-content:space-between;gap:12px;font-weight:600;font-variant-numeric:tabular-nums}
+summary:focus-visible{outline:2px solid var(--accent);outline-offset:2px}
+summary span{font-weight:400;color:var(--ink2);font-size:13px}
+.hl td{background:color-mix(in srgb,var(--s2) 12%,transparent)}
+.base td{font-weight:600}
+ul{margin:0;padding-left:1.2em;max-width:38em}
+li{margin:4px 0}
+@media (max-width:520px){.tiles{grid-template-columns:1fr 1fr}.tile:last-child{grid-column:1/-1}#ledger th,#ledger td{padding:6px 5px;font-size:12px}.tile b{font-size:20px}h1{font-size:22px}}
+</style>
+</head>
+<body>
+<main>
+<header>
+  <h1>纳指 100 动量前三名：每个月买了什么</h1>
+  <p class="sub">规则：每月底在纳指 100 成分股里，按过去 6 个月的平均月收益排名，买前 3 名各三分之一，持有一个月。区间 2014-12-31 至 2026-11-13，单边成本 0.25%，不含股息。历史回测，不是投资建议。</p>
+</header>
+
+<div class="tiles" id="tiles"></div>
+
+<section>
+  <h2>净值：原规则、加 10% 止损再买回、QQQ</h2>
+  <p class="sub">起点为 1，纵轴是对数刻度（每一格代表翻约 3 倍）。</p>
+  <div class="card"><div class="legend" id="lgA"></div><div id="chA"></div><div class="tip"></div></div>
+</section>
+
+<section>
+  <h2>从最高点回落了多少</h2>
+  <p class="sub">按日计算。止损再买回的版本跌得更深，不是更浅。</p>
+  <div class="card"><div class="legend" id="lgB"></div><div id="chB"></div><div class="tip"></div></div>
+</section>
+
+<section>
+  <h2>每个月的收益</h2>
+  <p class="sub">原规则，扣成本后。点一下柱子看当月持仓。</p>
+  <div class="card"><div class="legend" id="lgC"></div><div id="chC"></div><div class="tip"></div></div>
+</section>
+
+<section>
+  <h2>持仓怎么换的</h2>
+  <p class="sub">每一行是一只股票，每一格是一个月；有颜色表示当月持有，颜色是它当月的涨跌。只列出持有 4 个月以上的股票，其余并入最后一行。可左右滑动。</p>
+  <div class="card"><div class="legend" id="lgD"></div><div class="scroll"><div id="chD"></div></div><div class="tip"></div></div>
+  <p class="note" id="noteD"></p>
+</section>
+
+<section>
+  <h2>10% 止损、回到卖出价再买回：结果</h2>
+  <p class="sub">做法：买入后挂一张比买入价低 10% 的止损单；卖出后挂一张等于卖出价的买回单。用日线的开盘、最高、最低、收盘价模拟，跳空时按开盘价成交，每笔交易 0.25%。</p>
+  <div class="card scroll"><table id="tbS"></table></div>
+  <ul class="sub" id="why"></ul>
+</section>
+
+<section>
+  <h2>逐月持仓明细</h2>
+  <p class="sub">月份是持有的那个月。「新」表示这个月新换进来的股票。百分比是该股当月涨跌，最右是组合扣成本后的收益。</p>
+  <div id="ledger"></div>
+</section>
+
+<p class="note">数据：成分股名单来自 GitHub 开源项目 jmccarrell/n100tickers；价格为 Massive 拆股调整价（Queen 的 v1.1 修正版）。月末信号、月末收盘成交。脚本与数据在仓库 research-exchange/claude/ndx-top3-holdings-and-stop-20261115。</p>
+</main>
+<script>
+const D=/*DATA*/;
+const R=D.rows,$=s=>document.querySelector(s),css=v=>getComputedStyle(document.documentElement).getPropertyValue(v).trim();
+const pct=(v,d=1)=>(v>0?'+':'')+v.toFixed(d)+'%';
+const mon=r=>{const [y,m]=r.e.split('-');return y+'-'+m};
+function svgEl(w,h){return `<svg viewBox="0 0 ${w} ${h}" role="img">`}
+function tipFor(card){const t=card.querySelector('.tip');return{show(x,y,html){t.innerHTML=html;t.style.display='block';const cw=card.clientWidth,tw=t.offsetWidth;t.style.left=Math.max(4,Math.min(cw-tw-4,x-tw/2))+'px';t.style.top=Math.max(4,y-t.offsetHeight-10)+'px'},hide(){t.style.display='none'}}}
+function legend(id,items){$(id).innerHTML=items.map(([c,n])=>`<span><i class="sw" style="background:${c}"></i>${n}</span>`).join('')}
+
+function tiles(){
+  const b=D.base,s=D.stop,q=R[R.length-1].q,yrs=(new Date(R[R.length-1].e)-new Date(R[0].s))/31557600000;
+  const T=[['var(--s1)','原规则',pct(b.cagr*100).slice(1)+' / 年','约 '+b.mult.toFixed(0)+' 倍；最大回撤 '+(b.mdd*100).toFixed(0)+'%'],
+           ['var(--s2)','加 10% 止损再买回',pct(s.cagr*100).slice(1)+' / 年','约 '+s.mult.toFixed(0)+' 倍；最大回撤 '+(s.mdd*100).toFixed(0)+'%'],
+           ['var(--s3)','QQQ 买入持有',((Math.pow(q,1/yrs)-1)*100).toFixed(1)+'% / 年','约 '+q.toFixed(1)+' 倍']];
+  $('#tiles').innerHTML=T.map(t=>`<div class="tile"><span class="k"><i class="sw" style="background:${t[0]}"></i>${t[1]}</span><b>${t[2]}</b><span class="d">${t[3]}</span></div>`).join('');
+}
+
+function lineChart(id,series,opt){
+  const el=$(id),card=el.parentElement,tip=tipFor(card),W=Math.max(300,el.clientWidth),H=opt.h||260,m={l:36,r:opt.r||58,t:8,b:22},pw=W-m.l-m.r,ph=H-m.t-m.b;
+  const n=series[0].v.length,X=i=>m.l+pw*i/(n-1),Y=v=>m.t+ph*(1-(opt.f(v)-opt.f(opt.min))/(opt.f(opt.max)-opt.f(opt.min)));
+  let s=svgEl(W,H);
+  opt.ticks.forEach(t=>{s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="${css('--line')}"/><text x="${m.l-6}" y="${Y(t)+4}" text-anchor="end">${opt.tf(t)}</text>`});
+  opt.xt.forEach(([i,l])=>{s+=`<text x="${X(i)}" y="${H-6}" text-anchor="middle">${l}</text>`});
+  const ends=series.map(se=>({se,y:Y(se.v[n-1])})).sort((a,b)=>a.y-b.y);
+  for(let k=1;k<ends.length;k++)if(ends[k].y-ends[k-1].y<13)ends[k].y=ends[k-1].y+13;
+  series.forEach(se=>{s+=`<path d="${se.v.map((v,i)=>(i?'L':'M')+X(i).toFixed(1)+' '+Y(v).toFixed(1)).join('')}" fill="none" stroke="${css(se.c)}" stroke-width="2" stroke-linejoin="round"/>`});
+  ends.forEach(({se,y})=>{s+=`<circle cx="${X(n-1)}" cy="${Y(se.v[n-1])}" r="3.5" fill="${css(se.c)}" stroke="${css('--surface')}" stroke-width="2"/><text x="${X(n-1)+7}" y="${y+4}" style="fill:${css('--ink')}">${opt.ef(se.v[n-1])}</text>`});
+  s+=`<line id="${id.slice(1)}x" y1="${m.t}" y2="${m.t+ph}" stroke="${css('--axis')}" style="display:none"/><rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;
+  el.innerHTML=s;const sv=el.firstChild,cx=sv.querySelector('#'+id.slice(1)+'x');
+  const mv=e=>{const r=sv.getBoundingClientRect(),x=(e.clientX-r.left)*W/r.width,i=Math.max(0,Math.min(n-1,Math.round((x-m.l)/pw*(n-1))));cx.setAttribute('x1',X(i));cx.setAttribute('x2',X(i));cx.style.display='';
+    tip.show(el.offsetLeft+X(i)*r.width/W,el.offsetTop+m.t+20,`<b>${opt.lab(i)}</b><br>`+series.map(se=>se.n+' '+opt.ef(se.v[i])).join('<br>'))};
+  sv.addEventListener('pointermove',mv);sv.addEventListener('pointerdown',mv);sv.addEventListener('pointerleave',()=>{tip.hide();cx.style.display='none'});
+}
+function yearTicks(dates){const o=[];let last='';dates.forEach((d,i)=>{const y=d.slice(0,4);if(y!==last&&(+y)%2===0&&i>0)o.push([i,y]);last=y});return o}
+
+function chartA(){
+  const dates=[R[0].s,...R.map(r=>r.e)],S=[{n:'原规则',c:'--s1',v:[1,...R.map(r=>r.nav)]},{n:'止损再买回',c:'--s2',v:[1,...R.map(r=>r.navs)]},{n:'QQQ',c:'--s3',v:[1,...R.map(r=>r.q)]}];
+  legend('#lgA',[['var(--s1)','原规则'],['var(--s2)','加 10% 止损再买回'],['var(--s3)','QQQ']]);
+  lineChart('#chA',S,{f:Math.log10,min:.8,max:110,ticks:[1,3,10,30,100],tf:t=>t+'×',ef:v=>v.toFixed(v<10?2:1)+'×',xt:yearTicks(dates),lab:i=>dates[i]});
+}
+function chartB(){
+  const a=D.dd,b=D.dds,dates=a.map(x=>x[0]);
+  legend('#lgB',[['var(--s1)','原规则'],['var(--s2)','加 10% 止损再买回']]);
+  lineChart('#chB',[{n:'原规则',c:'--s1',v:a.map(x=>x[1])},{n:'止损再买回',c:'--s2',v:b.map(x=>x[1])}],{h:220,r:46,f:v=>v,min:-65,max:0,ticks:[0,-20,-40,-60],tf:t=>t+'%',ef:v=>v.toFixed(0)+'%',xt:yearTicks(dates),lab:i=>dates[i]});
+}
+function chartC(){
+  const el=$('#chC'),card=el.parentElement,tip=tipFor(card),W=Math.max(300,el.clientWidth),H=220,m={l:36,r:8,t:8,b:22},pw=W-m.l-m.r,ph=H-m.t-m.b,n=R.length,bw=pw/n,lo=-40,hi=60,Y=v=>m.t+ph*(1-(v-lo)/(hi-lo));
+  legend('#lgC',[['var(--s1)','上涨的月份'],['var(--neg)','下跌的月份']]);
+  let s=svgEl(W,H);[-40,-20,0,20,40,60].forEach(t=>{s+=`<line x1="${m.l}" x2="${W-m.r}" y1="${Y(t)}" y2="${Y(t)}" stroke="${css(t?'--line':'--axis')}"/><text x="${m.l-6}" y="${Y(t)+4}" text-anchor="end">${t}%</text>`});
+  yearTicks(R.map(r=>r.e)).forEach(([i,l])=>{s+=`<text x="${m.l+bw*(i+.5)}" y="${H-6}" text-anchor="middle">${l}</text>`});
+  R.forEach((r,i)=>{const v=Math.max(lo,Math.min(hi,r.pr)),y0=Y(0),y1=Y(v);s+=`<rect x="${(m.l+bw*i+.5).toFixed(1)}" y="${Math.min(y0,y1).toFixed(1)}" width="${Math.max(1,bw-1).toFixed(1)}" height="${Math.max(1,Math.abs(y1-y0)).toFixed(1)}" fill="${css(r.pr>=0?'--s1':'--neg')}" rx="1"/>`});
+  s+=`<rect x="${m.l}" y="${m.t}" width="${pw}" height="${ph}" fill="transparent"/></svg>`;el.innerHTML=s;const sv=el.firstChild;
+  const mv=e=>{const rc=sv.getBoundingClientRect(),x=(e.clientX-rc.left)*W/rc.width,i=Math.max(0,Math.min(n-1,Math.floor((x-m.l)/bw))),r=R[i];
+    tip.show(el.offsetLeft+(m.l+bw*(i+.5))*rc.width/W,el.offsetTop+m.t+24,`<b>${mon(r)}</b> 组合 ${pct(r.pr)}<br>`+r.p.map((t,k)=>t+' '+pct(r.r[k])).join('<br>'))};
+  sv.addEventListener('pointermove',mv);sv.addEventListener('pointerdown',mv);sv.addEventListener('pointerleave',()=>tip.hide());
+}
+const BINS=[-20,-10,0,10,20];
+function divColor(v){const neg=css('--neg'),pos=css('--s1'),mid=css('--mid');const k=v<0?(v<-20?100:v<-10?66:36):(v>=20?100:v>=10?66:36);return `color-mix(in srgb, ${v<0?neg:pos} ${k}%, ${mid})`}
+function chartD(){
+  const cnt={},first={};R.forEach((r,i)=>r.p.forEach(t=>{cnt[t]=(cnt[t]||0)+1;if(!(t in first))first[t]=i}));
+  const main=Object.keys(cnt).filter(t=>cnt[t]>=4).sort((a,b)=>first[a]-first[b]),other=Object.keys(cnt).filter(t=>cnt[t]<4),rows=[...main,'其他'];
+  const cw=6,rh=15,lw=46,top=18,W=lw+cw*R.length+6,H=top+rh*rows.length+4,el=$('#chD'),card=el.closest('.card'),tip=tipFor(card);
+  el.style.width=W+'px';
+  let s=`<svg viewBox="0 0 ${W} ${H}" width="${W}" height="${H}" style="width:${W}px">`;
+  let last='';R.forEach((r,i)=>{const y=r.e.slice(0,4);if(y!==last){s+=`<line x1="${lw+cw*i}" x2="${lw+cw*i}" y1="${top-4}" y2="${H}" stroke="${css('--line')}"/><text x="${lw+cw*i+2}" y="11">${y}</text>`;last=y}});
+  rows.forEach((t,j)=>{s+=`<text x="${lw-6}" y="${top+rh*j+11}" text-anchor="end" style="font-family:var(--mono);fill:${css('--ink')}">${t}</text>`});
+  const cells=[];R.forEach((r,i)=>r.p.forEach((t,k)=>{const j=main.indexOf(t)>=0?main.indexOf(t):rows.length-1;cells.push([i,j,t,r.r[k]]);s+=`<rect x="${lw+cw*i+.5}" y="${top+rh*j+1}" width="${cw-1}" height="${rh-2}" rx="1" fill="${divColor(r.r[k])}"/>`}));
+  s+='</svg>';el.innerHTML=s;const sv=el.firstChild;
+  legend('#lgD',[[divColor(-25),'跌 20% 以上'],[divColor(-15),'跌 10–20%'],[divColor(-5),'跌 0–10%'],[divColor(5),'涨 0–10%'],[divColor(15),'涨 10–20%'],[divColor(25),'涨 20% 以上']]);
+  const mv=e=>{const rc=sv.getBoundingClientRect(),x=e.clientX-rc.left,y=e.clientY-rc.top,i=Math.floor((x-lw)/cw),j=Math.floor((y-top)/rh),hit=cells.filter(c=>c[0]===i&&c[1]===j);
+    if(!hit.length){tip.hide();return}const cr=card.getBoundingClientRect();tip.show(e.clientX-cr.left,rc.top-cr.top+top+rh*j,`<b>${mon(R[i])}</b><br>`+hit.map(h=>h[2]+' '+pct(h[3])).join('<br>'))};
+  sv.addEventListener('pointermove',mv);sv.addEventListener('pointerdown',mv);sv.addEventListener('pointerleave',()=>tip.hide());
+  const ch=R.slice(1).reduce((a,r)=>a+r.new.length,0)/(R.length-1);
+  $('#noteD').textContent=`${R.length} 个月里一共买过 ${Object.keys(cnt).length} 只股票，其中 ${other.length} 只持有不到 4 个月。平均每个月换掉 ${ch.toFixed(1)} 只。持有最久的：`+Object.entries(cnt).sort((a,b)=>b[1]-a[1]).slice(0,6).map(([t,c])=>t+' '+c+' 个月').join('、')+'。';
+}
+function stopTable(){
+  const lab={'不止损 (原规则)':'不止损（原规则）','止损10% + 回到卖出价买回 (挂单)':'止损 10% + 回到卖出价买回','止损5% + 回到卖出价买回 (挂单)':'止损 5% + 买回','止损8% + 回到卖出价买回 (挂单)':'止损 8% + 买回','止损15% + 回到卖出价买回 (挂单)':'止损 15% + 买回','止损20% + 回到卖出价买回 (挂单)':'止损 20% + 买回','止损30% + 回到卖出价买回 (挂单)':'止损 30% + 买回','止损10% + 买回, 只看收盘价':'止损 10% + 买回，只看收盘价','止损10%, 不买回 (等月底)':'止损 10%，不买回，等月底'};
+  const P=[...new Set(D.res.map(r=>r.period))],by={};D.res.forEach(r=>{(by[r.test]=by[r.test]||{})[r.period]=r});
+  let h=`<tr><th rowspan="2">做法</th>${P.map(p=>`<th colspan="2">${p.replace(' → ','–').replace('-11-13','')}</th>`).join('')}<th rowspan="2">止损 / 买回次数</th></tr><tr>${P.map(()=>'<th>年化</th><th>按日最大回撤</th>').join('')}</tr>`;
+  Object.keys(lab).forEach(k=>{const r=by[k];if(!r)return;h+=`<tr class="${k.startsWith('不止损')?'base':k.startsWith('止损10% + 回到')?'hl':''}"><td>${lab[k]}</td>${P.map(p=>`<td>${(r[p].CAGR*100).toFixed(1)}%</td><td>${(r[p].daily_MDD*100).toFixed(0)}%</td>`).join('')}<td>${+r[P[0]].stops?r[P[0]].stops+' / '+r[P[0]].rebuys:'—'}</td></tr>`});
+  $('#tbS').innerHTML=h;
+  const s=D.stop;
+  $('#why').innerHTML=[`收益和回撤都变差了：2015–2026 年化从 ${(D.base.cagr*100).toFixed(1)}% 降到 ${(s.cagr*100).toFixed(1)}%，按日最大回撤从 ${(D.base.mdd*100).toFixed(0)}% 加深到 ${(s.mdd*100).toFixed(0)}%。`,`原因是反复止损。${R.length} 个月里止损了 ${s.stops} 次、买回 ${s.rebuys} 次。每次止损平均实亏约 10.6%，买回时平均又比卖出价贵约 2%，之后再跌 10% 又卖一次。`,`其中 ${D.res.find(r=>r.test.startsWith('止损10% + 回到')).gap_fills} 次是跳空低开，成交价比止损价更低。这些股票日波动很大，跌 10% 再涨回来很常见。`,'止损线放得越宽（20%、30%），结果越接近不止损。没有任何一档同时改善收益和回撤。'].map(x=>`<li>${x}</li>`).join('');
+}
+function ledger(){
+  const Y={};R.forEach(r=>{(Y[r.e.slice(0,4)]=Y[r.e.slice(0,4)]||[]).push(r)});const ys=Object.keys(Y).sort().reverse();
+  $('#ledger').innerHTML=ys.map((y,k)=>{const rs=Y[y],tot=rs.reduce((a,r)=>a*(1+r.pr/100),1)-1;
+    return `<details ${k===0?'open':''}><summary>${y} 年<span>全年 ${pct(tot*100,0)}${y==='2026'?'（至 11-13）':''}</span></summary><div class="scroll"><table><tr><th>月份</th><th style="text-align:left">持仓 1</th><th style="text-align:left">持仓 2</th><th style="text-align:left">持仓 3</th><th>组合</th></tr>`+
+    rs.slice().reverse().map(r=>`<tr><td>${mon(r)}</td>`+r.p.map((t,i)=>`<td class="h"><span class="tk">${t}</span>${r.new.includes(t)?'<span class="new">新</span>':''}<br><span class="${r.r[i]<0?'dn':'up'}">${pct(r.r[i])}</span></td>`).join('')+`<td class="${r.pr<0?'dn':'up'}"><b>${pct(r.pr)}</b></td></tr>`).join('')+'</table></div></details>'}).join('');
+}
+function draw(){tiles();chartA();chartB();chartC();chartD();stopTable();ledger()}
+draw();let rt;addEventListener('resize',()=>{clearTimeout(rt);rt=setTimeout(()=>{chartA();chartB();chartC()},150)});
+new MutationObserver(()=>{chartA();chartB();chartC();chartD()}).observe(document.documentElement,{attributes:true,attributeFilter:['data-theme']});
+matchMedia('(prefers-color-scheme: dark)').addEventListener('change',()=>{chartA();chartB();chartC();chartD()});
+</script>
+</body>
+</html>
