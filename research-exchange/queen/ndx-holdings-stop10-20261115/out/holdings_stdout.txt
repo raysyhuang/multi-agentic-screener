@@ -1,0 +1,59 @@
+baseline engine: CAGR 37.72% MDDd -49.7% MDDm -45.7% x45.32 months 143
+names changed per month (excl. first): avg 1.26 of 3; dist 0:18 1:71 2:51 3:2; avg one-way turnover 43.5%/month
+unique tickers held: 87  total ticker-months: 429
+
+Most held:
+  NVDA    46 months  avg +7.3%  hit 70%  logcontrib +1.054
+  TSLA    25 months  avg +8.0%  hit 60%  logcontrib +0.583
+  MU      19 months  avg +4.2%  hit 42%  logcontrib +0.158
+  MRNA    18 months  avg +4.1%  hit 56%  logcontrib +0.175
+  NFLX    16 months  avg +5.5%  hit 81%  logcontrib +0.280
+  AMD     15 months  avg -1.2%  hit 27%  logcontrib -0.087
+  MELI    14 months  avg +4.0%  hit 57%  logcontrib +0.171
+  PDD     10 months  avg -2.4%  hit 20%  logcontrib -0.102
+  PLTR    10 months  avg +10.8%  hit 80%  logcontrib +0.333
+  STX     10 months  avg +10.5%  hit 60%  logcontrib +0.293
+  ALGN     9 months  avg -3.4%  hit 67%  logcontrib -0.123
+  AMZN     9 months  avg +2.3%  hit 56%  logcontrib +0.059
+  CEG      9 months  avg +1.6%  hit 67%  logcontrib +0.045
+  AMAT     8 months  avg +3.4%  hit 62%  logcontrib +0.087
+  APP      8 months  avg +8.3%  hit 50%  logcontrib +0.187
+
+Top 10 contributors (log attribution; sum of all = ln(final gross NAV)):
+  NVDA    46m  log +1.054  arith sum(w*r) +1.115
+  TSLA    25m  log +0.583  arith sum(w*r) +0.667
+  WDC      6m  log +0.369  arith sum(w*r) +0.444
+  ZM       8m  log +0.354  arith sum(w*r) +0.397
+  PLTR    10m  log +0.333  arith sum(w*r) +0.360
+  STX     10m  log +0.293  arith sum(w*r) +0.350
+  NFLX    16m  log +0.280  arith sum(w*r) +0.295
+  SNDK     6m  log +0.207  arith sum(w*r) +0.292
+  APP      8m  log +0.187  arith sum(w*r) +0.221
+  MRNA    18m  log +0.175  arith sum(w*r) +0.247
+Bottom 10:
+  INTC     4m  log -0.200  arith sum(w*r) -0.125
+  ALGN     9m  log -0.123  arith sum(w*r) -0.101
+  PDD     10m  log -0.102  arith sum(w*r) -0.079
+  AMD     15m  log -0.087  arith sum(w*r) -0.061
+  ARM      3m  log -0.084  arith sum(w*r) -0.082
+  SGEN     7m  log -0.084  arith sum(w*r) -0.081
+  PTON     2m  log -0.074  arith sum(w*r) -0.071
+  BIDU     4m  log -0.073  arith sum(w*r) -0.064
+  WBA      1m  log -0.069  arith sum(w*r) -0.064
+  VIP      1m  log -0.067  arith sum(w*r) -0.064
+sum log contrib 4.1253 ; ln(gross NAV) 4.1253 ; total cost drag log -0.3115
+months beating QQQ: 83/143
+
+Year  strategy  QQQ
+ 2015    +31.4%    +8.3%
+ 2016    +59.2%    +5.9%
+ 2017    +16.4%   +31.5%
+ 2018    -19.3%    -1.0%
+ 2019    +49.8%   +37.8%
+ 2020   +185.1%   +47.6%
+ 2021    +26.3%   +26.8%
+ 2022    -24.8%   -33.1%
+ 2023    +57.1%   +53.8%
+ 2024     -8.2%   +24.8%
+ 2025   +122.6%   +20.2%
+ 2026    +77.1%   +10.7%

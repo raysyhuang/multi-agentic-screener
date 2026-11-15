@@ -1,0 +1,66 @@
+variant                           CAGR    MDDd    MDDm        x  worstM stops reent  whip costpy  cash%  dCAGR   dMDD
+baseline (no stop)              37.72%  -49.7%  -45.7%    45.32  -36.9%     0     0     0  0.00%   0.0%  +0.00   +0.0
+from-entry 5% same-close        21.95%  -63.5%  -53.0%    10.64  -17.9%   449   349   344  4.96%  18.2% -15.77  -13.8
+from-entry 5% next-open         21.34%  -62.9%  -53.5%    10.02  -21.6%   475   374   309  5.25%  17.1% -16.38  -13.2
+from-entry 10% same-close       23.74%  -65.0%  -56.2%    12.65  -26.5%   265   204   204  2.74%   9.7% -13.98  -15.3
+from-entry 10% next-open        23.17%  -72.3%  -63.2%    11.98  -25.7%   278   215   185  2.88%   9.1% -14.55  -22.6
+from-entry 15% same-close       26.33%  -58.5%  -53.4%    16.20  -28.6%   158   128   128  1.57%   4.6% -11.39   -8.8
+from-entry 15% next-open        27.60%  -66.1%  -61.3%    18.26  -30.6%   159   128   105  1.59%   4.3% -10.11  -16.4
+from-entry 20% same-close       33.83%  -55.9%  -51.9%    32.21  -29.0%    68    53    52  0.63%   2.0%  -3.89   -6.2
+from-entry 20% next-open        32.70%  -57.7%  -52.3%    29.13  -27.7%    74    60    49  0.69%   1.8%  -5.02   -8.0
+trailing 5% same-close          15.66%  -61.0%  -60.5%     5.66  -15.5%   781   601   594  9.25%  30.1% -22.06  -11.3
+trailing 5% next-open           13.42%  -61.0%  -60.2%     4.48  -21.7%   798   615   532  9.41%  28.6% -24.30  -11.3
+trailing 10% same-close         21.87%  -61.0%  -54.4%    10.56  -21.3%   416   321   320  4.67%  15.0% -15.85  -11.3
+trailing 10% next-open          18.64%  -72.7%  -66.0%     7.66  -24.7%   430   334   290  4.80%  14.0% -19.08  -23.0
+trailing 15% same-close         23.41%  -58.4%  -53.4%    12.26  -25.5%   241   194   194  2.55%   6.8% -14.31   -8.7
+trailing 15% next-open          23.88%  -64.0%  -58.9%    12.83  -30.0%   237   187   152  2.50%   6.4% -13.84  -14.3
+trailing 20% same-close         29.96%  -58.0%  -52.9%    22.72  -29.0%   121    86    85  1.15%   3.4%  -7.75   -8.3
+trailing 20% next-open          29.62%  -61.6%  -56.3%    22.02  -29.2%   127    92    77  1.21%   3.0%  -8.09  -11.9
+from-entry 10% same-close reenter@line  23.36%  -68.0%  -60.2%    12.21  -26.3%   196   128   128  1.93%  10.9% -14.36  -18.3
+from-entry 10% next-open reenter@line  23.70%  -70.8%  -61.6%    12.61  -24.5%   190   120   111  1.85%  10.4% -14.02  -21.1
+
+2020 / 2022 (calendar-year return, intra-year daily MDD)
+baseline (no stop)             2020  +185.1% mdd  -42.6% | 2022   -24.8% mdd  -39.7% | helped 0 hurt 0
+from-entry 5% same-close       2020  +142.8% mdd  -34.1% | 2022   -26.0% mdd  -38.5% | helped 208 hurt 241
+from-entry 5% next-open        2020  +135.3% mdd  -32.3% | 2022   -25.8% mdd  -38.4% | helped 208 hurt 267
+from-entry 10% same-close      2020  +130.4% mdd  -42.0% | 2022   -37.7% mdd  -47.5% | helped 105 hurt 160
+from-entry 10% next-open       2020  +140.8% mdd  -33.0% | 2022   -37.4% mdd  -48.9% | helped 107 hurt 171
+from-entry 15% same-close      2020  +134.3% mdd  -40.8% | 2022   -32.8% mdd  -44.5% | helped 51 hurt 107
+from-entry 15% next-open       2020  +163.4% mdd  -33.4% | 2022   -38.5% mdd  -50.2% | helped 52 hurt 107
+from-entry 20% same-close      2020  +157.9% mdd  -41.4% | 2022   -33.4% mdd  -45.6% | helped 20 hurt 48
+from-entry 20% next-open       2020  +133.7% mdd  -40.2% | 2022   -30.8% mdd  -43.9% | helped 22 hurt 52
+trailing 5% same-close         2020  +120.3% mdd  -16.5% | 2022   -36.7% mdd  -41.3% | helped 368 hurt 413
+trailing 5% next-open          2020   +78.0% mdd  -27.1% | 2022   -35.4% mdd  -39.7% | helped 373 hurt 425
+trailing 10% same-close        2020  +138.4% mdd  -26.6% | 2022   -35.0% mdd  -45.8% | helped 188 hurt 228
+trailing 10% next-open         2020  +141.8% mdd  -22.6% | 2022   -35.2% mdd  -46.4% | helped 184 hurt 246
+trailing 15% same-close        2020  +124.3% mdd  -35.9% | 2022   -33.1% mdd  -45.2% | helped 93 hurt 148
+trailing 15% next-open         2020  +172.6% mdd  -24.4% | 2022   -35.3% mdd  -47.8% | helped 85 hurt 152
+trailing 20% same-close        2020  +149.5% mdd  -39.1% | 2022   -33.5% mdd  -45.1% | helped 47 hurt 74
+trailing 20% next-open         2020  +147.3% mdd  -36.3% | 2022   -34.2% mdd  -46.8% | helped 47 hurt 80
+from-entry 10% same-close reenter@line 2020  +142.8% mdd  -36.3% | 2022   -43.2% mdd  -51.4% | helped 80 hurt 116
+from-entry 10% next-open reenter@line 2020  +150.1% mdd  -33.0% | 2022   -38.4% mdd  -49.4% | helped 74 hurt 116
+
+Yearly returns
+variant                           2015    2016    2017    2018    2019    2020    2021    2022    2023    2024    2025    2026
+baseline (no stop)               31.4%   59.2%   16.4%  -19.3%   49.8%  185.1%   26.3%  -24.8%   57.1%   -8.2%  122.6%   77.1%
+from-entry 5% same-close         26.1%   34.3%    4.5%    1.8%   18.4%  142.8%   11.1%  -26.0%   43.0%  -39.7%   31.6%  120.5%
+from-entry 5% next-open          16.3%   45.9%    2.2%   -8.5%   23.7%  135.3%   -6.1%  -25.8%   41.9%  -29.3%   27.5%  143.5%
+from-entry 10% same-close        29.6%   37.6%    8.5%  -11.3%   51.1%  130.4%    2.6%  -37.7%   44.4%  -37.0%   67.2%  118.1%
+from-entry 10% next-open         23.0%   38.1%    8.5%  -11.9%   51.1%  140.8%  -11.9%  -37.4%   45.4%  -36.1%   56.8%  152.6%
+from-entry 15% same-close        26.3%   50.4%   11.6%  -23.0%   51.1%  134.3%   -4.9%  -32.8%   52.0%  -26.8%   85.2%  112.7%
+from-entry 15% next-open         22.5%   51.1%   11.7%  -18.6%   51.1%  163.4%  -13.4%  -38.5%   52.0%  -20.7%   84.9%  129.5%
+from-entry 20% same-close        30.9%   59.2%   16.4%  -16.8%   49.8%  157.9%    3.4%  -33.4%   56.5%   -9.5%   99.8%  112.0%
+from-entry 20% next-open         28.6%   59.2%   16.4%  -13.4%   49.8%  133.7%   -4.0%  -30.8%   56.3%  -12.8%  103.1%  119.2%
+trailing 5% same-close           18.0%   35.5%   -6.8%  -10.6%   -1.3%  120.3%   48.0%  -36.7%   24.4%  -37.4%   62.7%   64.8%
+trailing 5% next-open            11.9%   42.3%   -7.9%  -14.5%    7.3%   78.0%   18.8%  -35.4%   16.1%  -25.6%   44.1%   96.2%
+trailing 10% same-close          27.9%   37.2%   10.5%  -11.1%   37.8%  138.4%   13.0%  -35.0%   33.7%  -36.4%   65.3%   80.5%
+trailing 10% next-open           20.5%   37.6%   10.0%  -11.5%   41.8%  141.8%   -5.7%  -35.2%   39.5%  -36.1%   35.1%   88.4%
+trailing 15% same-close          27.5%   50.4%    9.9%  -24.4%   48.4%  124.3%   -3.6%  -33.1%   49.4%  -23.6%   74.8%   79.5%
+trailing 15% next-open           18.6%   51.1%    6.3%  -19.3%   48.5%  172.6%  -11.5%  -35.3%   52.4%  -24.7%   51.1%  107.7%
+trailing 20% same-close          29.0%   59.2%   15.1%  -16.3%   49.5%  149.5%   -2.9%  -33.5%   56.6%  -16.6%   79.1%  103.9%
+trailing 20% next-open           25.1%   59.2%   14.9%  -13.7%   49.7%  147.3%   -8.4%  -34.2%   56.5%  -15.1%   68.7%  123.2%
+from-entry 10% same-close reenter@line   23.0%   32.6%    7.6%  -13.8%   51.1%  142.8%    2.3%  -43.2%   44.7%  -37.7%   71.6%  144.8%
+from-entry 10% next-open reenter@line   24.2%   38.0%    6.4%  -15.2%   51.1%  150.1%   -4.4%  -38.4%   43.1%  -38.3%   65.2%  151.2%
+
+best by Calmar (CAGR/|daily MDD|, in-sample pick): from-entry 20% same-close 0.606 baseline calmar 0.759
+missing opens fallback count: 0
